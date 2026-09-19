@@ -51,19 +51,39 @@
 ### 建置與執行
 
 ```bash
-./build.sh          # 產生 GoblinCamp.app
+./build.sh          # 快速建置，產生 GoblinCamp.app（只給這台 Mac 用）
 open GoblinCamp.app
 ```
 
 `build.sh` 用 Swift Package Manager 編譯，再手動組成 `.app` 並做 ad-hoc 簽署。
 
-App 沒有 Apple Developer 憑證簽署或公證。自己在本機建置的可以直接開；如果是從別處拿到的 `.app`，第一次要**右鍵 → 打開**，或先移除隔離標記：
+### 分享給別人
 
 ```bash
-xattr -dr com.apple.quarantine GoblinCamp.app
+./build.sh --release   # 同時支援 Apple Silicon 與 Intel，並產生 dist/GoblinCamp-<版本>.zip
 ```
 
+把 `dist/GoblinCamp-<版本>.zip` 傳給對方即可（**請傳 zip，不要直接傳 `.app`**，否則檔案權限與簽章可能壞掉）。`.app` 是獨立的，裡面已經有全部角色與圖片，不需要專案資料夾、Swift 或任何其他工具。
+
+對方的步驟：
+
+1. 解壓縮，把 `GoblinCamp.app` 拖進「應用程式」資料夾。
+2. 第一次打開會被系統擋下（因為沒有 Apple Developer 憑證簽署與公證）：
+   - macOS 15 以上：先雙擊打開一次被擋下，再到「系統設定 → 隱私權與安全性」，往下找到「仍要打開」按下去。
+   - macOS 13、14：對 App 按右鍵 → 打開。
+   - 也可以在終端機執行 `xattr -dr com.apple.quarantine /Applications/GoblinCamp.app`。
+3. 用選單的「連接 Claude Code」設定提醒（見下方）。
+
 公司電腦若用 MDM 擋下未簽署的 App，就無法安裝。
+
+### 更新版本
+
+1. 改 `Resources/Info.plist` 的 `CFBundleShortVersionString`（版本）與 `CFBundleVersion`，重新 `./build.sh --release`，把新的 zip 給對方。
+2. 對方先從選單「結束哥布林營地」，再用新的 `GoblinCamp.app` **取代**舊的（同一個位置），重新打開。
+3. **紀錄不會消失**：營地、每一隻哥布林、統計與選單設定都存在 App **外面**（見下方「資料存放位置」），換 App 不會動到它們。Claude Code 的連接也不用重做，前提是新的 App 放在同一個位置（放到別處就再按一次「連接」）。
+4. 每次建置的簽章都不同，所以更新後系統可能會再擋一次，照上面的步驟放行即可。
+
+之後的版本會維持這些讓舊紀錄能繼續用的約定：套件識別碼（`dev.goblincamp.game`）不變、資料夾名稱（`Application Support/GoblinCamp`）不變、存檔只新增欄位（舊存檔讀得進新版）。
 
 
 ### 玩法
@@ -179,7 +199,7 @@ xattr -dr com.apple.quarantine GoblinCamp.app
 - 完成後在 Claude Code 輸入 `/hooks` 確認，或重新開啟 Claude Code。
 - 選單另有「連接（只有一般提醒）」（不能回答）與「移除連接」；選單會顯示目前狀態（尚未連接／已連接／需要更新）。
 - **把哥布林營地搬到別的位置後**，請再按一次「連接」（腳本記的是它目前的位置；找不到程式時 hook 會安靜地什麼都不做，不會擋住 Claude Code）。
-- **給同事用**：把 `GoblinCamp.app` 放進「應用程式」資料夾，第一次右鍵 → 打開（見上方「建置與執行」），再按選單的「連接 Claude Code」即可。從下載資料夾直接開的話，系統會把程式放在暫時的位置，選單會請你先移到「應用程式」。
+- **給同事用**：照上方「分享給別人」把 App 放進「應用程式」資料夾並放行，再按選單的「連接 Claude Code」即可。從下載資料夾直接開的話，系統會把程式放在暫時的位置，選單會請你先移到「應用程式」。
 
 **手動設定**（想自己改設定檔時）：選單做的事等於在 `~/.claude/settings.json` 加上下面這一塊，`/path/to/goblincamp-hook.sh` 是選單放的那個腳本（`~/.claude/hooks/goblincamp-hook.sh`），或直接寫 `"/Applications/GoblinCamp.app/Contents/MacOS/GoblinCamp" --hook …`：
 
@@ -364,7 +384,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 - 實際插拔螢幕、點擊營地讓公主探頭（全域滑鼠監聽）、選單列圖示的實際樣子尚未在真實環境完整驗證。
 - 公主目前只有走路與站立的影格：睡覺、打哈欠、跳舞等只有動作本身與頭旁的圖示，沒有專屬姿勢；營地外觀與居民的品種已是哥布林版，公主的動作還在換成公主日常（第 2 步）。
 - 食物不存檔；沒有畫費洛蒙軌跡；食物離營地很遠、哥布林又少時，可能很久才會被發現（這是刻意的）。
-- 未簽署、未公證（見上方說明）。
+- 未簽署、未公證（見上方「分享給別人」）；沒有自動更新，要更新請換新的 App。
 
 ## 想法
 
