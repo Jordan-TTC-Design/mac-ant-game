@@ -1,0 +1,19 @@
+# Build output (regenerate with ./build.sh)
+.build/
+AntFarm.app/
+
+# Distribution archives
+*.dmg
+*.zip
+
+# SwiftPM / Xcode local state
+.swiftpm/
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Local tooling and scratch
+.claude/
+*.log
