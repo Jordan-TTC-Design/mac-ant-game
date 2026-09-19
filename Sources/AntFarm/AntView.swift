@@ -20,102 +20,243 @@ final class AntView: NSView {
     // MARK: Input
 
     override func resetCursorRects() {
-        if colony.phase == .choosingNest {
-            addCursorRect(bounds, cursor: .crosshair)
+        switch colony.phase {
+        case .choosingNest: addCursorRect(bounds, cursor: .crosshair)
+        case .editing: addCursorRect(bounds, cursor: .openHand)
+        case .placingFood: addCursorRect(bounds, cursor: .crosshair)
+        default: break
         }
     }
 
+    private var draggingNest = false
+    private var dragOffset = CGSize.zero
+
+    /// How close to the nest a click must be to grab it.
+    private var nestGrabRadius: CGFloat {
+        (NestImageStore.image != nil ? CGFloat(Settings.shared.nestImageWidth) / 2 + 10 : 34)
+    }
+
+    /// Event position in global screen coordinates. Uses the window the drag started in, so it stays correct
+    /// even when the pointer has moved onto another screen.
+    private func screenLocation(of event: NSEvent) -> CGPoint {
+        window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
+    }
+
     override func mouseDown(with event: NSEvent) {
-        guard colony.phase == .choosingNest else { return }
-        let local = convert(event.locationInWindow, from: nil)
-        colony.placeNest(at: CGPoint(x: origin.x + local.x, y: origin.y + local.y))
+        switch colony.phase {
+        case .choosingNest:
+            let local = convert(event.locationInWindow, from: nil)
+            colony.placeNest(at: CGPoint(x: origin.x + local.x, y: origin.y + local.y))
+        case .placingFood:
+            colony.placeFood(at: screenLocation(of: event))
+        case .editing:
+            guard let nest = colony.nest else { return }
+            let mouse = screenLocation(of: event)
+            if hypot(mouse.x - nest.x, mouse.y - nest.y) <= nestGrabRadius + 6 {
+                draggingNest = true
+                dragOffset = CGSize(width: nest.x - mouse.x, height: nest.y - mouse.y)
+                NSCursor.closedHand.set()
+            }
+        default:
+            break
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard draggingNest else { return }
+        let mouse = screenLocation(of: event)
+        colony.moveNest(to: CGPoint(x: mouse.x + dragOffset.width, y: mouse.y + dragOffset.height))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard draggingNest else { return }
+        draggingNest = false
+        NSCursor.openHand.set()
+        colony.nestDragEnded()
     }
 
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         switch colony.phase {
+        case .idle:
+            break
         case .choosingNest:
+            if colony.nest != nil { drawColony() } // an existing colony stays visible (frozen) while picking
             drawPickHint()
         case .running:
-            if let nest = colony.nest {
-                drawNest(at: CGPoint(x: nest.x - origin.x, y: nest.y - origin.y), pulse: colony.nestPulse,
-                         antCount: colony.ants.count, seed: UInt64(abs(nest.x * 7 + nest.y * 13)))
-            }
-            let scale = CGFloat(Settings.shared.antScale)
-            let theme = Settings.shared.colorTheme
-            let onScreen = bounds.insetBy(dx: -20, dy: -20)
+            drawColony()
+        case .editing:
+            drawColony()
+            drawEditOverlay()
+        case .placingFood:
+            drawColony()
+            drawFoodHint()
+        }
+    }
 
-            // All workers go into one body path and one limb path: two draw calls no matter how many ants.
-            let body = CGMutablePath(), limbs = CGMutablePath()
-            for ant in colony.ants {
-                let p = CGPoint(x: ant.pos.x - origin.x, y: ant.pos.y - origin.y)
-                if onScreen.contains(p) {
-                    addAnt(to: body, limbs: limbs, at: p, heading: ant.heading, legPhase: ant.legPhase, scale: scale, queen: false)
-                }
-            }
-            paint(body: body, limbs: limbs, color: theme.worker, lineWidth: 0.6 * scale, alpha: 1)
+    private func drawColony() {
+        if let nest = colony.nest {
+            drawNest(at: CGPoint(x: nest.x - origin.x, y: nest.y - origin.y), pulse: colony.nestPulse,
+                     antCount: colony.ants.count, seed: UInt64(abs(nest.x * 7 + nest.y * 13)))
+        }
+        let scale = CGFloat(Settings.shared.antScale)
+        let theme = Settings.shared.colorTheme
+        let onScreen = bounds.insetBy(dx: -20, dy: -20)
+        let foodScale = CGFloat(Colony.foodScale(Settings.shared.antScale))
 
-            for egg in colony.eggs {
-                let p = CGPoint(x: egg.pos.x - origin.x, y: egg.pos.y - origin.y)
-                if onScreen.contains(p) { drawEgg(at: p, alpha: egg.alpha, scale: scale) }
-            }
-            for d in colony.dirt {
-                let p = CGPoint(x: d.pos.x - origin.x, y: d.pos.y - origin.y)
-                if onScreen.contains(p) {
-                    drawSpeck(at: p, radius: 1.3 * scale, color: NSColor(calibratedRed: 0.5, green: 0.36, blue: 0.22, alpha: d.alpha))
-                }
-            }
-            for pebble in colony.pebbles {
-                let p = CGPoint(x: pebble.pos.x - origin.x, y: pebble.pos.y - origin.y)
-                if onScreen.contains(p) {
-                    drawSpeck(at: p, radius: 1.6 * scale, color: NSColor(calibratedWhite: 0.5, alpha: pebble.alpha))
-                }
-            }
+        for food in colony.foods {
+            let p = CGPoint(x: food.pos.x - origin.x, y: food.pos.y - origin.y)
+            if bounds.insetBy(dx: -40, dy: -40).contains(p) { drawFood(food, at: p, scale: foodScale) }
+        }
 
-            if let q = colony.queen, q.alpha > 0 {
-                let p = CGPoint(x: q.pos.x - origin.x, y: q.pos.y - origin.y)
-                if onScreen.contains(p) {
-                    let qs = 1.9 * scale
-                    let qBody = CGMutablePath(), qLimbs = CGMutablePath()
-                    addAnt(to: qBody, limbs: qLimbs, at: p, heading: q.heading, legPhase: q.legPhase, scale: qs,
-                           queen: true, antennae: q.antennae, headScale: CGFloat(q.headScale))
-                    // peeking out of the hole: only the front part of her body shows
-                    var clip: CGPath?
-                    if let line = q.clipLine {
-                        // crawling out of the hole: hide whatever is still behind the hole's edge
-                        let t = CGAffineTransform(translationX: line.origin.x - origin.x, y: line.origin.y - origin.y).rotated(by: line.angle)
-                        clip = CGPath(rect: CGRect(x: 0, y: -60, width: 120, height: 120), transform: [t])
-                    } else if q.emergence < 1 {
-                        let cutX = 4.0 - CGFloat(q.emergence) * 9.5
-                        clip = CGPath(rect: CGRect(x: cutX, y: -8, width: 30, height: 16), transform: [antTransform(at: p, heading: q.heading, scale: qs)])
-                    }
-                    paint(body: qBody, limbs: qLimbs, color: theme.queen, lineWidth: 0.6 * qs, alpha: q.alpha, clip: clip)
-                    if q.carryingPebble {
-                        drawSpeck(at: CGPoint(x: p.x + CGFloat(cos(q.heading)) * 3.9 * qs, y: p.y + CGFloat(sin(q.heading)) * 3.9 * qs),
-                                  radius: 1.1 * qs, color: NSColor(calibratedWhite: 0.5, alpha: 1))
-                    }
-                    if let decoration = q.decoration { drawDecoration(decoration, at: p, scale: scale) }
-                }
+        // All workers go into one body path and one limb path: two draw calls no matter how many ants.
+        let body = CGMutablePath(), limbs = CGMutablePath()
+        for ant in colony.ants where !ant.isHidden { // ants resting in the nest are out of sight
+            let p = CGPoint(x: ant.pos.x - origin.x, y: ant.pos.y - origin.y)
+            if onScreen.contains(p) {
+                addAnt(to: body, limbs: limbs, at: p, heading: ant.heading, legPhase: ant.legPhase, scale: scale, queen: false)
             }
         }
+        paint(body: body, limbs: limbs, color: theme.worker, lineWidth: 0.6 * scale, alpha: 1)
+
+        // pieces of food carried in the jaws
+        for ant in colony.ants {
+            guard let kind = ant.carrying else { continue }
+            let p = CGPoint(x: ant.pos.x - origin.x + CGFloat(cos(ant.heading)) * 3.6 * scale,
+                            y: ant.pos.y - origin.y + CGFloat(sin(ant.heading)) * 3.6 * scale)
+            if onScreen.contains(p) { drawSpeck(at: p, radius: 1.3 * scale, color: kind.pieceColor) }
+        }
+
+        for egg in colony.eggs {
+            let p = CGPoint(x: egg.pos.x - origin.x, y: egg.pos.y - origin.y)
+            if onScreen.contains(p) { drawEgg(at: p, alpha: egg.alpha, scale: scale) }
+        }
+        for d in colony.dirt {
+            let p = CGPoint(x: d.pos.x - origin.x, y: d.pos.y - origin.y)
+            if onScreen.contains(p) {
+                drawSpeck(at: p, radius: 1.3 * scale, color: NSColor(calibratedRed: 0.5, green: 0.36, blue: 0.22, alpha: d.alpha))
+            }
+        }
+        for pebble in colony.pebbles {
+            let p = CGPoint(x: pebble.pos.x - origin.x, y: pebble.pos.y - origin.y)
+            if onScreen.contains(p) {
+                drawSpeck(at: p, radius: 1.6 * scale, color: NSColor(calibratedWhite: 0.5, alpha: pebble.alpha))
+            }
+        }
+
+        if let q = colony.queen, q.alpha > 0 {
+            let p = CGPoint(x: q.pos.x - origin.x, y: q.pos.y - origin.y)
+            if onScreen.contains(p) {
+                let qs = 1.9 * scale
+                let qBody = CGMutablePath(), qLimbs = CGMutablePath()
+                addAnt(to: qBody, limbs: qLimbs, at: p, heading: q.heading, legPhase: q.legPhase, scale: qs,
+                       queen: true, antennae: q.antennae, headScale: CGFloat(q.headScale))
+                // peeking out of the hole: only the front part of her body shows
+                var clip: CGPath?
+                if let line = q.clipLine {
+                    // crawling out of the hole: hide whatever is still behind the hole's edge
+                    let t = CGAffineTransform(translationX: line.origin.x - origin.x, y: line.origin.y - origin.y).rotated(by: line.angle)
+                    clip = CGPath(rect: CGRect(x: 0, y: -60, width: 120, height: 120), transform: [t])
+                } else if q.emergence < 1 {
+                    let cutX = 4.0 - CGFloat(q.emergence) * 9.5
+                    clip = CGPath(rect: CGRect(x: cutX, y: -8, width: 30, height: 16), transform: [antTransform(at: p, heading: q.heading, scale: qs)])
+                }
+                paint(body: qBody, limbs: qLimbs, color: theme.queen, lineWidth: 0.6 * qs, alpha: q.alpha, clip: clip)
+                if q.carryingPebble {
+                    drawSpeck(at: CGPoint(x: p.x + CGFloat(cos(q.heading)) * 3.9 * qs, y: p.y + CGFloat(sin(q.heading)) * 3.9 * qs),
+                              radius: 1.1 * qs, color: NSColor(calibratedWhite: 0.5, alpha: 1))
+                }
+                if let decoration = q.decoration { drawDecoration(decoration, at: p, scale: scale) }
+            }
+        }
+    }
+
+    /// Dark rounded label with white text, centred on `center`.
+    private func drawPill(_ string: String, center: NSPoint, fontSize: CGFloat) {
+        let text = string as NSString
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let size = text.size(withAttributes: attrs)
+        let padX = fontSize * 0.9, padY = fontSize * 0.45
+        let pill = NSRect(x: center.x - size.width / 2 - padX, y: center.y - size.height / 2 - padY,
+                          width: size.width + padX * 2, height: size.height + padY * 2)
+        NSColor.black.withAlphaComponent(0.6).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+        text.draw(at: NSPoint(x: pill.minX + padX, y: pill.minY + padY), withAttributes: attrs)
     }
 
     private func drawPickHint() {
         NSColor.black.withAlphaComponent(0.12).setFill()
         bounds.fill()
+        drawPill("🐜 點一下，選擇蟻窩的位置", center: NSPoint(x: bounds.midX, y: bounds.midY), fontSize: 22)
+        drawPill("按 Esc 取消", center: NSPoint(x: bounds.midX, y: bounds.midY - 46), fontSize: 14)
+    }
 
-        let text = "🐜 點一下，選擇蟻窩的位置" as NSString
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 22, weight: .medium),
-            .foregroundColor: NSColor.white,
-        ]
-        let size = text.size(withAttributes: attrs)
-        let pill = NSRect(x: bounds.midX - size.width / 2 - 20, y: bounds.midY - size.height / 2 - 10,
-                          width: size.width + 40, height: size.height + 20)
-        NSColor.black.withAlphaComponent(0.6).setFill()
-        NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
-        text.draw(at: NSPoint(x: pill.minX + 20, y: pill.minY + 10), withAttributes: attrs)
+    private func drawFoodHint() {
+        NSColor.black.withAlphaComponent(0.06).setFill()
+        bounds.fill()
+        guard let kind = colony.pendingFood else { return }
+        drawPill("\(kind.emoji) 點一下，放下\(kind.label)　·　按 Esc 取消", center: NSPoint(x: bounds.midX, y: bounds.maxY - 70), fontSize: 16)
+    }
+
+    /// A puddle of water or a blob of honey, shrinking as the ants carry it off.
+    private func drawFood(_ food: FoodSource, at p: CGPoint, scale: CGFloat) {
+        let r = CGFloat(food.radius(scale: Double(scale)))
+        let w = r * 1.25, h = r * 0.95 // a little wider than tall, like something spilled
+        let body = NSRect(x: p.x - w, y: p.y - h, width: w * 2, height: h * 2)
+
+        // soft shadow underneath
+        NSColor(calibratedWhite: 0, alpha: 0.12).setFill()
+        NSBezierPath(ovalIn: body.offsetBy(dx: 0.6, dy: -1.2)).fill()
+
+        switch food.kind {
+        case .water:
+            NSColor(calibratedRed: 0.42, green: 0.70, blue: 0.95, alpha: 0.62).setFill()
+            NSBezierPath(ovalIn: body).fill()
+            NSColor(calibratedRed: 0.25, green: 0.52, blue: 0.85, alpha: 0.75).setStroke()
+            let rim = NSBezierPath(ovalIn: body)
+            rim.lineWidth = 0.8
+            rim.stroke()
+            NSColor(calibratedWhite: 1, alpha: 0.75).setFill() // highlight
+            NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.55, y: p.y + h * 0.15, width: w * 0.6, height: h * 0.32)).fill()
+        case .honey:
+            // a main blob with a smaller drip beside it, so it looks gooey
+            let drip = NSRect(x: p.x + w * 0.45, y: p.y - h * 0.95, width: w * 0.85, height: h * 0.75)
+            for shape in [body, drip] {
+                NSColor(calibratedRed: 0.93, green: 0.64, blue: 0.08, alpha: 0.96).setFill()
+                NSBezierPath(ovalIn: shape).fill()
+            }
+            NSColor(calibratedRed: 0.70, green: 0.42, blue: 0.04, alpha: 0.85).setStroke()
+            let rim = NSBezierPath(ovalIn: body)
+            rim.lineWidth = 0.8
+            rim.stroke()
+            NSColor(calibratedRed: 1, green: 0.90, blue: 0.55, alpha: 0.9).setFill() // shine
+            NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.5, y: p.y + h * 0.2, width: w * 0.55, height: h * 0.3)).fill()
+        }
+    }
+
+    /// Edit mode: a faint dim, a dashed ring around the nest as the handle, and a hint on the nest's screen.
+    private func drawEditOverlay() {
+        NSColor.black.withAlphaComponent(0.08).setFill()
+        bounds.fill()
+        guard let nest = colony.nest else { return }
+        let p = CGPoint(x: nest.x - origin.x, y: nest.y - origin.y)
+        guard bounds.insetBy(dx: -60, dy: -60).contains(p) else { return }
+
+        let r = nestGrabRadius
+        let ring = NSBezierPath(ovalIn: NSRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
+        ring.lineWidth = 3
+        NSColor.black.withAlphaComponent(0.35).setStroke()
+        ring.stroke()
+        ring.lineWidth = 1.5
+        ring.setLineDash([5, 4], count: 2, phase: 0)
+        NSColor.white.withAlphaComponent(0.95).setStroke()
+        ring.stroke()
+
+        drawPill("拖曳蟻窩到新位置　·　Esc 或 Return 完成", center: NSPoint(x: bounds.midX, y: bounds.maxY - 70), fontSize: 16)
     }
 
     private func drawNest(at p: CGPoint, pulse: Double, antCount: Int, seed: UInt64) {

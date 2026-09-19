@@ -28,6 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastCursor: CGPoint?
     private var cursorSpeed = 0.0
     private var clickMonitor: Any?
+    private var keyMonitor: Any?
+    private var pickItem: ClosureMenuItem!
+    private var editItem: ClosureMenuItem!
+    private var foodMenuItem: NSMenuItem!
+    private var clearFoodItem: ClosureMenuItem!
     private let countItem = NSMenuItem(title: "螞蟻數：0", action: nil, keyEquivalent: "")
     private var pauseItem: ClosureMenuItem!
 
@@ -56,6 +61,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateCount()
         startFrameTimer()
         scheduleSnapshot()
+        scheduleUITests()
+
+        // Esc cancels nest picking; Esc or Return finishes editing. (A local monitor: no permission needed.)
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let esc = event.keyCode == 53
+            let done = esc || event.keyCode == 36 || event.keyCode == 76 // Esc, Return, keypad Enter
+            switch self.colony.phase {
+            case .choosingNest where esc:
+                self.colony.cancelPicking()
+                return nil
+            case .editing where done:
+                self.colony.endEditing()
+                return nil
+            case .placingFood where esc:
+                self.colony.cancelPlacingFood()
+                return nil
+            default:
+                return event
+            }
+        }
 
         // Clicks on the nest (which land on whatever app is underneath) make the queen duck and peek.
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
@@ -80,33 +106,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Test hook: `ANT_SNAPSHOT=/path/prefix` saves the overlay (composited on grey, cropped around the nest) after a delay.
     private func scheduleSnapshot() {
         guard let prefix = ProcessInfo.processInfo.environment["ANT_SNAPSHOT"] else { return }
-        let delay = Double(ProcessInfo.processInfo.environment["ANT_SNAPSHOT_AFTER"] ?? "") ?? 20
+        let delays = (ProcessInfo.processInfo.environment["ANT_SNAPSHOT_AFTER"] ?? "20").split(separator: ",").compactMap { Double($0) }
+        let delay = delays.first ?? 20
         if let forced = ProcessInfo.processInfo.environment["ANT_QUEEN_FORCE"] {
             let lead = forced == "digging" ? 4.5 : 1.2
             DispatchQueue.main.asyncAfter(deadline: .now() + max(0, delay - lead)) { [weak self] in
                 self?.colony.debugForceQueen(forced)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, let nest = self.colony.nest else { return }
+        let full = ProcessInfo.processInfo.environment["ANT_SNAPSHOT_FULL"] != nil
+        for (n, when) in delays.enumerated() { DispatchQueue.main.asyncAfter(deadline: .now() + when) { [weak self] in
+            guard let self else { return }
+            let nest = self.colony.nest ?? CGPoint(x: NSScreen.main?.frame.midX ?? 0, y: NSScreen.main?.frame.midY ?? 0)
             for (i, window) in self.windows.enumerated() where window.frame.contains(nest) {
                 guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber),
                                                        [.boundsIgnoreFraming, .bestResolution]) else { continue }
                 let scale = CGFloat(cg.width) / window.frame.width
                 let half: CGFloat = 130
-                // crop (image origin is top-left) around the nest, then paint over grey
+                // crop (image origin is top-left) around the nest, or keep the whole screen, then paint over grey
                 let cx = (nest.x - window.frame.minX) * scale, cy = (window.frame.maxY - nest.y) * scale
-                let rect = CGRect(x: cx - half * scale, y: cy - half * scale * 0.7, width: half * 2 * scale, height: half * 1.4 * scale)
+                let rect = full ? CGRect(x: 0, y: 0, width: cg.width, height: cg.height)
+                                : CGRect(x: cx - half * scale, y: cy - half * scale * 0.7, width: half * 2 * scale, height: half * 1.4 * scale)
                 guard let crop = cg.cropping(to: rect) else { continue }
-                let out = NSImage(size: NSSize(width: crop.width * 2, height: crop.height * 2))
+                let factor: CGFloat = full ? 0.5 : 2
+                let out = NSImage(size: NSSize(width: CGFloat(crop.width) * factor, height: CGFloat(crop.height) * factor))
                 out.lockFocus()
                 NSColor(calibratedWhite: 0.85, alpha: 1).setFill()
                 NSRect(origin: .zero, size: out.size).fill()
                 NSImage(cgImage: crop, size: out.size).draw(in: NSRect(origin: .zero, size: out.size))
                 out.unlockFocus()
                 if let tiff = out.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
-                    try? png.write(to: URL(fileURLWithPath: "\(prefix)-\(i).png"))
-                    NSLog("AntFarm: snapshot saved \(prefix)-\(i).png")
+                    let path = delays.count > 1 ? "\(prefix)-\(n)-\(i).png" : "\(prefix)-\(i).png"
+                    try? png.write(to: URL(fileURLWithPath: path))
+                    NSLog("AntFarm: snapshot saved \(path)")
+                }
+            }
+        }
+        }
+    }
+
+    /// Test hooks that drive the UI with synthetic events, so the nest-picking and edit flows can be exercised
+    /// without real mouse or keyboard input (which needs extra permissions):
+    /// `ANT_TEST_ESC=秒` presses Esc; `ANT_TEST_EDIT=dx,dy` enters edit mode and drags the nest by (dx, dy), then Esc.
+    private func scheduleUITests() {
+        let env = ProcessInfo.processInfo.environment
+        func after(_ seconds: Double, _ work: @escaping () -> Void) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        }
+        func log(_ s: String) { NSLog("AntFarm test: \(s)") }
+        func pressKey(_ code: UInt16, _ chars: String) {
+            if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                        windowNumber: 0, context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                                        isARepeat: false, keyCode: code) { NSApp.postEvent(e, atStart: false) }
+        }
+        func mouse(_ type: NSEvent.EventType, at global: CGPoint, in window: NSWindow) {
+            let local = CGPoint(x: global.x - window.frame.minX, y: global.y - window.frame.minY)
+            if let e = NSEvent.mouseEvent(with: type, location: local, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                NSApp.postEvent(e, atStart: false)
+            }
+        }
+
+        if let s = env["ANT_TEST_ESC"], let t = Double(s) {
+            log("phase at start: \(colony.phase)")
+            after(t) { pressKey(53, "\u{1b}") }
+            after(t + 0.5) { log("phase after Esc: \(self.colony.phase), nest: \(String(describing: self.colony.nest))") }
+        }
+        if let s = env["ANT_TEST_FOOD"] {
+            let parts = s.split(separator: ",")
+            guard parts.count == 3, let kind = FoodKind(rawValue: String(parts[0])), let dx = Double(parts[1]), let dy = Double(parts[2]) else { return }
+            after(4) {
+                guard let nest = self.colony.nest else { return log("no nest") }
+                self.colony.beginPlacingFood(kind) // what the menu item does
+                self.syncWindows()
+                log("phase: \(self.colony.phase), window accepts input: \(self.windows.contains { !$0.ignoresMouseEvents })")
+                let target = CGPoint(x: nest.x + dx, y: nest.y + dy)
+                if let window = self.windows.first(where: { $0.frame.contains(target) }) {
+                    mouse(.leftMouseDown, at: target, in: window)
+                    after(0.2) { mouse(.leftMouseUp, at: target, in: window) }
+                }
+                after(0.5) { log("placed: \(self.colony.foods.map { "\($0.kind.rawValue)@\($0.pos) x\($0.amount)" }), phase \(self.colony.phase)") }
+                for k in 1...40 { after(0.5 + Double(k) * 5) { log("t+\(k * 5)s \(self.colony.foodSummary())") } }
+            }
+            if env["ANT_TEST_FOOD_CANCEL"] != nil { // press Esc while placing instead of clicking
+                after(10) {
+                    self.colony.beginPlacingFood(.water)
+                    self.syncWindows()
+                    log("placing again: phase \(self.colony.phase), pending \(String(describing: self.colony.pendingFood))")
+                    after(2.5) { pressKey(53, "\u{1b}") } // leave the hint on screen long enough to be captured
+                    after(3.0) { log("after Esc while placing: phase \(self.colony.phase), pending \(String(describing: self.colony.pendingFood))") }
+                }
+            }
+        }
+        if let s = env["ANT_TEST_EDIT"] {
+            let d = s.split(separator: ",").compactMap { Double($0) }
+            guard d.count == 2 else { return }
+            after(5) {
+                guard let nest = self.colony.nest else { return log("no nest") }
+                log("running, nest \(nest), ants \(self.colony.ants.count)")
+                self.colony.beginEditing()
+                self.syncWindows()
+                log("phase: \(self.colony.phase)")
+                guard let window = self.windows.first(where: { $0.frame.contains(nest) }) else { return }
+                log("window accepts input: \(!window.ignoresMouseEvents)")
+                mouse(.leftMouseDown, at: nest, in: window)
+                after(0.3) { mouse(.leftMouseDragged, at: CGPoint(x: nest.x + d[0] / 2, y: nest.y + d[1] / 2), in: window) }
+                after(0.6) { mouse(.leftMouseDragged, at: CGPoint(x: nest.x + d[0], y: nest.y + d[1]), in: window) }
+                after(0.9) { mouse(.leftMouseUp, at: CGPoint(x: nest.x + d[0], y: nest.y + d[1]), in: window) }
+                after(1.3) {
+                    log("after drag, nest \(String(describing: self.colony.nest)), ants \(self.colony.ants.count), phase \(self.colony.phase)")
+                    pressKey(53, "\u{1b}")
+                }
+                after(1.8) { log("after Esc, phase \(self.colony.phase)") }
+                if env["ANT_TEST_EDIT_HOLD"] != nil { // stay in edit mode for a screenshot
+                    after(1.4) { self.colony.beginEditing(); self.syncWindows() }
                 }
             }
         }
@@ -124,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         menu.delegate = self
+        menu.autoenablesItems = false // enabled state of the game items is set in menuNeedsUpdate
 
         countItem.isEnabled = false
         menu.addItem(countItem)
@@ -134,7 +248,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.colony.isPaused.toggle()
         }
         menu.addItem(pauseItem)
-        menu.addItem(ClosureMenuItem(title: "重新選擇蟻窩（清空螞蟻）") { [weak self] in self?.colony.reset() })
+        pickItem = ClosureMenuItem(title: "重新選擇蟻窩（清空螞蟻）") { [weak self] in self?.colony.beginPicking() }
+        menu.addItem(pickItem)
+        editItem = ClosureMenuItem(title: "編輯蟻窩位置") { [weak self] in
+            guard let self else { return }
+            if self.colony.phase == .editing { self.colony.endEditing() } else { self.colony.beginEditing() }
+        }
+        menu.addItem(editItem)
+        menu.addItem(foodMenu())
         menu.addItem(.separator())
 
         menu.addItem(choiceMenu(title: "生成速度",
@@ -216,6 +337,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// "Put down food": pick a kind, then click on the screen.
+    private func foodMenu() -> NSMenuItem {
+        foodMenuItem = NSMenuItem(title: "放食物", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "放食物")
+        for kind in FoodKind.allCases {
+            sub.addItem(ClosureMenuItem(title: "\(kind.emoji) \(kind.label)") { [weak self] in self?.colony.beginPlacingFood(kind) })
+        }
+        sub.addItem(.separator())
+        clearFoodItem = ClosureMenuItem(title: "清除所有食物") { [weak self] in
+            self?.colony.clearFoods()
+            self?.redrawAll()
+        }
+        sub.addItem(clearFoodItem)
+        foodMenuItem.submenu = sub
+        return foodMenuItem
+    }
+
     /// Submenu of mutually exclusive options with a checkmark on the current one.
     private func choiceMenu<T: Equatable>(title: String, options: [(String, T)],
                                           get: @escaping () -> T, set: @escaping (T) -> Void) -> NSMenuItem {
@@ -235,6 +373,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         pauseItem.title = colony.isPaused ? "繼續" : "暫停"
+        pauseItem.isEnabled = colony.isSimulating
+        pickItem.title = colony.nest == nil ? "選擇蟻窩位置…" : "重新選擇蟻窩（清空螞蟻）"
+        pickItem.isEnabled = colony.phase != .choosingNest
+        editItem.title = colony.phase == .editing ? "完成編輯（Esc）" : "編輯蟻窩位置"
+        editItem.isEnabled = colony.phase == .running || colony.phase == .editing
+        foodMenuItem.isEnabled = colony.phase == .running
+        clearFoodItem.isEnabled = !colony.foods.isEmpty
         refreshStates(in: menu)
     }
 
@@ -277,7 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         lastCursor = cursor
 
-        guard colony.phase == .running, !colony.isPaused else { return }
+        guard colony.isSimulating, !colony.isPaused else { return }
         colony.tick(dt: dt, cursor: cursor, cursorSpeed: cursorSpeed)
         redrawAll()
         let wanted: Double = colony.ants.count > AppDelegate.crowdedAnts ? 20 : 30
@@ -294,7 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func persist() {
         guard settings.saveProgress else { return }
-        if colony.phase == .running, let nest = colony.nest {
+        if let nest = colony.nest {
             Persistence.save(SavedState(nestX: nest.x, nestY: nest.y, antCount: colony.ants.count))
         } else {
             Persistence.clear()
@@ -316,7 +461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Sync window input mode with the game phase and redraw.
     private func syncWindows() {
-        let picking = colony.phase == .choosingNest
+        let picking = [.choosingNest, .editing, .placingFood].contains(colony.phase) // overlay must capture the mouse
         for window in windows {
             window.acceptsInput = picking
             window.contentView?.needsDisplay = true

@@ -33,29 +33,35 @@ final class Settings {
     static let shared = Settings()
     private let defaults = UserDefaults.standard
 
+    /// A number setting, or nil if unset. Values passed on the command line (`-maxAnts 200`) arrive as strings,
+    /// which `double(forKey:)` converts, so this works for both stored and command-line values.
+    private func number(_ key: String) -> Double? {
+        defaults.object(forKey: key) == nil ? nil : defaults.double(forKey: key)
+    }
+
     /// Seconds between newborn ants. `ANT_SPAWN_INTERVAL` overrides it for quick testing.
     var spawnInterval: Double {
         get {
             if let s = ProcessInfo.processInfo.environment["ANT_SPAWN_INTERVAL"], let v = Double(s), v > 0 { return v }
-            return defaults.object(forKey: "spawnInterval") as? Double ?? 10
+            return number("spawnInterval") ?? 10
         }
         set { defaults.set(newValue, forKey: "spawnInterval") }
     }
 
     var maxAnts: Int {
-        get { defaults.object(forKey: "maxAnts") as? Int ?? 500 }
+        get { number("maxAnts").map { Int($0) } ?? 500 }
         set { defaults.set(newValue, forKey: "maxAnts") }
     }
 
     /// Multiplier on drawn ant size.
     var antScale: Double {
-        get { defaults.object(forKey: "antScale") as? Double ?? 1.0 }
+        get { number("antScale") ?? 1.0 }
         set { defaults.set(newValue, forKey: "antScale") }
     }
 
     /// Multiplier on walking speed.
     var speedMultiplier: Double {
-        get { defaults.object(forKey: "speedMultiplier") as? Double ?? 1.0 }
+        get { number("speedMultiplier") ?? 1.0 }
         set { defaults.set(newValue, forKey: "speedMultiplier") }
     }
 
@@ -66,7 +72,7 @@ final class Settings {
 
     /// Drawn width in points of the custom nest picture.
     var nestImageWidth: Double {
-        get { defaults.object(forKey: "nestImageWidth") as? Double ?? 48 }
+        get { number("nestImageWidth") ?? 48 }
         set { defaults.set(newValue, forKey: "nestImageWidth") }
     }
 
