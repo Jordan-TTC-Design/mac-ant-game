@@ -83,6 +83,11 @@ final class AntView: NSView {
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        if colony.campHidden { // the goblins are away, but the pomodoro and the popups stay
+            drawMessage()
+            drawPomodoro()
+            return
+        }
         switch colony.phase {
         case .idle:
             break

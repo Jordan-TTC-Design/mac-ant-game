@@ -311,3 +311,8 @@ Characters/<id>/
 - 使用者的定義：**專注模式**＝完全暫停（原本的「暫時隱藏」）；**工作模式**＝背景繼續運行、只是不出現在畫面上。
 - 實作：`AppDelegate.QuietMode { focus, work }`、`hide(_:for:)`；`isHiddenByUser`（視窗藏起來、不跳通知）與 `isFrozen`（只有專注模式，不 `tick`）。兩種模式的選單各有 30 分鐘／1 小時／2 小時／直到我取消。已驗證：專注模式下哥布林數不變，工作模式下背景繼續出生。
 - 使用者說明：他打算長時間常駐，平常主要靠番茄鐘與 Claude 通知。所以整理了 [SCENARIOS.md](SCENARIOS.md)，並提出「工作模式下番茄鐘與通知仍要出現」的待決定事項。
+
+
+## 四種狀態、全螢幕專注、第二螢幕、每日統計、hook 安裝（2026-09）
+
+見 SCENARIOS.md。使用者的四種需求：完全靜音（專注模式）、有番茄鐘和通知但營地暫停（節能模式）、有番茄鐘和通知且營地背景運作（工作模式）、全開。實作：`QuietMode { work, saver, focus }`、`effectiveMode`（全螢幕視窗會強制專注）、`isHiddenByUser`（營地不畫）、`isSilenced`（不跳出、不出聲）、`isFrozen`（不 tick）；營地隱藏時覆蓋視窗仍在，`AntView` 只畫番茄鐘與通知（`colony.campHidden`）。`Stats.swift` 存每日統計（測試時 `CAMP_NO_SAVE` 不寫檔）。`tools/install-hooks.sh` 安裝／移除 Claude Code hook。已驗證：三種模式的視窗、暫停、通知、更新頻率；全螢幕開啟與結束；統計計數。沒驗證：真實第二螢幕、真實全螢幕影片或簡報、開機自動啟動。

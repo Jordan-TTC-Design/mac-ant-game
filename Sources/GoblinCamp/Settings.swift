@@ -107,6 +107,17 @@ final class Settings {
         set { defaults.set(newValue, forKey: "pomodoroRest") }
     }
 
+    /// Where the pomodoro clock and the Claude popups appear: "cursor" (the screen the mouse is on), "main", or a screen's name.
+    var alertScreen: String {
+        get { defaults.string(forKey: "alertScreen") ?? "cursor" }
+        set { defaults.set(newValue, forKey: "alertScreen") }
+    }
+    /// A full-screen window (video, slideshow) counts as focus mode: everything goes quiet.
+    var fullscreenFocus: Bool {
+        get { defaults.object(forKey: "fullscreenFocus") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "fullscreenFocus") }
+    }
+
     /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.
     var wildlife: Int {
         get { number("wildlife", argument: "wildlife").map { min(3, max(0, Int($0))) } ?? 2 }

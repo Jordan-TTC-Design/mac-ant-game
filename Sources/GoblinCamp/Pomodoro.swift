@@ -4,7 +4,7 @@ import AppKit
 /// focus time counts down, then a rest counts down, then the goblin walks away.
 final class Pomodoro {
     enum Phase { case focus, rest }
-    enum Event { case started, restBegan, finished }
+    enum Event { case started, focusDone, restBegan, finished }
 
     private(set) var phase: Phase?
     private(set) var endsAt = Date()
@@ -15,6 +15,10 @@ final class Pomodoro {
     private(set) var breedIndex = 0
     private(set) var arriving = false
     private(set) var leaving = false
+    /// The last run ended straight after the focus time, with no rest.
+    private(set) var endedWithoutRest = false
+    /// How long the focus part was.
+    private(set) var focusSeconds = 0.0
     private var screen = CGRect.zero
     private var restSeconds = 0.0
     private var targetX: CGFloat = 0
@@ -33,6 +37,8 @@ final class Pomodoro {
         self.screen = screen
         self.breedIndex = breedIndex
         restSeconds = restMinutes * 60
+        focusSeconds = focusMinutes * 60
+        endedWithoutRest = false
         phaseLength = focusMinutes * 60
         endsAt = Date().addingTimeInterval(phaseLength)
         phase = .focus
@@ -70,6 +76,7 @@ final class Pomodoro {
             return
         }
         guard let phase, remaining <= 0 else { return }
+        if phase == .focus { onEvent?(.focusDone) }
         if phase == .focus, restSeconds > 0 {
             self.phase = .rest
             phaseLength = restSeconds
@@ -77,6 +84,7 @@ final class Pomodoro {
             shake = 3
             onEvent?(.restBegan)
         } else {
+            endedWithoutRest = phase == .focus
             self.phase = nil
             leaving = true
             onEvent?(.finished)

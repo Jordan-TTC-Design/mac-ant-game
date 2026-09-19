@@ -55,6 +55,8 @@ final class Colony {
     let stage = MessageStage()
     /// The pomodoro goblin with the clock.
     let pomodoro = Pomodoro()
+    /// The camp is not drawn (work, energy-saving or focus mode); only the pomodoro and the popups still are.
+    var campHidden = false
     private(set) var creatures: [Creature] = []
     /// Little sparks where something was just hit.
     private(set) var hits: [(pos: CGPoint, age: Double)] = []
