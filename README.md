@@ -160,20 +160,10 @@ xattr -dr com.apple.quarantine GoblinCamp.app
 
 **串接方式**：`tools/goblin-notify.sh permission|done` 會用 `open -g "goblincamp://notify?kind=…&project=…&app=…"` 通知遊戲（遊戲沒在跑就什麼都不做，不會自己把遊戲打開）。
 
-**手動設定 hook**（不想跑安裝腳本時）：用編輯器（例如 `vi ~/.claude/settings.json`）打開 Claude Code 設定檔，在最後一項後面補逗號，加上 `hooks` 區塊。下面是加完的整份範例（其他設定照你自己的，只要多 `hooks` 這一塊）：
+**手動設定 hook**（不想跑安裝腳本時）：用編輯器打開 Claude Code 設定檔 `~/.claude/settings.json`，在最後一項後面補逗號，加上 `hooks` 區塊。下面把路徑寫成 `/path/to/GoblinCamp`，請換成你把這個專案放的實際位置（其他設定照你自己的，只要多 `hooks` 這一塊）：
 
 ```json
 {
-  "statusLine": {
-    "type": "command",
-    "command": "bash ~/.claude/statusline-command.sh"
-  },
-  "enabledPlugins": {
-    "frontend-design@claude-plugins-official": true
-  },
-  "tui": "fullscreen",
-  "theme": "dark",
-  "agentPushNotifEnabled": true,
   "model": "opus",
   "hooks": {
     "Notification": [
@@ -198,7 +188,7 @@ xattr -dr com.apple.quarantine GoblinCamp.app
 - 這樣直接指向專案裡的腳本，不需要先跑安裝腳本；專案資料夾搬家時，這兩個路徑要一起改。
 - 存檔後在 Claude Code 輸入 `/hooks` 確認有出現這兩個 hook，或重開 Claude Code。
 - 測試：先開著哥布林營地，在終端機執行
-  `echo '{"cwd":"/path/to/GoblinCamp"}' | /path/to/GoblinCamp/tools/goblin-notify.sh permission`，右上角應該會有哥布林跳出來說話。
+  `echo '{"cwd":"/path/to/your/project"}' | /path/to/GoblinCamp/tools/goblin-notify.sh permission`，右上角應該會有哥布林跳出來說話。
 - 移除：把 `hooks` 區塊刪掉即可（或用 `tools/install-hooks.sh --uninstall`）。
 
 每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
