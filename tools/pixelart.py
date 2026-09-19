@@ -183,7 +183,7 @@ def lcd_clock(art, x, y, text="24:59", rest=False, alarm=False, label="專注"):
     art.rect(x + body_w - 3, y + body_h - 1, 4, 3, hand)
 
 
-def bubble(art, x, y, lines, accent=(242, 140, 26, 255), tail_x=None, width=None, size=12, title=None, foot=None):
+def bubble(art, x, y, lines, accent=(242, 140, 26, 255), tail_x=None, width=None, size=12, title=None, foot=None, extra=0):
     """A speech bubble (top-left at x, y in art pixels) with a pointer at the bottom, like the game's popups."""
     line_h = size + 2
     f = ImageFont.truetype(FONT_CJK, size)
@@ -191,7 +191,7 @@ def bubble(art, x, y, lines, accent=(242, 140, 26, 255), tail_x=None, width=None
     text_w = max(probe.textbbox((0, 0), s, font=f)[2] for s in lines + ([title] if title else []) + ([foot] if foot else []))
     w = width or text_w + 12
     rows = len(lines) + (1 if title else 0) + (1 if foot else 0)
-    h = rows * line_h + 8
+    h = rows * line_h + 8 + extra
     art.rect(x, y, w, h, accent)
     art.rect(x + 1, y + 1, w - 2, h - 2, (255, 255, 255, 255))
     art.rect(x, y, 1, 1, (0, 0, 0, 0)); art.dot(x + w - 1, y, (0, 0, 0, 0))

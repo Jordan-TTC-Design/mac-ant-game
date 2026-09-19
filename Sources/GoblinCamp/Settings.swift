@@ -143,6 +143,17 @@ final class Settings {
         set { defaults.set(newValue, forKey: "hotkeysEnabled") }
     }
 
+    /// Popups can be answered right there (allow/deny, or a typed reply that goes back to Claude Code).
+    var askEnabled: Bool {
+        get { defaults.object(forKey: "askEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "askEnabled") }
+    }
+    /// How long a question popup waits for an answer, in seconds, before Claude Code's own prompt takes over.
+    var askWait: Double {
+        get { min(120, max(5, defaults.object(forKey: "askWait") as? Double ?? 30)) }
+        set { defaults.set(newValue, forKey: "askWait") }
+    }
+
     /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.
     var wildlife: Int {
         get { number("wildlife", argument: "wildlife").map { min(3, max(0, Int($0))) } ?? 2 }

@@ -94,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupMenuBar()
         rebuildOverlays()
         startFullscreenWatch()
+        purgeOldReplies()
 
         // Resume a saved colony if its nest is still on a screen; otherwise start at nest-picking.
         if settings.saveProgress, let saved = Persistence.load() {
@@ -303,6 +304,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let s = env["CAMP_TEST_POMODORO"] { // "focusMinutes,restMinutes" (fractions allowed), started at 3 s
             let parts = s.split(separator: ",").compactMap { Double($0) }
             if parts.count == 2 { after(3) { self.startPomodoro(focus: parts[0], rest: parts[1]) } }
+        }
+        if let s = env["CAMP_TEST_ASKANSWER"] { // "allow", "deny", "look", "dismiss" or "reply:text", at CAMP_TEST_ASKAT seconds (default 8)
+            after(Double(env["CAMP_TEST_ASKAT"] ?? "") ?? 8) {
+                log("ask panel: \(self.askPanel != nil ? "showing, frame \(self.askPanel!.frame)" : "none")")
+                let answer: AskAnswer
+                switch s {
+                case "allow": answer = .allow
+                case "deny": answer = .deny
+                case "look": answer = .look
+                case let r where r.hasPrefix("reply:"): answer = .reply(String(r.dropFirst(6)))
+                default: answer = .dismiss
+                }
+                self.askPanel?.answer(answer)
+            }
         }
         if let s = env["CAMP_TEST_CLICKMSG"], let t = Double(s) { // click the popup at t seconds (needs a popup with an app)
             after(t) {
@@ -600,6 +615,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// `goblincamp://notify?kind=permission|done&project=name`, sent by the Claude Code hooks (tools/goblin-notify.sh).
     func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "goblincamp" && url.host == "ask" {
+            handleAsk(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+        }
         for url in urls where url.scheme == "goblincamp" && url.host == "notify" {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let kind = NotifyKind(rawValue: items.first { $0.name == "kind" }?.value ?? "") ?? .done
@@ -613,8 +631,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Someone wants the player: a goblin (or now and then the princess) pops up and says so.
     /// Silent while hidden (meeting, focus), only a badge on the menu bar icon.
-    func notify(_ kind: NotifyKind, project: String = "", appBundleID: String? = nil, speaker forced: Speaker? = nil) {
-        if forced == nil { Stats.shared.notification(kind) }
+    func notify(_ kind: NotifyKind, project: String = "", appBundleID: String? = nil, speaker forced: Speaker? = nil, count: Bool = true) {
+        if forced == nil, count { Stats.shared.notification(kind) }
         guard settings.notifyEnabled, settings.notifies(kind) else { return }
         if isSilenced {
             noteMissed()
@@ -624,20 +642,141 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if forced == nil, let last = lastNotify[kind], Date().timeIntervalSince(last) < 6 { return }
         lastNotify[kind] = Date()
         let screen = alertScreenFrame()
-        let character = Characters.current
-        var breedIndex = 0
-        var speaker = Speakers.common
-        if let forced {
-            speaker = forced
-            breedIndex = character.breedIndex(id: forced.id)
-        } else if Double.random(in: 0..<1) < 0.25 {
-            speaker = Speakers.princess
-        } else if let ant = colony.ants.randomElement() { // one of the living goblins, so rare breeds turn up when you have them
-            breedIndex = ant.breedIndex
-            speaker = Speakers.forBreed(character.breeds[min(breedIndex, character.breeds.count - 1)].id)
-        }
+        let (speaker, breedIndex) = pickSpeaker(forced)
         colony.stage.enqueue(Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: appBundleID, screen: screen))
         redrawAll()
+    }
+
+    /// Who speaks: now and then the princess, otherwise one of the living goblins (so rare breeds turn up when you have them).
+    private func pickSpeaker(_ forced: Speaker? = nil) -> (Speaker, Int) {
+        let character = Characters.current
+        if let forced { return (forced, character.breedIndex(id: forced.id)) }
+        if Double.random(in: 0..<1) < 0.25 { return (Speakers.princess, 0) }
+        if let ant = colony.ants.randomElement() {
+            return (Speakers.forBreed(character.breeds[min(ant.breedIndex, character.breeds.count - 1)].id), ant.breedIndex)
+        }
+        return (Speakers.common, 0)
+    }
+
+    // MARK: Questions from hooks (answer on the bubble)
+
+    private func after(_ seconds: Double, _ block: @escaping () -> Void) { DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: block) }
+
+    private var pendingAsks: Set<String> = []
+    private var askPanel: AskPanel?
+    private var askPanelID: String?
+
+    private static var repliesDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GoblinCamp/replies")
+    }
+
+    /// Files the waiting hook script polls: `<id>.ack` (we got the question) and `<id>.json` (the answer).
+    private func writeReply(_ id: String, _ payload: [String: Any], ack: Bool = false) {
+        let dir = AppDelegate.repliesDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let final = dir.appendingPathComponent(ack ? "\(id).ack" : "\(id).json")
+        let temp = dir.appendingPathComponent("\(id).tmp")
+        guard let data = try? JSONSerialization.data(withJSONObject: payload), (try? data.write(to: temp)) != nil else { return }
+        try? FileManager.default.removeItem(at: final)
+        try? FileManager.default.moveItem(at: temp, to: final)
+    }
+
+    private func finishAsk(_ id: String, _ payload: [String: Any]) {
+        pendingAsks.remove(id)
+        writeReply(id, payload)
+    }
+
+    private func purgeOldReplies() {
+        let dir = AppDelegate.repliesDirectory
+        for file in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
+            let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if Date().timeIntervalSince(date) > 3600 { try? FileManager.default.removeItem(at: file) }
+        }
+    }
+
+    /// `goblincamp://ask?kind=permission|reply&id=…&project=…&app=…&text=…&wait=…` from tools/goblin-ask.sh, which then waits for the answer.
+    /// Anything that cannot be shown as a question is answered "none" right away, so the hook never waits for nothing.
+    private func handleAsk(_ items: [URLQueryItem]) {
+        func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
+        guard let id = value("id"), id.range(of: "^[A-Za-z0-9-]{8,64}$", options: .regularExpression) != nil else { return }
+        writeReply(id, ["ack": true], ack: true)
+        let kind: NotifyKind = value("kind") == "permission" ? .permission : .done
+        Stats.shared.notification(kind)
+        let project = String((value("project") ?? "").filter { !$0.isNewline }.prefix(28))
+        var app = value("app")
+        if let bundle = app, bundle.range(of: "^[A-Za-z0-9.-]{1,80}$", options: .regularExpression) == nil { app = nil }
+        let context = String((value("text") ?? "").filter { !$0.isNewline }.prefix(90))
+        guard settings.notifyEnabled, settings.notifies(kind) else { return finishAsk(id, ["action": "none"]) }
+        if !settings.askEnabled { // plain popup, no question
+            notify(kind, project: project, appBundleID: app, count: false)
+            return finishAsk(id, ["action": "none"])
+        }
+        if isSilenced {
+            noteMissed()
+            return finishAsk(id, ["action": "none"])
+        }
+        guard !colony.stage.isFull else { return finishAsk(id, ["action": "none"]) }
+        let (speaker, breedIndex) = pickSpeaker()
+        let wait = min(settings.askWait, Double(value("wait") ?? "") ?? 60)
+        pendingAsks.insert(id)
+        colony.stage.enqueue(Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: app,
+                                     screen: alertScreenFrame(), interaction: kind == .permission ? .decision : .reply, askID: id, context: context, talkTime: wait))
+        redrawAll()
+    }
+
+    /// The panel with buttons or a text field, over the goblin's bubble spot while it stands there talking.
+    private func updateAskPanel() {
+        guard !isSilenced, let m = colony.stage.current, m.interaction != nil, m.phase == .talking, let id = m.askID else {
+            if askPanel != nil { askPanel?.orderOut(nil); askPanel = nil; askPanelID = nil }
+            return
+        }
+        guard askPanelID != id else { return }
+        let size = AskPanel.size(for: m)
+        let sprite = spriteHeight(of: m)
+        var origin = NSPoint(x: m.pos.x - size.width + 30, y: m.pos.y + sprite * 0.8 + 12)
+        origin.x = max(origin.x, m.screen.minX + 8)
+        askPanel?.orderOut(nil)
+        let panel = AskPanel(message: m, frame: NSRect(origin: origin, size: size)) { [weak self] answer in self?.answered(answer) }
+        askPanel = panel
+        askPanelID = id
+        panel.orderFrontRegardless()
+        if let path = ProcessInfo.processInfo.environment["CAMP_TEST_ASKSHOT"], let view = panel.contentView { // draw the bubble into a PNG
+            after(0.5) {
+                guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
+            }
+        }
+    }
+
+    private func answered(_ answer: AskAnswer) {
+        guard let id = askPanelID else { return }
+        let app = colony.stage.current?.appBundleID
+        switch answer {
+        case .allow: finishAsk(id, ["action": "allow"])
+        case .deny: finishAsk(id, ["action": "deny"])
+        case .reply(let text): finishAsk(id, ["action": "reply", "text": text])
+        case .look:
+            finishAsk(id, ["action": "none"])
+            bringForward(app)
+        case .dismiss: finishAsk(id, ["action": "none"])
+        }
+        colony.stage.dismissCurrent()
+        GoblinVoice.shared.stop()
+        askPanel?.orderOut(nil)
+        askPanel = nil
+        askPanelID = nil
+    }
+
+    private func bringForward(_ bundleID: String?) {
+        guard let bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private func spriteHeight(of m: Message) -> CGFloat {
+        let character = Characters.current
+        let role = m.speaker.isPrincess ? character.queenRole(outfit: colony.outfitIndex) : character.breeds[min(m.breedIndex, character.breeds.count - 1)].sprites
+        return CGFloat(role?.frameSize ?? 16) * (role?.pixelSize(scale: 1.6) ?? 3)
     }
 
     /// The overlay lets every click through, so the popup gets a small window of its own that catches clicks:
@@ -645,7 +784,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var clickPanel: NSPanel?
 
     private func updateClickPanel() {
-        guard !isSilenced, let m = colony.stage.current, m.phase == .talking, m.appBundleID != nil else {
+        guard !isSilenced, let m = colony.stage.current, m.phase == .talking, m.appBundleID != nil, m.interaction == nil else {
             clickPanel?.orderOut(nil)
             return
         }
@@ -674,9 +813,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.stage.dismissCurrent()
         GoblinVoice.shared.stop()
         clickPanel?.orderOut(nil)
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-        }
+        bringForward(id)
     }
 
     /// The "Claude notifications" submenu: what to show, how loud, and a way to try it.
@@ -692,12 +829,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             sub.addItem(item)
         }
         sub.addItem(.separator())
+        let ask = ClosureMenuItem(title: "泡泡可直接回覆（允許／拒絕、輸入回覆）") { [weak self] in self?.settings.askEnabled.toggle() }
+        ask.stateProvider = { self.settings.askEnabled }
+        sub.addItem(ask)
+        sub.addItem(choiceMenu(title: "等你回覆多久", options: [("15 秒", 15.0), ("30 秒", 30.0), ("60 秒", 60.0)],
+                               get: { self.settings.askWait }, set: { self.settings.askWait = $0 }))
+        sub.addItem(.separator())
         let volume = choiceMenu(title: "聲音", options: [("關（只跳出泡泡）", 0), ("小聲", 1), ("中等", 2), ("大聲", 3)],
                                 get: { self.settings.notifyVolume }, set: { self.settings.notifyVolume = $0 })
         sub.addItem(volume)
         sub.addItem(.separator())
         sub.addItem(ClosureMenuItem(title: "試試看（隨機）") { [weak self] in self?.notify(.permission, project: "測試", appBundleID: "com.apple.Terminal") })
         sub.addItem(ClosureMenuItem(title: "試試看：公主") { [weak self] in self?.notify(.done, project: "測試", appBundleID: "com.apple.Terminal", speaker: Speakers.princess) })
+        sub.addItem(ClosureMenuItem(title: "試試看：詢問允許") { [weak self] in
+            self?.handleAsk([URLQueryItem(name: "id", value: "test-\(UUID().uuidString)"), URLQueryItem(name: "kind", value: "permission"),
+                             URLQueryItem(name: "project", value: "測試"), URLQueryItem(name: "app", value: "com.apple.Terminal"),
+                             URLQueryItem(name: "text", value: "執行：git push origin main")])
+        })
+        sub.addItem(ClosureMenuItem(title: "試試看：可以回覆") { [weak self] in
+            self?.handleAsk([URLQueryItem(name: "id", value: "test-\(UUID().uuidString)"), URLQueryItem(name: "kind", value: "reply"),
+                             URLQueryItem(name: "project", value: "測試"), URLQueryItem(name: "app", value: "com.apple.Terminal")])
+        })
         sub.addItem(ClosureMenuItem(title: "試試看：壯碩哥布林") { [weak self] in self?.notify(.permission, project: "測試", appBundleID: "com.apple.Terminal", speaker: Speakers.brute) })
         parent.submenu = sub
         return parent
@@ -761,6 +913,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if mode == .focus {
             colony.stage.clear()
             clickPanel?.orderOut(nil)
+            askPanel?.orderOut(nil)
+            askPanel = nil
+            askPanelID = nil
             GoblinVoice.shared.stop()
             windows.forEach { $0.orderOut(nil) }
         } else {
@@ -1112,6 +1267,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !isSilenced { redrawAll() }
         }
         updateClickPanel()
+        updateAskPanel()
+        for id in pendingAsks where !colony.stage.hasAsk(id) || colony.stage.isLeaving(ask: id) { // nobody answered in time (or it was cleared)
+            finishAsk(id, ["action": "none"])
+        }
         if !isFrozen, colony.isSimulating, !colony.isPaused {
             colony.tick(dt: dt, cursor: cursor, cursorSpeed: cursorSpeed)
             if !isHiddenByUser { redrawAll() } // nothing to draw while the camp is away

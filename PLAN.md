@@ -322,3 +322,12 @@ Characters/<id>/
 
 - 模式（`AppDelegate.setMode`）：選單最上面四個一鍵切換的項目（全開、工作、節能、專注）＋「切換模式後持續」＋「啟動時的模式」（預設工作模式；還沒有營地時固定全開，好讓人選位置）；全域快捷鍵 ⌃⌥1～4（`HotKeys.swift`，用系統熱鍵服務，不需要權限，已用真的按鍵驗證）。選單列圖示旁顯示模式小字（工、省、靜）。專注模式下番茄鐘時間到，圖示閃動；回到全開時有靜音的「歡迎回來」小泡泡（營地多了幾隻、錯過幾則通知）。開始番茄鐘時若在全開，自動進入工作模式，結束後回來。
 - README 美術：`tools/pixelart.py`、`tools/make_readme_art.py` 從遊戲自己的精靈圖合成 `docs/images/` 八張圖（封面、品種、公主、營地、自然事件、四種狀態、番茄鐘、通知），全是 4 倍放大的點陣，重新產生只要執行 `python3 tools/make_readme_art.py`。
+
+
+## 泡泡上直接回覆 Claude（2026-09）
+
+- 機制（已對照本機 Claude Code 2.1.278 的程式確認格式）：`PermissionRequest` hook 輸出 `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`（拒絕是 `"behavior":"deny"` 加 `message`）；`Stop` hook 輸出 `{"decision":"block","reason":"…"}` 讓 Claude 把 reason 當作下一個指示繼續；什麼都不印就照平常。
+- `tools/goblin-ask.sh permission|reply`：開 `goblincamp://ask?…`，等遊戲在 `Application Support/GoblinCamp/replies/` 寫下 `<id>.ack`（4 秒內沒有就放棄，不卡住 Claude Code）與 `<id>.json`（答案），再印出 hook 要的 JSON。id 是一次性的隨機編號，遊戲只接受 `[A-Za-z0-9-]{8,64}`。
+- 遊戲端：`AppDelegate.handleAsk` 決定要不要顯示問題（專注模式、關掉回覆、佇列滿了都立刻回「none」），`AskPanel`（真的視窗、不搶焦點的面板）放按鈕與輸入框；按鈕是自己畫的 `PillButton`，因為系統按鈕在深色模式下是白底白字。逾時、關掉或被清除的問題都回「none」。
+- `tools/install-hooks.sh` 預設裝 `PermissionRequest`（timeout 70）、`Stop`（timeout 70）、`Notification`（只有 idle_prompt、elicitation_dialog）；`--simple` 只裝一般提醒。
+- 已驗證：允許、拒絕、自己去看、輸入回覆、不用了五種情況，腳本輸出的 JSON 正確；泡泡畫面（`CAMP_TEST_ASKSHOT` 畫成 PNG）。沒驗證：真的 Claude Code 觸發 hook 後是否照預期繼續、輸入框在真實使用時取得鍵盤焦點（用真滑鼠點）的行為。

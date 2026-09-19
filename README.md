@@ -36,7 +36,7 @@
 它不只是好玩，也是拿來**常駐工作**的：
 
 - **番茄鐘**：右上角一隻哥布林舉著電子時鐘幫你倒數，時間到會跳起來提醒你休息。
-- **Claude 通知**：Claude Code 需要你決定、或做完事情時，哥布林（有時是公主）跳出來，用各自的聲音與語氣告訴你。
+- **Claude 通知**：Claude Code 需要你決定、或做完事情時，哥布林（有時是公主）跳出來，用各自的聲音與語氣告訴你；**泡泡上可以直接按允許／拒絕、輸入回覆**，或是自己去看。
 - **四種狀態**：全開、工作（營地在背景跑）、節能（營地暫停）、專注（完全靜音），可以用快捷鍵一鍵切換；全螢幕影片或簡報時自動專注。
 
 > 前身是「螞蟻農場 AntFarm」，現在專心做哥布林（螞蟻版已移除）。所有圖片都由專案自己的精靈圖與 `tools/make_readme_art.py` 產生。
@@ -152,31 +152,47 @@ xattr -dr com.apple.quarantine GoblinCamp.app
 任何 Claude Code 需要你時，右上角會有哥布林（有時是公主）走出來，用氣泡和聲音告訴你；點一下泡泡會把跑 Claude 的終端機／編輯器帶到最前面。
 
 - **誰來說話**：25% 是公主（輕柔的聲音、鈴聲），其餘是營地裡某一隻哥布林的品種：平民（尖聲加嘻嘻笑）、敏捷（快速尖叫）、壯碩（低沉悶哼）、聰明（嗯哼、慢條斯理）、金皮（高傲、閃亮音效）。每種有自己的聲音、語氣、台詞（`Notifier.swift` 的 `Speakers`）。氣泡標題是說話者的名稱（哥布林、壯碩哥布林、公主…），下面小字是專案資料夾名。
-- **選單「Claude 通知」**：整體開關、要不要在「需要我決定」「工作完成」時出現、聲音（關／小／中／大）、試試看（隨機、公主、壯碩哥布林）。
+- **選單「Claude 通知」**：整體開關、要不要在「需要我決定」「工作完成」時出現、泡泡可直接回覆（開關與等待時間）、聲音（關／小／中／大）、試試看（隨機、公主、壯碩哥布林、詢問允許、可以回覆）。
 - **專注模式中**（含全螢幕自動專注）：不跳出、不出聲，選單列圖示旁出現「● 數字」，選單的「回到全開」會寫「期間有 N 則通知」。工作模式與節能模式下通知照常出現。
 - 6 秒內同類通知只會出一次，最多排 3 個。
 
-**一行安裝 hook**：在終端機執行 `tools/install-hooks.sh`（會把腳本複製到 `~/.claude/hooks/`、備份設定檔後加入 Notification 與 Stop 兩個 hook，可重複執行，`--uninstall` 移除，`--dir 資料夾` 指定腳本存放處）。裝好後在 Claude Code 輸入 `/hooks` 或重開即可。
+### 直接在泡泡上回覆 Claude
 
-**串接方式**：`tools/goblin-notify.sh permission|done` 會用 `open -g "goblincamp://notify?kind=…&project=…&app=…"` 通知遊戲（遊戲沒在跑就什麼都不做，不會自己把遊戲打開）。
+<p align="center"><img src="docs/images/ask.png" alt="可以按允許、拒絕，或輸入回覆的泡泡" width="100%"></p>
 
-**手動設定 hook**（不想跑安裝腳本時）：用編輯器打開 Claude Code 設定檔 `~/.claude/settings.json`，在最後一項後面補逗號，加上 `hooks` 區塊。下面把路徑寫成 `/path/to/GoblinCamp`，請換成你把這個專案放的實際位置（其他設定照你自己的，只要多 `hooks` 這一塊）：
+泡泡不只是提醒，也可以當場回答，或是「自己去看」：
+
+- **Claude 要求授權時**（`PermissionRequest` hook）：泡泡寫出 Claude 想做什麼（例如「執行：git push origin main」），有**允許**、**拒絕**、**自己去看**三個按鈕。按允許或拒絕，答案直接送回 Claude Code；按「自己去看」或超過等待時間（選單可設 15／30／60 秒），Claude Code 就照平常在終端機顯示自己的授權畫面。
+- **Claude 做完一輪時**（`Stop` hook）：泡泡有輸入框，打字按 Return 或「送出」，你輸入的話會變成 Claude 的下一個指示（它會接著繼續做）；「自己去看」會把終端機帶到最前面；「不用了」或沒回應就照平常結束。
+- 遊戲沒開、在專注模式（含全螢幕自動專注）、或選單關掉「泡泡可直接回覆」時，hook 不會等你，也不會擋住 Claude Code；關掉回覆功能時仍會跳出一般的提醒泡泡。
+- 泡泡上會顯示指令的前幾十個字，方便你判斷；這些文字只在你自己的螢幕上顯示，不會傳到任何地方。
+
+**一行安裝 hook**：在終端機執行 `tools/install-hooks.sh`。它會把 `goblin-notify.sh`、`goblin-ask.sh` 複製到 `~/.claude/hooks/`、備份 `settings.json` 後加入 `PermissionRequest`、`Stop`、`Notification`（只在 Claude 閒置等你或問你問題時）三個 hook；可重複執行（會先移除舊的 GoblinCamp hook 再加）。`--simple` 只裝一般提醒（不能回答）、`--uninstall` 移除、`--dir 資料夾` 指定腳本存放處。裝好後在 Claude Code 輸入 `/hooks` 或重開。
+
+**手動設定 hook**（不想跑安裝腳本時）：用編輯器打開 `~/.claude/settings.json`，加上 `hooks` 區塊。下面把路徑寫成 `/path/to/GoblinCamp`，請換成專案的實際位置：
 
 ```json
 {
-  "model": "opus",
   "hooks": {
-    "Notification": [
+    "PermissionRequest": [
       {
         "hooks": [
-          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh permission" }
+          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-ask.sh permission", "timeout": 70 }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh done" }
+          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-ask.sh reply", "timeout": 70 }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "idle_prompt|elicitation_dialog",
+        "hooks": [
+          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh permission" }
         ]
       }
     ]
@@ -184,14 +200,13 @@ xattr -dr com.apple.quarantine GoblinCamp.app
 }
 ```
 
-- 兩個 hook：`Notification`（Claude 需要你決定或授權）對應 `permission`（橘框泡泡），`Stop`（Claude 做完一輪）對應 `done`（綠框泡泡）。
-- 這樣直接指向專案裡的腳本，不需要先跑安裝腳本；專案資料夾搬家時，這兩個路徑要一起改。
-- 存檔後在 Claude Code 輸入 `/hooks` 確認有出現這兩個 hook，或重開 Claude Code。
+- 只想要一般提醒、不要回答功能：用 `Notification` → `goblin-notify.sh permission` 與 `Stop` → `goblin-notify.sh done`。
+- `timeout` 是這個 hook 最多等多久（秒），要比選單的「等你回覆多久」長。
 - 測試：先開著哥布林營地，在終端機執行
-  `echo '{"cwd":"/path/to/your/project"}' | /path/to/GoblinCamp/tools/goblin-notify.sh permission`，右上角應該會有哥布林跳出來說話。
-- 移除：把 `hooks` 區塊刪掉即可（或用 `tools/install-hooks.sh --uninstall`）。
+  `echo '{"cwd":"/path/to/your/project","tool_name":"Bash","tool_input":{"command":"ls"}}' | /path/to/GoblinCamp/tools/goblin-ask.sh permission`，右上角會有哥布林問你能不能執行；按「允許」，終端機會印出一行 JSON。
+- 移除：刪掉 `hooks` 區塊，或執行 `tools/install-hooks.sh --uninstall`。
 
-每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
+**通訊方式**：`goblin-notify.sh` 用 `open -g "goblincamp://notify?…"`；`goblin-ask.sh` 用 `goblincamp://ask?…`，並在 `~/Library/Application Support/GoblinCamp/replies/` 用一次性編號的檔案等答案（收到確認 4 秒內沒有就放棄，不會讓 Claude Code 卡住）。每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
 
 ## 選單設定
 
@@ -260,7 +275,8 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
 │   ├── make_animals.py         # 畫雞、羊、豬
 │   ├── pixelart.py             # README 圖片用的點陣繪圖小工具
 │   ├── make_readme_art.py      # 產生 docs/images 裡的封面與說明圖
-│   ├── goblin-notify.sh        # Claude Code hook：通知遊戲
+│   ├── goblin-notify.sh        # Claude Code hook：一般提醒泡泡
+│   ├── goblin-ask.sh           # Claude Code hook：可回答的泡泡（允許／拒絕、輸入回覆）
 │   ├── install-hooks.sh        # 安裝／移除 Claude Code hook
 │   └── make_icons.py           # 產生 AppIcon.icns
 └── Sources/GoblinCamp/
@@ -278,6 +294,7 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
     ├── Food.swift              # 食物種類與資料
     ├── Animal.swift            # 動物：雞、羊、豬的資料與行為
     ├── Notifier.swift          # Claude 通知：說話者（各品種與公主）、泡泡、音效與語音
+    ├── AskPanel.swift          # 可回答的泡泡（按鈕與輸入框）
     ├── Pomodoro.swift          # 番茄鐘：計時、哥布林舉時鐘
     ├── Stats.swift             # 每日統計（番茄鐘、通知）
     ├── HotKeys.swift           # 全域快捷鍵 ⌃⌥1～4
@@ -323,6 +340,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_TEST_ESC=秒` | 用合成事件按一次 Esc（測試取消選位置） |
 | `CAMP_TEST_FOOD=種類,dx,dy` | 用合成事件走完「選單放食物 → 點擊放下」：在營地旁 (dx, dy) 放 `water` 或 `honey`，並每 5 秒印一次覓食狀態；加 `CAMP_TEST_FOOD_CANCEL=1` 會另外測試放食物時按 Esc |
 | `CAMP_TEST_POMODORO=專注分,休息分` | 3 秒後開始番茄鐘（可填小數分鐘，例如 `0.25,0.15`） |
+| `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
 | `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |
 | `CAMP_TEST_WILD=種類,dx,dy` | 在營地旁 (dx, dy) 放一隻動物（`chicken`／`sheep`／`pig`）與一棵果樹，並每 3 秒印一次狀態 |

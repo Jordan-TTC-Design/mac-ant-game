@@ -387,7 +387,39 @@ def notify_img():
     a.save(os.path.join(OUT, "notify.png"))
 
 
-ALL = {"cover": cover, "characters": characters, "princess": princess_img, "camps": camps_img, "wildlife": wildlife_img,
+def ask_img():
+    W, H = 400, 132
+    a = Art(W, H, 4)
+    backdrop(a, 21)
+    a.text("直接在泡泡上回答，或是自己去看", 10, 5, size=14, color=GOLD, outline=DARK)
+    green, red, grey, ink = (51, 153, 71, 255), (199, 56, 51, 255), (230, 230, 230, 255), (30, 30, 30, 255)
+
+    def button(x, y, label, fill, text):
+        w = 12 * len(label) + 10
+        a.rect(x, y, w, 15, (0, 0, 0, 70)); a.rect(x + 1, y + 1, w - 2, 13, fill)
+        a.text(label, x + 5, y + 1, size=12, color=text)
+        return w
+
+    # 1: asking permission
+    w, h = bubble(a, 8, 26, ["可以執行這個指令嗎？"], accent=(242, 140, 26, 255), tail_x=60, width=184, title="公主", size=12,
+                  foot="執行：git push origin main", extra=20)
+    x, y = 14, 26 + h - 22
+    for label, fill, text in (("允許", green, WHITE), ("拒絕", red, WHITE), ("自己去看", grey, ink)):
+        x += button(x, y, label, fill, text) + 4
+    a.shadow(64, 108, 16); a.sprite(princess("queen"), 64, 106)
+    # 2: replying
+    bx = 208
+    w, h = bubble(a, bx, 26, ["工作做完了！快來看！"], accent=(64, 166, 77, 255), tail_x=bx + 60, width=184, title="哥布林", size=12, extra=38)
+    a.rect(bx + 6, 26 + h - 40, w - 12, 15, (190, 190, 190, 255)); a.rect(bx + 7, 26 + h - 39, w - 14, 13, WHITE)
+    a.text("回覆 Claude…", bx + 10, 26 + h - 39, size=12, color=(150, 150, 150, 255))
+    x, y = bx + 6, 26 + h - 22
+    for label, fill, text in (("送出", green, WHITE), ("自己去看", grey, ink), ("不用了", grey, ink)):
+        x += button(x, y, label, fill, text) + 4
+    a.shadow(bx + 64, 124, 16); a.sprite(goblin("worker", "down", 0), bx + 64, 126)
+    a.save(os.path.join(OUT, "ask.png"))
+
+
+ALL = {"ask": ask_img, "cover": cover, "characters": characters, "princess": princess_img, "camps": camps_img, "wildlife": wildlife_img,
        "modes": modes_img, "pomodoro": pomodoro_img, "notify": notify_img}
 
 

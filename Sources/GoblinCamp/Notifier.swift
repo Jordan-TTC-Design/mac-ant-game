@@ -76,6 +76,14 @@ enum Speakers {
 }
 
 /// One popup: someone walks in from the edge of a screen, says their piece in a bubble, and walks off again.
+/// What a popup lets the player do besides reading it.
+enum Interaction {
+    /// Claude wants permission: allow, deny or go and look.
+    case decision
+    /// Claude is done: type a reply, or go and look.
+    case reply
+}
+
 struct Message {
     enum Phase { case walkingIn, talking, leaving }
 
@@ -90,6 +98,11 @@ struct Message {
     let project: String
     /// Bundle id of the app Claude runs in (Terminal, iTerm, VS Code…); clicking the popup brings it forward.
     let appBundleID: String?
+    /// Set for popups the player can answer; `askID` names the reply file the waiting hook is polling.
+    let interaction: Interaction?
+    let askID: String?
+    /// A short line under the words (what Claude wants to run).
+    let context: String
     let screen: CGRect
     var pos: CGPoint
     var phase: Phase = .walkingIn
@@ -98,8 +111,12 @@ struct Message {
     let stopX: CGFloat
     let talkTime: Double
 
-    init(kind: NotifyKind, speaker: Speaker, breedIndex: Int, project: String, appBundleID: String?, screen: CGRect, text custom: String? = nil, silent: Bool = false) {
+    init(kind: NotifyKind, speaker: Speaker, breedIndex: Int, project: String, appBundleID: String?, screen: CGRect, text custom: String? = nil, silent: Bool = false,
+         interaction: Interaction? = nil, askID: String? = nil, context: String = "", talkTime custom_talk: Double? = nil) {
         self.silent = silent
+        self.interaction = interaction
+        self.askID = askID
+        self.context = context
         self.kind = kind
         self.appBundleID = appBundleID
         self.speaker = speaker
@@ -109,7 +126,7 @@ struct Message {
         text = custom ?? speaker.line(for: kind)
         pos = CGPoint(x: screen.maxX + 40, y: screen.maxY - 230) // top right, under the menu bar, with room for the bubble above
         stopX = screen.maxX - 190
-        talkTime = max(4.5, Double(text.count) * 0.3)
+        talkTime = custom_talk ?? max(4.5, Double(text.count) * 0.3)
     }
 
     var heading: Double { phase == .leaving ? 0 : .pi }
@@ -171,6 +188,7 @@ final class MessageStage {
     static let maxQueued = 3
 
     var isActive: Bool { current != nil }
+    var isFull: Bool { queue.count >= MessageStage.maxQueued }
 
     func enqueue(_ message: Message) {
         guard queue.count < MessageStage.maxQueued else { return }
@@ -185,6 +203,16 @@ final class MessageStage {
 
     /// The player clicked the popup: the messenger goes away.
     func dismissCurrent() { current?.dismiss() }
+
+    /// Whether a popup for this question is still on screen or waiting its turn.
+    func hasAsk(_ id: String) -> Bool {
+        current?.askID == id || queue.contains { $0.askID == id }
+    }
+
+    /// The popup for this question is on its way out (nobody answered in time).
+    func isLeaving(ask id: String) -> Bool {
+        current?.askID == id && current?.phase == .leaving
+    }
 
     func update(dt: Double) {
         guard var m = current else { return }

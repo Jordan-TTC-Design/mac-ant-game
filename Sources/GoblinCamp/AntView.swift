@@ -227,7 +227,7 @@ final class AntView: NSView {
             ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2 + hop, width: size, height: size))
             ctx.restoreGState()
         }
-        if m.phase == .talking { drawBubble(m, above: CGPoint(x: p.x, y: p.y + size * 0.8 + hop)) }
+        if m.phase == .talking, m.interaction == nil { drawBubble(m, above: CGPoint(x: p.x, y: p.y + size * 0.8 + hop)) }
     }
 
     private func drawBubble(_ m: Message, above p: CGPoint) {
