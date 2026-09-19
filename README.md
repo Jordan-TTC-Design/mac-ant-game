@@ -168,6 +168,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_SNAPSHOT=/路徑前綴` `CAMP_SNAPSHOT_AFTER=秒` | App 把自己的視窗（營地附近）截圖存成 PNG，不需要螢幕錄製權限；加 `CAMP_SNAPSHOT_FULL=1` 改截整個螢幕（縮小一半） |
 | `CAMP_TEST_ESC=秒` | 用合成事件按一次 Esc（測試取消選位置） |
 | `CAMP_TEST_FOOD=種類,dx,dy` | 用合成事件走完「選單放食物 → 點擊放下」：在營地旁 (dx, dy) 放 `water` 或 `honey`，並每 5 秒印一次覓食狀態；加 `CAMP_TEST_FOOD_CANCEL=1` 會另外測試放食物時按 Esc |
+| `CAMP_TEST_POMODORO=專注分,休息分` | 3 秒後開始番茄鐘（可填小數分鐘，例如 `0.25,0.15`） |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
 | `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |
 | `CAMP_TEST_WILD=種類,dx,dy` | 在營地旁 (dx, dy) 放一隻動物（`chicken`／`sheep`／`pig`）與一棵果樹，並每 3 秒印一次狀態 |
@@ -189,6 +190,10 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 - 公主目前只有走路與站立的影格：睡覺、打哈欠、跳舞等只有動作本身與頭旁的圖示，沒有專屬姿勢；營地外觀與居民的品種已是哥布林版，公主的動作還在換成公主日常（第 2 步）。
 - 食物不存檔；沒有畫費洛蒙軌跡；食物離營地很遠、哥布林又少時，可能很久才會被發現（這是刻意的）。
 - 未簽署、未公證（見上方說明）。
+
+## 番茄鐘
+
+選單「番茄鐘」：專注 25／休息 5、50／10、15／3 分鐘，或自訂。開始後有一隻哥布林（營地裡隨機一隻）走到主螢幕右上角，舉著電子時鐘倒數（`專注`：綠色 LCD，最後一分鐘變紅；時間到時哥布林跳起來、出聲提醒，時鐘轉成藍色的 `休息` 倒數；休息完哥布林說一句話後走開）。選單裡可看剩餘時間、隨時停止。聲音用「Claude 通知」的音量設定；暫時隱藏時只計時、不出聲，圖示旁會有通知數。實作在 `Pomodoro.swift`（計時與走位）與 `AntView.drawPomodoro`（七段顯示器）。
 
 ## Claude 通知（哥布林跳出來說話）
 

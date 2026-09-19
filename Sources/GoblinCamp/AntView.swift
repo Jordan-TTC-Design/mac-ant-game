@@ -99,6 +99,105 @@ final class AntView: NSView {
             drawFoodHint()
         }
         drawMessage()
+        drawPomodoro()
+    }
+
+    /// Seven-segment digit layouts: top, top-left, top-right, middle, bottom-left, bottom-right, bottom.
+    private static let segments: [[Bool]] = [
+        [true, true, true, false, true, true, true], [false, false, true, false, false, true, false],
+        [true, false, true, true, true, false, true], [true, false, true, true, false, true, true],
+        [false, true, true, true, false, true, false], [true, true, false, true, false, true, true],
+        [true, true, false, true, true, true, true], [true, false, true, false, false, true, false],
+        [true, true, true, true, true, true, true], [true, true, true, true, false, true, true],
+    ]
+
+    /// The pomodoro: a goblin at the top right holding up an electronic clock that counts down.
+    private func drawPomodoro() {
+        let pomodoro = colony.pomodoro
+        guard pomodoro.isVisible, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let p = local(pomodoro.pos)
+        guard bounds.insetBy(dx: -200, dy: -200).contains(p) else { return }
+        let character = Characters.current
+        guard let role = character.breeds[min(pomodoro.breedIndex, character.breeds.count - 1)].sprites else { return }
+        let pixel = role.pixelSize(scale: 1.6)
+        let size = CGFloat(role.frameSize) * pixel
+        let walking = pomodoro.arriving || pomodoro.leaving
+        let resting = pomodoro.phase == .rest
+        // the goblin hops when the rest starts
+        let hop: CGFloat = pomodoro.shake > 0 || resting ? abs(CGFloat(sin(Date().timeIntervalSinceReferenceDate * (pomodoro.shake > 0 ? 10 : 3)))) * (pomodoro.shake > 0 ? 6 : 2) : 0
+        let direction: SpriteDirection = walking ? (pomodoro.leaving ? .right : .left) : .down
+        NSColor(calibratedWhite: 0, alpha: 0.18).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - size * 0.3, y: p.y - 4, width: size * 0.6, height: 8)).fill()
+        if let image = role.image(direction: direction, phase: walking ? pomodoro.walked / 16 : 0) {
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2 + hop, width: size, height: size))
+            ctx.restoreGState()
+        }
+        guard pomodoro.phase != nil else { return } // walking away: the clock is put down
+
+        // the clock, held up over the head
+        let seconds = Int(pomodoro.remaining.rounded(.up))
+        let u: CGFloat = 2 // one LCD "pixel"
+        let bodyW: CGFloat = 92, bodyH: CGFloat = 48
+        let shakeX = pomodoro.shake > 0 ? CGFloat(sin(Date().timeIntervalSinceReferenceDate * 40)) * 2 : 0
+        let body = NSRect(x: p.x - bodyW / 2 + shakeX, y: p.y + size * 0.8 + hop, width: bodyW, height: bodyH)
+        NSColor(calibratedWhite: 0.14, alpha: 1).setFill()
+        NSBezierPath(roundedRect: body, xRadius: 6, yRadius: 6).fill()
+        let lit = resting ? NSColor(calibratedRed: 0.10, green: 0.30, blue: 0.45, alpha: 1)
+                          : (seconds <= 60 ? NSColor(calibratedRed: 0.70, green: 0.08, blue: 0.08, alpha: 1)
+                                           : NSColor(calibratedRed: 0.10, green: 0.22, blue: 0.10, alpha: 1))
+        let glass = NSRect(x: body.minX + 5, y: body.minY + 5, width: bodyW - 10, height: bodyH - 20)
+        (resting ? NSColor(calibratedRed: 0.70, green: 0.86, blue: 0.95, alpha: 1) : NSColor(calibratedRed: 0.74, green: 0.84, blue: 0.62, alpha: 1)).setFill()
+        NSBezierPath(roundedRect: glass, xRadius: 3, yRadius: 3).fill()
+
+        // label on the bezel: what the clock is counting
+        let label = (resting ? "休息" : "專注") as NSString
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .bold), .foregroundColor: NSColor.white]
+        label.draw(at: NSPoint(x: body.minX + 7, y: body.maxY - 15), withAttributes: attrs)
+        // progress along the top edge
+        let progress = CGFloat(max(0, min(1, 1 - pomodoro.remaining / pomodoro.phaseLength)))
+        NSColor(calibratedWhite: 0.35, alpha: 1).setFill()
+        NSRect(x: body.minX + 40, y: body.maxY - 10, width: bodyW - 47, height: 3).fill()
+        (resting ? NSColor(calibratedRed: 0.4, green: 0.75, blue: 0.95, alpha: 1) : NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.4, alpha: 1)).setFill()
+        NSRect(x: body.minX + 40, y: body.maxY - 10, width: (bodyW - 47) * progress, height: 3).fill()
+
+        // MM:SS in seven segments
+        let minutes = min(99, seconds / 60), rest = seconds % 60
+        let digits = [minutes / 10, minutes % 10, rest / 10, rest % 10]
+        let digitW: CGFloat = 5 * u, digitH: CGFloat = 9 * u, gap: CGFloat = 1.5 * u, colonW: CGFloat = 2.5 * u
+        let total = digitW * 4 + gap * 4 + colonW
+        var x = glass.midX - total / 2
+        let y = glass.midY - digitH / 2
+        lit.setFill()
+        func segment(_ i: Int, _ dx: CGFloat) {
+            let t = u // thickness
+            let rects: [NSRect] = [
+                NSRect(x: dx + t, y: y + digitH - t, width: digitW - 2 * t, height: t),
+                NSRect(x: dx, y: y + digitH / 2, width: t, height: digitH / 2 - t / 2),
+                NSRect(x: dx + digitW - t, y: y + digitH / 2, width: t, height: digitH / 2 - t / 2),
+                NSRect(x: dx + t, y: y + digitH / 2 - t / 2, width: digitW - 2 * t, height: t),
+                NSRect(x: dx, y: y + t / 2, width: t, height: digitH / 2 - t / 2 - 0.5),
+                NSRect(x: dx + digitW - t, y: y + t / 2, width: t, height: digitH / 2 - t / 2 - 0.5),
+                NSRect(x: dx + t, y: y, width: digitW - 2 * t, height: t),
+            ]
+            rects[i].fill()
+        }
+        for (index, digit) in digits.enumerated() {
+            for (i, on) in AntView.segments[digit].enumerated() where on { segment(i, x) }
+            x += digitW + gap
+            if index == 1 {
+                if Int(Date().timeIntervalSinceReferenceDate * 2) % 2 == 0 { // blinking colon
+                    NSRect(x: x, y: y + digitH * 0.3, width: u, height: u).fill()
+                    NSRect(x: x, y: y + digitH * 0.65, width: u, height: u).fill()
+                }
+                x += colonW
+            }
+        }
+        // hands holding the clock
+        NSColor(calibratedRed: 0.36, green: 0.62, blue: 0.24, alpha: 1).setFill()
+        NSRect(x: body.minX - 1, y: body.minY - 3, width: 9, height: 7).fill()
+        NSRect(x: body.maxX - 8, y: body.minY - 3, width: 9, height: 7).fill()
     }
 
     /// The Claude notification: a goblin (or the princess) hops in from the screen edge with a speech bubble.

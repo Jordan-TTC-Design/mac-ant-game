@@ -97,6 +97,16 @@ final class Settings {
         set { defaults.set(newValue, forKey: "notifyVolume") }
     }
 
+    /// The pomodoro lengths in minutes that the custom entry remembers.
+    var pomodoroFocus: Double {
+        get { min(99, max(1, defaults.object(forKey: "pomodoroFocus") as? Double ?? 25)) }
+        set { defaults.set(newValue, forKey: "pomodoroFocus") }
+    }
+    var pomodoroRest: Double {
+        get { min(60, max(0, defaults.object(forKey: "pomodoroRest") as? Double ?? 5)) }
+        set { defaults.set(newValue, forKey: "pomodoroRest") }
+    }
+
     /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.
     var wildlife: Int {
         get { number("wildlife", argument: "wildlife").map { min(3, max(0, Int($0))) } ?? 2 }

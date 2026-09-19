@@ -50,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Claude notifications that came while the goblins were hidden (silently dropped, but counted).
     private var missedNotifications = 0
     private var lastNotify: [NotifyKind: Date] = [:]
+    private var pomodoroStatusItem: NSMenuItem!
+    private var pomodoroStopItem: ClosureMenuItem!
+    private var pomodoroSpeaker = Speakers.common
     private var hideMenuItem: NSMenuItem!
     private var unhideItem: ClosureMenuItem!
     private var rosterItem: ClosureMenuItem!
@@ -68,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: \(message.speaker.name) says \"\(message.text)\" (\(message.kind.rawValue))") }
             GoblinVoice.shared.speak(message.text, as: message.speaker, level: self.settings.notifyVolume)
         }
+        colony.pomodoro.onEvent = { [weak self] event in self?.pomodoroEvent(event) }
         setupMenuBar()
         rebuildOverlays()
 
@@ -240,6 +244,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(t) { pressKey(53, "\u{1b}") }
             after(t + 0.5) { log("phase after Esc: \(self.colony.phase), nest: \(String(describing: self.colony.nest))") }
         }
+        if let s = env["CAMP_TEST_POMODORO"] { // "focusMinutes,restMinutes" (fractions allowed), started at 3 s
+            let parts = s.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 2 { after(3) { self.startPomodoro(focus: parts[0], rest: parts[1]) } }
+        }
         if let s = env["CAMP_TEST_CLICKMSG"], let t = Double(s) { // click the popup at t seconds (needs a popup with an app)
             after(t) {
                 log("popup before click: \(String(describing: self.colony.stage.current?.phase)), panel visible: \(self.clickPanel?.isVisible ?? false), frame \(String(describing: self.clickPanel?.frame))")
@@ -372,6 +380,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
         menu.addItem(capMenuItem)
         menu.addItem(nestImageMenu())
+        menu.addItem(pomodoroMenu())
         menu.addItem(notifyMenu())
         menu.addItem(.separator())
 
@@ -386,6 +395,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "結束哥布林營地", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         statusItem.menu = menu
+    }
+
+    // MARK: Pomodoro
+
+    /// "Pomodoro": a goblin at the top right holds up a clock that counts down the focus time, then the rest.
+    private func pomodoroMenu() -> NSMenuItem {
+        let parent = NSMenuItem(title: "番茄鐘", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "番茄鐘")
+        pomodoroStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        pomodoroStatusItem.isEnabled = false
+        pomodoroStatusItem.isHidden = true
+        sub.addItem(pomodoroStatusItem)
+        for (focus, rest) in [(25.0, 5.0), (50.0, 10.0), (15.0, 3.0)] {
+            sub.addItem(ClosureMenuItem(title: "專注 \(Int(focus)) 分鐘，休息 \(Int(rest)) 分鐘") { [weak self] in
+                self?.startPomodoro(focus: focus, rest: rest)
+            })
+        }
+        sub.addItem(ClosureMenuItem(title: "自訂…") { [weak self] in
+            DispatchQueue.main.async { self?.askCustomPomodoro() }
+        })
+        sub.addItem(.separator())
+        pomodoroStopItem = ClosureMenuItem(title: "停止番茄鐘") { [weak self] in
+            self?.colony.pomodoro.stop()
+            GoblinVoice.shared.stop()
+        }
+        sub.addItem(pomodoroStopItem)
+        parent.submenu = sub
+        return parent
+    }
+
+    func startPomodoro(focus: Double, rest: Double) {
+        let screen = colony.walkable.first ?? NSScreen.screens.first?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        var breedIndex = 0
+        pomodoroSpeaker = Speakers.common
+        let character = Characters.current
+        if let ant = colony.ants.randomElement() { // one of the living goblins holds the clock
+            breedIndex = ant.breedIndex
+            pomodoroSpeaker = Speakers.forBreed(character.breeds[min(breedIndex, character.breeds.count - 1)].id)
+        }
+        colony.pomodoro.start(focusMinutes: focus, restMinutes: rest, screen: screen, breedIndex: breedIndex)
+    }
+
+    /// Speaks (unless hidden: then only the badge counts it) when the pomodoro starts, rests, or ends.
+    private func pomodoroEvent(_ event: Pomodoro.Event) {
+        if isHiddenByUser {
+            if event != .started { missedNotifications += 1; applyStatusIcon() }
+            return
+        }
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: pomodoro \(event)") }
+        GoblinVoice.shared.speak(Speakers.pomodoroLine(pomodoroSpeaker, event), as: pomodoroSpeaker, level: settings.notifyVolume)
+    }
+
+    private func askCustomPomodoro() {
+        let alert = NSAlert()
+        alert.messageText = "自訂番茄鐘"
+        alert.informativeText = "專注與休息各幾分鐘？（專注 1～99 分鐘，休息 0～60 分鐘，休息填 0 表示不休息）"
+        let focus = NSTextField(frame: NSRect(x: 0, y: 30, width: 220, height: 24))
+        let rest = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        focus.placeholderString = "專注分鐘"
+        rest.placeholderString = "休息分鐘"
+        focus.stringValue = String(format: "%g", settings.pomodoroFocus)
+        rest.stringValue = String(format: "%g", settings.pomodoroRest)
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 56))
+        box.addSubview(focus)
+        box.addSubview(rest)
+        alert.accessoryView = box
+        alert.addButton(withTitle: "開始")
+        alert.addButton(withTitle: "取消")
+        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        alert.window.initialFirstResponder = focus
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let f = Double(focus.stringValue), (1...99).contains(f), let r = Double(rest.stringValue), (0...60).contains(r) else {
+            let error = NSAlert()
+            error.messageText = "看不懂這些分鐘數"
+            error.informativeText = "專注請填 1 到 99，休息請填 0 到 60。"
+            error.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            error.runModal()
+            return
+        }
+        settings.pomodoroFocus = f
+        settings.pomodoroRest = r
+        startPomodoro(focus: f, rest: r)
     }
 
     // MARK: Claude notifications
@@ -670,6 +762,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        let pomodoro = colony.pomodoro
+        pomodoroStatusItem.isHidden = !pomodoro.isRunning
+        if let phase = pomodoro.phase {
+            let left = Int(pomodoro.remaining.rounded(.up))
+            pomodoroStatusItem.title = "\(phase == .focus ? "專注中" : "休息中")，剩 \(String(format: "%d:%02d", left / 60, left % 60))"
+        }
+        pomodoroStopItem.isEnabled = pomodoro.isRunning
         pauseItem.title = colony.isPaused ? "繼續" : "暫停"
         pauseItem.isEnabled = colony.isSimulating
         let character = Characters.current
@@ -738,6 +837,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !isHiddenByUser, colony.stage.isActive {
             colony.stage.update(dt: dt)
             redrawAll()
+        }
+        if colony.pomodoro.isVisible {
+            colony.pomodoro.update(dt: dt)
+            if !isHiddenByUser { redrawAll() }
         }
         updateClickPanel()
         guard !isHiddenByUser, colony.isSimulating, !colony.isPaused else { return }

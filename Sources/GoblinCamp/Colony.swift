@@ -53,6 +53,8 @@ final class Colony {
     private(set) var slain = 0
     /// Popups for Claude notifications (not part of the simulation, so they work while paused).
     let stage = MessageStage()
+    /// The pomodoro goblin with the clock.
+    let pomodoro = Pomodoro()
     private(set) var creatures: [Creature] = []
     /// Little sparks where something was just hit.
     private(set) var hits: [(pos: CGPoint, age: Double)] = []
