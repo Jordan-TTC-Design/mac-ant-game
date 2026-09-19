@@ -231,8 +231,6 @@ App 的資料都在你的使用者資料夾裡，**不在專案資料夾內，�
 | 自訂角色 | `~/Library/Application Support/GoblinCamp/Characters/<角色名>/`（格式見下） |
 | 選單設定 | UserDefaults，網域 `dev.goblincamp.game` |
 
-**從螞蟻農場升級**：第一次以「哥布林營地」啟動時，會自動把舊的 `Application Support/AntFarm` 資料夾內容與選單設定複製過來（舊資料不會刪除，確定沒問題後可自行刪掉）。
-
 完全重置：
 
 ```bash
@@ -267,7 +265,6 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
 │   └── make_icons.py           # 產生 AppIcon.icns
 └── Sources/GoblinCamp/
     ├── main.swift              # 進入點（先跑舊資料搬家）
-    ├── Migration.swift         # 從 AntFarm 搬存檔與設定
     ├── AppDelegate.swift       # 選單列、覆蓋視窗、主迴圈（30fps，數量多時 20fps）
     ├── OverlayWindow.swift     # 每個螢幕一個透明、滑鼠可穿透的視窗
     ├── AntView.swift           # 全部繪製：角色、營地、氣泡、食物、選取圈
