@@ -305,6 +305,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let parts = s.split(separator: ",").compactMap { Double($0) }
             if parts.count == 2 { after(3) { self.startPomodoro(focus: parts[0], rest: parts[1]) } }
         }
+        if let s = env["CAMP_TEST_HOOKINSTALL"] { // "interactive", "simple", "uninstall" or "status", against CAMP_CLAUDE_DIR
+            after(1) {
+                do {
+                    switch s {
+                    case "interactive": try HookInstaller.install(.interactive)
+                    case "simple": try HookInstaller.install(.simple)
+                    case "uninstall": try HookInstaller.uninstall()
+                    default: break
+                    }
+                    log("hooks \(s): status \(HookInstaller.status())")
+                } catch { log("hooks \(s) failed: \(error.localizedDescription)") }
+                NSApp.terminate(nil)
+            }
+        }
         if let s = env["CAMP_TEST_ASKANSWER"] { // "allow", "deny", "look", "dismiss" or "reply:text", at CAMP_TEST_ASKAT seconds (default 8)
             after(Double(env["CAMP_TEST_ASKAT"] ?? "") ?? 8) {
                 log("ask panel: \(self.askPanel != nil ? "showing, frame \(self.askPanel!.frame)" : "none")")
@@ -478,6 +492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(nestImageMenu())
         menu.addItem(pomodoroMenu())
         menu.addItem(notifyMenu())
+        menu.addItem(claudeConnectMenu())
         alertScreenItem = NSMenuItem(title: "提醒顯示的螢幕", action: nil, keyEquivalent: "")
         alertScreenItem.submenu = NSMenu(title: "提醒顯示的螢幕")
         menu.addItem(alertScreenItem)
@@ -855,6 +870,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return parent
     }
 
+    // MARK: Connecting Claude Code
+
+    private var claudeConnectItem: NSMenuItem!
+    private var claudeStatusItem: NSMenuItem!
+    private var claudeRemoveItem: ClosureMenuItem!
+
+    /// One-click setup of the Claude Code hooks (no terminal needed).
+    private func claudeConnectMenu() -> NSMenuItem {
+        claudeConnectItem = NSMenuItem(title: "連接 Claude Code", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "連接 Claude Code")
+        claudeStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        claudeStatusItem.isEnabled = false
+        sub.addItem(claudeStatusItem)
+        sub.addItem(.separator())
+        sub.addItem(ClosureMenuItem(title: "連接（泡泡可回覆，建議）…") { [weak self] in
+            DispatchQueue.main.async { self?.confirmConnect(.interactive) }
+        })
+        sub.addItem(ClosureMenuItem(title: "連接（只有一般提醒）…") { [weak self] in
+            DispatchQueue.main.async { self?.confirmConnect(.simple) }
+        })
+        claudeRemoveItem = ClosureMenuItem(title: "移除連接…") { [weak self] in
+            DispatchQueue.main.async { self?.confirmDisconnect() }
+        }
+        sub.addItem(claudeRemoveItem)
+        claudeConnectItem.submenu = sub
+        return claudeConnectItem
+    }
+
+    private func refreshClaudeStatus() {
+        let status = HookInstaller.status()
+        let text: String
+        switch status {
+        case .notInstalled: text = "尚未連接"
+        case .interactive: text = "已連接：泡泡可回覆"
+        case .simple: text = "已連接：一般提醒"
+        case .needsUpdate: text = "需要更新：請再按一次「連接」"
+        }
+        claudeStatusItem.title = "狀態：\(text)"
+        claudeConnectItem.title = status == .notInstalled ? "連接 Claude Code（尚未連接）" : (status == .needsUpdate ? "連接 Claude Code（需要更新）" : "連接 Claude Code（已連接）")
+        claudeRemoveItem.isEnabled = status != .notInstalled
+    }
+
+    private func presentAlert(_ title: String, _ text: String, buttons: [String] = ["好"]) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        buttons.forEach { alert.addButton(withTitle: $0) }
+        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func confirmConnect(_ style: HookInstaller.Style) {
+        if (Bundle.main.executablePath ?? "").contains("AppTranslocation") {
+            _ = presentAlert("請先把哥布林營地移到「應用程式」資料夾", "現在它是從暫時的位置執行的，連接後 Claude Code 之後會找不到它。移好之後重新開啟，再按一次連接。")
+            return
+        }
+        let what = style == .interactive
+            ? "・Claude 要求授權時，哥布林會問你「允許或拒絕」\n・Claude 做完一輪時，哥布林會讓你直接輸入回覆\n・Claude 閒置等你時，哥布林會提醒"
+            : "・Claude 需要你、或做完事情時，哥布林會跳出來提醒（不能回覆）"
+        let ok = presentAlert("連接 Claude Code？", """
+            會做的事：
+            1. 在 ~/.claude/hooks/ 放一個小腳本
+            2. 備份 ~/.claude/settings.json（存成 settings.json.bak-goblincamp）後，加入 hook
+
+            連接後：
+            \(what)
+
+            你原本的其他設定與 hook 不會被動到，隨時可以在這個選單移除。
+            完成後請在 Claude Code 輸入 /hooks 確認，或重新開啟 Claude Code。
+            """, buttons: ["連接", "取消"])
+        guard ok else { return }
+        do {
+            try HookInstaller.install(style)
+            _ = presentAlert("已連接", "請在 Claude Code 輸入 /hooks 確認，或重新開啟 Claude Code。\n之後 Claude 需要你時，哥布林就會跳出來。\n\n如果之後把哥布林營地搬到別的位置，請再按一次「連接」。")
+        } catch {
+            _ = presentAlert("連接失敗", error.localizedDescription)
+        }
+    }
+
+    private func confirmDisconnect() {
+        guard presentAlert("移除連接？", "會先備份 ~/.claude/settings.json，再拿掉哥布林營地加入的 hook 和腳本，其他設定不動。", buttons: ["移除", "取消"]) else { return }
+        do {
+            try HookInstaller.uninstall()
+            _ = presentAlert("已移除", "請在 Claude Code 輸入 /hooks 確認，或重新開啟 Claude Code。")
+        } catch {
+            _ = presentAlert("移除失敗", error.localizedDescription)
+        }
+    }
+
     // MARK: Hiding
 
     private static let durationChoices: [(String, Double)] = [("直到我改變", 0), ("30 分鐘", 1800), ("1 小時", 3600), ("2 小時", 7200)]
@@ -1205,6 +1310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         quietStatusItem.isHidden = status.isEmpty
         quietStatusItem.title = status.joined(separator: "　·　")
         rebuildAlertScreenMenu()
+        refreshClaudeStatus()
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
         nestMenuItem.title = "\(home)外觀"
         pickItem.isEnabled = colony.phase != .choosingNest && !isHiddenByUser

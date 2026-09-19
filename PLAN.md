@@ -331,3 +331,10 @@ Characters/<id>/
 - 遊戲端：`AppDelegate.handleAsk` 決定要不要顯示問題（專注模式、關掉回覆、佇列滿了都立刻回「none」），`AskPanel`（真的視窗、不搶焦點的面板）放按鈕與輸入框；按鈕是自己畫的 `PillButton`，因為系統按鈕在深色模式下是白底白字。逾時、關掉或被清除的問題都回「none」。
 - `tools/install-hooks.sh` 預設裝 `PermissionRequest`（timeout 70）、`Stop`（timeout 70）、`Notification`（只有 idle_prompt、elicitation_dialog）；`--simple` 只裝一般提醒。
 - 已驗證：允許、拒絕、自己去看、輸入回覆、不用了五種情況，腳本輸出的 JSON 正確；泡泡畫面（`CAMP_TEST_ASKSHOT` 畫成 PNG）。沒驗證：真的 Claude Code 觸發 hook 後是否照預期繼續、輸入框在真實使用時取得鍵盤焦點（用真滑鼠點）的行為。
+
+
+## 選單一鍵連接 Claude Code（2026-09，給同事用）
+
+- 目的：同事不需要開終端機。選單「連接 Claude Code」：說明視窗 → 按「連接」→ `HookInstaller` 寫 `~/.claude/hooks/goblincamp-hook.sh`（記著遊戲目前的位置，找不到就安靜退出）、備份並更新 `settings.json`（只加減自己的 hook，用 `goblincamp-hook.sh`、`goblin-notify.sh`、`goblin-ask.sh` 當記號，舊版寫的也會一起換掉）；也可以只裝一般提醒、或移除。設定檔不是正確 JSON 時直接停下。從「App Translocation」的暫時位置執行時，請使用者先搬到「應用程式」。
+- 原本的 Python 腳本改成遊戲執行檔的 `--hook` 模式（`HookCLI.swift`，不依賴 Python），`tools/goblin-*.sh` 只留成轉接腳本，讓舊設定還能用；`tools/install-hooks.sh` 移除。
+- 已驗證：對假的 `~/.claude`（`CAMP_CLAUDE_DIR`）安裝、重複安裝、只裝提醒、移除，其他設定與別人的 hook 都保留；`--hook` 五種情況的輸出（允許、拒絕、自己去看、回覆、遊戲沒開時立刻結束）。沒驗證：用真滑鼠按選單的實際視窗，以及真的 Claude Code 載入這些 hook。

@@ -167,46 +167,46 @@ xattr -dr com.apple.quarantine GoblinCamp.app
 - 遊戲沒開、在專注模式（含全螢幕自動專注）、或選單關掉「泡泡可直接回覆」時，hook 不會等你，也不會擋住 Claude Code；關掉回覆功能時仍會跳出一般的提醒泡泡。
 - 泡泡上會顯示指令的前幾十個字，方便你判斷；這些文字只在你自己的螢幕上顯示，不會傳到任何地方。
 
-**一行安裝 hook**：在終端機執行 `tools/install-hooks.sh`。它會把 `goblin-notify.sh`、`goblin-ask.sh` 複製到 `~/.claude/hooks/`、備份 `settings.json` 後加入 `PermissionRequest`、`Stop`、`Notification`（只在 Claude 閒置等你或問你問題時）三個 hook；可重複執行（會先移除舊的 GoblinCamp hook 再加）。`--simple` 只裝一般提醒（不能回答）、`--uninstall` 移除、`--dir 資料夾` 指定腳本存放處。裝好後在 Claude Code 輸入 `/hooks` 或重開。
+### 連接 Claude Code（在選單裡按一下，不需要終端機）
 
-**手動設定 hook**（不想跑安裝腳本時）：用編輯器打開 `~/.claude/settings.json`，加上 `hooks` 區塊。下面把路徑寫成 `/path/to/GoblinCamp`，請換成專案的實際位置：
+選單 **「連接 Claude Code」→「連接（泡泡可回覆，建議）」**，會跳出說明視窗，按「連接」就完成了。它會：
+
+1. 在 `~/.claude/hooks/` 放一個小腳本 `goblincamp-hook.sh`（把 Claude Code 的事件交給遊戲）；
+2. 先把 `~/.claude/settings.json` 備份成 `settings.json.bak-goblincamp`，再加入三個 hook：`PermissionRequest`（要求授權）、`Stop`（做完一輪）、`Notification`（只在 Claude 閒置等你或問你問題時）。
+
+你原本的其他設定與 hook 都不會被動到（設定檔的欄位會依字母排序重新寫入）。設定檔如果不是正確的 JSON，會直接停下來，不會改任何東西。
+
+- 完成後在 Claude Code 輸入 `/hooks` 確認，或重新開啟 Claude Code。
+- 選單另有「連接（只有一般提醒）」（不能回答）與「移除連接」；選單會顯示目前狀態（尚未連接／已連接／需要更新）。
+- **把哥布林營地搬到別的位置後**，請再按一次「連接」（腳本記的是它目前的位置；找不到程式時 hook 會安靜地什麼都不做，不會擋住 Claude Code）。
+- **給同事用**：把 `GoblinCamp.app` 放進「應用程式」資料夾，第一次右鍵 → 打開（見上方「建置與執行」），再按選單的「連接 Claude Code」即可。從下載資料夾直接開的話，系統會把程式放在暫時的位置，選單會請你先移到「應用程式」。
+
+**手動設定**（想自己改設定檔時）：選單做的事等於在 `~/.claude/settings.json` 加上下面這一塊，`/path/to/goblincamp-hook.sh` 是選單放的那個腳本（`~/.claude/hooks/goblincamp-hook.sh`），或直接寫 `"/Applications/GoblinCamp.app/Contents/MacOS/GoblinCamp" --hook …`：
 
 ```json
 {
   "hooks": {
     "PermissionRequest": [
-      {
-        "hooks": [
-          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-ask.sh permission", "timeout": 70 }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "/path/to/goblincamp-hook.sh ask permission", "timeout": 70 }] }
     ],
     "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-ask.sh reply", "timeout": 70 }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "/path/to/goblincamp-hook.sh ask reply", "timeout": 70 }] }
     ],
     "Notification": [
-      {
-        "matcher": "idle_prompt|elicitation_dialog",
-        "hooks": [
-          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh permission" }
-        ]
-      }
+      { "matcher": "idle_prompt|elicitation_dialog",
+        "hooks": [{ "type": "command", "command": "/path/to/goblincamp-hook.sh notify permission" }] }
     ]
   }
 }
 ```
 
-- 只想要一般提醒、不要回答功能：用 `Notification` → `goblin-notify.sh permission` 與 `Stop` → `goblin-notify.sh done`。
+- 只要一般提醒、不要回答：`Notification` → `notify permission`、`Stop` → `notify done`。
 - `timeout` 是這個 hook 最多等多久（秒），要比選單的「等你回覆多久」長。
 - 測試：先開著哥布林營地，在終端機執行
-  `echo '{"cwd":"/path/to/your/project","tool_name":"Bash","tool_input":{"command":"ls"}}' | /path/to/GoblinCamp/tools/goblin-ask.sh permission`，右上角會有哥布林問你能不能執行；按「允許」，終端機會印出一行 JSON。
-- 移除：刪掉 `hooks` 區塊，或執行 `tools/install-hooks.sh --uninstall`。
+  `echo '{"cwd":"/path/to/project","tool_name":"Bash","tool_input":{"command":"ls"}}' | /Applications/GoblinCamp.app/Contents/MacOS/GoblinCamp --hook ask permission`，右上角會有哥布林問你能不能執行；按「允許」，終端機會印出一行 JSON。
+- 專案裡的 `tools/goblin-notify.sh`、`tools/goblin-ask.sh` 只是舊設定用的轉接腳本，效果一樣。
 
-**通訊方式**：`goblin-notify.sh` 用 `open -g "goblincamp://notify?…"`；`goblin-ask.sh` 用 `goblincamp://ask?…`，並在 `~/Library/Application Support/GoblinCamp/replies/` 用一次性編號的檔案等答案（收到確認 4 秒內沒有就放棄，不會讓 Claude Code 卡住）。每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
+**通訊方式**：hook 是遊戲執行檔的小幫手模式（`GoblinCamp --hook …`，不需要 Python 或其他工具），用 `goblincamp://notify` / `goblincamp://ask` 交給執行中的遊戲，問答則在 `~/Library/Application Support/GoblinCamp/replies/` 用一次性編號的檔案傳答案（收到確認 4 秒內沒有就放棄，不會讓 Claude Code 卡住）。遊戲沒開時它什麼都不做。每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
 
 ## 選單設定
 
@@ -275,9 +275,8 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
 │   ├── make_animals.py         # 畫雞、羊、豬
 │   ├── pixelart.py             # README 圖片用的點陣繪圖小工具
 │   ├── make_readme_art.py      # 產生 docs/images 裡的封面與說明圖
-│   ├── goblin-notify.sh        # Claude Code hook：一般提醒泡泡
-│   ├── goblin-ask.sh           # Claude Code hook：可回答的泡泡（允許／拒絕、輸入回覆）
-│   ├── install-hooks.sh        # 安裝／移除 Claude Code hook
+│   ├── goblin-notify.sh        # 舊設定用的轉接腳本（呼叫遊戲的 --hook 模式）
+│   ├── goblin-ask.sh           # 同上，可回答的版本
 │   └── make_icons.py           # 產生 AppIcon.icns
 └── Sources/GoblinCamp/
     ├── main.swift              # 進入點（先跑舊資料搬家）
@@ -295,6 +294,8 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
     ├── Animal.swift            # 動物：雞、羊、豬的資料與行為
     ├── Notifier.swift          # Claude 通知：說話者（各品種與公主）、泡泡、音效與語音
     ├── AskPanel.swift          # 可回答的泡泡（按鈕與輸入框）
+    ├── HookCLI.swift           # Claude Code hook 的小幫手模式（GoblinCamp --hook …）
+    ├── HookInstaller.swift     # 選單一鍵連接 Claude Code：寫腳本、改 settings.json、移除
     ├── Pomodoro.swift          # 番茄鐘：計時、哥布林舉時鐘
     ├── Stats.swift             # 每日統計（番茄鐘、通知）
     ├── HotKeys.swift           # 全域快捷鍵 ⌃⌥1～4
@@ -340,6 +341,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_TEST_ESC=秒` | 用合成事件按一次 Esc（測試取消選位置） |
 | `CAMP_TEST_FOOD=種類,dx,dy` | 用合成事件走完「選單放食物 → 點擊放下」：在營地旁 (dx, dy) 放 `water` 或 `honey`，並每 5 秒印一次覓食狀態；加 `CAMP_TEST_FOOD_CANCEL=1` 會另外測試放食物時按 Esc |
 | `CAMP_TEST_POMODORO=專注分,休息分` | 3 秒後開始番茄鐘（可填小數分鐘，例如 `0.25,0.15`） |
+| `CAMP_CLAUDE_DIR=資料夾` `CAMP_TEST_HOOKINSTALL=interactive／simple／uninstall／status` | 把「連接 Claude Code」的動作對到另一個資料夾測試（不動真正的 `~/.claude`），做完就結束 |
 | `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
 | `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |
