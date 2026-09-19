@@ -1,0 +1,13 @@
+{
+  "id": "chicken",
+  "name": "雞",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 3,
+  "speed": 20,
+  "meat": 5,
+  "aggressive": false,
+  "weight": 5,
+  "radius": 6
+}

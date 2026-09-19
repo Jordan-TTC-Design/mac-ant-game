@@ -98,6 +98,54 @@ final class AntView: NSView {
             drawColony()
             drawFoodHint()
         }
+        drawMessage()
+    }
+
+    /// The Claude notification: a goblin (or the princess) hops in from the screen edge with a speech bubble.
+    private func drawMessage() {
+        guard let m = colony.stage.current, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let p = local(m.pos)
+        guard bounds.insetBy(dx: -320, dy: -200).contains(p) else { return }
+        let character = Characters.current
+        let role = m.speaker.isPrincess ? character.queenRole(outfit: colony.outfitIndex)
+                                        : character.breeds[min(m.breedIndex, character.breeds.count - 1)].sprites
+        guard let role else { return }
+        let pixel = role.pixelSize(scale: 1.6)
+        let size = CGFloat(role.frameSize) * pixel
+        let hop: CGFloat = m.phase == .talking ? abs(CGFloat(sin(m.timer * 8))) * 5 : 0
+        let direction: SpriteDirection = m.phase == .talking ? .down : (m.phase == .leaving ? .right : .left)
+        let phase = m.phase == .talking ? 0 : m.walked / 16
+        NSColor(calibratedWhite: 0, alpha: 0.18).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - size * 0.3, y: p.y - 4, width: size * 0.6, height: 8)).fill()
+        if let image = role.image(direction: direction, phase: phase) {
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2 + hop, width: size, height: size))
+            ctx.restoreGState()
+        }
+        if m.phase == .talking { drawBubble(m, above: CGPoint(x: p.x, y: p.y + size * 0.8 + hop)) }
+    }
+
+    private func drawBubble(_ m: Message, above p: CGPoint) {
+        let size = m.bubbleTextSize, pad = Message.bubblePadding
+        var rect = m.bubbleRect(headTop: p)
+        rect.origin.x = max(rect.origin.x, bounds.minX + 8)
+        let bubble = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
+        NSColor.white.setFill()
+        bubble.fill()
+        // tail pointing at the speaker's head
+        let tail = NSBezierPath()
+        tail.move(to: NSPoint(x: p.x - 8, y: rect.minY + 1))
+        tail.line(to: NSPoint(x: p.x + 2, y: p.y + 2))
+        tail.line(to: NSPoint(x: p.x + 8, y: rect.minY + 1))
+        tail.fill()
+        m.accent.setStroke()
+        bubble.lineWidth = 2.5
+        bubble.stroke()
+        NSColor.white.setFill()
+        NSRect(x: p.x - 7, y: rect.minY - 1, width: 14, height: 4).fill() // hide the border where the tail joins
+        m.attributed.draw(with: NSRect(x: rect.minX + pad, y: rect.minY + pad, width: size.width, height: size.height),
+                          options: [.usesLineFragmentOrigin])
     }
 
     private func drawColony() {
@@ -111,6 +159,11 @@ final class AntView: NSView {
         for food in colony.foods {
             let p = CGPoint(x: food.pos.x - origin.x, y: food.pos.y - origin.y)
             if bounds.insetBy(dx: -40, dy: -40).contains(p) { drawFood(food, at: p, scale: foodScale) }
+        }
+
+        for creature in colony.creatures {
+            let p = local(creature.pos)
+            if bounds.insetBy(dx: -60, dy: -60).contains(p) { drawCreature(creature, at: p) }
         }
 
         let character = Characters.current
@@ -127,6 +180,12 @@ final class AntView: NSView {
         if let id = colony.selectedAntID, let ant = colony.ants.first(where: { $0.id == id }) {
             let p = local(ant.pos)
             if onScreen.contains(p) { drawSelectionRing(at: p) }
+        }
+
+        drawWoundedMarks(onScreen: onScreen)
+        for hit in colony.hits {
+            let p = local(hit.pos)
+            if onScreen.contains(p) { drawHitBurst(at: p, age: hit.age) }
         }
 
         for egg in colony.eggs {
@@ -371,6 +430,10 @@ final class AntView: NSView {
             rim.stroke()
             NSColor(calibratedWhite: 1, alpha: 0.75).setFill() // highlight
             NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.55, y: p.y + h * 0.15, width: w * 0.6, height: h * 0.32)).fill()
+        case .fruit:
+            drawTree(food, at: p)
+        case .meat:
+            drawMeat(food, at: p, w: w, h: h)
         case .honey:
             // a main blob with a smaller drip beside it, so it looks gooey
             let drip = NSRect(x: p.x + w * 0.45, y: p.y - h * 0.95, width: w * 0.85, height: h * 0.75)
@@ -384,6 +447,90 @@ final class AntView: NSView {
             rim.stroke()
             NSColor(calibratedRed: 1, green: 0.90, blue: 0.55, alpha: 0.9).setFill() // shine
             NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.5, y: p.y + h * 0.2, width: w * 0.55, height: h * 0.3)).fill()
+        }
+    }
+
+    /// A small pixel-style fruit tree; the red dots are the fruit still on it.
+    private func drawTree(_ food: FoodSource, at p: CGPoint) {
+        let u: CGFloat = 2 // one "pixel"
+        func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) {
+            c.setFill()
+            NSRect(x: p.x + x * u, y: p.y + y * u, width: w * u, height: h * u).fill()
+        }
+        let trunk = NSColor(calibratedRed: 0.42, green: 0.27, blue: 0.14, alpha: 1)
+        let dark = NSColor(calibratedRed: 0.16, green: 0.42, blue: 0.20, alpha: 1)
+        let leaf = NSColor(calibratedRed: 0.27, green: 0.62, blue: 0.27, alpha: 1)
+        let light = NSColor(calibratedRed: 0.42, green: 0.76, blue: 0.36, alpha: 1)
+        px(-1, 0, 2, 4, trunk)
+        px(-4, 4, 8, 5, dark)
+        px(-5, 5, 10, 3, dark)
+        px(-3, 8, 6, 3, dark)
+        px(-4, 5, 7, 4, leaf)
+        px(-3, 8, 5, 2, leaf)
+        px(-3, 8, 2, 1, light)
+        px(-4, 7, 1, 1, light)
+        let spots: [(CGFloat, CGFloat)] = [(-3, 5), (2, 6), (0, 8), (-1, 6), (3, 4), (-4, 7)]
+        let fruit = NSColor(calibratedRed: 0.90, green: 0.18, blue: 0.16, alpha: 1)
+        for i in 0..<min(food.amount, spots.count) { px(spots[i].0, spots[i].1, 1.4, 1.4, fruit) }
+    }
+
+    private func drawMeat(_ food: FoodSource, at p: CGPoint, w: CGFloat, h: CGFloat) {
+        let bone = NSColor(calibratedRed: 0.96, green: 0.93, blue: 0.84, alpha: 1)
+        bone.setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x + w * 0.5, y: p.y + h * 0.1, width: w * 0.5, height: h * 0.5)).fill()
+        NSBezierPath(ovalIn: NSRect(x: p.x + w * 0.5, y: p.y - h * 0.5, width: w * 0.5, height: h * 0.5)).fill()
+        NSColor(calibratedRed: 0.78, green: 0.32, blue: 0.24, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - w, y: p.y - h, width: w * 1.7, height: h * 2)).fill()
+        NSColor(calibratedRed: 0.55, green: 0.18, blue: 0.14, alpha: 0.9).setStroke()
+        let rim = NSBezierPath(ovalIn: NSRect(x: p.x - w, y: p.y - h, width: w * 1.7, height: h * 2))
+        rim.lineWidth = 0.8
+        rim.stroke()
+        NSColor(calibratedRed: 0.95, green: 0.6, blue: 0.5, alpha: 0.9).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.6, y: p.y + h * 0.1, width: w * 0.6, height: h * 0.5)).fill()
+    }
+
+    /// A wandering animal: its walk frame, a shadow, and a red flash when it has just been hit.
+    private func drawCreature(_ c: Creature, at p: CGPoint) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let kind = c.kind
+        let facingRight = cos(c.heading) >= 0
+        guard let image = kind.image(facingRight: facingRight, phase: c.legPhase) else { return }
+        let w = CGFloat(image.width) * CGFloat(kind.pixelScale), h = CGFloat(image.height) * CGFloat(kind.pixelScale)
+        NSColor(calibratedWhite: 0, alpha: 0.16).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.4, y: p.y - 3, width: w * 0.8, height: 6)).fill()
+        ctx.interpolationQuality = .none
+        let rect = CGRect(x: p.x - w / 2, y: p.y - h * 0.12, width: w, height: h)
+        ctx.draw(image, in: rect)
+        if c.hurt > 0 {
+            ctx.saveGState()
+            ctx.clip(to: rect, mask: image)
+            ctx.setFillColor(NSColor(calibratedRed: 1, green: 0.15, blue: 0.1, alpha: 0.55).cgColor)
+            ctx.fill(rect)
+            ctx.restoreGState()
+        }
+    }
+
+    /// A red "+" over goblins that got bitten and are limping home.
+    private func drawWoundedMarks(onScreen: NSRect) {
+        for ant in colony.ants where ant.isWounded && !ant.isHidden {
+            let p = local(ant.pos)
+            guard onScreen.contains(p) else { continue }
+            NSColor.white.setFill()
+            NSRect(x: p.x - 3, y: p.y + 12, width: 6, height: 6).fill()
+            NSColor(calibratedRed: 0.85, green: 0.1, blue: 0.1, alpha: 1).setFill()
+            NSRect(x: p.x - 0.75, y: p.y + 12.5, width: 1.5, height: 5).fill()
+            NSRect(x: p.x - 2.5, y: p.y + 14.25, width: 5, height: 1.5).fill()
+        }
+    }
+
+    /// Yellow sparks where something was hit.
+    private func drawHitBurst(at p: CGPoint, age: Double) {
+        let t = CGFloat(min(1, age / 0.35))
+        NSColor(calibratedRed: 1, green: 0.85, blue: 0.2, alpha: 1 - t).setFill()
+        for i in 0..<6 {
+            let a = CGFloat(i) * .pi / 3 + 0.4
+            let d = 4 + 9 * t
+            NSRect(x: p.x + cos(a) * d - 1.25, y: p.y + 6 + sin(a) * d - 1.25, width: 2.5, height: 2.5).fill()
         }
     }
 

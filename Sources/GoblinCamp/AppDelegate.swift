@@ -17,6 +17,14 @@ final class ClosureMenuItem: NSMenuItem {
     @objc private func fire() { handler?() }
 }
 
+/// A see-through view that reports clicks (and shows a pointing hand).
+final class ClickCatcher: NSView {
+    var onClick: (() -> Void)?
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var windows: [OverlayWindow] = []
@@ -39,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// While set, the goblins are hidden and the camp is frozen (a meeting, focused work). `nil` = visible.
     private var hiddenUntil: Date?
     private var hideTimer: Timer?
+    /// Claude notifications that came while the goblins were hidden (silently dropped, but counted).
+    private var missedNotifications = 0
+    private var lastNotify: [NotifyKind: Date] = [:]
     private var hideMenuItem: NSMenuItem!
     private var unhideItem: ClosureMenuItem!
     private var rosterItem: ClosureMenuItem!
@@ -52,6 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pauseItem: ClosureMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        colony.stage.onArrive = { [weak self] message in
+            guard let self else { return }
+            if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: \(message.speaker.name) says \"\(message.text)\" (\(message.kind.rawValue))") }
+            GoblinVoice.shared.speak(message.text, as: message.speaker, level: self.settings.notifyVolume)
+        }
         setupMenuBar()
         rebuildOverlays()
 
@@ -224,6 +240,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(t) { pressKey(53, "\u{1b}") }
             after(t + 0.5) { log("phase after Esc: \(self.colony.phase), nest: \(String(describing: self.colony.nest))") }
         }
+        if let s = env["CAMP_TEST_CLICKMSG"], let t = Double(s) { // click the popup at t seconds (needs a popup with an app)
+            after(t) {
+                log("popup before click: \(String(describing: self.colony.stage.current?.phase)), panel visible: \(self.clickPanel?.isVisible ?? false), frame \(String(describing: self.clickPanel?.frame))")
+                (self.clickPanel?.contentView as? ClickCatcher)?.onClick?()
+                after(0.5) { log("after click: \(String(describing: self.colony.stage.current?.phase)), panel visible: \(self.clickPanel?.isVisible ?? false)") }
+            }
+        }
+        if let s = env["CAMP_TEST_WILD"] { // "pig,300,80": an animal of that kind this far from the nest, plus a tree
+            let parts = s.split(separator: ",")
+            guard parts.count == 3, let kind = Animals.all.first(where: { $0.id == parts[0] }), let dx = Double(parts[1]), let dy = Double(parts[2]) else { return }
+            after(4) {
+                guard let nest = self.colony.nest else { return log("no nest") }
+                self.colony.spawnTree(at: CGPoint(x: nest.x - 120, y: nest.y - 60))
+                self.colony.debugSpawnCreature(kind: kind, at: CGPoint(x: nest.x + dx, y: nest.y + dy))
+                for k in 1...60 {
+                    after(Double(k) * 3) {
+                        let c = self.colony
+                        let modes = Dictionary(grouping: c.ants.map { String(describing: $0.mode).prefix(12) }, by: { $0 }).mapValues(\.count)
+                        log("t+\(k * 3)s animals \(c.creatures.map { "\($0.kind.id) hp\($0.hp)" }) foods \(c.foods.map { "\($0.kind.rawValue)x\($0.amount)" }) slain \(c.slain) goblins \(c.ants.count) \(modes)")
+                    }
+                }
+            }
+        }
         if let s = env["CAMP_TEST_FOOD"] {
             let parts = s.split(separator: ",")
             guard parts.count == 3, let kind = FoodKind(rawValue: String(parts[0])), let dx = Double(parts[1]), let dy = Double(parts[2]) else { return }
@@ -325,11 +364,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         characterMenuItem.isHidden = Characters.all.count <= 1 // nothing to choose from with a single character
         menu.addItem(characterMenuItem)
         menu.addItem(spawnMenu())
+        menu.addItem(choiceMenu(title: "自然事件（動物、果樹）",
+                                options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
+                                get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 }))
         capMenuItem = choiceMenu(title: "數量上限",
                                  options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
         menu.addItem(capMenuItem)
         menu.addItem(nestImageMenu())
+        menu.addItem(notifyMenu())
         menu.addItem(.separator())
 
         let save = ClosureMenuItem(title: "儲存進度") { [weak self] in
@@ -343,6 +386,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "結束哥布林營地", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         statusItem.menu = menu
+    }
+
+    // MARK: Claude notifications
+
+    /// `goblincamp://notify?kind=permission|done&project=name`, sent by the Claude Code hooks (tools/goblin-notify.sh).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "goblincamp" && url.host == "notify" {
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let kind = NotifyKind(rawValue: items.first { $0.name == "kind" }?.value ?? "") ?? .done
+            var project = items.first { $0.name == "project" }?.value ?? ""
+            project = String(project.filter { !$0.isNewline }.prefix(28)) // anyone can open this link, so keep it short
+            var app = items.first { $0.name == "app" }?.value
+            if let id = app, id.range(of: "^[A-Za-z0-9.-]{1,80}$", options: .regularExpression) == nil { app = nil }
+            notify(kind, project: project, appBundleID: app)
+        }
+    }
+
+    /// Someone wants the player: a goblin (or now and then the princess) pops up and says so.
+    /// Silent while hidden (meeting, focus), only a badge on the menu bar icon.
+    func notify(_ kind: NotifyKind, project: String = "", appBundleID: String? = nil, speaker forced: Speaker? = nil) {
+        guard settings.notifyEnabled, settings.notifies(kind) else { return }
+        if isHiddenByUser {
+            missedNotifications += 1
+            applyStatusIcon()
+            return
+        }
+        // keep it from turning into spam
+        if forced == nil, let last = lastNotify[kind], Date().timeIntervalSince(last) < 6 { return }
+        lastNotify[kind] = Date()
+        let mouse = NSEvent.mouseLocation
+        let screen = colony.walkable.first { $0.contains(mouse) } ?? colony.walkable.first ?? NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let character = Characters.current
+        var breedIndex = 0
+        var speaker = Speakers.common
+        if let forced {
+            speaker = forced
+            breedIndex = character.breedIndex(id: forced.id)
+        } else if Double.random(in: 0..<1) < 0.25 {
+            speaker = Speakers.princess
+        } else if let ant = colony.ants.randomElement() { // one of the living goblins, so rare breeds turn up when you have them
+            breedIndex = ant.breedIndex
+            speaker = Speakers.forBreed(character.breeds[min(breedIndex, character.breeds.count - 1)].id)
+        }
+        colony.stage.enqueue(Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: appBundleID, screen: screen))
+        redrawAll()
+    }
+
+    /// The overlay lets every click through, so the popup gets a small window of its own that catches clicks:
+    /// clicking the bubble brings the app Claude runs in to the front and sends the messenger away.
+    private var clickPanel: NSPanel?
+
+    private func updateClickPanel() {
+        guard !isHiddenByUser, let m = colony.stage.current, m.phase == .talking, m.appBundleID != nil else {
+            clickPanel?.orderOut(nil)
+            return
+        }
+        let character = Characters.current
+        let role = m.speaker.isPrincess ? character.queenRole(outfit: colony.outfitIndex) : character.breeds[min(m.breedIndex, character.breeds.count - 1)].sprites
+        let size = CGFloat(role?.frameSize ?? 16) * (role?.pixelSize(scale: 1.6) ?? 3)
+        let frame = m.hitRect(spriteSize: size)
+        if clickPanel == nil {
+            let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            let view = ClickCatcher()
+            view.onClick = { [weak self] in self?.messageClicked() }
+            panel.contentView = view
+            clickPanel = panel
+        }
+        clickPanel?.setFrame(frame, display: false)
+        clickPanel?.orderFrontRegardless()
+    }
+
+    private func messageClicked() {
+        guard let id = colony.stage.current?.appBundleID else { return }
+        colony.stage.dismissCurrent()
+        GoblinVoice.shared.stop()
+        clickPanel?.orderOut(nil)
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
+    /// The "Claude notifications" submenu: what to show, how loud, and a way to try it.
+    private func notifyMenu() -> NSMenuItem {
+        let parent = NSMenuItem(title: "Claude 通知", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "Claude 通知")
+        let master = ClosureMenuItem(title: "開啟通知") { [weak self] in self?.settings.notifyEnabled.toggle() }
+        master.stateProvider = { self.settings.notifyEnabled }
+        sub.addItem(master)
+        for (label, kind) in [("Claude 需要我決定時", NotifyKind.permission), ("Claude 工作完成時", NotifyKind.done)] {
+            let item = ClosureMenuItem(title: label) { [weak self] in self?.settings.setNotifies(kind, !(self?.settings.notifies(kind) ?? true)) }
+            item.stateProvider = { self.settings.notifies(kind) }
+            sub.addItem(item)
+        }
+        sub.addItem(.separator())
+        let volume = choiceMenu(title: "聲音", options: [("關（只跳出泡泡）", 0), ("小聲", 1), ("中等", 2), ("大聲", 3)],
+                                get: { self.settings.notifyVolume }, set: { self.settings.notifyVolume = $0 })
+        sub.addItem(volume)
+        sub.addItem(.separator())
+        sub.addItem(ClosureMenuItem(title: "試試看（隨機）") { [weak self] in self?.notify(.permission, project: "測試", appBundleID: "com.apple.Terminal") })
+        sub.addItem(ClosureMenuItem(title: "試試看：公主") { [weak self] in self?.notify(.done, project: "測試", appBundleID: "com.apple.Terminal", speaker: Speakers.princess) })
+        sub.addItem(ClosureMenuItem(title: "試試看：壯碩哥布林") { [weak self] in self?.notify(.permission, project: "測試", appBundleID: "com.apple.Terminal", speaker: Speakers.brute) })
+        parent.submenu = sub
+        return parent
     }
 
     // MARK: Hiding
@@ -371,6 +522,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let seconds {
             hideTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in self?.unhide() }
         }
+        colony.stage.clear()
+        clickPanel?.orderOut(nil)
+        GoblinVoice.shared.stop()
         windows.forEach { $0.orderOut(nil) }
         roster.hide()
         applyStatusIcon()
@@ -379,6 +533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func unhide() {
         guard hiddenUntil != nil else { return }
         hiddenUntil = nil
+        missedNotifications = 0
         hideTimer?.invalidate()
         hideTimer = nil
         lastTick = Date() // do not count the time spent hidden
@@ -484,7 +639,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func foodMenu() -> NSMenuItem {
         foodMenuItem = NSMenuItem(title: "放食物", action: nil, keyEquivalent: "")
         let sub = NSMenu(title: "放食物")
-        for kind in FoodKind.allCases {
+        for kind in FoodKind.placeable {
             sub.addItem(ClosureMenuItem(title: "\(kind.emoji) \(kind.label)") { [weak self] in self?.colony.beginPlacingFood(kind) })
         }
         sub.addItem(.separator())
@@ -524,7 +679,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hideMenuItem.isHidden = isHiddenByUser
         unhideItem.isHidden = !isHiddenByUser
         if let until = hiddenUntil {
-            unhideItem.title = until == .distantFuture ? "顯示（取消隱藏）" : "顯示（取消隱藏，還剩約 \(max(1, Int(until.timeIntervalSinceNow / 60))) 分鐘）"
+            let missed = missedNotifications > 0 ? "　·　期間有 \(missedNotifications) 則 Claude 通知" : ""
+            unhideItem.title = (until == .distantFuture ? "顯示（取消隱藏）" : "顯示（取消隱藏，還剩約 \(max(1, Int(until.timeIntervalSinceNow / 60))) 分鐘）") + missed
         }
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
         nestMenuItem.title = "\(home)外觀"
@@ -579,6 +735,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         lastCursor = cursor
 
+        if !isHiddenByUser, colony.stage.isActive {
+            colony.stage.update(dt: dt)
+            redrawAll()
+        }
+        updateClickPanel()
         guard !isHiddenByUser, colony.isSimulating, !colony.isPaused else { return }
         colony.tick(dt: dt, cursor: cursor, cursorSpeed: cursorSpeed)
         redrawAll()
@@ -590,6 +751,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyStatusIcon() {
         let character = Characters.current
         statusItem.button?.alphaValue = isHiddenByUser ? 0.4 : 1 // dimmed while the goblins are hidden
+        defer { // a dot beside the icon while notifications piled up during the hiding
+            if missedNotifications > 0 {
+                statusItem.button?.imagePosition = .imageLeft
+                statusItem.button?.title = " ●\(missedNotifications)"
+                statusItem.button?.alphaValue = 1
+            }
+        }
         if let icon = character.icon {
             icon.size = NSSize(width: 16, height: 16) // 16 art pixels on 32 device pixels, so it stays crisp
             icon.isTemplate = false

@@ -23,6 +23,12 @@ struct Ant {
         case hauling(food: Int, kind: FoodKind, pieces: Int)
         /// Died of old age: stands still and fades away.
         case dying(remaining: Double)
+        /// Found an animal; hurrying home to tell the others.
+        case huntNews(creature: Int)
+        /// Chasing an animal and hitting it every second or so.
+        case hunting(creature: Int, cooldown: Double)
+        /// Hidden in the nest until it is time to go and hunt.
+        case inNestForHunt(remaining: Double, creature: Int)
         /// One of the two carrying the princess into the camp, walking to `target`.
         case carryingPrincess(target: CGPoint)
         /// Arrived with the princess; waiting until the other carrier gets there too.
@@ -37,6 +43,9 @@ struct Ant {
         case delivered(Int, pieces: Int)
         case died
         case carrierArrived
+        case foundCreature(Int)
+        case huntNewsDelivered(Int)
+        case attack(Int)
     }
 
     /// How fast the two carriers walk the princess in, in points per second.
@@ -54,6 +63,8 @@ struct Ant {
     let traits: Traits
     /// Seconds lived.
     var age: Double
+    /// Hits it can still take; hunting animals that fight back wear it down. It heals slowly inside the nest.
+    var health: Double
     var pos: CGPoint
     var heading: Double
     var speed: Double
@@ -70,6 +81,7 @@ struct Ant {
         self.traits = traits
         self.seed = seed
         self.age = age
+        health = traits.maxHealth
         self.pos = pos
         heading = Double.random(in: 0..<(2 * .pi))
         speed = Double.random(in: 15...40) * traits.speed
@@ -100,8 +112,20 @@ struct Ant {
     }
 
     var isHidden: Bool {
-        if case .inNest = mode { return true }
-        return false
+        switch mode {
+        case .inNest, .inNestForHunt: return true
+        default: return false
+        }
+    }
+
+    /// Badly hurt: it stays out of fights and limps home.
+    var isWounded: Bool { health <= 1 && health < traits.maxHealth }
+
+    var isHunting: Bool {
+        switch mode {
+        case .hunting, .huntNews, .inNestForHunt: return true
+        default: return false
+        }
     }
 
     /// The food being carried, if any.
@@ -179,7 +203,43 @@ struct Ant {
                 return .delivered(id, pieces: pieces)
             }
 
+        case .huntNews(let id):
+            if walkHome(dt: dt, world: world, speedFactor: 1.4) {
+                mode = .hunting(creature: id, cooldown: 0) // and straight back out with the others
+                return .huntNewsDelivered(id)
+            }
+
+        case .inNestForHunt(let remaining, let id):
+            health = min(traits.maxHealth, health + dt * 0.05)
+            let left = remaining - dt
+            if left > 0 {
+                mode = .inNestForHunt(remaining: left, creature: id)
+                return nil
+            }
+            pos = CGPoint(x: world.nest.x + CGFloat.random(in: -3...3), y: world.nest.y + CGFloat.random(in: -3...3))
+            if world.creature(id) != nil { mode = .hunting(creature: id, cooldown: 0) } else { return giveUp() }
+
+        case .hunting(let id, let cooldown):
+            guard let target = world.creature(id) else { return giveUp() }
+            let dx = target.pos.x - pos.x, dy = target.pos.y - pos.y, distance = hypot(dx, dy)
+            heading = atan2(dy, dx)
+            let reach = target.radius + 6
+            if distance > reach { // run it down
+                let step = min(effectiveSpeed * 1.3 * dt, distance - reach * 0.5)
+                pos.x += cos(heading) * step
+                pos.y += sin(heading) * step
+                legPhase += step * 0.9
+                moving = true
+                mode = .hunting(creature: id, cooldown: max(0, cooldown - dt))
+            } else if cooldown - dt <= 0 { // in reach: hit it
+                mode = .hunting(creature: id, cooldown: Double.random(in: 0.8...1.2))
+                return .attack(id)
+            } else {
+                mode = .hunting(creature: id, cooldown: cooldown - dt)
+            }
+
         case .inNest(let remaining, let thenForage):
+            health = min(traits.maxHealth, health + dt * 0.05)
             let left = remaining - dt
             if left > 0 {
                 mode = .inNest(remaining: left, thenForage: thenForage)
@@ -237,6 +297,16 @@ struct Ant {
             mode = .carryingNews(food: food.id)
             heading = atan2(world.nest.y - pos.y, world.nest.x - pos.x)
             return .foundFood(food.id)
+        }
+        // Notice an animal only by walking into it (and not while hurt).
+        if !isWounded, let animal = world.creatures.first(where: { hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.radius + 20 * traits.sense }) {
+            if animal.alerted {
+                mode = .hunting(creature: animal.id, cooldown: 0) // the others know already: join in
+                return nil
+            }
+            mode = .huntNews(creature: animal.id)
+            heading = atan2(world.nest.y - pos.y, world.nest.x - pos.x)
+            return .foundCreature(animal.id)
         }
         // Now and then go home for a rest.
         if Double.random(in: 0..<1) < dt / 90 * traits.rest {

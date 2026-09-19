@@ -49,6 +49,16 @@ final class Colony {
     private(set) var foodDelivered = 0
     /// How many have died of old age.
     private(set) var deaths = 0
+    /// How many goblins wild animals have killed.
+    private(set) var slain = 0
+    /// Popups for Claude notifications (not part of the simulation, so they work while paused).
+    let stage = MessageStage()
+    private(set) var creatures: [Creature] = []
+    /// Little sparks where something was just hit.
+    private(set) var hits: [(pos: CGPoint, age: Double)] = []
+    private var nextCreatureID = 1
+    private var animalTimer: Double = -1
+    private var treeTimer: Double = -1
     /// Which of the princess's outfits she wears now. `CAMP_OUTFIT` picks the first one (for testing).
     private(set) var outfitIndex: Int = Int(ProcessInfo.processInfo.environment["CAMP_OUTFIT"] ?? "") ?? 0
     /// The individual highlighted from the roster, if any.
@@ -136,14 +146,17 @@ final class Colony {
         let spot = isWalkable(point) ? point : nearestWalkable(to: point)
         foods.append(FoodSource(id: nextFoodID, kind: kind, pos: spot, amount: kind.initialAmount))
         nextFoodID += 1
-        if foods.count > Colony.maxFoods { foods.removeFirst() }
+        if foods.filter({ $0.origin == .placed }).count > Colony.maxFoods, let oldest = foods.firstIndex(where: { $0.origin == .placed }) {
+            foods.remove(at: oldest)
+        }
         pendingFood = nil
         phase = .running
         onChange?()
     }
 
+    /// Puts away the food the player put down and any meat; fruit trees stay.
     func clearFoods() {
-        foods = []
+        foods.removeAll { $0.origin != .tree }
         onChange?()
     }
 
@@ -198,11 +211,27 @@ final class Colony {
             let pieces = min(ants[index].traits.carry, foods[i].amount)
             ants[index].mode = .hauling(food: id, kind: foods[i].kind, pieces: pieces)
             foods[i].amount -= pieces
-            if foods[i].amount == 0 { foods.remove(at: i) }
+            if foods[i].amount == 0 {
+                if foods[i].isTree {
+                    foods[i].scouted = false // nobody knows about it until it has fruit again
+                    foods[i].reported = false
+                    foods[i].regrow = Colony.treeRegrowTime
+                } else {
+                    foods.remove(at: i)
+                }
+            }
         case .delivered(let id, let pieces):
             foodDelivered += pieces
             // every successful trip can bring one or two more helpers
             if Double.random(in: 0..<1) < 0.5 { recruit(for: id, count: Int.random(in: 1...2)) }
+        case .foundCreature(let id):
+            if let i = creatures.firstIndex(where: { $0.id == id }) { creatures[i].scouted = true }
+        case .huntNewsDelivered(let id):
+            guard let i = creatures.firstIndex(where: { $0.id == id }) else { return }
+            creatures[i].reported = true
+            recruitHunters(for: id, count: 5 + Int(creatures[i].hp / 3) + ants[index].traits.recruit)
+        case .attack(let id):
+            attack(creature: id, by: index)
         case .carrierArrived:
             carriersArrived += 1
         case .died:
@@ -223,6 +252,7 @@ final class Colony {
         ants = []
         spawnTimer = 0
         beginCarrying(to: point)
+        primeWildlifeTimers()
         onChange?()
     }
 
@@ -254,6 +284,194 @@ final class Colony {
             ants.append(ant)
             carrierIDs.append(ant.id)
         }
+    }
+
+    // MARK: Wildlife
+
+    static let treeRegrowTime = 70.0
+    static let maxHunters = 8
+
+    /// Seconds between new animals / new trees, and how many may be about, for each level of the "nature" setting.
+    private static let animalEvery: [Double] = [0, 480, 240, 120]
+    private static let treeEvery: [Double] = [0, 600, 300, 150]
+    private static let maxAnimals = [0, 1, 2, 3]
+    private static let maxTrees = [0, 2, 3, 4]
+
+    /// `CAMP_WILD_SCALE` makes nature happen faster (for testing).
+    private static let wildScale: Double = {
+        if let s = ProcessInfo.processInfo.environment["CAMP_WILD_SCALE"], let v = Double(s), v > 0 { return v }
+        return 1
+    }()
+
+    /// Animals come and go, trees grow fruit back, and new animals and trees turn up on their own.
+    private func updateWildlife(dt: Double) {
+        let level = settings.wildlife
+        for i in hits.indices { hits[i].age += dt }
+        hits.removeAll { $0.age > 0.35 }
+
+        // animals
+        for i in creatures.indices.reversed() where creatures[i].update(dt: dt, walkable: walkable) {
+            creatures.remove(at: i) // walked off the screen
+        }
+        // trees grow fruit
+        for i in foods.indices where foods[i].isTree && foods[i].amount < foods[i].capacity {
+            foods[i].regrow -= dt * Colony.wildScale
+            if foods[i].regrow <= 0 {
+                foods[i].amount += 1
+                foods[i].regrow = Colony.treeRegrowTime
+                foods[i].scouted = false
+                foods[i].reported = false
+            }
+        }
+
+        guard level > 0, ants.count >= 6, queen?.isCarried == false else { return }
+        animalTimer -= dt * Colony.wildScale
+        treeTimer -= dt * Colony.wildScale
+        if animalTimer < 0 {
+            if animalTimer < -1_000_000 || creatures.count < Colony.maxAnimals[level] { spawnAnimal() }
+            animalTimer = Colony.animalEvery[level] * Double.random(in: 0.6...1.4)
+        }
+        if treeTimer < 0 {
+            if foods.filter(\.isTree).count < Colony.maxTrees[level] { spawnTree() }
+            treeTimer = Colony.treeEvery[level] * Double.random(in: 0.6...1.4)
+        }
+    }
+
+    /// A first-time countdown: an animal and a tree turn up fairly soon after the colony gets going.
+    private func primeWildlifeTimers() {
+        let level = settings.wildlife
+        guard level > 0 else { return }
+        if animalTimer == -1 { animalTimer = Colony.animalEvery[level] * Double.random(in: 0.25...0.5) }
+        if treeTimer == -1 { treeTimer = Colony.treeEvery[level] * Double.random(in: 0.1...0.3) }
+    }
+
+    func spawnAnimal(of kind: AnimalKind? = nil) {
+        guard let nest, let kind = kind ?? Animals.pick() else { return }
+        let rect = walkable.randomElement() ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        // it walks in from a random edge toward somewhere inside
+        let start: CGPoint, inward: CGPoint
+        switch Int.random(in: 0..<4) {
+        case 0: start = CGPoint(x: rect.minX - 30, y: CGFloat.random(in: rect.minY + 80...rect.maxY - 80)); inward = CGPoint(x: 1, y: 0)
+        case 1: start = CGPoint(x: rect.maxX + 30, y: CGFloat.random(in: rect.minY + 80...rect.maxY - 80)); inward = CGPoint(x: -1, y: 0)
+        case 2: start = CGPoint(x: CGFloat.random(in: rect.minX + 80...rect.maxX - 80), y: rect.minY - 30); inward = CGPoint(x: 0, y: 1)
+        default: start = CGPoint(x: CGFloat.random(in: rect.minX + 80...rect.maxX - 80), y: rect.maxY + 30); inward = CGPoint(x: 0, y: -1)
+        }
+        let depth = CGFloat.random(in: 140...320)
+        var target = CGPoint(x: start.x + inward.x * depth, y: start.y + inward.y * depth)
+        if hypot(target.x - nest.x, target.y - nest.y) < 60 { target.x += 120 }
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: a \(kind.id) walks in from \(start)") }
+        creatures.append(Creature(id: nextCreatureID, kind: kind, start: start, enter: target, stay: Double.random(in: 120...240)))
+        nextCreatureID += 1
+    }
+
+    func spawnTree(at point: CGPoint? = nil) {
+        guard let nest else { return }
+        for _ in 0..<30 {
+            let angle = Double.random(in: 0..<(2 * .pi)), radius = Double.random(in: 90...260)
+            let spot = point ?? CGPoint(x: nest.x + cos(angle) * radius, y: nest.y + sin(angle) * radius)
+            let clear = foods.allSatisfy { hypot($0.pos.x - spot.x, $0.pos.y - spot.y) > 60 }
+            if walkable.contains(where: { $0.insetBy(dx: 40, dy: 40).contains(spot) }), hypot(spot.x - nest.x, spot.y - nest.y) > 50, clear {
+                var tree = FoodSource(id: nextFoodID, kind: .fruit, pos: spot, amount: 4)
+                tree.origin = .tree
+                tree.regrow = Colony.treeRegrowTime
+                foods.append(tree)
+                nextFoodID += 1
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: a fruit tree grows at \(spot)") }
+                return
+            }
+            if point != nil { return }
+        }
+    }
+
+    private func hunters(of id: Int) -> Int {
+        ants.reduce(0) {
+            switch $1.mode {
+            case .hunting(let target, _), .inNestForHunt(_, let target), .huntNews(let target): return $0 + (target == id ? 1 : 0)
+            default: return $0
+            }
+        }
+    }
+
+    /// The news of an animal reached the nest: hunters set out (those resting in the nest one by one).
+    private func recruitHunters(for id: Int, count: Int) {
+        guard let nest, let creature = creatures.first(where: { $0.id == id }) else { return }
+        let want = min(count, Colony.maxHunters - hunters(of: id))
+        guard want > 0 else { return }
+        var inside: [Int] = [], nearby: [(index: Int, distance: Double)] = []
+        for (i, ant) in ants.enumerated() where !ant.isWounded {
+            switch ant.mode {
+            case .inNest(_, nil): inside.append(i)
+            case .wandering:
+                let d = hypot(ant.pos.x - nest.x, ant.pos.y - nest.y)
+                if d < 110 { nearby.append((i, d)) }
+            default: break
+            }
+        }
+        var chosen = 0
+        for i in inside.shuffled().prefix(want) {
+            ants[i].mode = .inNestForHunt(remaining: Double(chosen) * 0.6 + 0.2, creature: id)
+            chosen += 1
+        }
+        for entry in nearby.sorted(by: { $0.distance < $1.distance }).prefix(want - chosen) {
+            ants[entry.index].mode = .hunting(creature: id, cooldown: 0)
+        }
+        _ = creature
+    }
+
+    /// A goblin hits an animal. A fighting one hits back now and then; a timid one runs.
+    private func attack(creature id: Int, by index: Int) {
+        guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
+        creatures[ci].hp -= ants[index].traits.might
+        creatures[ci].hurt = 0.35
+        hits.append((pos: creatures[ci].pos, age: 0))
+        if creatures[ci].hp <= 0 {
+            kill(creatureAt: ci)
+        } else if creatures[ci].kind.aggressive {
+            if Double.random(in: 0..<1) < 0.4 { hurt(ant: index) }
+        } else {
+            let away = atan2(creatures[ci].pos.y - ants[index].pos.y, creatures[ci].pos.x - ants[index].pos.x)
+            creatures[ci].state = .fleeing(remaining: 2.5, angle: away)
+        }
+    }
+
+    /// The animal bites: the goblin loses health, limps home when it is nearly done for, and may be killed.
+    private func hurt(ant index: Int) {
+        ants[index].health -= 1
+        hits.append((pos: ants[index].pos, age: 0))
+        if ants[index].health <= 0 {
+            ants[index].mode = .dying(remaining: Ant.dyingTime)
+            slain += 1
+        } else if ants[index].isWounded {
+            ants[index].mode = .returningToNest
+        }
+    }
+
+    /// The animal is down: it leaves a pile of meat, and the hunters start carrying it home.
+    private func kill(creatureAt index: Int) {
+        let animal = creatures.remove(at: index)
+        var meat = FoodSource(id: nextFoodID, kind: .meat, pos: animal.pos, amount: animal.kind.meat)
+        meat.origin = .meat
+        meat.capacityOverride = animal.kind.meat
+        meat.scouted = true
+        meat.reported = true
+        foods.append(meat)
+        let meatID = nextFoodID
+        nextFoodID += 1
+        for i in ants.indices {
+            switch ants[i].mode {
+            case .hunting(let target, _), .inNestForHunt(_, let target), .huntNews(let target):
+                if target == animal.id { ants[i].mode = .foraging(food: meatID, slot: Double.random(in: 0..<(2 * .pi))) }
+            default: break
+            }
+        }
+    }
+
+    /// Test aids.
+    func debugSpawnCreature(kind: AnimalKind, at point: CGPoint) {
+        var c = Creature(id: nextCreatureID, kind: kind, start: point, enter: point, stay: 600)
+        c.state = .wandering
+        creatures.append(c)
+        nextCreatureID += 1
     }
 
     /// Keeps the princess between her carriers, and sets her down once both have arrived.
@@ -295,6 +513,7 @@ final class Colony {
             }
         }
         spawnTimer = 0
+        primeWildlifeTimers()
     }
 
     /// What to write to disk: where the nest is and who lives there.
@@ -416,7 +635,7 @@ final class Colony {
             }
         }
         let antDt = dt * settings.speedMultiplier
-        let world = AntWorld(nest: nest, walkable: walkable, foods: foods, foodScale: Colony.foodScale(settings.antScale))
+        let world = AntWorld(nest: nest, walkable: walkable, foods: foods, creatures: creatures.map(\.info), foodScale: Colony.foodScale(settings.antScale))
         let ageDt = dt * Colony.timeScale
         var events: [(index: Int, event: Ant.Event)] = []
         for i in ants.indices {
@@ -424,6 +643,7 @@ final class Colony {
         }
         for (index, event) in events { handle(event, from: index) }
         moveCarriedPrincess()
+        updateWildlife(dt: dt)
         // the dead leave the colony (highest index first so the others keep their places)
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)
         for index in gone.sorted(by: >) {

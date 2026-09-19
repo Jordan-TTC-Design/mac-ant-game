@@ -81,6 +81,28 @@ final class Settings {
         set { defaults.set(newValue, forKey: "camp") }
     }
 
+    /// Claude notifications: a goblin (or the princess) pops up and speaks. On by default.
+    var notifyEnabled: Bool {
+        get { defaults.object(forKey: "notifyEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "notifyEnabled") }
+    }
+    /// Which events pop up: Claude waiting for a decision / Claude finished.
+    func notifies(_ kind: NotifyKind) -> Bool {
+        defaults.object(forKey: "notify.\(kind.rawValue)") as? Bool ?? true
+    }
+    func setNotifies(_ kind: NotifyKind, _ on: Bool) { defaults.set(on, forKey: "notify.\(kind.rawValue)") }
+    /// 0 = silent (popups only), 1 quiet, 2 medium, 3 loud.
+    var notifyVolume: Int {
+        get { min(3, max(0, defaults.object(forKey: "notifyVolume") as? Int ?? 2)) }
+        set { defaults.set(newValue, forKey: "notifyVolume") }
+    }
+
+    /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.
+    var wildlife: Int {
+        get { number("wildlife", argument: "wildlife").map { min(3, max(0, Int($0))) } ?? 2 }
+        set { defaults.set(newValue, forKey: "wildlife") }
+    }
+
     /// Which character is on screen ("goblin", "ants", or a user-made one).
     var characterID: String {
         get { defaults.string(forKey: "character") ?? "goblin" }

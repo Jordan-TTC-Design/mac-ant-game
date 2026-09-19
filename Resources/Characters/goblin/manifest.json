@@ -51,7 +51,9 @@
         "speed": 1.35,
         "sense": 1.3,
         "rest": 0.8,
-        "lifespan": 0.8
+        "lifespan": 0.8,
+        "might": 0.6,
+        "health": 2
       },
       "sheet": "scout.png"
     },
@@ -66,7 +68,9 @@
         "sense": 0.9,
         "carry": 2,
         "rest": 1.2,
-        "lifespan": 1.25
+        "lifespan": 1.25,
+        "might": 1.6,
+        "health": 5
       },
       "sheet": "brute.png"
     },
@@ -80,7 +84,8 @@
         "speed": 0.95,
         "sense": 1.25,
         "recruit": 3,
-        "lifespan": 1.15
+        "lifespan": 1.15,
+        "might": 0.8
       },
       "sheet": "sage.png"
     },
@@ -95,7 +100,9 @@
         "sense": 1.1,
         "recruit": 1,
         "rest": 0.9,
-        "lifespan": 2.0
+        "lifespan": 2.0,
+        "might": 1.2,
+        "health": 4
       },
       "sheet": "golden.png"
     }

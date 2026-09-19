@@ -157,7 +157,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         }.joined(separator: "　")
         let noun = Characters.current.noun
         summary.stringValue = "現有 \(rows.count) 隻\(noun)" + (byBreed.isEmpty ? "" : "\n\(byBreed)")
-            + "\n累積搬回食物 \(colony.foodDelivered) 份　已老死 \(colony.deaths) 隻"
+            + "\n累積搬回食物 \(colony.foodDelivered) 份　已老死 \(colony.deaths - colony.slain) 隻　打獵犧牲 \(colony.slain) 隻"
 
         table.reloadData()
         if let id = colony.selectedAntID, let row = rows.firstIndex(where: { $0.id == id }) {

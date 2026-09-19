@@ -168,6 +168,9 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_SNAPSHOT=/路徑前綴` `CAMP_SNAPSHOT_AFTER=秒` | App 把自己的視窗（營地附近）截圖存成 PNG，不需要螢幕錄製權限；加 `CAMP_SNAPSHOT_FULL=1` 改截整個螢幕（縮小一半） |
 | `CAMP_TEST_ESC=秒` | 用合成事件按一次 Esc（測試取消選位置） |
 | `CAMP_TEST_FOOD=種類,dx,dy` | 用合成事件走完「選單放食物 → 點擊放下」：在營地旁 (dx, dy) 放 `water` 或 `honey`，並每 5 秒印一次覓食狀態；加 `CAMP_TEST_FOOD_CANCEL=1` 會另外測試放食物時按 Esc |
+| `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
+| `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |
+| `CAMP_TEST_WILD=種類,dx,dy` | 在營地旁 (dx, dy) 放一隻動物（`chicken`／`sheep`／`pig`）與一棵果樹，並每 3 秒印一次狀態 |
 | `CAMP_TEST_MENU` | 啟動 2 秒後把選單（依目前角色更新過名稱）逐項印出來 |
 | `CAMP_TEST_EDIT=dx,dy` | 進入編輯模式、用合成滑鼠事件把營地拖 (dx, dy) 再按 Esc（測試編輯模式）；加 `CAMP_TEST_EDIT_HOLD=1` 會留在編輯模式方便截圖 |
 
@@ -187,10 +190,31 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 - 食物不存檔；沒有畫費洛蒙軌跡；食物離營地很遠、哥布林又少時，可能很久才會被發現（這是刻意的）。
 - 未簽署、未公證（見上方說明）。
 
+## Claude 通知（哥布林跳出來說話）
+
+任何 Claude Code 需要你時，右上角會有哥布林（有時是公主）走出來，用氣泡和聲音告訴你；點一下泡泡會把跑 Claude 的終端機／編輯器帶到最前面。
+
+- **誰來說話**：25% 是公主（輕柔的聲音、鈴聲），其餘是營地裡某一隻哥布林的品種：平民（尖聲加嘻嘻笑）、敏捷（快速尖叫）、壯碩（低沉悶哼）、聰明（嗯哼、慢條斯理）、金皮（高傲、閃亮音效）。每種有自己的聲音、語氣、台詞（`Notifier.swift` 的 `Speakers`）。氣泡標題是說話者的名稱（哥布林、壯碩哥布林、公主…），下面小字是專案資料夾名。
+- **選單「Claude 通知」**：整體開關、要不要在「需要我決定」「工作完成」時出現、聲音（關／小／中／大）、試試看（隨機、公主、壯碩哥布林）。
+- **暫時隱藏時**：完全安靜、不跳出，選單列圖示旁出現「● 數字」，取消隱藏的選單項會寫「期間有 N 則 Claude 通知」。
+- 6 秒內同類通知只會出一次，最多排 3 個。
+
+**串接方式**：`tools/goblin-notify.sh permission|done` 會用 `open -g "goblincamp://notify?kind=…&project=…&app=…"` 通知遊戲（遊戲沒在跑就什麼都不做）。要讓 Claude Code 呼叫它，在 Claude Code 的設定檔（`~/.claude/settings.json`）加上：
+
+```json
+"hooks": {
+  "Notification": [{ "hooks": [{ "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh permission" }] }],
+  "Stop":         [{ "hooks": [{ "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh done" }] }]
+}
+```
+
+專案資料夾搬家時路徑要一起改。每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
+
 ## 想法
 
 - 公主的日常動作（喝茶、運動、看書、澆花、梳頭髮、跳舞…）與專用影格。
-- 平常會自己出現的東西：果樹、蘑菇、小動物（羊、豬）可以打獵、寶箱，之後才有敵人；打獵有風險。
+- 已完成：自動出現的果樹（吃完會長回來）與小動物（雞、羊、豬）；哥布林碰到才發現、圍捕，打獵有風險（豬會反擊，可能受傷或死亡）。選單「自然事件」可調頻率。
+- 還沒做：蘑菇、寶箱、敵人。
 - 進化與職業（士兵、戰士、魔法師、弓箭手）。
 - 角色編輯器（畫正面，其他方向由編輯器產生）。
 

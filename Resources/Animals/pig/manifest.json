@@ -1,0 +1,13 @@
+{
+  "id": "pig",
+  "name": "豬",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 9,
+  "speed": 15,
+  "meat": 16,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 9
+}

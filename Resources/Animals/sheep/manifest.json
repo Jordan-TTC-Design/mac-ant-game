@@ -1,0 +1,13 @@
+{
+  "id": "sheep",
+  "name": "羊",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 6,
+  "speed": 13,
+  "meat": 12,
+  "aggressive": false,
+  "weight": 3,
+  "radius": 9
+}

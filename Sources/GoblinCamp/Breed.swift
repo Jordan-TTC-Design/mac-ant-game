@@ -12,10 +12,14 @@ struct BreedStats: Decodable {
     var carry = 1
     /// Extra helpers called when it brings news of food.
     var recruit = 0
+    /// How hard it hits when hunting (1 = a plain goblin).
+    var might = 1.0
+    /// How many hits it takes before it goes down.
+    var health = 3.0
 
     init() {}
 
-    private enum Keys: String, CodingKey { case speed, sense, rest, lifespan, carry, recruit }
+    private enum Keys: String, CodingKey { case speed, sense, rest, lifespan, carry, recruit, might, health }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -25,6 +29,8 @@ struct BreedStats: Decodable {
         lifespan = try c.decodeIfPresent(Double.self, forKey: .lifespan) ?? 1
         carry = try c.decodeIfPresent(Int.self, forKey: .carry) ?? 1
         recruit = try c.decodeIfPresent(Int.self, forKey: .recruit) ?? 0
+        might = try c.decodeIfPresent(Double.self, forKey: .might) ?? 1
+        health = try c.decodeIfPresent(Double.self, forKey: .health) ?? 3
     }
 }
 
@@ -52,6 +58,8 @@ struct Traits {
     let rest: Double
     let carry: Int
     let recruit: Int
+    let might: Double
+    let maxHealth: Double
     /// Seconds it lives.
     let lifespan: Double
 
@@ -68,7 +76,8 @@ struct Traits {
         func jitter(_ spread: Double) -> Double { 1 + (rng.next() * 2 - 1) * spread }
         let stats = breed.stats
         return Traits(speed: stats.speed * jitter(0.08), sense: stats.sense * jitter(0.08), rest: stats.rest * jitter(0.15),
-                      carry: stats.carry, recruit: stats.recruit, lifespan: baseLifespan * stats.lifespan * jitter(0.10))
+                      carry: stats.carry, recruit: stats.recruit, might: stats.might * jitter(0.10), maxHealth: stats.health,
+                      lifespan: baseLifespan * stats.lifespan * jitter(0.10))
     }
 }
 
