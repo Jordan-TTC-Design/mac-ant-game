@@ -46,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var characterMenuItem: NSMenuItem!
     /// While set, the goblins are hidden and the camp is frozen (a meeting, focused work). `nil` = visible.
     private var hiddenUntil: Date?
+    /// 專注模式 (focus): hidden and completely paused. 工作模式 (work): hidden, but the camp keeps running in the background.
+    private var quietMode: QuietMode?
+    enum QuietMode { case focus, work }
     private var hideTimer: Timer?
     /// Claude notifications that came while the goblins were hidden (silently dropped, but counted).
     private var missedNotifications = 0
@@ -53,7 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pomodoroStatusItem: NSMenuItem!
     private var pomodoroStopItem: ClosureMenuItem!
     private var pomodoroSpeaker = Speakers.common
-    private var hideMenuItem: NSMenuItem!
+    private var focusMenuItem: NSMenuItem!
+    private var workMenuItem: NSMenuItem!
     private var unhideItem: ClosureMenuItem!
     private var rosterItem: ClosureMenuItem!
     private lazy var roster: RosterPanel = {
@@ -217,12 +221,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 log("roster captured \(cg.width)x\(cg.height)")
             }
         }
-        if env["CAMP_TEST_HIDE"] != nil { // hide for 2 s, and check the windows and the clock
-            after(3) {
+        if env["CAMP_TEST_HIDE"] != nil { // hide for 2 s, and check the windows and the clock (CAMP_TEST_HIDE_AT = when, default 3 s)
+            after(Double(env["CAMP_TEST_HIDE_AT"] ?? "") ?? 3) {
                 let ticksBefore = self.colony.ants.count
-                self.hide(for: 2)
+                self.hide(env["CAMP_TEST_HIDE"] == "work" ? .work : .focus, for: 2)
                 log("hidden: windows visible = \(self.windows.contains { $0.isVisible }), hidden flag = \(self.isHiddenByUser)")
-                after(1) { log("still hidden: windows visible = \(self.windows.contains { $0.isVisible }), ants \(ticksBefore) -> \(self.colony.ants.count) (frozen)") }
+                after(1) { log("still hidden: windows visible = \(self.windows.contains { $0.isVisible }), ants \(ticksBefore) -> \(self.colony.ants.count) (\(self.isFrozen ? "frozen" : "running in the background"))") }
                 after(3) { log("after the timer: windows visible = \(self.windows.contains { $0.isVisible }), hidden flag = \(self.isHiddenByUser)") }
             }
         }
@@ -357,9 +361,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(foodMenu())
         rosterItem = ClosureMenuItem(title: "名冊…") { [weak self] in self?.roster.toggle() }
         menu.addItem(rosterItem)
-        hideMenuItem = hideMenu()
-        menu.addItem(hideMenuItem)
-        unhideItem = ClosureMenuItem(title: "顯示（取消隱藏）") { [weak self] in self?.unhide() }
+        focusMenuItem = quietMenu(title: "專注模式", mode: .focus)
+        menu.addItem(focusMenuItem)
+        workMenuItem = quietMenu(title: "工作模式", mode: .work)
+        menu.addItem(workMenuItem)
+        unhideItem = ClosureMenuItem(title: "結束專注模式") { [weak self] in self?.unhide() }
         menu.addItem(unhideItem)
         menu.addItem(.separator())
 
@@ -594,22 +600,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ("30 分鐘", 30 * 60), ("1 小時", 3600), ("2 小時", 7200), ("直到我取消", nil),
     ]
 
-    /// "Hide for a while": for a meeting or focused work. Everything disappears and the camp is frozen.
-    private func hideMenu() -> NSMenuItem {
-        let parent = NSMenuItem(title: "暫時隱藏", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "暫時隱藏")
+    /// 專注模式 and 工作模式, each for a while: the goblins disappear from the screen and nothing pops up.
+    /// In focus mode the camp is also frozen; in work mode it keeps running in the background.
+    private func quietMenu(title: String, mode: QuietMode) -> NSMenuItem {
+        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: title)
         for choice in AppDelegate.hideChoices {
-            sub.addItem(ClosureMenuItem(title: choice.label) { [weak self] in self?.hide(for: choice.seconds) })
+            sub.addItem(ClosureMenuItem(title: choice.label) { [weak self] in self?.hide(mode, for: choice.seconds) })
         }
         parent.submenu = sub
         return parent
     }
 
     var isHiddenByUser: Bool { hiddenUntil != nil }
+    /// Focus mode stops the game completely.
+    var isFrozen: Bool { quietMode == .focus }
 
     /// `seconds` nil hides until the player brings the goblins back.
-    func hide(for seconds: TimeInterval?) {
+    func hide(_ mode: QuietMode, for seconds: TimeInterval?) {
         hiddenUntil = seconds.map { Date().addingTimeInterval($0) } ?? .distantFuture
+        quietMode = mode
         hideTimer?.invalidate()
         if let seconds {
             hideTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in self?.unhide() }
@@ -620,18 +630,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         windows.forEach { $0.orderOut(nil) }
         roster.hide()
         applyStatusIcon()
+        scheduleFrameTimer(fps: mode == .focus ? 5 : 10) // nothing to draw, so run lightly (this is meant to stay running all day)
     }
 
     func unhide() {
         guard hiddenUntil != nil else { return }
+        let wasFrozen = isFrozen
         hiddenUntil = nil
+        quietMode = nil
         missedNotifications = 0
         hideTimer?.invalidate()
         hideTimer = nil
-        lastTick = Date() // do not count the time spent hidden
+        if wasFrozen { lastTick = Date() } // do not count the time spent frozen
         windows.forEach { $0.orderFrontRegardless() }
         syncWindows()
         applyStatusIcon()
+        scheduleFrameTimer(fps: 30)
     }
 
     /// The camp's look: the built-in camps (each grows as more goblins move in), or the player's own picture.
@@ -775,11 +789,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let home = character.nestName
         rosterItem.title = roster.isVisible ? "\(Characters.current.noun)名冊（開啟中，再按一次關閉）" : "\(Characters.current.noun)名冊…"
         rosterItem.isEnabled = colony.nest != nil && !isHiddenByUser
-        hideMenuItem.isHidden = isHiddenByUser
+        focusMenuItem.isHidden = isHiddenByUser
+        workMenuItem.isHidden = isHiddenByUser
         unhideItem.isHidden = !isHiddenByUser
         if let until = hiddenUntil {
-            let missed = missedNotifications > 0 ? "　·　期間有 \(missedNotifications) 則 Claude 通知" : ""
-            unhideItem.title = (until == .distantFuture ? "顯示（取消隱藏）" : "顯示（取消隱藏，還剩約 \(max(1, Int(until.timeIntervalSinceNow / 60))) 分鐘）") + missed
+            let name = isFrozen ? "專注模式" : "工作模式"
+            let missed = missedNotifications > 0 ? "　·　期間有 \(missedNotifications) 則通知" : ""
+            unhideItem.title = (until == .distantFuture ? "結束\(name)" : "結束\(name)（還剩約 \(max(1, Int(until.timeIntervalSinceNow / 60))) 分鐘）") + missed
         }
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
         nestMenuItem.title = "\(home)外觀"
@@ -843,9 +859,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !isHiddenByUser { redrawAll() }
         }
         updateClickPanel()
-        guard !isHiddenByUser, colony.isSimulating, !colony.isPaused else { return }
+        guard !isFrozen, colony.isSimulating, !colony.isPaused else { return }
         colony.tick(dt: dt, cursor: cursor, cursorSpeed: cursorSpeed)
-        redrawAll()
+        if !isHiddenByUser { redrawAll() } // in work mode nothing is on screen
+        else { return }
         let wanted: Double = colony.ants.count > AppDelegate.crowdedAnts ? 20 : 30
         if wanted != currentFPS { scheduleFrameTimer(fps: wanted) }
     }
@@ -853,7 +870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The player picked another character: refresh the menu bar icon and names, and redraw.
     private func applyStatusIcon() {
         let character = Characters.current
-        statusItem.button?.alphaValue = isHiddenByUser ? 0.4 : 1 // dimmed while the goblins are hidden
+        statusItem.button?.alphaValue = isFrozen ? 0.4 : (isHiddenByUser ? 0.7 : 1) // dimmed while the goblins are hidden
         defer { // a dot beside the icon while notifications piled up during the hiding
             if missedNotifications > 0 {
                 statusItem.button?.imagePosition = .imageLeft
