@@ -213,16 +213,50 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 
 **一行安裝 hook**：在終端機執行 `tools/install-hooks.sh`（會把腳本複製到 `~/.claude/hooks/`、備份設定檔後加入 Notification 與 Stop 兩個 hook，可重複執行，`--uninstall` 移除，`--dir 資料夾` 指定腳本存放處）。裝好後在 Claude Code 輸入 `/hooks` 或重開即可。
 
-**串接方式**：`tools/goblin-notify.sh permission|done` 會用 `open -g "goblincamp://notify?kind=…&project=…&app=…"` 通知遊戲（遊戲沒在跑就什麼都不做）。要手動設定的話，在 Claude Code 的設定檔（`~/.claude/settings.json`）加上：
+**串接方式**：`tools/goblin-notify.sh permission|done` 會用 `open -g "goblincamp://notify?kind=…&project=…&app=…"` 通知遊戲（遊戲沒在跑就什麼都不做，不會自己把遊戲打開）。
+
+**手動設定 hook**（不想跑安裝腳本時）：用編輯器（例如 `vi ~/.claude/settings.json`）打開 Claude Code 設定檔，在最後一項後面補逗號，加上 `hooks` 區塊。下面是加完的整份範例（其他設定照你自己的，只要多 `hooks` 這一塊）：
 
 ```json
-"hooks": {
-  "Notification": [{ "hooks": [{ "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh permission" }] }],
-  "Stop":         [{ "hooks": [{ "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh done" }] }]
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
+  },
+  "tui": "fullscreen",
+  "theme": "dark",
+  "agentPushNotifEnabled": true,
+  "model": "opus",
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh permission" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/path/to/GoblinCamp/tools/goblin-notify.sh done" }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-專案資料夾搬家時路徑要一起改。每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
+- 兩個 hook：`Notification`（Claude 需要你決定或授權）對應 `permission`（橘框泡泡），`Stop`（Claude 做完一輪）對應 `done`（綠框泡泡）。
+- 這樣直接指向專案裡的腳本，不需要先跑安裝腳本；專案資料夾搬家時，這兩個路徑要一起改。
+- 存檔後在 Claude Code 輸入 `/hooks` 確認有出現這兩個 hook，或重開 Claude Code。
+- 測試：先開著哥布林營地，在終端機執行
+  `echo '{"cwd":"/path/to/GoblinCamp"}' | /path/to/GoblinCamp/tools/goblin-notify.sh permission`，右上角應該會有哥布林跳出來說話。
+- 移除：把 `hooks` 區塊刪掉即可（或用 `tools/install-hooks.sh --uninstall`）。
+
+每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
 
 ## 想法
 
