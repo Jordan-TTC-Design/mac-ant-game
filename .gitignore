@@ -1,6 +1,6 @@
 # Build output (regenerate with ./build.sh)
 .build/
-AntFarm.app/
+GoblinCamp.app/
 
 # Distribution archives
 *.dmg
@@ -17,3 +17,7 @@ DerivedData/
 # Local tooling and scratch
 .claude/
 *.log
+
+# Python bytecode from the tools/ scripts
+__pycache__/
+*.pyc

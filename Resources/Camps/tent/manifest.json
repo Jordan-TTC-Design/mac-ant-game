@@ -1,0 +1,32 @@
+{
+  "id": "tent",
+  "name": "營帳",
+  "blurb": "獸皮帳篷加一堆營火，人多了再搭第二、第三頂。",
+  "pixelScale": 1.5,
+  "stages": [
+    {
+      "sheet": "stage1.png",
+      "minCount": 0,
+      "entrance": [
+        19,
+        15
+      ]
+    },
+    {
+      "sheet": "stage2.png",
+      "minCount": 30,
+      "entrance": [
+        23,
+        19
+      ]
+    },
+    {
+      "sheet": "stage3.png",
+      "minCount": 90,
+      "entrance": [
+        27,
+        23
+      ]
+    }
+  ]
+}

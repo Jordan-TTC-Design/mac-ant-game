@@ -23,22 +23,6 @@ final class Colony {
         var alpha: Double { min(1, (Egg.lifetime - age) / 2) }
     }
 
-    /// A speck of soil the queen digs up beside the nest; fades away, or all at once when she patches the nest.
-    struct Dirt {
-        static let lifetime = 40.0
-        let pos: CGPoint
-        var age: Double = 0
-        var alpha: Double { min(1, (Dirt.lifetime - age) / 1.5) }
-    }
-
-    /// A small stone she carried over and dropped.
-    struct Pebble {
-        static let lifetime = 90.0
-        let pos: CGPoint
-        var age: Double = 0
-        var alpha: Double { min(1, (Pebble.lifetime - age) / 2) }
-    }
-
     static let maxFoods = 6
     /// At most this many ants work on one food at a time.
     static let maxForagers = 10
@@ -48,6 +32,10 @@ final class Colony {
 
     private let settings = Settings.shared
 
+    /// Which breeds exist. Normally the current character's; tests can put their own here.
+    var breedOverride: [Breed]?
+    private var breeds: [Breed] { breedOverride ?? Characters.current.breeds }
+
     private(set) var phase: Phase = .choosingNest
     /// Set while picking a new spot for an existing colony, so Esc can put things back as they were.
     private var phaseBeforePicking: Phase?
@@ -55,15 +43,21 @@ final class Colony {
     private(set) var queen: Queen?
     private(set) var ants: [Ant] = []
     private(set) var eggs: [Egg] = []
-    private(set) var dirt: [Dirt] = []
-    private(set) var pebbles: [Pebble] = []
     private(set) var foods: [FoodSource] = []
     private(set) var pendingFood: FoodKind?
     /// Pieces of food the ants have carried into the nest so far.
     private(set) var foodDelivered = 0
+    /// How many have died of old age.
+    private(set) var deaths = 0
+    /// Which of the princess's outfits she wears now. `CAMP_OUTFIT` picks the first one (for testing).
+    private(set) var outfitIndex: Int = Int(ProcessInfo.processInfo.environment["CAMP_OUTFIT"] ?? "") ?? 0
+    /// The individual highlighted from the roster, if any.
+    var selectedAntID: Int?
     private var nextFoodID = 1
-    /// 1 right after the nest is patched, easing back to 0; the nest is drawn a little bigger meanwhile.
-    private(set) var nestPulse: Double = 0
+    private var nextAntID = 1
+    /// The two goblins carrying the princess in at the start, and how many have arrived.
+    private var carrierIDs: [Int] = []
+    private var carriersArrived = 0
     var isPaused = false
 
     /// Screen frames ants may walk on. Change it through `updateWalkable`.
@@ -194,18 +188,25 @@ final class Colony {
         case .newsDelivered(let id):
             guard let i = foods.firstIndex(where: { $0.id == id && $0.amount > 0 }) else { return }
             foods[i].reported = true
-            recruit(for: id, count: 4 + foods[i].amount / 6)
+            recruit(for: id, count: 4 + foods[i].amount / 6 + ants[index].traits.recruit)
         case .tookPiece(let id):
             guard let i = foods.firstIndex(where: { $0.id == id && $0.amount > 0 }) else {
                 ants[index].mode = .wandering // somebody else took the last piece
                 return
             }
-            foods[i].amount -= 1
+            // a strong one carries more than one piece (never more than is left)
+            let pieces = min(ants[index].traits.carry, foods[i].amount)
+            ants[index].mode = .hauling(food: id, kind: foods[i].kind, pieces: pieces)
+            foods[i].amount -= pieces
             if foods[i].amount == 0 { foods.remove(at: i) }
-        case .delivered(let id):
-            foodDelivered += 1
+        case .delivered(let id, let pieces):
+            foodDelivered += pieces
             // every successful trip can bring one or two more helpers
             if Double.random(in: 0..<1) < 0.5 { recruit(for: id, count: Int.random(in: 1...2)) }
+        case .carrierArrived:
+            carriersArrived += 1
+        case .died:
+            break // removed by the caller once all events are handled
         }
     }
 
@@ -218,26 +219,109 @@ final class Colony {
         }
         nest = point
         phase = .running
-        queen = Queen(emergingFrom: point) // crawls out of the hole
         clearDecorations()
         ants = []
         spawnTimer = 0
+        beginCarrying(to: point)
         onChange?()
     }
 
+    /// Where the screen edge nearest to `point` is, a little outside the screen.
+    private func nearestEdgePoint(to point: CGPoint) -> CGPoint {
+        let rect = walkable.first { $0.contains(point) } ?? walkable.first ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let sides: [(distance: CGFloat, spot: CGPoint)] = [
+            (point.x - rect.minX, CGPoint(x: rect.minX - 30, y: point.y)),
+            (rect.maxX - point.x, CGPoint(x: rect.maxX + 30, y: point.y)),
+            (point.y - rect.minY, CGPoint(x: point.x, y: rect.minY - 30)),
+            (rect.maxY - point.y, CGPoint(x: point.x, y: rect.maxY + 30)),
+        ]
+        return sides.min { $0.distance < $1.distance }!.spot
+    }
+
+    /// The opening: two goblins come in from the nearest screen edge carrying the princess (a captive, over their
+    /// heads) to the camp. They become the camp's first two inhabitants once they set her down.
+    private func beginCarrying(to nest: CGPoint) {
+        let home = Queen.homeSpot(for: nest)
+        let start = nearestEdgePoint(to: nest)
+        let dx = home.x - start.x, dy = home.y - start.y, length = max(1, hypot(dx, dy))
+        let direction = CGPoint(x: dx / length, y: dy / length)
+        queen = Queen(carriedTo: nest)
+        carrierIDs = []
+        carriersArrived = 0
+        for offset in [CGFloat(9), CGFloat(-9)] { // one in front, one behind, along the way they walk
+            var ant = makeAnt(at: CGPoint(x: start.x + direction.x * offset, y: start.y + direction.y * offset), breedIndex: 0)
+            ant.mode = .carryingPrincess(target: CGPoint(x: home.x + direction.x * offset, y: home.y + direction.y * offset))
+            ants.append(ant)
+            carrierIDs.append(ant.id)
+        }
+    }
+
+    /// Keeps the princess between her carriers, and sets her down once both have arrived.
+    private func moveCarriedPrincess() {
+        guard queen?.isCarried == true else { return }
+        let carriers = ants.filter { carrierIDs.contains($0.id) }
+        if carriers.count < 2 || carriersArrived >= 2 {
+            queen?.setDown()
+            for i in ants.indices where carrierIDs.contains(ants[i].id) { ants[i].mode = .wandering }
+            carrierIDs = []
+            return
+        }
+        let mid = CGPoint(x: carriers.map(\.pos.x).reduce(0, +) / 2, y: carriers.map(\.pos.y).reduce(0, +) / 2)
+        queen?.carry(at: mid, heading: carriers[0].heading)
+    }
+
     /// Resume a saved colony: queen already home, ants scattered around the nest.
-    func restore(nest: CGPoint, antCount: Int) {
+    func restore(nest: CGPoint, saved: SavedState) {
         self.nest = nest
         phase = .running
         queen = Queen.settled(nest: nest)
-        ants = (0..<min(antCount, settings.maxAnts)).map { _ in
+        foodDelivered = saved.delivered ?? 0
+
+        func scattered() -> CGPoint {
             let angle = Double.random(in: 0..<(2 * .pi))
             let radius = Double.random(in: 0...1).squareRoot() * 200
             let p = CGPoint(x: nest.x + cos(angle) * radius, y: nest.y + sin(angle) * radius)
-            return Ant(at: walkable.contains(where: { $0.contains(p) }) ? p : nest)
+            return walkable.contains(where: { $0.contains(p) }) ? p : nest
+        }
+        if let goblins = saved.goblins {
+            ants = goblins.prefix(settings.maxAnts).map { g in
+                makeAnt(at: scattered(), breedIndex: breeds.firstIndex { $0.id == g.breed } ?? 0, age: g.age, seed: g.seed, id: g.id)
+            }
+            nextAntID = max(saved.nextID ?? 1, (goblins.map(\.id).max() ?? 0) + 1)
+        } else {
+            // an older save that only knew how many there were: they are all plain, and young
+            ants = (0..<min(saved.antCount, settings.maxAnts)).map { _ in
+                makeAnt(at: scattered(), breedIndex: 0, age: Double.random(in: 0...(Traits.baseLifespan * 0.3)))
+            }
         }
         spawnTimer = 0
     }
+
+    /// What to write to disk: where the nest is and who lives there.
+    func savedState() -> SavedState? {
+        guard let nest else { return nil }
+        let breeds = self.breeds
+        return SavedState(nestX: nest.x, nestY: nest.y, antCount: ants.count,
+                          goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed) },
+                          delivered: foodDelivered, nextID: nextAntID)
+    }
+
+    /// Births and restores both go through here so every individual gets its traits the same way.
+    private func makeAnt(at pos: CGPoint, breedIndex: Int? = nil, age: Double = 0, seed: UInt64? = nil, id: Int? = nil) -> Ant {
+        let breeds = self.breeds
+        let index = min(breedIndex ?? Breeding.roll(from: breeds, delivered: foodDelivered), breeds.count - 1)
+        let seed = seed ?? UInt64.random(in: 0...UInt64(UInt32.max))
+        let traits = Traits.make(for: breeds[index], seed: seed)
+        let ant = Ant(at: pos, id: id ?? nextAntID, breedIndex: index, traits: traits, seed: seed, age: age)
+        if id == nil { nextAntID += 1 }
+        return ant
+    }
+
+    /// `CAMP_TIME_SCALE` makes life go faster (for testing ageing without waiting a day).
+    static let timeScale: Double = {
+        if let s = ProcessInfo.processInfo.environment["CAMP_TIME_SCALE"], let v = Double(s), v > 0 { return v }
+        return 1
+    }()
 
     /// Screens were added or removed: anything left outside the new screens is moved to the nearest one,
     /// so the nest and its ants survive unplugging a monitor.
@@ -285,9 +369,6 @@ final class Colony {
 
     private func clearDecorations() {
         eggs = []
-        dirt = []
-        pebbles = []
-        nestPulse = 0
     }
 
     func debugForceQueen(_ name: String) {
@@ -304,27 +385,16 @@ final class Colony {
         let around = Surroundings(cursor: cursor, cursorSpeed: cursorSpeed, newestAnt: ants.last?.pos)
         if let event = queen?.update(dt: dt, walkable: walkable, around: around) {
             switch event {
-            case .layEgg(let at):
-                eggs.append(Egg(pos: at))
-            case .dropDirt(let at):
-                dirt.append(Dirt(pos: at))
-                if dirt.count > 10 { dirt.removeFirst() }
-            case .dropPebble(let at):
-                pebbles.append(Pebble(pos: at))
-                if pebbles.count > 6 { pebbles.removeFirst() }
-            case .patched:
-                // press the soil flat: everything fades out quickly
-                for i in dirt.indices { dirt[i].age = max(dirt[i].age, Dirt.lifetime - 1.5) }
-                nestPulse = 1
+            case .outfitChange:
+                let count = Characters.current.outfits.count
+                if count > 1 { outfitIndex = (outfitIndex + Int.random(in: 1..<count)) % count } // always a different one
+            case .layEgg:
+                // she plants a flower next to her feet
+                if let queen { eggs.append(Egg(pos: CGPoint(x: queen.pos.x + [-14, 14].randomElement()!, y: queen.pos.y - 7))) }
             }
         }
         for i in eggs.indices { eggs[i].age += dt }
-        for i in dirt.indices { dirt[i].age += dt }
-        for i in pebbles.indices { pebbles[i].age += dt }
         eggs.removeAll { $0.age >= Egg.lifetime }
-        dirt.removeAll { $0.age >= Dirt.lifetime }
-        pebbles.removeAll { $0.age >= Pebble.lifetime }
-        nestPulse = max(0, nestPulse - dt / 1.2)
 
         // The clock only starts once the queen has crawled out.
         if queen?.arrived == true, ants.count < settings.maxAnts {
@@ -332,8 +402,8 @@ final class Colony {
             if spawnTimer >= settings.spawnInterval {
                 spawnTimer = 0
                 let jitter = { CGFloat.random(in: -4...4) }
-                ants.append(Ant(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter())))
-                if ProcessInfo.processInfo.environment["ANT_DEBUG"] != nil { NSLog("AntFarm: ants=\(ants.count)") }
+                ants.append(makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter())))
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: ants=\(ants.count)") }
                 queen?.greet(toward: nest)
                 if Colony.milestones.contains(ants.count) { queen?.celebrate() }
                 onAntsChanged?()
@@ -341,10 +411,20 @@ final class Colony {
         }
         let antDt = dt * settings.speedMultiplier
         let world = AntWorld(nest: nest, walkable: walkable, foods: foods, foodScale: Colony.foodScale(settings.antScale))
+        let ageDt = dt * Colony.timeScale
         var events: [(index: Int, event: Ant.Event)] = []
         for i in ants.indices {
-            if let event = ants[i].update(dt: antDt, world: world) { events.append((i, event)) }
+            if let event = ants[i].update(dt: antDt, ageDt: ageDt, world: world) { events.append((i, event)) }
         }
         for (index, event) in events { handle(event, from: index) }
+        moveCarriedPrincess()
+        // the dead leave the colony (highest index first so the others keep their places)
+        let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)
+        for index in gone.sorted(by: >) {
+            if ants[index].id == selectedAntID { selectedAntID = nil }
+            ants.remove(at: index)
+        }
+        deaths += gone.count
+        if !gone.isEmpty { onAntsChanged?() }
     }
 }

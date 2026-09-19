@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "AntFarm",
+    name: "GoblinCamp",
     platforms: [.macOS(.v13)],
     targets: [
-        .executableTarget(name: "AntFarm", path: "Sources/AntFarm")
+        .executableTarget(name: "GoblinCamp", path: "Sources/GoblinCamp")
     ]
 )

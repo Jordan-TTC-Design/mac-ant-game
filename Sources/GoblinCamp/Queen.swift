@@ -14,7 +14,8 @@ struct Surroundings {
 /// See QUEEN_BEHAVIORS.md for the full list of things she does.
 struct Queen {
     enum State {
-        case emerging
+        /// Being carried into the camp by two goblins; the colony moves her along with them.
+        case carried
         case resting
         case wandering(to: CGPoint)
         case grooming
@@ -27,24 +28,19 @@ struct Queen {
         case watching
         case spinning
         case lookingAround
-        case digging
-        case fetching(to: CGPoint)
-        case carrying(to: CGPoint)
-        case patchApproach
-        case patching
         case sleeping
         case yawning
         case thinking
         case dancing
+        /// A twirl and a shower of sparkles, and she is wearing something else.
+        case changingOutfit
         case curious
     }
 
     /// Things the colony has to react to.
     enum Event {
         case layEgg(at: CGPoint)
-        case dropDirt(at: CGPoint)
-        case dropPebble(at: CGPoint)
-        case patched
+        case outfitChange
     }
 
     /// Little drawings floating near her head.
@@ -52,13 +48,15 @@ struct Queen {
         case zzz(clock: Double)
         case yawnBubble(progress: Double)
         case thought(emoji: String, progress: Double)
+        case sparkles(progress: Double)
     }
 
     private(set) var pos: CGPoint
     private(set) var heading: Double
     private(set) var legPhase: Double = 0
-    private(set) var state: State = .emerging { didSet { walkTime = 0 } }
-    private(set) var carryingPebble = false
+    private(set) var state: State = .carried { didSet { walkTime = 0 } }
+    /// Whether her legs moved during the last update (sprites stand still otherwise).
+    private(set) var walking = false
 
     private let nest: CGPoint
     private let home: CGPoint // where she stands when idle
@@ -67,27 +65,22 @@ struct Queen {
     private var duration: Double = 0
     private var baseHeading: Double = 0
     private var eggLaid = false
+    private var outfitSwapped = false
     private var peekPending = false
     private var hideSpeed: Double = 18
     private var startledHide = false
-    private var dirtClock: Double = 0
-    private var patchAngle: Double = 0
     private var thoughtEmoji = "💭"
     private var reactCooldown: Double = 0
     private var walkTime: Double = 0 // time spent walking in the current state (safety net)
 
-    private static let patchRadius: Double = 12
-
     var arrived: Bool {
-        if case .emerging = state { return false }
+        if case .carried = state { return false }
         return true
     }
 
-    /// While crawling out, only the part of her body past the hole is visible: everything beyond the line
-    /// through `origin` (the hole) perpendicular to `angle` (the direction she is heading out).
-    var clipLine: (origin: CGPoint, angle: Double)? {
-        guard case .emerging = state else { return nil }
-        return (nest, atan2(home.y - nest.y, home.x - nest.x))
+    var isCarried: Bool {
+        if case .carried = state { return true }
+        return false
     }
 
     /// 0 while she is inside the hole, fading in as she walks out.
@@ -109,52 +102,19 @@ struct Queen {
         return (1 - u) / 0.25 * out
     }
 
-    /// Head size multiplier (grows while yawning).
-    var headScale: Double {
-        guard case .yawning = state else { return 1 }
-        return 1 + 0.6 * sin(progress * .pi)
-    }
-
     var decoration: Decoration? {
         switch state {
         case .sleeping: return .zzz(clock: clock)
         case .yawning: return .yawnBubble(progress: progress)
         case .thinking: return .thought(emoji: thoughtEmoji, progress: progress)
+        case .changingOutfit: return .sparkles(progress: progress)
         default: return nil
-        }
-    }
-
-    /// Antenna offsets in radians from the resting pose (positive = outward). Left / right.
-    var antennae: (left: Double, right: Double) {
-        switch state {
-        case .grooming:
-            let t = clock * 5
-            return (-0.9 * max(0, sin(t)), -0.9 * max(0, sin(t + .pi)))
-        case .greeting:
-            let wave = 0.35 * sin(clock * 12) - 0.3
-            return (wave, wave)
-        case .dancing:
-            let wave = 0.5 * sin(clock * 14)
-            return (wave, -wave)
-        case .sleeping:
-            return (-0.7, -0.7)
-        case .peeking, .curious:
-            let wave = 0.25 * sin(clock * 7)
-            return (wave, -wave)
-        case .watching, .thinking:
-            let wave = 0.1 * sin(clock * 3)
-            return (wave, wave)
-        case .resting:
-            let twitch = sin(clock * 0.7) > 0.85 ? 0.18 * sin(clock * 9) : 0
-            return (twitch, -twitch)
-        default:
-            return (0, 0)
         }
     }
 
     var stateName: String {
         switch state {
-        case .emerging: return "emerging"
+        case .carried: return "carried"
         case .resting: return "resting"
         case .wandering: return "wandering"
         case .grooming: return "grooming"
@@ -167,15 +127,11 @@ struct Queen {
         case .watching: return "watching"
         case .spinning: return "spinning"
         case .lookingAround: return "lookingAround"
-        case .digging: return "digging"
-        case .fetching: return "fetching"
-        case .carrying: return "carrying"
-        case .patchApproach: return "patchApproach"
-        case .patching: return "patching"
         case .sleeping: return "sleeping"
         case .yawning: return "yawning"
         case .thinking: return "thinking"
         case .dancing: return "dancing"
+        case .changingOutfit: return "changingOutfit"
         case .curious: return "curious"
         }
     }
@@ -185,35 +141,48 @@ struct Queen {
         duration > 0 ? min(1, max(0, 1 - timer / duration)) : 0
     }
 
-    static func homeSpot(for nest: CGPoint) -> CGPoint { CGPoint(x: nest.x + 10, y: nest.y + 5) }
+    /// Where she stands when idle: beside the camp, not in front of its entrance.
+    static func homeSpot(for nest: CGPoint) -> CGPoint { CGPoint(x: nest.x + 30, y: nest.y - 6) }
 
-    /// Starts hidden just behind the hole and crawls out to her spot beside the nest.
-    init(emergingFrom nest: CGPoint) {
+    /// Starts out being carried toward `nest`; `Colony` moves her with her carriers until they set her down.
+    init(carriedTo nest: CGPoint) {
         self.nest = nest
         home = Queen.homeSpot(for: nest)
-        heading = atan2(home.y - nest.y, home.x - nest.x)
-        // far enough behind the hole that no part of her shows, whatever the ant size setting
-        pos = CGPoint(x: nest.x - cos(heading) * 18, y: nest.y - sin(heading) * 18)
+        heading = 0
+        pos = nest
     }
 
     /// Already at home (restored colony).
     static func settled(nest: CGPoint) -> Queen {
-        var q = Queen(emergingFrom: nest)
-        q.pos = q.home
-        q.beginResting()
+        var q = Queen(carriedTo: nest)
+        q.setDown()
         return q
+    }
+
+    /// Follow the carriers.
+    mutating func carry(at point: CGPoint, heading: Double) {
+        guard isCarried else { return }
+        pos = point
+        self.heading = heading
+    }
+
+    /// The carriers arrived: she stands up beside the camp.
+    mutating func setDown() {
+        pos = home
+        beginResting()
     }
 
     // MARK: Update
 
     mutating func update(dt: Double, walkable: [CGRect], around: Surroundings = Surroundings()) -> Event? {
         clock += dt
+        walking = false
         reactCooldown = max(0, reactCooldown - dt)
         var event: Event?
 
         switch state {
-        case .emerging:
-            if walk(to: home, speed: 10, dt: dt) { beginResting() } // slow crawl out of the hole
+        case .carried:
+            break // her position comes from the carriers (see `carry`)
 
         case .resting:
             timer -= dt
@@ -242,6 +211,18 @@ struct Queen {
             timer -= dt
             heading += 4 * .pi / duration * dt
             legPhase += dt * 8
+            walking = true
+            if timer <= 0 { beginResting() }
+
+        case .changingOutfit:
+            timer -= dt
+            heading += 4 * .pi / duration * dt // twirls twice
+            legPhase += dt * 8
+            walking = true
+            if !outfitSwapped, progress >= 0.5 { // in the middle of the twirl, unseen behind the sparkles
+                outfitSwapped = true
+                event = .outfitChange
+            }
             if timer <= 0 { beginResting() }
 
         case .lookingAround:
@@ -256,6 +237,7 @@ struct Queen {
             timer -= dt
             heading = baseHeading + 0.6 * sin(clock * 14)
             legPhase += dt * 10
+            walking = true
             if timer <= 0 {
                 heading = baseHeading
                 beginResting()
@@ -268,49 +250,6 @@ struct Queen {
                 event = .layEgg(at: CGPoint(x: pos.x - cos(heading) * 5, y: pos.y - sin(heading) * 5))
             }
             if timer <= 0 { beginResting() }
-
-        case .digging:
-            timer -= dt
-            turn(toward: atan2(nest.y - pos.y, nest.x - pos.x), rate: 4, dt: dt)
-            dirtClock += dt
-            if dirtClock >= 0.8 {
-                dirtClock = 0
-                let angle = Double.random(in: 0..<(2 * .pi)), radius = Double.random(in: 9...18)
-                event = .dropDirt(at: CGPoint(x: nest.x + cos(angle) * radius, y: nest.y + sin(angle) * radius))
-            }
-            if timer <= 0 { beginResting() }
-
-        case .fetching(let target):
-            if walk(to: target, speed: 25, dt: dt) {
-                carryingPebble = true
-                let angle = Double.random(in: 0..<(2 * .pi)), radius = Double.random(in: 14...22)
-                state = .carrying(to: CGPoint(x: nest.x + cos(angle) * radius, y: nest.y + sin(angle) * radius))
-            }
-
-        case .carrying(let target):
-            if walk(to: target, speed: 20, dt: dt) {
-                carryingPebble = false
-                event = .dropPebble(at: CGPoint(x: pos.x + cos(heading) * 3, y: pos.y + sin(heading) * 3))
-                beginResting()
-            }
-
-        case .patchApproach:
-            let start = CGPoint(x: nest.x + Queen.patchRadius, y: nest.y)
-            if walk(to: start, speed: 22, dt: dt) {
-                patchAngle = 0
-                state = .patching
-            }
-
-        case .patching:
-            // One lap around the hole, pressing the soil flat.
-            patchAngle += 20 / Queen.patchRadius * dt
-            pos = CGPoint(x: nest.x + cos(patchAngle) * Queen.patchRadius, y: nest.y + sin(patchAngle) * Queen.patchRadius)
-            heading = patchAngle + .pi / 2
-            legPhase += dt * 8
-            if patchAngle >= 2 * .pi {
-                event = .patched
-                state = .wandering(to: home)
-            }
 
         case .enteringHole:
             if walk(to: nest, speed: hideSpeed, dt: dt) {
@@ -364,7 +303,7 @@ struct Queen {
 
     // MARK: Outside triggers
 
-    /// A newborn appeared: turn to face it and touch antennae for a moment.
+    /// A newborn appeared: turn to face it for a moment.
     mutating func greet(toward point: CGPoint) {
         guard canBeInterrupted else { return }
         heading = atan2(point.y - pos.y, point.x - pos.x)
@@ -380,7 +319,7 @@ struct Queen {
     /// Somebody clicked on the nest: duck into the hole and peek out.
     mutating func poke() {
         switch state {
-        case .emerging, .enteringHole, .leavingHole, .peeking: return
+        case .carried, .enteringHole, .leavingHole, .peeking: return
         case .inHole:
             peekPending = false
             pos = nest
@@ -393,18 +332,15 @@ struct Queen {
         }
     }
 
-    /// Test hook (`ANT_QUEEN_FORCE`): jump straight into a named action so it can be inspected.
+    /// Test hook (`CAMP_QUEEN_FORCE`): jump straight into a named action so it can be inspected.
     mutating func debugForce(_ name: String) {
         pos = home
         switch name {
+        case "outfit": outfitSwapped = false; begin(.changingOutfit, duration: 1.8)
         case "sleeping": begin(.sleeping, duration: 30)
         case "yawning": begin(.yawning, duration: 4)
         case "thinking": thoughtEmoji = "🍰"; begin(.thinking, duration: 6)
         case "dancing": begin(.dancing, duration: 6)
-        case "digging": dirtClock = 0; begin(.digging, duration: 12)
-        case "carrying":
-            carryingPebble = true
-            state = .carrying(to: CGPoint(x: home.x + 400, y: home.y))
         case "peeking":
             pos = nest
             heading = atan2(home.y - nest.y, home.x - nest.x)
@@ -418,7 +354,7 @@ struct Queen {
 
     private var canBeInterrupted: Bool {
         switch state {
-        case .emerging, .enteringHole, .inHole, .leavingHole, .peeking: return false
+        case .carried, .enteringHole, .inHole, .leavingHole, .peeking: return false
         default: return true
         }
     }
@@ -432,7 +368,6 @@ struct Queen {
 
     private mutating func beginResting(long: Bool = false) {
         begin(.resting, duration: long ? Double.random(in: 6...12) : Double.random(in: 2...6))
-        carryingPebble = false
     }
 
     /// Reactions to the mouse cursor while idle. Returns true if she changed state.
@@ -465,41 +400,36 @@ struct Queen {
         var acc = 0.0
         func chance(_ weight: Double) -> Bool { acc += weight; return roll < acc }
 
-        if chance(20) {
+        if chance(24) {
             let target = point(around: home, radius: 12...30)
             if isWalkable(target) { state = .wandering(to: target) } else { beginResting() }
         } else if chance(12) {
             begin(.grooming, duration: 2.5)
-        } else if chance(8) {
+        } else if chance(9) {
             peekPending = false
             hideSpeed = 18
             state = .enteringHole
-        } else if chance(8) {
+        } else if chance(11) {
             begin(.layingEgg, duration: 2.6)
             eggLaid = false
-        } else if chance(5) {
+        } else if chance(6) {
             begin(.spinning, duration: 1.3)
-        } else if chance(6) {
+        } else if chance(8) {
             begin(.lookingAround, duration: 2.6)
-        } else if chance(6) {
+        } else if chance(7) {
             peekPending = true
             hideSpeed = 18
             state = .enteringHole
         } else if chance(7) {
-            dirtClock = 0
-            begin(.digging, duration: 5)
-        } else if chance(6) {
-            let target = point(around: nest, radius: 35...50)
-            if isWalkable(target) { state = .fetching(to: target) } else { beginResting() }
-        } else if chance(5) {
-            state = .patchApproach
-        } else if chance(5) {
             begin(.sleeping, duration: Double.random(in: 8...14))
-        } else if chance(4) {
-            begin(.yawning, duration: 2.2)
         } else if chance(5) {
+            begin(.yawning, duration: 2.2)
+        } else if chance(6) {
             thoughtEmoji = ["🍎", "🍰", "💭", "🍯", "🌿"].randomElement() ?? "💭"
             begin(.thinking, duration: 3.5)
+        } else if chance(3) {
+            outfitSwapped = false
+            begin(.changingOutfit, duration: 1.8)
         } else {
             beginResting(long: true)
         }
@@ -530,6 +460,7 @@ struct Queen {
         pos.x += cos(heading) * step
         pos.y += sin(heading) * step
         legPhase += speed * dt * 0.6
+        walking = true
         return false
     }
 }

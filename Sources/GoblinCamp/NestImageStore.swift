@@ -1,18 +1,18 @@
 import AppKit
 
-/// The user's custom nest picture, stored as ~/Library/Application Support/AntFarm/nest.png
+/// The user's custom nest picture, stored as ~/Library/Application Support/GoblinCamp/nest.png
 /// (a downscaled copy, so moving or deleting the original doesn't break it).
 enum NestImageStore {
     private static let maxPixels: CGFloat = 256
 
     private static var url: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("AntFarm/nest.png")
+        return base.appendingPathComponent("GoblinCamp/nest.png")
     }
 
     /// nil means "use the default dirt mound".
-    /// (`ANT_NO_NEST_IMAGE` ignores the saved picture, for testing the default mound.)
-    private(set) static var image: NSImage? = ProcessInfo.processInfo.environment["ANT_NO_NEST_IMAGE"] == nil ? NSImage(contentsOf: url) : nil
+    /// (`CAMP_NO_NEST_IMAGE` ignores the saved picture, for testing the default mound.)
+    private(set) static var image: NSImage? = ProcessInfo.processInfo.environment["CAMP_NO_NEST_IMAGE"] == nil ? NSImage(contentsOf: url) : nil
 
     @discardableResult
     static func importImage(from source: URL) -> Bool {
@@ -39,7 +39,7 @@ enum NestImageStore {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try png.write(to: url, options: .atomic)
         } catch {
-            NSLog("AntFarm: saving nest image failed: \(error)")
+            NSLog("GoblinCamp: saving nest image failed: \(error)")
             return false
         }
         image = NSImage(contentsOf: url)

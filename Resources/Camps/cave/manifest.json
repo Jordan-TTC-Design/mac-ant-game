@@ -1,0 +1,32 @@
+{
+  "id": "cave",
+  "name": "岩洞",
+  "blurb": "灰色的大石頭堆成的洞口，之後會插上火把和骷髏。",
+  "pixelScale": 1.5,
+  "stages": [
+    {
+      "sheet": "stage1.png",
+      "minCount": 0,
+      "entrance": [
+        16,
+        14
+      ]
+    },
+    {
+      "sheet": "stage2.png",
+      "minCount": 30,
+      "entrance": [
+        20,
+        18
+      ]
+    },
+    {
+      "sheet": "stage3.png",
+      "minCount": 90,
+      "entrance": [
+        24,
+        22
+      ]
+    }
+  ]
+}

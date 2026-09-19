@@ -1,0 +1,32 @@
+{
+  "id": "stump",
+  "name": "樹洞",
+  "blurb": "老樹墩上的洞，旁邊長出一圈蘑菇，還會掛上燈籠。",
+  "pixelScale": 1.5,
+  "stages": [
+    {
+      "sheet": "stage1.png",
+      "minCount": 0,
+      "entrance": [
+        16,
+        13
+      ]
+    },
+    {
+      "sheet": "stage2.png",
+      "minCount": 30,
+      "entrance": [
+        20,
+        17
+      ]
+    },
+    {
+      "sheet": "stage3.png",
+      "minCount": 90,
+      "entrance": [
+        24,
+        21
+      ]
+    }
+  ]
+}

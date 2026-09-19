@@ -1,0 +1,164 @@
+{
+  "id": "goblin",
+  "name": "哥布林",
+  "noun": "哥布林",
+  "emoji": "👺",
+  "icon": "icon.png",
+  "nestName": "營地",
+  "frame": 16,
+  "defaultMaxCount": 150,
+  "worker": {
+    "sheet": "worker.png",
+    "pixelScale": 1.5,
+    "walk": {
+      "down": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "up": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "side": [
+        8,
+        9,
+        10,
+        11
+      ]
+    }
+  },
+  "breeds": [
+    {
+      "id": "common",
+      "name": "平民",
+      "weight": 100,
+      "boost": 0,
+      "blurb": "最普通的哥布林，什麼都會一點。",
+      "stats": {},
+      "sheet": "worker.png"
+    },
+    {
+      "id": "scout",
+      "name": "敏捷",
+      "weight": 10,
+      "boost": 1.0,
+      "blurb": "瘦小、腿快、眼尖，但一次只拿得動一份，也比較短命。",
+      "stats": {
+        "speed": 1.35,
+        "sense": 1.3,
+        "rest": 0.8,
+        "lifespan": 0.8
+      },
+      "sheet": "scout.png"
+    },
+    {
+      "id": "brute",
+      "name": "壯碩",
+      "weight": 8,
+      "boost": 1.0,
+      "blurb": "身強體壯，走得慢，一次搬兩份，活得也久。",
+      "stats": {
+        "speed": 0.8,
+        "sense": 0.9,
+        "carry": 2,
+        "rest": 1.2,
+        "lifespan": 1.25
+      },
+      "sheet": "brute.png"
+    },
+    {
+      "id": "sage",
+      "name": "聰明",
+      "weight": 5,
+      "boost": 1.5,
+      "blurb": "愛動腦筋，很會找食物，也很會叫同伴來幫忙。",
+      "stats": {
+        "speed": 0.95,
+        "sense": 1.25,
+        "recruit": 3,
+        "lifespan": 1.15
+      },
+      "sheet": "sage.png"
+    },
+    {
+      "id": "golden",
+      "name": "金皮",
+      "weight": 1,
+      "boost": 3.0,
+      "blurb": "罕見的金皮哥布林，每一方面都好一點，壽命是兩倍。",
+      "stats": {
+        "speed": 1.1,
+        "sense": 1.1,
+        "recruit": 1,
+        "rest": 0.9,
+        "lifespan": 2.0
+      },
+      "sheet": "golden.png"
+    }
+  ],
+  "queen": {
+    "sheet": "queen.png",
+    "pixelScale": 2.0,
+    "walk": {
+      "down": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "up": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "side": [
+        8,
+        9,
+        10,
+        11
+      ]
+    },
+    "outfits": [
+      {
+        "id": "dress",
+        "name": "洋裝",
+        "sheet": "queen.png"
+      },
+      {
+        "id": "gown",
+        "name": "長裙禮服",
+        "sheet": "queen_gown.png"
+      },
+      {
+        "id": "skirt",
+        "name": "短裙上衣",
+        "sheet": "queen_skirt.png"
+      },
+      {
+        "id": "sport",
+        "name": "運動裝",
+        "sheet": "queen_sport.png"
+      },
+      {
+        "id": "sunny",
+        "name": "草帽洋裝",
+        "sheet": "queen_sunny.png"
+      },
+      {
+        "id": "winter",
+        "name": "冬季外套",
+        "sheet": "queen_winter.png"
+      },
+      {
+        "id": "pajamas",
+        "name": "睡衣",
+        "sheet": "queen_pajamas.png"
+      }
+    ]
+  }
+}

@@ -33,7 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var editItem: ClosureMenuItem!
     private var foodMenuItem: NSMenuItem!
     private var clearFoodItem: ClosureMenuItem!
-    private let countItem = NSMenuItem(title: "螞蟻數：0", action: nil, keyEquivalent: "")
+    private var nestMenuItem: NSMenuItem!
+    private var customSpawnItem: ClosureMenuItem!
+    private var characterMenuItem: NSMenuItem!
+    private var rosterItem: ClosureMenuItem!
+    private lazy var roster: RosterPanel = {
+        let panel = RosterPanel(colony: colony)
+        panel.onSelectionChanged = { [weak self] in self?.redrawAll() }
+        return panel
+    }()
+    private var capMenuItem: NSMenuItem!
+    private let countItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var pauseItem: ClosureMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -44,8 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if settings.saveProgress, let saved = Persistence.load() {
             let nest = CGPoint(x: saved.nestX, y: saved.nestY)
             if colony.walkable.contains(where: { $0.contains(nest) }) {
-                colony.restore(nest: nest, antCount: saved.antCount)
-                if ProcessInfo.processInfo.environment["ANT_DEBUG"] != nil { NSLog("AntFarm: restored \(saved.antCount) ants") }
+                colony.restore(nest: nest, saved: saved)
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: restored \(colony.ants.count) ants") }
             }
         }
 
@@ -61,6 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateCount()
         startFrameTimer()
         scheduleSnapshot()
+        // Ages change all the time, so save now and then even when nothing else happens.
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.persist() }
         scheduleUITests()
 
         // Esc cancels nest picking; Esc or Return finishes editing. (A local monitor: no permission needed.)
@@ -98,23 +110,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         // Test hook: skip nest-picking by dropping the nest at the centre of the main screen.
-        if colony.phase == .choosingNest, ProcessInfo.processInfo.environment["ANT_AUTO_NEST"] != nil, let f = NSScreen.main?.frame {
+        if colony.phase == .choosingNest, ProcessInfo.processInfo.environment["CAMP_AUTO_NEST"] != nil, let f = NSScreen.main?.frame {
             colony.placeNest(at: CGPoint(x: f.midX, y: f.midY))
         }
     }
 
-    /// Test hook: `ANT_SNAPSHOT=/path/prefix` saves the overlay (composited on grey, cropped around the nest) after a delay.
+    /// Test hook: `CAMP_SNAPSHOT=/path/prefix` saves the overlay (composited on grey, cropped around the nest) after a delay.
     private func scheduleSnapshot() {
-        guard let prefix = ProcessInfo.processInfo.environment["ANT_SNAPSHOT"] else { return }
-        let delays = (ProcessInfo.processInfo.environment["ANT_SNAPSHOT_AFTER"] ?? "20").split(separator: ",").compactMap { Double($0) }
+        guard let prefix = ProcessInfo.processInfo.environment["CAMP_SNAPSHOT"] else { return }
+        let delays = (ProcessInfo.processInfo.environment["CAMP_SNAPSHOT_AFTER"] ?? "20").split(separator: ",").compactMap { Double($0) }
         let delay = delays.first ?? 20
-        if let forced = ProcessInfo.processInfo.environment["ANT_QUEEN_FORCE"] {
+        if let forced = ProcessInfo.processInfo.environment["CAMP_QUEEN_FORCE"] {
             let lead = forced == "digging" ? 4.5 : 1.2
             DispatchQueue.main.asyncAfter(deadline: .now() + max(0, delay - lead)) { [weak self] in
                 self?.colony.debugForceQueen(forced)
             }
         }
-        let full = ProcessInfo.processInfo.environment["ANT_SNAPSHOT_FULL"] != nil
+        let full = ProcessInfo.processInfo.environment["CAMP_SNAPSHOT_FULL"] != nil
         for (n, when) in delays.enumerated() { DispatchQueue.main.asyncAfter(deadline: .now() + when) { [weak self] in
             guard let self else { return }
             let nest = self.colony.nest ?? CGPoint(x: NSScreen.main?.frame.midX ?? 0, y: NSScreen.main?.frame.midY ?? 0)
@@ -138,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let tiff = out.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
                     let path = delays.count > 1 ? "\(prefix)-\(n)-\(i).png" : "\(prefix)-\(i).png"
                     try? png.write(to: URL(fileURLWithPath: path))
-                    NSLog("AntFarm: snapshot saved \(path)")
+                    NSLog("GoblinCamp: snapshot saved \(path)")
                 }
             }
         }
@@ -147,13 +159,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Test hooks that drive the UI with synthetic events, so the nest-picking and edit flows can be exercised
     /// without real mouse or keyboard input (which needs extra permissions):
-    /// `ANT_TEST_ESC=秒` presses Esc; `ANT_TEST_EDIT=dx,dy` enters edit mode and drags the nest by (dx, dy), then Esc.
+    /// `CAMP_TEST_ESC=秒` presses Esc; `CAMP_TEST_EDIT=dx,dy` enters edit mode and drags the nest by (dx, dy), then Esc.
     private func scheduleUITests() {
         let env = ProcessInfo.processInfo.environment
         func after(_ seconds: Double, _ work: @escaping () -> Void) {
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
         }
-        func log(_ s: String) { NSLog("AntFarm test: \(s)") }
+        func log(_ s: String) { NSLog("GoblinCamp test: \(s)") }
         func pressKey(_ code: UInt16, _ chars: String) {
             if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                         windowNumber: 0, context: nil, characters: chars, charactersIgnoringModifiers: chars,
@@ -167,12 +179,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        if let s = env["ANT_TEST_ESC"], let t = Double(s) {
+        if let s = env["CAMP_TEST_ROSTER"], let t = Double(s), let prefix = env["CAMP_SNAPSHOT"] { // open the roster, pick a goblin, capture it
+            after(t) {
+                self.roster.show()
+                self.roster.select(row: 1)
+                log("roster shown, selected goblin: \(String(describing: self.colony.selectedAntID))")
+            }
+            after(t + 1.5) {
+                guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(self.roster.windowNumber), [.boundsIgnoreFraming, .bestResolution]) else { return log("roster capture failed") }
+                let rep = NSBitmapImageRep(cgImage: cg)
+                if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-roster.png")) }
+                log("roster captured \(cg.width)x\(cg.height)")
+            }
+        }
+        if env["CAMP_TEST_MENU"] != nil { // print the menu the way it would look when opened
+            after(2) {
+                guard let menu = self.statusItem.menu else { return }
+                self.menuNeedsUpdate(menu)
+                func dump(_ menu: NSMenu, _ depth: Int) {
+                    for item in menu.items where !item.isSeparatorItem {
+                        log("menu: \(String(repeating: "  ", count: depth))\(item.title)\(item.isEnabled ? "" : "  (disabled)")")
+                        if let sub = item.submenu { dump(sub, depth + 1) }
+                    }
+                }
+                dump(menu, 0)
+            }
+        }
+        if let s = env["CAMP_TEST_ESC"], let t = Double(s) {
             log("phase at start: \(colony.phase)")
             after(t) { pressKey(53, "\u{1b}") }
             after(t + 0.5) { log("phase after Esc: \(self.colony.phase), nest: \(String(describing: self.colony.nest))") }
         }
-        if let s = env["ANT_TEST_FOOD"] {
+        if let s = env["CAMP_TEST_FOOD"] {
             let parts = s.split(separator: ",")
             guard parts.count == 3, let kind = FoodKind(rawValue: String(parts[0])), let dx = Double(parts[1]), let dy = Double(parts[2]) else { return }
             after(4) {
@@ -188,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 after(0.5) { log("placed: \(self.colony.foods.map { "\($0.kind.rawValue)@\($0.pos) x\($0.amount)" }), phase \(self.colony.phase)") }
                 for k in 1...40 { after(0.5 + Double(k) * 5) { log("t+\(k * 5)s \(self.colony.foodSummary())") } }
             }
-            if env["ANT_TEST_FOOD_CANCEL"] != nil { // press Esc while placing instead of clicking
+            if env["CAMP_TEST_FOOD_CANCEL"] != nil { // press Esc while placing instead of clicking
                 after(10) {
                     self.colony.beginPlacingFood(.water)
                     self.syncWindows()
@@ -198,7 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
-        if let s = env["ANT_TEST_EDIT"] {
+        if let s = env["CAMP_TEST_EDIT"] {
             let d = s.split(separator: ",").compactMap { Double($0) }
             guard d.count == 2 else { return }
             after(5) {
@@ -218,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     pressKey(53, "\u{1b}")
                 }
                 after(1.8) { log("after Esc, phase \(self.colony.phase)") }
-                if env["ANT_TEST_EDIT_HOLD"] != nil { // stay in edit mode for a screenshot
+                if env["CAMP_TEST_EDIT_HOLD"] != nil { // stay in edit mode for a screenshot
                     after(1.4) { self.colony.beginEditing(); self.syncWindows() }
                 }
             }
@@ -233,7 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🐜"
+        applyStatusIcon()
 
         let menu = NSMenu()
         menu.delegate = self
@@ -256,23 +294,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(editItem)
         menu.addItem(foodMenu())
+        rosterItem = ClosureMenuItem(title: "名冊…") { [weak self] in self?.roster.toggle() }
+        menu.addItem(rosterItem)
         menu.addItem(.separator())
 
-        menu.addItem(choiceMenu(title: "生成速度",
-                                options: [("每 10 秒一隻", 10.0), ("每 5 秒一隻", 5.0), ("每 3 秒一隻", 3.0), ("每 1 秒一隻", 1.0)],
-                                get: { self.settings.spawnInterval }, set: { self.settings.spawnInterval = $0 }))
-        menu.addItem(choiceMenu(title: "螞蟻上限",
-                                options: [("100 隻", 100), ("200 隻", 200), ("500 隻", 500), ("1000 隻", 1000)],
-                                get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 }))
-        menu.addItem(choiceMenu(title: "螞蟻大小",
-                                options: [("小", 0.8), ("標準", 1.0), ("大", 1.5), ("超大", 2.2)],
-                                get: { self.settings.antScale }, set: { self.settings.antScale = $0 }))
-        menu.addItem(choiceMenu(title: "移動速度",
-                                options: [("慢", 0.5), ("標準", 1.0), ("快", 2.0)],
-                                get: { self.settings.speedMultiplier }, set: { self.settings.speedMultiplier = $0 }))
-        menu.addItem(choiceMenu(title: "螞蟻顏色",
-                                options: AntColorTheme.allCases.map { ($0.label, $0) },
-                                get: { self.settings.colorTheme }, set: { self.settings.colorTheme = $0 }))
+        characterMenuItem = choiceMenu(title: "角色",
+                                options: Characters.all.map { ($0.name, $0.id) },
+                                get: { Characters.current.id }, set: { [weak self] in
+                                    self?.settings.characterID = $0
+                                    self?.characterChanged()
+                                })
+        characterMenuItem.isHidden = Characters.all.count <= 1 // nothing to choose from with a single character
+        menu.addItem(characterMenuItem)
+        menu.addItem(spawnMenu())
+        capMenuItem = choiceMenu(title: "數量上限",
+                                 options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
+                                 get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
+        menu.addItem(capMenuItem)
         menu.addItem(nestImageMenu())
         menu.addItem(.separator())
 
@@ -284,31 +322,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         save.stateProvider = { self.settings.saveProgress }
         menu.addItem(save)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "結束螞蟻農場", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "結束哥布林營地", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         statusItem.menu = menu
     }
 
+    /// The camp's look: the built-in camps (each grows as more goblins move in), or the player's own picture.
     private func nestImageMenu() -> NSMenuItem {
-        let parent = NSMenuItem(title: "蟻窩圖案", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "蟻窩圖案")
+        let parent = NSMenuItem(title: "營地外觀", action: nil, keyEquivalent: "")
+        nestMenuItem = parent
+        let sub = NSMenu(title: "營地外觀")
 
-        let builtIn = ClosureMenuItem(title: "預設土堆") { [weak self] in
-            NestImageStore.remove()
-            self?.redrawAll()
+        for style in Camps.all {
+            let item = ClosureMenuItem(title: style.name) { [weak self] in
+                self?.settings.campID = style.id
+                self?.redrawAll()
+            }
+            item.toolTip = style.blurb
+            item.stateProvider = { self.settings.campID == style.id || (Camps.current === style && self.settings.campID != Camps.customID) }
+            sub.addItem(item)
         }
-        builtIn.stateProvider = { NestImageStore.image == nil }
-        sub.addItem(builtIn)
 
-        let custom = ClosureMenuItem(title: "選擇圖片…") { [weak self] in
+        sub.addItem(.separator())
+        let custom = ClosureMenuItem(title: "自己的圖片…") { [weak self] in
             // Let the menu finish closing before the panel opens.
             DispatchQueue.main.async { self?.pickNestImage() }
         }
-        custom.stateProvider = { NestImageStore.image != nil }
+        custom.stateProvider = { self.settings.campID == Camps.customID }
         sub.addItem(custom)
-
-        sub.addItem(.separator())
-        sub.addItem(choiceMenu(title: "圖片大小",
+        sub.addItem(choiceMenu(title: "自己的圖片大小",
                                options: [("小", 32.0), ("中", 48.0), ("大", 80.0)],
                                get: { self.settings.nestImageWidth }, set: { self.settings.nestImageWidth = $0 }))
         parent.submenu = sub
@@ -317,7 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func pickNestImage() {
         let panel = NSOpenPanel()
-        panel.title = "選擇蟻窩圖片"
+        panel.title = "選擇\(Characters.current.nestName)圖片"
         panel.message = "建議使用透明背景的 PNG"
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
@@ -327,6 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if NestImageStore.importImage(from: url) {
+            settings.campID = Camps.customID
             redrawAll()
         } else {
             let alert = NSAlert()
@@ -334,6 +377,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.informativeText = "請換一張 PNG 或 JPG 試試。"
             alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
             alert.runModal()
+        }
+    }
+
+    private static let spawnPresets: [Double] = [10, 30, 60, 180, 300]
+
+    /// How often a new one is born: a few presets and a custom value.
+    private func spawnMenu() -> NSMenuItem {
+        let parent = choiceMenu(title: "生成速度", options: AppDelegate.spawnPresets.map { ("每 \(IntervalFormat.text($0)) 一隻", $0) },
+                                get: { self.settings.spawnInterval }, set: { self.settings.spawnInterval = $0 })
+        customSpawnItem = ClosureMenuItem(title: "自訂…") { [weak self] in
+            // let the menu close before the dialog opens
+            DispatchQueue.main.async { self?.askCustomSpawnInterval() }
+        }
+        customSpawnItem.stateProvider = { !AppDelegate.spawnPresets.contains(self.settings.spawnInterval) }
+        parent.submenu?.addItem(.separator())
+        parent.submenu?.addItem(customSpawnItem)
+        return parent
+    }
+
+    private func askCustomSpawnInterval() {
+        let alert = NSAlert()
+        alert.messageText = "自訂生成間隔"
+        alert.informativeText = "每隔多久生出一隻？輸入秒數（45），或加單位：30s、5m、1.5h、90秒、3分。範圍 1 秒到 24 小時。"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        field.stringValue = IntervalFormat.text(settings.spawnInterval)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: "取消")
+        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        alert.window.initialFirstResponder = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if let seconds = IntervalFormat.parse(field.stringValue) {
+            settings.spawnInterval = seconds
+        } else {
+            let error = NSAlert()
+            error.messageText = "看不懂這個時間"
+            error.informativeText = "請輸入像 45、30s、5m、1.5h 這樣的時間（1 秒到 24 小時）。"
+            error.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            error.runModal()
         }
     }
 
@@ -374,9 +457,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         pauseItem.title = colony.isPaused ? "繼續" : "暫停"
         pauseItem.isEnabled = colony.isSimulating
-        pickItem.title = colony.nest == nil ? "選擇蟻窩位置…" : "重新選擇蟻窩（清空螞蟻）"
+        let character = Characters.current
+        let home = character.nestName
+        rosterItem.title = roster.isVisible ? "\(Characters.current.noun)名冊（開啟中，再按一次關閉）" : "\(Characters.current.noun)名冊…"
+        rosterItem.isEnabled = colony.nest != nil
+        pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
+        nestMenuItem.title = "\(home)外觀"
         pickItem.isEnabled = colony.phase != .choosingNest
-        editItem.title = colony.phase == .editing ? "完成編輯（Esc）" : "編輯蟻窩位置"
+        editItem.title = colony.phase == .editing ? "完成編輯（Esc）" : "編輯\(home)位置"
+        capMenuItem.title = "\(character.noun)數量上限"
+        customSpawnItem.title = AppDelegate.spawnPresets.contains(settings.spawnInterval)
+            ? "自訂…" : "自訂…（目前 \(IntervalFormat.text(settings.spawnInterval))）"
+        updateCount()
         editItem.isEnabled = colony.phase == .running || colony.phase == .editing
         foodMenuItem.isEnabled = colony.phase == .running
         clearFoodItem.isEnabled = !colony.foods.isEmpty
@@ -429,18 +521,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if wanted != currentFPS { scheduleFrameTimer(fps: wanted) }
     }
 
+    /// The player picked another character: refresh the menu bar icon and names, and redraw.
+    private func applyStatusIcon() {
+        let character = Characters.current
+        if let icon = character.icon {
+            icon.size = NSSize(width: 16, height: 16) // 16 art pixels on 32 device pixels, so it stays crisp
+            icon.isTemplate = false
+            statusItem.button?.image = icon
+            statusItem.button?.title = ""
+            if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: menu bar icon from \(character.id): \(icon.representations.first?.pixelsWide ?? 0)px") }
+        } else {
+            statusItem.button?.image = nil
+            statusItem.button?.title = character.emoji
+        }
+    }
+
+    private func characterChanged() {
+        applyStatusIcon()
+        updateCount()
+        redrawAll()
+    }
+
     private func redrawAll() {
         windows.forEach { $0.contentView?.needsDisplay = true }
     }
 
     private func updateCount() {
-        countItem.title = "螞蟻數：\(colony.ants.count)"
+        countItem.title = "\(Characters.current.noun)數：\(colony.ants.count)"
     }
 
     private func persist() {
         guard settings.saveProgress else { return }
-        if let nest = colony.nest {
-            Persistence.save(SavedState(nestX: nest.x, nestY: nest.y, antCount: colony.ants.count))
+        if let state = colony.savedState() {
+            Persistence.save(state)
         } else {
             Persistence.clear()
         }

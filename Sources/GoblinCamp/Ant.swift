@@ -19,8 +19,14 @@ struct Ant {
         case foraging(food: Int, slot: Double)
         /// Standing on the rim, about to pick up a piece.
         case feeding(food: Int, slot: Double, remaining: Double)
-        /// Carrying a piece home, slowly.
-        case hauling(food: Int, kind: FoodKind)
+        /// Carrying pieces home, slowly.
+        case hauling(food: Int, kind: FoodKind, pieces: Int)
+        /// Died of old age: stands still and fades away.
+        case dying(remaining: Double)
+        /// One of the two carrying the princess into the camp, walking to `target`.
+        case carryingPrincess(target: CGPoint)
+        /// Arrived with the princess; waiting until the other carrier gets there too.
+        case waitingWithPrincess
     }
 
     /// Things the colony has to react to.
@@ -28,21 +34,69 @@ struct Ant {
         case foundFood(Int)
         case newsDelivered(Int)
         case tookPiece(Int)
-        case delivered(Int)
+        case delivered(Int, pieces: Int)
+        case died
+        case carrierArrived
     }
 
+    /// How fast the two carriers walk the princess in, in points per second.
+    static let carrySpeed = 50.0
+    /// How long the fade-out after death takes, in seconds.
+    static let dyingTime = 2.5
+    /// The last stretch of a life (as a fraction) is spent slower.
+    static let elderStart = 0.9
+
+    /// Stable identity, so the roster and the selection ring can follow one individual.
+    let id: Int
+    let breedIndex: Int
+    /// Seeds this individual's personal variation (see `Traits.make`); saved so it comes back the same.
+    let seed: UInt64
+    let traits: Traits
+    /// Seconds lived.
+    var age: Double
     var pos: CGPoint
     var heading: Double
     var speed: Double
     var mode: Mode = .wandering
     var pause: Double = 0
+    /// Whether the legs moved during the last update (sprites stand still otherwise).
+    private(set) var moving = false
     var legPhase: Double = Double.random(in: 0...(2 * .pi))
     private let wobblePhase = Double.random(in: 0...(2 * .pi))
 
-    init(at pos: CGPoint) {
+    init(at pos: CGPoint, id: Int, breedIndex: Int, traits: Traits, seed: UInt64, age: Double = 0) {
+        self.id = id
+        self.breedIndex = breedIndex
+        self.traits = traits
+        self.seed = seed
+        self.age = age
         self.pos = pos
         heading = Double.random(in: 0..<(2 * .pi))
-        speed = Double.random(in: 15...40)
+        speed = Double.random(in: 15...40) * traits.speed
+    }
+
+    /// 0 at birth, 1 at the end of its life.
+    var lifeFraction: Double { min(1, age / max(traits.lifespan, 1)) }
+
+    /// Old ones walk slower.
+    private var effectiveSpeed: Double { lifeFraction > Ant.elderStart ? speed * 0.6 : speed }
+
+    var isCarryingPrincess: Bool {
+        switch mode {
+        case .carryingPrincess, .waitingWithPrincess: return true
+        default: return false
+        }
+    }
+
+    var isDying: Bool {
+        if case .dying = mode { return true }
+        return false
+    }
+
+    /// 1 while alive, fading to 0 as it dies.
+    var fadeAlpha: Double {
+        if case .dying(let remaining) = mode { return max(0, min(1, remaining / Ant.dyingTime)) }
+        return 1
     }
 
     var isHidden: Bool {
@@ -50,23 +104,59 @@ struct Ant {
         return false
     }
 
-    /// The piece of food being carried, if any.
+    /// The food being carried, if any.
     var carrying: FoodKind? {
-        if case .hauling(_, let kind) = mode { return kind }
+        if case .hauling(_, let kind, _) = mode { return kind }
         return nil
+    }
+
+    var carriedPieces: Int {
+        if case .hauling(_, _, let pieces) = mode { return pieces }
+        return 0
     }
 
     /// The food this ant is working on (on its way there, at it, or hauling from it).
     var targetFood: Int? {
         switch mode {
-        case .foraging(let id, _), .feeding(let id, _, _), .hauling(let id, _): return id
+        case .foraging(let id, _), .feeding(let id, _, _), .hauling(let id, _, _): return id
         case .inNest(_, let id): return id
         default: return nil
         }
     }
 
-    mutating func update(dt: Double, world: AntWorld) -> Event? {
+    /// `ageDt` is real elapsed time (a life is counted in real time, whatever the speed setting).
+    mutating func update(dt: Double, ageDt: Double, world: AntWorld) -> Event? {
+        moving = false
+        age += ageDt
+        if age >= traits.lifespan, !isDying, !isCarryingPrincess {
+            if isHidden { return .died } // it went quietly in the nest
+            mode = .dying(remaining: Ant.dyingTime)
+        }
         switch mode {
+        case .carryingPrincess(let target):
+            // the two carriers walk in step, in a straight line, so the princess stays level between them
+            let distance = hypot(target.x - pos.x, target.y - pos.y)
+            heading = atan2(target.y - pos.y, target.x - pos.x)
+            if distance < 2 {
+                mode = .waitingWithPrincess
+                return .carrierArrived
+            }
+            let step = min(Ant.carrySpeed * dt, distance)
+            pos.x += cos(heading) * step
+            pos.y += sin(heading) * step
+            legPhase += step * 0.9
+            moving = true
+            return nil
+
+        case .waitingWithPrincess:
+            return nil
+
+        case .dying(let remaining):
+            let left = remaining - dt
+            if left <= 0 { return .died }
+            mode = .dying(remaining: left)
+            return nil
+
         case .wandering:
             return updateWandering(dt: dt, world: world)
 
@@ -81,12 +171,12 @@ struct Ant {
                 return .newsDelivered(id)
             }
 
-        case .hauling(let id, _):
+        case .hauling(let id, _, let pieces):
             if walkHome(dt: dt, world: world, speedFactor: 0.7) {
                 // Most ants rest a moment and go back for more while there is food left.
                 let more = world.food(id) != nil && Double.random(in: 0..<1) < 0.85
                 mode = .inNest(remaining: more ? Double.random(in: 3...8) : Double.random(in: 10...30), thenForage: more ? id : nil)
-                return .delivered(id)
+                return .delivered(id, pieces: pieces)
             }
 
         case .inNest(let remaining, let thenForage):
@@ -113,7 +203,7 @@ struct Ant {
                 mode = .feeding(food: id, slot: slot, remaining: Double.random(in: 2...4))
                 return nil
             }
-            walk(toward: target, distance: distance, speed: speed * 1.15, dt: dt)
+            walk(toward: target, distance: distance, speed: effectiveSpeed * 1.15, dt: dt)
 
         case .feeding(let id, let slot, let remaining):
             guard let food = world.food(id) else { return giveUp() }
@@ -127,7 +217,7 @@ struct Ant {
                 mode = .feeding(food: id, slot: slot, remaining: left)
                 return nil
             }
-            mode = .hauling(food: id, kind: food.kind)
+            mode = .hauling(food: id, kind: food.kind, pieces: traits.carry)
             heading = atan2(world.nest.y - pos.y, world.nest.x - pos.x)
             return .tookPiece(id)
         }
@@ -138,7 +228,7 @@ struct Ant {
 
     private mutating func updateWandering(dt: Double, world: AntWorld) -> Event? {
         // Notice food only by walking into it.
-        if let food = world.foods.first(where: { $0.amount > 0 && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.senseRadius(scale: world.foodScale) }) {
+        if let food = world.foods.first(where: { $0.amount > 0 && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.senseRadius(scale: world.foodScale) * traits.sense }) {
             if food.scouted || food.reported {
                 // others already know about it: just join in
                 mode = .foraging(food: food.id, slot: atan2(pos.y - food.pos.y, pos.x - food.pos.x))
@@ -149,7 +239,7 @@ struct Ant {
             return .foundFood(food.id)
         }
         // Now and then go home for a rest.
-        if Double.random(in: 0..<1) < dt / 90 {
+        if Double.random(in: 0..<1) < dt / 90 * traits.rest {
             mode = .returningToNest
             return nil
         }
@@ -165,11 +255,12 @@ struct Ant {
         }
         heading += Double.random(in: -1...1) * 3.0 * dt
 
-        let step = speed * dt
+        let step = effectiveSpeed * dt
         let next = CGPoint(x: pos.x + cos(heading) * step, y: pos.y + sin(heading) * step)
         if world.walkable.contains(where: { $0.insetBy(dx: 4, dy: 4).contains(next) }) {
             pos = next
-            legPhase += speed * dt * 0.9
+            legPhase += effectiveSpeed * dt * 0.9
+            moving = true
         } else {
             heading += .pi + Double.random(in: -0.6...0.6) // bounce off the screen edge
         }
@@ -193,7 +284,7 @@ struct Ant {
     private mutating func walkHome(dt: Double, world: AntWorld, speedFactor: Double) -> Bool {
         let distance = hypot(world.nest.x - pos.x, world.nest.y - pos.y)
         if distance < 3 { return true }
-        walk(toward: world.nest, distance: distance, speed: speed * speedFactor, dt: dt)
+        walk(toward: world.nest, distance: distance, speed: effectiveSpeed * speedFactor, dt: dt)
         return false
     }
 
@@ -205,6 +296,7 @@ struct Ant {
         pos.x += cos(angle) * step
         pos.y += sin(angle) * step
         legPhase += step * 0.9
+        moving = true
     }
 
     private mutating func turn(toward angle: Double, rate: Double, dt: Double) {

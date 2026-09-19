@@ -1,0 +1,32 @@
+{
+  "id": "mound",
+  "name": "土堆洞穴",
+  "blurb": "小土堆上有個黑黑的洞口，數量多了會長出更多土堆和一面旗子。",
+  "pixelScale": 1.5,
+  "stages": [
+    {
+      "sheet": "stage1.png",
+      "minCount": 0,
+      "entrance": [
+        16,
+        15
+      ]
+    },
+    {
+      "sheet": "stage2.png",
+      "minCount": 30,
+      "entrance": [
+        20,
+        19
+      ]
+    },
+    {
+      "sheet": "stage3.png",
+      "minCount": 90,
+      "entrance": [
+        24,
+        23
+      ]
+    }
+  ]
+}
