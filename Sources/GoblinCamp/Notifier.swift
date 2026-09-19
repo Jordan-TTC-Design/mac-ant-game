@@ -84,6 +84,8 @@ struct Message {
     /// Which breed's sprite to use (ignored for the princess).
     let breedIndex: Int
     let text: String
+    /// A note without sound (the summary when coming back).
+    let silent: Bool
     /// The project (folder) the Claude session works in, if the hook told us.
     let project: String
     /// Bundle id of the app Claude runs in (Terminal, iTerm, VS Code…); clicking the popup brings it forward.
@@ -96,14 +98,15 @@ struct Message {
     let stopX: CGFloat
     let talkTime: Double
 
-    init(kind: NotifyKind, speaker: Speaker, breedIndex: Int, project: String, appBundleID: String?, screen: CGRect) {
+    init(kind: NotifyKind, speaker: Speaker, breedIndex: Int, project: String, appBundleID: String?, screen: CGRect, text custom: String? = nil, silent: Bool = false) {
+        self.silent = silent
         self.kind = kind
         self.appBundleID = appBundleID
         self.speaker = speaker
         self.breedIndex = breedIndex
         self.project = project
         self.screen = screen
-        text = speaker.line(for: kind)
+        text = custom ?? speaker.line(for: kind)
         pos = CGPoint(x: screen.maxX + 40, y: screen.maxY - 230) // top right, under the menu bar, with room for the bubble above
         stopX = screen.maxX - 190
         talkTime = max(4.5, Double(text.count) * 0.3)

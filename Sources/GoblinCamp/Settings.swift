@@ -118,6 +118,31 @@ final class Settings {
         set { defaults.set(newValue, forKey: "fullscreenFocus") }
     }
 
+    /// The mode the app starts in (and returns to when a timed mode runs out): "normal", "work", "saver" or "focus".
+    /// The environment variable `CAMP_START_MODE` overrides it (for tests).
+    var startupMode: String {
+        get {
+            if let forced = ProcessInfo.processInfo.environment["CAMP_START_MODE"] { return forced }
+            return defaults.string(forKey: "startupMode") ?? "work"
+        }
+        set { defaults.set(newValue, forKey: "startupMode") }
+    }
+    /// How long a mode chosen from the menu lasts, in seconds; 0 = until the player changes it.
+    var modeDuration: Double {
+        get { defaults.object(forKey: "modeDuration") as? Double ?? 0 }
+        set { defaults.set(newValue, forKey: "modeDuration") }
+    }
+    /// Starting a pomodoro from the everything-on mode switches to work mode until it is over.
+    var pomodoroWorkMode: Bool {
+        get { defaults.object(forKey: "pomodoroWorkMode") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "pomodoroWorkMode") }
+    }
+    /// The ⌃⌥1–4 shortcuts for the four modes.
+    var hotkeysEnabled: Bool {
+        get { defaults.object(forKey: "hotkeysEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "hotkeysEnabled") }
+    }
+
     /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.
     var wildlife: Int {
         get { number("wildlife", argument: "wildlife").map { min(3, max(0, Int($0))) } ?? 2 }

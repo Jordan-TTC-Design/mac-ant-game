@@ -66,10 +66,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pomodoroStopItem: ClosureMenuItem!
     private var pomodoroTodayItem: NSMenuItem!
     private var pomodoroSpeaker = Speakers.common
-    private var modeMenuItems: [NSMenuItem] = []
+    private var modeMenuItems: [ClosureMenuItem] = []
+    /// What happened while the camp was away (hidden), for the summary when it comes back.
+    private var away: (since: Date, ants: Int, deaths: Int, missed: Int)?
+    /// The pomodoro switched the mode by itself, so it should switch it back when it is over.
+    private var pomodoroChangedMode = false
+    private var flashTimer: Timer?
     private var quietStatusItem: NSMenuItem!
     private var alertScreenItem: NSMenuItem!
-    private var unhideItem: ClosureMenuItem!
     private var rosterItem: ClosureMenuItem!
     private lazy var roster: RosterPanel = {
         let panel = RosterPanel(colony: colony)
@@ -84,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.stage.onArrive = { [weak self] message in
             guard let self else { return }
             if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: \(message.speaker.name) says \"\(message.text)\" (\(message.kind.rawValue))") }
-            GoblinVoice.shared.speak(message.text, as: message.speaker, level: self.settings.notifyVolume)
+            if !message.silent { GoblinVoice.shared.speak(message.text, as: message.speaker, level: self.settings.notifyVolume) }
         }
         colony.pomodoro.onEvent = { [weak self] event in self?.pomodoroEvent(event) }
         setupMenuBar()
@@ -111,6 +115,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncWindows()
         updateCount()
         startFrameTimer()
+        applyHotkeys()
+        // rest in the chosen mode (a brand new camp starts with everything on, so the first nest can be picked and watched)
+        if colony.nest != nil || ProcessInfo.processInfo.environment["CAMP_START_MODE"] != nil, let mode = baseMode {
+            setMode(mode, automatic: true)
+        }
         scheduleSnapshot()
         // Ages change all the time, so save now and then even when nothing else happens.
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.persist() }
@@ -284,6 +293,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 after(8) { log("back to normal: mode \(String(describing: self.effectiveMode)), windows visible = \(self.windows.contains { $0.isVisible }), fps \(self.currentFPS)") }
             }
         }
+        if let s = env["CAMP_TEST_MODELOG"] { // "4,8,20": print the mode, whether the camp is hidden and the menu bar title at those seconds
+            for t in s.split(separator: ",").compactMap({ Double($0) }) {
+                after(t) { log("t=\(t): mode \(String(describing: self.effectiveMode)), camp hidden \(self.colony.campHidden), windows visible \(self.windows.contains { $0.isVisible }), title '\(self.statusItem.button?.title ?? "")', popup \(self.colony.stage.current?.text ?? "-")") }
+            }
+        }
+        if env["CAMP_TEST_AWAY"] != nil { after(12) { self.setMode(.work, for: 62) } } // work mode for just over a minute, to see the summary
         if let s = env["CAMP_TEST_STATS"], let t = Double(s) { after(t) { let x = Stats.shared.summary(); log("stats today: \(x.today) | week first line: \(x.week.split(separator: "\n").first ?? "")") } }
         if let s = env["CAMP_TEST_POMODORO"] { // "focusMinutes,restMinutes" (fractions allowed), started at 3 s
             let parts = s.split(separator: ",").compactMap { Double($0) }
@@ -398,17 +413,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(foodMenu())
         rosterItem = ClosureMenuItem(title: "名冊…") { [weak self] in self?.roster.toggle() }
         menu.addItem(rosterItem)
-        quietStatusItem = NSMenuItem(title: "全螢幕中，已自動進入專注模式", action: nil, keyEquivalent: "")
+        quietStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         quietStatusItem.isEnabled = false
         menu.addItem(quietStatusItem)
-        modeMenuItems = [
-            quietMenu(title: "工作模式・營地在背景跑", mode: .work, tip: "營地藏起來但繼續運行；番茄鐘與 Claude 通知照常出現"),
-            quietMenu(title: "節能模式・營地暫停", mode: .saver, tip: "營地藏起來並完全暫停（省效能）；番茄鐘與 Claude 通知照常出現"),
-            quietMenu(title: "專注模式・完全靜音", mode: .focus, tip: "全部藏起來、暫停、不出聲；番茄鐘只計時。開會、簡報時用"),
+        let modes: [(QuietMode?, String, String, String)] = [
+            (nil, "全開", "1", "哥布林在畫面上活動，番茄鐘與通知都有"),
+            (.work, "工作模式・營地在背景跑", "2", "營地藏起來但繼續運行；番茄鐘與 Claude 通知照常出現"),
+            (.saver, "節能模式・營地暫停", "3", "營地藏起來並完全暫停（省效能）；番茄鐘與 Claude 通知照常出現"),
+            (.focus, "專注模式・完全靜音", "4", "全部藏起來、暫停、不出聲；番茄鐘只計時。開會、簡報時用"),
         ]
-        modeMenuItems.forEach { menu.addItem($0) }
-        unhideItem = ClosureMenuItem(title: "回到全開") { [weak self] in self?.unhide() }
-        menu.addItem(unhideItem)
+        for (mode, title, key, tip) in modes {
+            let item = ClosureMenuItem(title: title) { [weak self] in self?.chooseMode(mode) }
+            item.keyEquivalent = key
+            item.keyEquivalentModifierMask = [.control, .option]
+            item.toolTip = tip
+            item.stateProvider = { self.userMode == mode }
+            modeMenuItems.append(item)
+            menu.addItem(item)
+        }
+        menu.addItem(choiceMenu(title: "切換模式後持續", options: AppDelegate.durationChoices,
+                                get: { self.settings.modeDuration }, set: { self.settings.modeDuration = $0 }))
+        menu.addItem(choiceMenu(title: "啟動時的模式",
+                                options: [("全開", "normal"), ("工作模式（預設）", "work"), ("節能模式", "saver"), ("專注模式", "focus")],
+                                get: { self.settings.startupMode }, set: { self.settings.startupMode = $0 }))
+        let hotkeys = ClosureMenuItem(title: "全域快捷鍵 ⌃⌥1～4 切換模式") { [weak self] in
+            self?.settings.hotkeysEnabled.toggle()
+            self?.applyHotkeys()
+        }
+        hotkeys.stateProvider = { self.settings.hotkeysEnabled }
+        menu.addItem(hotkeys)
         menu.addItem(.separator())
 
         characterMenuItem = choiceMenu(title: "角色",
@@ -479,11 +512,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async { self?.askCustomPomodoro() }
         })
         sub.addItem(.separator())
+        let auto = ClosureMenuItem(title: "開始時自動進入工作模式") { [weak self] in self?.settings.pomodoroWorkMode.toggle() }
+        auto.stateProvider = { self.settings.pomodoroWorkMode }
+        sub.addItem(auto)
         pomodoroStopItem = ClosureMenuItem(title: "停止番茄鐘") { [weak self] in
             guard let pomodoro = self?.colony.pomodoro else { return }
             if pomodoro.phase == .focus { Stats.shared.addFocus(seconds: pomodoro.phaseLength - pomodoro.remaining) }
             pomodoro.stop()
             GoblinVoice.shared.stop()
+            if self?.pomodoroChangedMode == true {
+                self?.pomodoroChangedMode = false
+                self?.setMode(nil, automatic: true)
+            }
         }
         sub.addItem(pomodoroStopItem)
         parent.submenu = sub
@@ -500,13 +540,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             pomodoroSpeaker = Speakers.forBreed(character.breeds[min(breedIndex, character.breeds.count - 1)].id)
         }
         colony.pomodoro.start(focusMinutes: focus, restMinutes: rest, screen: screen, breedIndex: breedIndex)
+        // a pomodoro means work: from the everything-on mode it switches to work mode, and back again when it is over
+        if settings.pomodoroWorkMode, userMode == nil, !fullscreenActive {
+            setMode(.work, automatic: true)
+            pomodoroChangedMode = true
+        }
     }
 
     /// Speaks (unless hidden: then only the badge counts it) when the pomodoro starts, rests, or ends.
     private func pomodoroEvent(_ event: Pomodoro.Event) {
         if event == .focusDone { Stats.shared.pomodoroCompleted(focusSeconds: colony.pomodoro.focusSeconds); return }
+        if event == .finished, pomodoroChangedMode {
+            pomodoroChangedMode = false
+            setMode(nil, automatic: true)
+        }
         if isSilenced {
-            if event != .started { missedNotifications += 1; applyStatusIcon() }
+            if event == .restBegan || event == .finished { noteMissed(); flashStatusIcon() } // no sound, only the icon blinks
             return
         }
         if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: pomodoro \(event)") }
@@ -568,8 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if forced == nil { Stats.shared.notification(kind) }
         guard settings.notifyEnabled, settings.notifies(kind) else { return }
         if isSilenced {
-            missedNotifications += 1
-            applyStatusIcon()
+            noteMissed()
             return
         }
         // keep it from turning into spam
@@ -657,21 +705,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Hiding
 
-    private static let hideChoices: [(label: String, seconds: TimeInterval?)] = [
-        ("30 分鐘", 30 * 60), ("1 小時", 3600), ("2 小時", 7200), ("直到我取消", nil),
-    ]
+    private static let durationChoices: [(String, Double)] = [("直到我改變", 0), ("30 分鐘", 1800), ("1 小時", 3600), ("2 小時", 7200)]
 
-    /// One of the quiet modes for a while (see `QuietMode`).
-    private func quietMenu(title: String, mode: QuietMode, tip: String) -> NSMenuItem {
-        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        parent.toolTip = tip
-        let sub = NSMenu(title: title)
-        for choice in AppDelegate.hideChoices {
-            sub.addItem(ClosureMenuItem(title: choice.label) { [weak self] in self?.hide(mode, for: choice.seconds) })
+    static func mode(named name: String) -> QuietMode? {
+        switch name {
+        case "work": return .work
+        case "saver": return .saver
+        case "focus": return .focus
+        default: return nil
         }
-        parent.submenu = sub
-        return parent
     }
+
+    /// The mode the app rests in: what a timed mode returns to.
+    private var baseMode: QuietMode? { AppDelegate.mode(named: settings.startupMode) }
 
     /// What is actually in effect: a full-screen window forces focus mode.
     private var effectiveMode: QuietMode? { fullscreenActive && settings.fullscreenFocus ? .focus : userMode }
@@ -682,25 +728,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The camp does not run.
     var isFrozen: Bool { effectiveMode == .focus || effectiveMode == .saver }
 
-    /// `seconds` nil stays in the mode until the player switches back.
-    func hide(_ mode: QuietMode, for seconds: TimeInterval?) {
-        hiddenUntil = seconds.map { Date().addingTimeInterval($0) } ?? .distantFuture
+    /// Picked from the menu or a shortcut: lasts as long as the "how long" setting says.
+    private func chooseMode(_ mode: QuietMode?) {
+        setMode(mode, for: mode == nil ? nil : (settings.modeDuration > 0 ? settings.modeDuration : nil))
+    }
+
+    /// Switches mode. `seconds` nil stays until the player changes it; a timed mode goes back to the resting mode when it runs out.
+    func setMode(_ mode: QuietMode?, for seconds: TimeInterval? = nil, automatic: Bool = false) {
+        if !automatic { pomodoroChangedMode = false }
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: mode -> \(String(describing: mode)) automatic \(automatic)") }
         userMode = mode
         hideTimer?.invalidate()
-        if let seconds {
-            hideTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in self?.unhide() }
+        hideTimer = nil
+        hiddenUntil = nil
+        if mode != nil, let seconds {
+            hiddenUntil = Date().addingTimeInterval(seconds)
+            hideTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.setMode(self.baseMode, automatic: true)
+            }
         }
         applyQuietState()
     }
 
-    func unhide() {
-        guard userMode != nil else { return }
-        hiddenUntil = nil
-        userMode = nil
-        hideTimer?.invalidate()
-        hideTimer = nil
-        applyQuietState()
-    }
+    func hide(_ mode: QuietMode, for seconds: TimeInterval?) { setMode(mode, for: seconds) }
+    func unhide() { setMode(nil) }
 
     /// Puts the windows, sound, frame rate and menu bar icon in line with the mode in effect.
     private func applyQuietState() {
@@ -716,12 +768,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             windows.forEach { $0.orderFrontRegardless() }
         }
         if mode != nil { roster.hide() }
+        if mode != nil, away == nil { away = (Date(), colony.ants.count, colony.deaths, 0) }
+        if mode == nil, let gone = away {
+            away = nil
+            showReturnSummary(gone)
+        }
         if wasFrozen, !isFrozen { lastTick = Date() } // do not count the time spent frozen
         wasFrozen = isFrozen
         syncWindows()
         applyStatusIcon()
         scheduleFrameTimer(fps: desiredFPS())
         redrawAll()
+    }
+
+    /// "Welcome back": what changed in the camp while it was away and what notifications were missed. Silent.
+    private func showReturnSummary(_ gone: (since: Date, ants: Int, deaths: Int, missed: Int)) {
+        let minutes = Int(Date().timeIntervalSince(gone.since) / 60)
+        guard minutes >= 1, colony.nest != nil else { return }
+        let died = colony.deaths - gone.deaths
+        let born = max(0, colony.ants.count - gone.ants + died)
+        var parts: [String] = []
+        if born > 0 { parts.append("多了 \(born) 隻\(Characters.current.noun)") }
+        if died > 0 { parts.append("老死 \(died) 隻") }
+        var text = "回來啦！這 \(minutes >= 60 ? "\(minutes / 60) 小時 \(minutes % 60) 分" : "\(minutes) 分鐘")，營地" + (parts.isEmpty ? "沒有變化" : parts.joined(separator: "、"))
+        if gone.missed > 0 { text += "；錯過 \(gone.missed) 則 Claude 通知" }
+        colony.stage.enqueue(Message(kind: .done, speaker: Speakers.princess, breedIndex: 0, project: "", appBundleID: nil,
+                                     screen: alertScreenFrame(), text: text + "。", silent: true))
+    }
+
+    private func noteMissed() {
+        missedNotifications += 1
+        if away != nil { away?.missed += 1 }
+        applyStatusIcon()
     }
 
     private var alertsBusy: Bool { colony.stage.isActive || colony.pomodoro.arriving || colony.pomodoro.leaving }
@@ -961,13 +1039,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let home = character.nestName
         rosterItem.title = roster.isVisible ? "\(Characters.current.noun)名冊（開啟中，再按一次關閉）" : "\(Characters.current.noun)名冊…"
         rosterItem.isEnabled = colony.nest != nil && !isHiddenByUser
-        modeMenuItems.forEach { $0.isHidden = userMode != nil }
-        unhideItem.isHidden = userMode == nil
-        quietStatusItem.isHidden = !(fullscreenActive && settings.fullscreenFocus)
-        if let until = hiddenUntil, let mode = userMode {
-            let missed = missedNotifications > 0 ? "　·　期間有 \(missedNotifications) 則通知" : ""
-            unhideItem.title = "回到全開（目前：\(mode.name)" + (until == .distantFuture ? "" : "，還剩約 \(max(1, Int(until.timeIntervalSinceNow / 60))) 分鐘") + "）" + missed
+        var status: [String] = []
+        if fullscreenActive, settings.fullscreenFocus {
+            status.append("全螢幕中，自動專注")
+        } else if let until = hiddenUntil, let mode = userMode {
+            let back = baseMode.map { "回到\($0.name)" } ?? "回到全開"
+            status.append("\(mode.name)還剩約 \(max(1, Int(until.timeIntervalSinceNow / 60))) 分鐘，之後\(back)")
         }
+        if missedNotifications > 0 { status.append("錯過 \(missedNotifications) 則通知") }
+        quietStatusItem.isHidden = status.isEmpty
+        quietStatusItem.title = status.joined(separator: "　·　")
         rebuildAlertScreenMenu()
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
         nestMenuItem.title = "\(home)外觀"
@@ -1043,22 +1124,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyStatusIcon() {
         let character = Characters.current
         statusItem.button?.alphaValue = isSilenced ? 0.4 : (isHiddenByUser ? 0.7 : 1) // dimmed while the goblins are hidden
-        defer { // a dot beside the icon while notifications piled up during the hiding
-            if missedNotifications > 0 {
-                statusItem.button?.imagePosition = .imageLeft
-                statusItem.button?.title = " ●\(missedNotifications)"
-                statusItem.button?.alphaValue = 1
-            }
+        // a small letter for the mode (工 work, 省 energy saving, 靜 focus) and a dot with the number of missed notifications
+        let letter: String
+        switch effectiveMode {
+        case .work: letter = "工"
+        case .saver: letter = "省"
+        case .focus: letter = "靜"
+        case nil: letter = ""
         }
+        var badge = letter
+        if missedNotifications > 0 { badge += (badge.isEmpty ? "" : " ") + "●\(missedNotifications)" }
+        if missedNotifications > 0 { statusItem.button?.alphaValue = 1 }
         if let icon = character.icon {
             icon.size = NSSize(width: 16, height: 16) // 16 art pixels on 32 device pixels, so it stays crisp
             icon.isTemplate = false
             statusItem.button?.image = icon
-            statusItem.button?.title = ""
-            if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: menu bar icon from \(character.id): \(icon.representations.first?.pixelsWide ?? 0)px") }
+            statusItem.button?.imagePosition = badge.isEmpty ? .imageOnly : .imageLeft
+            statusItem.button?.title = badge.isEmpty ? "" : " " + badge
         } else {
             statusItem.button?.image = nil
-            statusItem.button?.title = character.emoji
+            statusItem.button?.title = character.emoji + (badge.isEmpty ? "" : " " + badge)
+        }
+    }
+
+    /// The menu bar icon blinks for a few seconds (the pomodoro ran out while everything is silent).
+    private func flashStatusIcon() {
+        flashTimer?.invalidate()
+        var count = 0
+        flashTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] timer in
+            guard let self else { return timer.invalidate() }
+            count += 1
+            self.statusItem.button?.alphaValue = count % 2 == 0 ? 1 : 0.15
+            if count >= 18 {
+                timer.invalidate()
+                self.applyStatusIcon()
+            }
+        }
+    }
+
+    // MARK: Shortcuts
+
+    /// ⌃⌥1 all on, ⌃⌥2 work mode, ⌃⌥3 energy saving, ⌃⌥4 focus.
+    private func applyHotkeys() {
+        HotKeys.shared.unregisterAll()
+        guard settings.hotkeysEnabled else { return }
+        let keys: [(Int, QuietMode?)] = [(18, nil), (19, .work), (20, .saver), (21, .focus)] // the 1–4 keys
+        for (code, mode) in keys {
+            let ok = HotKeys.shared.register(keyCode: code) { [weak self] in self?.chooseMode(mode) }
+            if !ok, ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: shortcut for key \(code) was not accepted") }
         }
     }
 
