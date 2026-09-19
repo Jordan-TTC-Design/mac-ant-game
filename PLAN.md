@@ -316,3 +316,9 @@ Characters/<id>/
 ## 四種狀態、全螢幕專注、第二螢幕、每日統計、hook 安裝（2026-09）
 
 見 SCENARIOS.md。使用者的四種需求：完全靜音（專注模式）、有番茄鐘和通知但營地暫停（節能模式）、有番茄鐘和通知且營地背景運作（工作模式）、全開。實作：`QuietMode { work, saver, focus }`、`effectiveMode`（全螢幕視窗會強制專注）、`isHiddenByUser`（營地不畫）、`isSilenced`（不跳出、不出聲）、`isFrozen`（不 tick）；營地隱藏時覆蓋視窗仍在，`AntView` 只畫番茄鐘與通知（`colony.campHidden`）。`Stats.swift` 存每日統計（測試時 `CAMP_NO_SAVE` 不寫檔）。`tools/install-hooks.sh` 安裝／移除 Claude Code hook。已驗證：三種模式的視窗、暫停、通知、更新頻率；全螢幕開啟與結束；統計計數。沒驗證：真實第二螢幕、真實全螢幕影片或簡報、開機自動啟動。
+
+
+## 切換模式、預設工作模式、README 美術（2026-09）
+
+- 模式（`AppDelegate.setMode`）：選單最上面四個一鍵切換的項目（全開、工作、節能、專注）＋「切換模式後持續」＋「啟動時的模式」（預設工作模式；還沒有營地時固定全開，好讓人選位置）；全域快捷鍵 ⌃⌥1～4（`HotKeys.swift`，用系統熱鍵服務，不需要權限，已用真的按鍵驗證）。選單列圖示旁顯示模式小字（工、省、靜）。專注模式下番茄鐘時間到，圖示閃動；回到全開時有靜音的「歡迎回來」小泡泡（營地多了幾隻、錯過幾則通知）。開始番茄鐘時若在全開，自動進入工作模式，結束後回來。
+- README 美術：`tools/pixelart.py`、`tools/make_readme_art.py` 從遊戲自己的精靈圖合成 `docs/images/` 八張圖（封面、品種、公主、營地、自然事件、四種狀態、番茄鐘、通知），全是 4 倍放大的點陣，重新產生只要執行 `python3 tools/make_readme_art.py`。
