@@ -195,8 +195,32 @@ final class AntView: NSView {
         guard onScreen.contains(p) else { return }
         let pixel = role.pixelSize(scale: Double(scale))
         let size = CGFloat(role.frameSize) * pixel
-        let phase = q.walking ? q.legPhase / 3 : 0
-        guard let image = role.image(direction: SpriteDirection(heading: q.heading), phase: phase) else { return }
+
+        // props sit behind her
+        if let prop = q.prop { drawProp(prop, at: p, pixel: pixel, size: size) }
+
+        if q.isLying, let image = role.image(direction: .down, phase: 0) {
+            // asleep: lying on her back with her head on the pillow, and the blanket pulled up
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.translateBy(x: p.x, y: p.y + size * 0.3)
+            ctx.rotate(by: .pi / 2)
+            ctx.draw(image, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
+            ctx.restoreGState()
+            drawBlanket(at: p, size: size)
+            if let decoration = q.decoration { drawDecoration(decoration, at: CGPoint(x: p.x, y: p.y + size * 0.3), scale: size / 16) }
+            return
+        }
+
+        // a pose of her own (tea, exercise…) if she has one, otherwise the walking frames
+        let image: CGImage
+        if let pose = q.pose, let posed = role.poseImage(pose.name, frame: pose.frame) {
+            image = posed
+        } else {
+            let phase = q.walking ? q.legPhase / 3 : 0
+            guard let walking = role.image(direction: SpriteDirection(heading: q.heading), phase: phase) else { return }
+            image = walking
+        }
         var rect = CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size)
 
         ctx.saveGState()
@@ -212,6 +236,77 @@ final class AntView: NSView {
         ctx.restoreGState()
 
         if let decoration = q.decoration { drawDecoration(decoration, at: p, scale: size / 16) }
+    }
+
+    // MARK: Props
+
+    /// Draws rows of characters as pixels (`.` is empty), the bottom-left of the grid at `origin`.
+    private func drawPixelGrid(_ rows: [String], palette: [Swift.Character: NSColor], origin: CGPoint, pixel: CGFloat) {
+        for (r, row) in rows.enumerated() {
+            for (c, symbol) in row.enumerated() {
+                guard let color = palette[symbol] else { continue }
+                color.setFill()
+                NSBezierPath(rect: NSRect(x: origin.x + CGFloat(c) * pixel, y: origin.y + CGFloat(rows.count - 1 - r) * pixel,
+                                          width: pixel, height: pixel)).fill()
+            }
+        }
+    }
+
+    private func drawProp(_ prop: Prop, at p: CGPoint, pixel: CGFloat, size: CGFloat) {
+        let ground = p.y - size * 0.2 // where her feet are
+        switch prop {
+        case .teaTable:
+            let palette: [Swift.Character: NSColor] = [
+                "o": NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 1), "w": NSColor(calibratedWhite: 0.98, alpha: 1),
+                "r": NSColor(calibratedRed: 0.84, green: 0.31, blue: 0.38, alpha: 1), "p": NSColor(calibratedRed: 0.47, green: 0.67, blue: 0.86, alpha: 1),
+                "t": NSColor(calibratedWhite: 0.94, alpha: 1), "v": NSColor(calibratedRed: 0.77, green: 0.45, blue: 0.2, alpha: 1),
+                "c": NSColor(calibratedWhite: 1, alpha: 1),
+            ]
+            drawPixelGrid(["...tt.....", "..pppp.vv.", "..pppp.cc.", ".oooooooo.", ".orrrrrro.", ".owwwwwwo.", "..o....o..", "..o....o.."],
+                          palette: palette, origin: CGPoint(x: p.x + size * 0.95, y: ground), pixel: pixel)
+        case .mat:
+            NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 1).setFill()
+            NSBezierPath(rect: NSRect(x: p.x - size * 0.7, y: ground - pixel * 2, width: size * 1.4, height: pixel * 3)).fill()
+            NSColor(calibratedRed: 0.45, green: 0.76, blue: 0.5, alpha: 1).setFill()
+            NSBezierPath(rect: NSRect(x: p.x - size * 0.7 + pixel * 0.5, y: ground - pixel * 1.5, width: size * 1.4 - pixel, height: pixel * 2)).fill()
+        case .flowerPots:
+            for k in 0..<3 {
+                let x = p.x + size * 1.05 + CGFloat(k) * pixel * 5
+                NSColor(calibratedRed: 0.6, green: 0.38, blue: 0.24, alpha: 1).setFill()
+                NSBezierPath(rect: NSRect(x: x, y: ground, width: pixel * 3.5, height: pixel * 2.5)).fill()
+                NSColor(calibratedRed: 0.35, green: 0.62, blue: 0.3, alpha: 1).setFill()
+                NSBezierPath(rect: NSRect(x: x + pixel * 1.5, y: ground + pixel * 2.5, width: pixel * 0.8, height: pixel * 3)).fill()
+                [NSColor(calibratedRed: 0.95, green: 0.4, blue: 0.5, alpha: 1), NSColor(calibratedRed: 1, green: 0.85, blue: 0.3, alpha: 1),
+                 NSColor(calibratedRed: 0.85, green: 0.6, blue: 0.95, alpha: 1)][k].setFill()
+                NSBezierPath(ovalIn: NSRect(x: x + pixel * 0.5, y: ground + pixel * 5, width: pixel * 2.8, height: pixel * 2.8)).fill()
+            }
+        case .bed:
+            // a mattress and a pillow, the pillow under her head on the left
+            let outline = NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 1)
+            let mattress = NSRect(x: p.x - size * 0.72, y: p.y + size * 0.05, width: size * 1.44, height: size * 0.62)
+            outline.setFill()
+            NSBezierPath(roundedRect: mattress.insetBy(dx: -pixel * 0.6, dy: -pixel * 0.6), xRadius: pixel * 2, yRadius: pixel * 2).fill()
+            NSColor(calibratedRed: 0.82, green: 0.87, blue: 0.95, alpha: 1).setFill()
+            NSBezierPath(roundedRect: mattress, xRadius: pixel * 1.5, yRadius: pixel * 1.5).fill()
+            outline.setFill()
+            NSBezierPath(roundedRect: NSRect(x: p.x - size * 0.7, y: p.y + size * 0.16, width: size * 0.42, height: size * 0.42).insetBy(dx: -pixel * 0.5, dy: -pixel * 0.5),
+                         xRadius: pixel * 1.5, yRadius: pixel * 1.5).fill()
+            NSColor.white.setFill()
+            NSBezierPath(roundedRect: NSRect(x: p.x - size * 0.7, y: p.y + size * 0.16, width: size * 0.42, height: size * 0.42),
+                         xRadius: pixel * 1.2, yRadius: pixel * 1.2).fill()
+        }
+    }
+
+    /// The blanket over a sleeping princess, from her waist down.
+    private func drawBlanket(at p: CGPoint, size: CGFloat) {
+        let pixel = size / 16
+        let blanket = NSRect(x: p.x - size * 0.02, y: p.y + size * 0.06, width: size * 0.7, height: size * 0.6)
+        NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 1).setFill()
+        NSBezierPath(roundedRect: blanket.insetBy(dx: -pixel * 0.5, dy: -pixel * 0.5), xRadius: pixel, yRadius: pixel).fill()
+        NSColor(calibratedRed: 0.55, green: 0.68, blue: 0.9, alpha: 1).setFill()
+        NSBezierPath(roundedRect: blanket, xRadius: pixel * 0.8, yRadius: pixel * 0.8).fill()
+        NSColor(calibratedWhite: 1, alpha: 0.9).setFill() // a folded-over edge
+        NSBezierPath(rect: NSRect(x: blanket.minX, y: blanket.minY, width: pixel * 1.6, height: blanket.height)).fill()
     }
 
     /// The princess lying across the two goblins carrying her, head toward where they are going.
@@ -348,6 +443,24 @@ final class AntView: NSView {
     /// Floating "z z z", yawn bubbles and thought bubbles beside the queen's head.
     private func drawDecoration(_ decoration: Queen.Decoration, at p: CGPoint, scale s: CGFloat) {
         switch decoration {
+        case .steam(let clock):
+            // wisps rising from the cup in her hand (about art pixel (11, 7))
+            let cup = CGPoint(x: p.x + 3 * s, y: p.y + 5.8 * s)
+            for k in 0..<3 {
+                let t = (clock * 0.8 + Double(k) / 3).truncatingRemainder(dividingBy: 1)
+                NSColor(calibratedWhite: 1, alpha: CGFloat(0.85 * sin(t * .pi))).setFill()
+                let x = cup.x + CGFloat(sin(t * 6 + Double(k))) * s * 0.8 + CGFloat(k - 1) * s * 0.8
+                NSBezierPath(rect: NSRect(x: x, y: cup.y + CGFloat(t) * 7 * s, width: s * 0.9, height: s * 0.9)).fill()
+            }
+        case .notes(let clock):
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 7 * s, weight: .bold),
+                                                        .foregroundColor: NSColor(calibratedRed: 0.35, green: 0.3, blue: 0.7, alpha: 1)]
+            for (k, note) in ["♪", "♫", "♪"].enumerated() {
+                let t = (clock * 0.6 + Double(k) / 3).truncatingRemainder(dividingBy: 1)
+                let x = p.x + (k == 1 ? -9 : 8) * s + CGFloat(sin(t * 5)) * 2 * s
+                (note as NSString).draw(at: NSPoint(x: x, y: p.y + (12 + 12 * CGFloat(t)) * s),
+                                        withAttributes: attrs.merging([.foregroundColor: NSColor(calibratedRed: 0.35, green: 0.3, blue: 0.7, alpha: CGFloat(sin(t * .pi)))]) { $1 })
+            }
         case .zzz(let clock):
             for k in 0..<3 {
                 let t = (clock * 0.35 + Double(k) / 3).truncatingRemainder(dividingBy: 1)

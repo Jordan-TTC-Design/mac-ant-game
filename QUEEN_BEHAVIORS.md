@@ -12,18 +12,23 @@
 | 被扛進營地 | 放好營地後，兩隻哥布林從最近的螢幕邊把她（橫躺在他們頭上）扛過來，約 10 秒，放在營地旁；放下後她才開始自己活動，哥布林才開始出生 | `carried`（`Colony.beginCarrying`） |
 | 散步 | 在她站的位置附近 12～30px 內隨機走走 | `wandering` |
 | 發呆 | 站著 2～6 秒（偶爾 6～12 秒） | `resting` |
-| 梳頭髮 | 站著 2.5 秒（目前沒有專屬姿勢，之後補） | `grooming` |
+| 梳頭髮 | 舉手用紅色的梳子梳，5～6 秒 | `doing(.comb)` |
 | 走進營地入口 | 走進去漸漸淡出，3～6 秒後再走出來 | `enteringHole` / `inHole` / `leavingHole` |
 | 探頭 | 走進去後，只露出上半身 3.2 秒再縮回 | `peeking` |
 | 放花 | 站著 2.6 秒，在腳邊放一朵小花，8 秒後淡出 | `layingEgg` + `Colony.eggs`（名稱是舊的） |
 | 轉圈 | 原地轉兩圈 | `spinning` |
 | 張望 | 左右轉頭看看 | `lookingAround` |
-| 睡覺 | 8～14 秒，頭上飄出 z z z（目前沒有躺下的姿勢） | `sleeping` |
-| 打哈欠 | 2.2 秒，旁邊冒兩顆小氣泡 | `yawning` |
+| 喝茶 | 捧著杯子啜飲，旁邊有小茶几（茶壺加杯子），杯口冒熱氣，9～12 秒；愛穿禮服 | `doing(.tea)` |
+| 運動 | 開合跳（手臂舉高、腳打開），腳下鋪綠色瑜珈墊，7～9 秒；先換運動裝 | `doing(.exercise)` |
+| 看書 | 捧著一本書、低頭看、偶爾翻頁，10～14 秒 | `doing(.read)` |
+| 澆花 | 拿澆水壺往旁邊的三盆花澆水（滴水珠），6～8 秒；戴草帽 | `doing(.water)` |
+| 唱歌 | 張嘴、雙手交握，頭上飄出音符，6～8 秒 | `doing(.sing)` |
+| 睡覺 | 換睡衣後躺在小床上（枕頭、被子），頭上飄 z z z，8～14 秒 | `sleeping`（躺下由 `AntView` 旋轉精靈） |
+| 打哈欠 | 2.2 秒，手放嘴邊、閉眼、旁邊冒兩顆小氣泡 | `yawning`（姿勢 `yawn`） |
 | 換裝 | 轉兩圈、周圍閃星星，轉到一半換成另一套（一定是不同的一套），1.8 秒；一套有 7 種款式，見下方 | `changingOutfit`（`Colony.outfitIndex`） |
-| 想事情 | 頭上冒出想法泡泡，裡面是食物或植物的表情符號 | `thinking` |
-| 迎接新生 | 轉向新出生的哥布林，1.8 秒，接著目送 4 秒 | `greeting` → `watching` |
-| 跳舞 | 哥布林數量到 10 / 50 / 100 / 200 / 300 / 400 / 500 時扭動 2.5 秒 | `dancing` |
+| 想事情 | 手指托著下巴，頭上冒出想法泡泡（食物或植物的表情符號） | `thinking`（姿勢 `think`） |
+| 迎接新生 | 轉向新出生的哥布林、揮手 1.8 秒，接著目送 4 秒 | `greeting`（姿勢 `wave`）→ `watching` |
+| 跳舞 | 手臂輪流舉起、腳步打開，哥布林數量到 10 / 50 / 100 / 200 / 300 / 400 / 500 時扭動 2.5 秒 | `dancing` |
 | 好奇 | 滑鼠在 220px 內、動得慢時，走向游標方向嗅一嗅，最多 6 秒 | `curious`（發呆時觸發） |
 | 被嚇到 | 滑鼠在 120px 內快速掃過（> 1200 px/s）就飛快躲進營地入口，躲 6～10 秒 | 發呆時觸發，20 秒冷卻 |
 | 回應點擊 | 點營地（26px 內）時她走進去再探頭；點擊不會被攔截，下面的 App 照常收到 | `Queen.poke`（全域滑鼠監聽） |
@@ -32,32 +37,31 @@
 
 ```
 carried ──被放下──▶ resting ──計時結束，依權重隨機挑下一個──▶
-   ├ 26%  wandering
-   ├ 12%  grooming
-   ├  9%  enteringHole ─▶ inHole(3~6s) ─▶ leavingHole ─▶ resting
-   ├ 11%  layingEgg（放花）
-   ├  6%  spinning
-   ├  8%  lookingAround
-   ├  7%  enteringHole(peekPending) ─▶ inHole ─▶ peeking ─▶ inHole(1.2s) ─▶ leavingHole
-   ├  7%  sleeping
-   ├  5%  yawning
-   ├  6%  thinking
-   ├  3%  changingOutfit
-   └  3%  長 resting（6~12 秒）
+   ├ 16%  wandering                       ├  9%  doing(tea)        ├  7%  doing(exercise)
+   ├  8%  doing(comb)                      ├  7%  doing(read)       ├  5%  doing(water)
+   ├  5%  enteringHole ─▶ inHole(3~6s) ─▶ leavingHole ─▶ resting     ├  7%  doing(sing)
+   ├  5%  layingEgg（放花）                ├  6%  sleeping          ├  4%  yawning
+   ├  3%  spinning                         ├  5%  lookingAround     ├  5%  thinking
+   ├  4%  enteringHole(peekPending) ─▶ inHole ─▶ peeking ─▶ inHole(1.2s) ─▶ leavingHole
+   ├  1%  changingOutfit                   └  3%  長 resting（6~12 秒）
+   做有「合適服裝」的活動前，有 30% 機率先換裝（見「服裝配對」）；睡覺前一樣（睡衣）。
 外部觸發：游標快速掃過 ─▶ 躲進去；游標慢慢靠近 ─▶ curious；greet ─▶ greeting ─▶ watching；celebrate ─▶ dancing；poke ─▶ 進去再探頭
 ```
 
 - 走路速度：走出來 10 px/s、散步 22、進出入口 18（被嚇到 70、被點擊 40）；離目標很近時會自動加快轉向，否則會在原地繞圈（見「踩過的坑」）；每個走路動作有 20 秒逾時保險。
 - 她站的位置（`Queen.homeSpot`）在營地的入口旁邊（右方 30px、下方 6px），不站在入口前，這樣營地不會被擋住。
+- 姿勢畫在每套服裝的精靈圖下方（`queen.png` 第 4 列起，每個姿勢一列，manifest 的 `poses` 標出格號），只有正面；道具（茶几、瑜珈墊、花盆、床）由 `AntView.drawProp` 用像素格畫在她身旁。
 - 像素角色的探頭是整個精靈從入口下方升起（`AntView.drawSpriteQueen`）。
 
-## 接下來：公主的日常
+## 服裝配對
 
-目標是把動作全換成人類公主會做的事，並補專用姿勢的影格。預計的清單（尚未實作，順序可調）：
+每個活動有合適的服裝（`Activity.preferredOutfits`）：喝茶與唱歌是禮服或洋裝、運動是運動裝、看書是短裙上衣／洋裝／冬季外套、澆花是草帽洋裝、睡覺是睡衣，梳頭髮不挑。開始活動前，如果身上不是合適的，有 30% 的機率先轉圈換上（`startOrChange`，換裝完成才開始活動），其餘時候就穿著現在的做。約每 100 秒一次換裝。
 
-喝茶（坐著捧杯，冒熱氣）、運動（伸展、原地跑步）、看書、澆花／種花、梳頭髮（真的拿梳子）、畫畫、織毛衣、唱歌（冒音符）、撐陽傘曬太陽、跟哥布林玩、餵哥布林吃東西、跳舞的專用影格、睡覺躺下的影格、打哈欠的影格、（換裝已做，見上方。）
+## 接下來
 
-哥布林可以邪惡（綁架、偷東西、伏擊、跟冒險者打）。
+還沒做的日常：坐著喝茶（現在是站著）、看書時偶爾打盹、撐陽傘曬太陽、畫畫、織毛衣、跟哥布林玩、餵哥布林吃東西、睡覺時的呼吸起伏。
+
+**內容界線**：她是被抓來的公主，不做更衣過程、沐浴、泳裝或任何裸露／性暗示的動作，也不做「哥布林是她所生」的設定；哥布林可以邪惡（綁架、偷東西、伏擊、跟冒險者打），但這些內容不涉及她的身體。
 
 ## 服裝
 

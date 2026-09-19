@@ -305,7 +305,7 @@ def goblin_face():
 # (`sleeves`), below (`bottom`: dress, gown, skirt, shorts, pants, coat) and on her head (`hat`), plus its colours.
 # Q/q = top and its shade, D/d = skirt or trousers and their shade, K = shoes, U/u = hat, A = accent, T = tights.
 GIRL.update({"Q": (96, 138, 214), "q": (66, 100, 178), "T": (76, 60, 84), "U": (232, 200, 130), "u": (196, 160, 90),
-             "A": (224, 64, 88)})
+             "A": (224, 64, 88), "V": (196, 116, 52), "C": (150, 160, 172), "X": (110, 182, 240), "a": (170, 40, 60)})
 
 OUTFITS = [
     dict(id="dress", name="洋裝", bottom="dress", sleeves="puff", hat="tiara",
@@ -330,7 +330,7 @@ OUTFITS = [
 ]
 
 
-def girl_lower(c, phase, o):
+def girl_lower(c, phase, o, apart=False):
     """Skirt, trousers or coat hem, the legs that show below, and the shoes."""
     kind = o["bottom"]
     left = (6, 7) if phase == 1 else (5, 6)
@@ -359,11 +359,13 @@ def girl_lower(c, phase, o):
         c.rect(9, 13, 10, 13, "D")
     elif kind == "coat":
         c.cells([(6, 13), (9, 13)], "T")                  # tights
+    if apart:
+        left, right = (3, 4), (11, 12)
     c.rect(left[0], 14, left[1], 14, "K")
     c.rect(right[0], 14, right[1], 14, "K")
 
 
-def girl_upper(c, phase, o, back):
+def girl_upper(c, phase, o, back, arms=True):
     kind = o["bottom"]
     coat = kind == "coat"
     c.rect(4 if coat else 5, 10, 11 if coat else 10, 12 if coat else 11, "Q")
@@ -382,7 +384,7 @@ def girl_upper(c, phase, o, back):
     elif o["sleeves"] == "none":
         c.cells([(7, 10), (8, 10)], "s")                                             # the neck of a tank top
     swing = {0: 0, 1: -1, 2: 0, 3: 1}[phase]
-    for x, sign in (((3 if coat else 4), 1), ((12 if coat else 11), -1)):
+    for x, sign in (((3 if coat else 4), 1), ((12 if coat else 11), -1)) if arms else ():
         dy = sign * swing if swing else 0
         if o["sleeves"] == "puff":
             c.put(x, 10 + dy, "Q")
@@ -423,10 +425,10 @@ def girl_head_top(c, o, side=False):
         c.rect(4, 3, 11, 3, "A")
 
 
-def girl_front(phase, o):
+def girl_front(phase, o, arms=True, mouth="smile", eyes="open", extra=None, apart=False):
     c = Canvas()
-    girl_lower(c, phase, o)
-    girl_upper(c, phase, o, back=False)
+    girl_lower(c, phase, o, apart=apart)
+    girl_upper(c, phase, o, back=False, arms=arms)
     c.rect(3, 4, 4, 9, "H")                                 # shoulder-length hair on both sides
     c.rect(11, 4, 12, 9, "H")
     girl_head_top(c, o)
@@ -435,12 +437,22 @@ def girl_front(phase, o):
     c.cells([(5, 4), (6, 4), (9, 4), (10, 4), (5, 5), (10, 5)], "H")     # bangs
     c.cells([(7, 4), (8, 4)], "s")
     c.cells([(3, 9), (12, 9)], "J")
+    if extra:
+        extra(c)                                            # arms and things she holds, in front of the hair
     c.outline()
-    c.cells([(5, 6), (6, 6), (9, 6), (10, 6)], "L")                      # eyes
-    c.cells([(5, 7), (10, 7)], "i")
-    c.cells([(6, 7), (9, 7)], "w")
+    if eyes == "open":
+        c.cells([(5, 6), (6, 6), (9, 6), (10, 6)], "L")                  # eyes
+        c.cells([(5, 7), (10, 7)], "i")
+        c.cells([(6, 7), (9, 7)], "w")
+    else:                                                   # looking down, or closed
+        c.cells([(5, 7), (6, 7), (9, 7), (10, 7)], "L")
     c.cells([(5, 8), (10, 8)], "p")
-    c.cells([(7, 8), (8, 8)], "m")
+    if mouth == "open":
+        c.cells([(7, 8), (8, 8), (7, 9), (8, 9)], "m")
+    elif mouth == "wide":
+        c.cells([(7, 8), (8, 8), (6, 9), (7, 9), (8, 9), (9, 9)], "m")
+    elif mouth != "hidden":
+        c.cells([(7, 8), (8, 8)], "m")
     return c
 
 
@@ -521,6 +533,142 @@ def girl_side(phase, o):
     c.put(11, 8, "m")
     c.put(10, 8, "p")
     return c
+
+
+# --- poses -----------------------------------------------------------------------------------------------------------
+# Front-facing action frames, four per row, added below the walking rows of every outfit's sheet. Arms and the things
+# she holds are drawn before the outline so they become part of her silhouette.
+def _sleeve_key(o):
+    return "s" if o["sleeves"] == "none" else "Q"
+
+
+def arm(c, o, pts):
+    """An arm along `pts` (shoulder first, hand last): sleeve colour, then bare hand."""
+    for x, y in pts[:-1]:
+        c.put(x, y, _sleeve_key(o))
+    c.put(pts[-1][0], pts[-1][1], "s")
+
+
+def _down(c, o):
+    arm(c, o, [(4, 10), (4, 11)])
+    arm(c, o, [(11, 10), (11, 11)])
+
+
+def pose_tea(f, o):
+    hands = [(12, 11), (11, 10), (10, 9), (11, 10)][f]
+    cup = [(12, 9), (11, 8), (9, 7), (11, 8)][f]
+
+    def extra(c):
+        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(11, 10), hands])
+        x, y = cup
+        c.cells([(x, y), (x + 1, y)], "V")                  # the tea
+        c.cells([(x, y + 1), (x + 1, y + 1)], "W")          # the cup
+        c.put(x + 2, y + 1, "W")                            # its handle
+    return girl_front(0, o, arms=False, mouth="hidden" if f == 2 else "smile", extra=extra)
+
+
+def pose_exercise(f, o):
+    up = f in (1, 3)
+
+    def extra(c):
+        if not up:
+            _down(c, o)
+        elif f == 1:
+            arm(c, o, [(4, 10), (3, 9), (2, 8)])
+            arm(c, o, [(11, 10), (12, 9), (13, 8)])
+        else:
+            arm(c, o, [(4, 10), (3, 9), (3, 7)])
+            arm(c, o, [(11, 10), (12, 9), (12, 7)])
+    return girl_front(0, o, arms=False, mouth="open" if up else "smile", extra=extra, apart=up)
+
+
+def pose_read(f, o):
+    def extra(c):
+        c.rect(5, 10, 10, 12, "W")                          # an open book held at her chest
+        c.rect(5, 10, 5, 12, "A")
+        c.rect(10, 10, 10, 12, "A")
+        c.rect(7, 10, 8, 12, "a")
+        c.cells([(6, 11), (9, 11)], "L")
+        if f in (1, 3):
+            c.cells([(9, 9), (10, 9)], "W")                 # a page turning
+        c.put(4, 12, "s")
+        c.put(11, 12, "s")
+    return girl_front(0, o, arms=False, eyes="down", extra=extra)
+
+
+def pose_water(f, o):
+    def extra(c):
+        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(11, 10), (11, 11)])
+        c.rect(11, 10, 13, 12, "C")                         # the watering can
+        c.put(10, 10, "C")
+        spout_y = [10, 10, 11, 10][f]
+        c.cells([(14, spout_y), (14, spout_y - 1)] if f == 0 else [(14, spout_y), (14, spout_y - (0 if f == 2 else 1))], "C")
+        if f in (1, 2, 3):
+            c.cells([(14, 12), (14, 14)] if f == 2 else [(14, 12)], "X")                     # drops
+    return girl_front(0, o, arms=False, extra=extra)
+
+
+def pose_comb(f, o):
+    y = 6 if f in (0, 2) else 5
+
+    def extra(c):
+        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(11, 10), (12, 8), (12, y)])
+        c.cells([(13, y - 1), (13, y), (13, y + 1)], "A")   # the comb
+    return girl_front(0, o, arms=False, extra=extra)
+
+
+def pose_sing(f, o):
+    def extra(c):
+        arm(c, o, [(4, 10), (5, 11), (6, 11), (7, 11)])
+        arm(c, o, [(11, 10), (10, 11), (9, 11), (8, 11)])
+    return girl_front(0, o, arms=False, mouth=["smile", "open", "wide", "open"][f], extra=extra)
+
+
+def pose_dance(f, o):
+    def extra(c):
+        if f == 0:
+            arm(c, o, [(4, 10), (3, 8), (3, 6)])
+            arm(c, o, [(11, 10), (12, 11)])
+        elif f == 2:
+            arm(c, o, [(4, 10), (3, 11)])
+            arm(c, o, [(11, 10), (12, 8), (12, 6)])
+        else:
+            arm(c, o, [(4, 10), (3, 11)])
+            arm(c, o, [(11, 10), (12, 11)])
+    return girl_front(0, o, arms=False, mouth="open", extra=extra, apart=f in (1, 3))
+
+
+def pose_wave(f, o):
+    def extra(c):
+        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(11, 10), (12, 8), (13 if f in (0, 2) else 12, 6)])
+    return girl_front(0, o, arms=False, mouth="open", extra=extra)
+
+
+def pose_yawn(f, o):
+    def extra(c):
+        arm(c, o, [(4, 10), (4, 11)])
+        if f == 0:
+            arm(c, o, [(11, 10), (11, 9), (10, 8)])         # a hand over the mouth
+        else:
+            arm(c, o, [(11, 10), (12, 8), (12, 6)])
+    return girl_front(0, o, arms=False, mouth="wide", eyes="down", extra=extra)
+
+
+def pose_think(f, o):
+    def extra(c):
+        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(11, 10), (11, 9), (9, 9)])              # a finger at the chin
+    return girl_front(0, o, arms=False, extra=extra, mouth="hidden")
+
+
+# name, drawing function, number of distinct frames
+POSES = [("tea", pose_tea, 4), ("exercise", pose_exercise, 4), ("read", pose_read, 4), ("water", pose_water, 4),
+         ("comb", pose_comb, 4), ("sing", pose_sing, 4), ("dance", pose_dance, 4), ("wave", pose_wave, 4),
+         ("yawn", pose_yawn, 2), ("think", pose_think, 2)]
 
 
 def face_image():
@@ -655,8 +803,18 @@ def build_sheet(queen, look=None, outfit=None):
     outfit = outfit or OUTFITS[0]
     pal = dict(GIRL, **outfit["pal"]) if queen else (look.palette if look else WORKER)
     rows = [girl_front, girl_back, girl_side] if queen else [goblin_front, goblin_back, goblin_side]
-    w, h = 4 * SIZE, len(rows) * SIZE
+    pose_rows = len(POSES) if queen else 0
+    w, h = 4 * SIZE, (len(rows) + pose_rows) * SIZE
     img = [[(0, 0, 0, 0)] * w for _ in range(h)]
+    if queen:
+        for r, (_name, draw, count) in enumerate(POSES):
+            for f in range(count):
+                canvas = draw(f, outfit)
+                for y in range(SIZE):
+                    for x in range(SIZE):
+                        key = canvas.px[y][x]
+                        if key is not None:
+                            img[(len(rows) + r) * SIZE + y][f * SIZE + x] = pal[key] + (255,)
     for r, draw in enumerate(rows):
         for phase in range(4):
             canvas = draw(phase, outfit) if queen else draw(phase, look or Look())
@@ -736,6 +894,7 @@ def main():
         "breeds": [{"id": i, "name": n, "weight": w, "boost": b, "blurb": blurb, "stats": stats, "sheet": sheet}
                    for i, n, w, b, blurb, stats, sheet, _ in BREEDS],
         "queen": {"sheet": "queen.png", "pixelScale": 2.0, "walk": walk,
+                  "poses": {name: [(3 + r) * 4 + f for f in range(count)] for r, (name, _d, count) in enumerate(POSES)},
                   "outfits": [{"id": o["id"], "name": o["name"], "sheet": "queen.png" if o["id"] == "dress" else f"queen_{o['id']}.png"}
                               for o in OUTFITS]},
     }

@@ -21,11 +21,20 @@ struct SpriteRole {
     let pixelScale: Double
     let frameSize: Int
     private let frames: [SpriteDirection: [CGImage]]
+    /// Action poses (tea, exercise…): front-facing animations, by name.
+    private let poses: [String: [CGImage]]
 
-    init(pixelScale: Double, frameSize: Int, frames: [SpriteDirection: [CGImage]]) {
+    init(pixelScale: Double, frameSize: Int, frames: [SpriteDirection: [CGImage]], poses: [String: [CGImage]] = [:]) {
         self.pixelScale = pixelScale
         self.frameSize = frameSize
         self.frames = frames
+        self.poses = poses
+    }
+
+    /// Frame `frame` (wrapping round) of the pose called `name`, if this character has it.
+    func poseImage(_ name: String, frame: Int) -> CGImage? {
+        guard let list = poses[name], !list.isEmpty else { return nil }
+        return list[((frame % list.count) + list.count) % list.count]
     }
 
     /// One frame of the walk cycle. `phase` grows with distance walked.
@@ -113,6 +122,7 @@ enum Characters {
             let pixelScale: Double
             let walk: [String: [Int]]
             let outfits: [OutfitEntry]?
+            let poses: [String: [Int]]?
         }
 
         struct OutfitEntry: Decodable {
@@ -173,13 +183,13 @@ enum Characters {
             let queen = try manifest.queen.flatMap { try role($0, frame: manifest.frame, folder: folder) }
             var outfits: [Outfit] = []
             for entry in manifest.queen?.outfits ?? [] {
-                let sheet = Manifest.Role(sheet: entry.sheet, pixelScale: manifest.queen?.pixelScale ?? 2, walk: manifest.queen?.walk ?? manifest.worker.walk, outfits: nil)
+                let sheet = Manifest.Role(sheet: entry.sheet, pixelScale: manifest.queen?.pixelScale ?? 2, walk: manifest.queen?.walk ?? manifest.worker.walk, outfits: nil, poses: manifest.queen?.poses)
                 if let sprites = try role(sheet, frame: manifest.frame, folder: folder) { outfits.append(Outfit(id: entry.id, name: entry.name, role: sprites)) }
             }
             var breeds: [Breed] = []
             for entry in manifest.breeds ?? [] {
                 // a breed shares the worker's animation layout and pixel scale, and brings its own sheet
-                let sheet = Manifest.Role(sheet: entry.sheet, pixelScale: manifest.worker.pixelScale, walk: manifest.worker.walk, outfits: nil)
+                let sheet = Manifest.Role(sheet: entry.sheet, pixelScale: manifest.worker.pixelScale, walk: manifest.worker.walk, outfits: nil, poses: nil)
                 guard let sprites = try role(sheet, frame: manifest.frame, folder: folder) else { continue }
                 breeds.append(Breed(id: entry.id, name: entry.name, weight: entry.weight, prosperityBoost: entry.boost ?? 0,
                                     stats: entry.stats ?? BreedStats(), sprites: sprites, blurb: entry.blurb ?? ""))
@@ -211,10 +221,13 @@ enum Characters {
         let up = slice(role.walk["up"] ?? role.walk["down"] ?? [])
         let side = slice(role.walk["side"] ?? role.walk["down"] ?? [])
         guard !down.isEmpty else { return nil }
+        var poses: [String: [CGImage]] = [:]
+        for (name, indices) in role.poses ?? [:] { poses[name] = slice(indices) }
         return SpriteRole(pixelScale: role.pixelScale, frameSize: frame,
                           frames: [.down: down, .up: up.isEmpty ? down : up,
                                    .right: side.isEmpty ? down : side,
-                                   .left: (side.isEmpty ? down : side).map(mirrored)])
+                                   .left: (side.isEmpty ? down : side).map(mirrored)],
+                          poses: poses)
     }
 
     /// The image flipped left to right (the art faces right; left is its mirror).

@@ -36,6 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var nestMenuItem: NSMenuItem!
     private var customSpawnItem: ClosureMenuItem!
     private var characterMenuItem: NSMenuItem!
+    /// While set, the goblins are hidden and the camp is frozen (a meeting, focused work). `nil` = visible.
+    private var hiddenUntil: Date?
+    private var hideTimer: Timer?
+    private var hideMenuItem: NSMenuItem!
+    private var unhideItem: ClosureMenuItem!
     private var rosterItem: ClosureMenuItem!
     private lazy var roster: RosterPanel = {
         let panel = RosterPanel(colony: colony)
@@ -192,6 +197,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 log("roster captured \(cg.width)x\(cg.height)")
             }
         }
+        if env["CAMP_TEST_HIDE"] != nil { // hide for 2 s, and check the windows and the clock
+            after(3) {
+                let ticksBefore = self.colony.ants.count
+                self.hide(for: 2)
+                log("hidden: windows visible = \(self.windows.contains { $0.isVisible }), hidden flag = \(self.isHiddenByUser)")
+                after(1) { log("still hidden: windows visible = \(self.windows.contains { $0.isVisible }), ants \(ticksBefore) -> \(self.colony.ants.count) (frozen)") }
+                after(3) { log("after the timer: windows visible = \(self.windows.contains { $0.isVisible }), hidden flag = \(self.isHiddenByUser)") }
+            }
+        }
         if env["CAMP_TEST_MENU"] != nil { // print the menu the way it would look when opened
             after(2) {
                 guard let menu = self.statusItem.menu else { return }
@@ -296,6 +310,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(foodMenu())
         rosterItem = ClosureMenuItem(title: "名冊…") { [weak self] in self?.roster.toggle() }
         menu.addItem(rosterItem)
+        hideMenuItem = hideMenu()
+        menu.addItem(hideMenuItem)
+        unhideItem = ClosureMenuItem(title: "顯示（取消隱藏）") { [weak self] in self?.unhide() }
+        menu.addItem(unhideItem)
         menu.addItem(.separator())
 
         characterMenuItem = choiceMenu(title: "角色",
@@ -325,6 +343,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "結束哥布林營地", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         statusItem.menu = menu
+    }
+
+    // MARK: Hiding
+
+    private static let hideChoices: [(label: String, seconds: TimeInterval?)] = [
+        ("30 分鐘", 30 * 60), ("1 小時", 3600), ("2 小時", 7200), ("直到我取消", nil),
+    ]
+
+    /// "Hide for a while": for a meeting or focused work. Everything disappears and the camp is frozen.
+    private func hideMenu() -> NSMenuItem {
+        let parent = NSMenuItem(title: "暫時隱藏", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "暫時隱藏")
+        for choice in AppDelegate.hideChoices {
+            sub.addItem(ClosureMenuItem(title: choice.label) { [weak self] in self?.hide(for: choice.seconds) })
+        }
+        parent.submenu = sub
+        return parent
+    }
+
+    var isHiddenByUser: Bool { hiddenUntil != nil }
+
+    /// `seconds` nil hides until the player brings the goblins back.
+    func hide(for seconds: TimeInterval?) {
+        hiddenUntil = seconds.map { Date().addingTimeInterval($0) } ?? .distantFuture
+        hideTimer?.invalidate()
+        if let seconds {
+            hideTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in self?.unhide() }
+        }
+        windows.forEach { $0.orderOut(nil) }
+        roster.hide()
+        applyStatusIcon()
+    }
+
+    func unhide() {
+        guard hiddenUntil != nil else { return }
+        hiddenUntil = nil
+        hideTimer?.invalidate()
+        hideTimer = nil
+        lastTick = Date() // do not count the time spent hidden
+        windows.forEach { $0.orderFrontRegardless() }
+        syncWindows()
+        applyStatusIcon()
     }
 
     /// The camp's look: the built-in camps (each grows as more goblins move in), or the player's own picture.
@@ -460,7 +520,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let character = Characters.current
         let home = character.nestName
         rosterItem.title = roster.isVisible ? "\(Characters.current.noun)名冊（開啟中，再按一次關閉）" : "\(Characters.current.noun)名冊…"
-        rosterItem.isEnabled = colony.nest != nil
+        rosterItem.isEnabled = colony.nest != nil && !isHiddenByUser
+        hideMenuItem.isHidden = isHiddenByUser
+        unhideItem.isHidden = !isHiddenByUser
+        if let until = hiddenUntil {
+            unhideItem.title = until == .distantFuture ? "顯示（取消隱藏）" : "顯示（取消隱藏，還剩約 \(max(1, Int(until.timeIntervalSinceNow / 60))) 分鐘）"
+        }
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
         nestMenuItem.title = "\(home)外觀"
         pickItem.isEnabled = colony.phase != .choosingNest
@@ -514,7 +579,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         lastCursor = cursor
 
-        guard colony.isSimulating, !colony.isPaused else { return }
+        guard !isHiddenByUser, colony.isSimulating, !colony.isPaused else { return }
         colony.tick(dt: dt, cursor: cursor, cursorSpeed: cursorSpeed)
         redrawAll()
         let wanted: Double = colony.ants.count > AppDelegate.crowdedAnts ? 20 : 30
@@ -524,6 +589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The player picked another character: refresh the menu bar icon and names, and redraw.
     private func applyStatusIcon() {
         let character = Characters.current
+        statusItem.button?.alphaValue = isHiddenByUser ? 0.4 : 1 // dimmed while the goblins are hidden
         if let icon = character.icon {
             icon.size = NSSize(width: 16, height: 16) // 16 art pixels on 32 device pixels, so it stays crisp
             icon.isTemplate = false
@@ -567,7 +633,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         windows = NSScreen.screens.map { screen in
             let window = OverlayWindow(screen: screen)
             window.contentView = AntView(frame: NSRect(origin: .zero, size: screen.frame.size), colony: colony)
-            window.orderFrontRegardless()
+            if !isHiddenByUser { window.orderFrontRegardless() }
             return window
         }
     }
@@ -579,7 +645,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.acceptsInput = picking
             window.contentView?.needsDisplay = true
         }
-        if picking {
+        if picking, !isHiddenByUser {
             NSApp.activate(ignoringOtherApps: true)
             windows.first?.makeKeyAndOrderFront(nil)
         }

@@ -8,7 +8,62 @@ struct Surroundings {
     var cursorSpeed: Double = 0
     /// Position of the most recently born ant, if any.
     var newestAnt: CGPoint?
+    /// The id of the outfit she is wearing, so she can change into one that suits what she is about to do.
+    var outfit: String = ""
 }
+
+/// Things the princess does that come with a pose of their own (and sometimes a prop and an outfit that suits it).
+enum Activity: String, CaseIterable {
+    case tea, exercise, read, water, comb, sing
+
+    /// How long it lasts, in seconds.
+    var duration: ClosedRange<Double> {
+        switch self {
+        case .tea: return 9...12
+        case .exercise: return 7...9
+        case .read: return 10...14
+        case .water: return 6...8
+        case .comb: return 5...6
+        case .sing: return 6...8
+        }
+    }
+
+    /// Frames of the pose animation per second.
+    var fps: Double {
+        switch self {
+        case .tea: return 0.7
+        case .exercise: return 3.5
+        case .read: return 0.5
+        case .water: return 1.6
+        case .comb: return 2.5
+        case .sing: return 2.5
+        }
+    }
+
+    /// Outfits that suit it (by id). Empty = anything goes.
+    var preferredOutfits: [String] {
+        switch self {
+        case .tea: return ["gown", "dress"]
+        case .exercise: return ["sport"]
+        case .read: return ["skirt", "dress", "winter"]
+        case .water: return ["sunny"]
+        case .comb: return []
+        case .sing: return ["gown", "dress"]
+        }
+    }
+
+    var prop: Prop? {
+        switch self {
+        case .tea: return .teaTable
+        case .exercise: return .mat
+        case .water: return .flowerPots
+        default: return nil
+        }
+    }
+}
+
+/// Something drawn next to her while she does it.
+enum Prop { case teaTable, mat, flowerPots, bed }
 
 /// The queen: crawls out of the nest hole, then lives beside it as a state machine.
 /// See QUEEN_BEHAVIORS.md for the full list of things she does.
@@ -34,13 +89,15 @@ struct Queen {
         case dancing
         /// A twirl and a shower of sparkles, and she is wearing something else.
         case changingOutfit
+        case doing(Activity)
         case curious
     }
 
     /// Things the colony has to react to.
     enum Event {
         case layEgg(at: CGPoint)
-        case outfitChange
+        /// She has changed; `to` is the outfit she wants (nil = any other one).
+        case outfitChange(to: String?)
     }
 
     /// Little drawings floating near her head.
@@ -49,6 +106,8 @@ struct Queen {
         case yawnBubble(progress: Double)
         case thought(emoji: String, progress: Double)
         case sparkles(progress: Double)
+        case steam(clock: Double)
+        case notes(clock: Double)
     }
 
     private(set) var pos: CGPoint
@@ -66,6 +125,15 @@ struct Queen {
     private var baseHeading: Double = 0
     private var eggLaid = false
     private var outfitSwapped = false
+    /// What she wants to wear and what she will do once she has changed.
+    private var desiredOutfit: String?
+    private var pending: Pending?
+    private var currentOutfit = ""
+
+    private enum Pending {
+        case doing(Activity)
+        case sleeping
+    }
     private var peekPending = false
     private var hideSpeed: Double = 18
     private var startledHide = false
@@ -108,8 +176,37 @@ struct Queen {
         case .yawning: return .yawnBubble(progress: progress)
         case .thinking: return .thought(emoji: thoughtEmoji, progress: progress)
         case .changingOutfit: return .sparkles(progress: progress)
+        case .doing(.tea): return .steam(clock: clock)
+        case .doing(.sing): return .notes(clock: clock)
         default: return nil
         }
+    }
+
+    /// A pose of her own instead of the walking frames: its name in the sheet and the (unwrapped) frame number.
+    var pose: (name: String, frame: Int)? {
+        switch state {
+        case .doing(let activity): return (activity.rawValue, Int(clock * activity.fps))
+        case .grooming: return ("comb", Int(clock * 2.5))
+        case .yawning: return ("yawn", progress > 0.5 ? 1 : 0)
+        case .thinking: return ("think", Int(clock * 1.2))
+        case .dancing: return ("dance", Int(clock * 4))
+        case .greeting: return ("wave", Int(clock * 4))
+        default: return nil
+        }
+    }
+
+    var prop: Prop? {
+        switch state {
+        case .doing(let activity): return activity.prop
+        case .sleeping: return .bed
+        default: return nil
+        }
+    }
+
+    /// Lying down to sleep.
+    var isLying: Bool {
+        if case .sleeping = state { return true }
+        return false
     }
 
     var stateName: String {
@@ -132,6 +229,7 @@ struct Queen {
         case .thinking: return "thinking"
         case .dancing: return "dancing"
         case .changingOutfit: return "changingOutfit"
+        case .doing(let activity): return "doing:\(activity.rawValue)"
         case .curious: return "curious"
         }
     }
@@ -177,6 +275,7 @@ struct Queen {
     mutating func update(dt: Double, walkable: [CGRect], around: Surroundings = Surroundings()) -> Event? {
         clock += dt
         walking = false
+        currentOutfit = around.outfit
         reactCooldown = max(0, reactCooldown - dt)
         var event: Event?
 
@@ -192,7 +291,7 @@ struct Queen {
         case .wandering(let target):
             if walk(to: target, speed: 22, dt: dt) { beginResting() }
 
-        case .grooming, .yawning, .thinking, .sleeping:
+        case .grooming, .yawning, .thinking, .sleeping, .doing:
             timer -= dt
             if timer <= 0 { beginResting() }
 
@@ -221,9 +320,17 @@ struct Queen {
             walking = true
             if !outfitSwapped, progress >= 0.5 { // in the middle of the twirl, unseen behind the sparkles
                 outfitSwapped = true
-                event = .outfitChange
+                event = .outfitChange(to: desiredOutfit)
+                desiredOutfit = nil
             }
-            if timer <= 0 { beginResting() }
+            if timer <= 0 {
+                if let next = pending {
+                    pending = nil
+                    start(next)
+                } else {
+                    beginResting()
+                }
+            }
 
         case .lookingAround:
             timer -= dt
@@ -337,6 +444,7 @@ struct Queen {
         pos = home
         switch name {
         case "outfit": outfitSwapped = false; begin(.changingOutfit, duration: 1.8)
+        case "tea", "exercise", "read", "water", "comb", "sing": begin(.doing(Activity(rawValue: name)!), duration: 60)
         case "sleeping": begin(.sleeping, duration: 30)
         case "yawning": begin(.yawning, duration: 4)
         case "thinking": thoughtEmoji = "🍰"; begin(.thinking, duration: 6)
@@ -370,6 +478,33 @@ struct Queen {
         begin(.resting, duration: long ? Double.random(in: 6...12) : Double.random(in: 2...6))
     }
 
+    private func preferredOutfits(for pending: Pending) -> [String] {
+        switch pending {
+        case .doing(let activity): return activity.preferredOutfits
+        case .sleeping: return ["pajamas"]
+        }
+    }
+
+    private mutating func start(_ pending: Pending) {
+        switch pending {
+        case .doing(let activity): begin(.doing(activity), duration: Double.random(in: activity.duration))
+        case .sleeping: begin(.sleeping, duration: Double.random(in: 8...14))
+        }
+    }
+
+    /// Starts `pending`, first changing into something that suits it (most of the time) if she is not wearing it yet.
+    private mutating func startOrChange(_ pending: Pending) {
+        let wanted = preferredOutfits(for: pending)
+        if !wanted.isEmpty, !wanted.contains(currentOutfit), Double.random(in: 0..<1) < 0.3 {
+            self.pending = pending
+            desiredOutfit = wanted.first
+            outfitSwapped = false
+            begin(.changingOutfit, duration: 1.8)
+        } else {
+            start(pending)
+        }
+    }
+
     /// Reactions to the mouse cursor while idle. Returns true if she changed state.
     private mutating func react(to around: Surroundings, dt: Double) -> Bool {
         let d = hypot(around.cursor.x - pos.x, around.cursor.y - pos.y)
@@ -400,36 +535,46 @@ struct Queen {
         var acc = 0.0
         func chance(_ weight: Double) -> Bool { acc += weight; return roll < acc }
 
-        if chance(24) {
+        if chance(16) {
             let target = point(around: home, radius: 12...30)
             if isWalkable(target) { state = .wandering(to: target) } else { beginResting() }
-        } else if chance(12) {
-            begin(.grooming, duration: 2.5)
-        } else if chance(9) {
+        } else if chance(8) {
+            startOrChange(.doing(.comb))
+        } else if chance(5) {
             peekPending = false
             hideSpeed = 18
             state = .enteringHole
-        } else if chance(11) {
+        } else if chance(5) {
             begin(.layingEgg, duration: 2.6)
             eggLaid = false
-        } else if chance(6) {
+        } else if chance(3) {
             begin(.spinning, duration: 1.3)
-        } else if chance(8) {
+        } else if chance(5) {
             begin(.lookingAround, duration: 2.6)
-        } else if chance(7) {
+        } else if chance(4) {
             peekPending = true
             hideSpeed = 18
             state = .enteringHole
-        } else if chance(7) {
-            begin(.sleeping, duration: Double.random(in: 8...14))
-        } else if chance(5) {
-            begin(.yawning, duration: 2.2)
         } else if chance(6) {
+            startOrChange(.sleeping)
+        } else if chance(4) {
+            begin(.yawning, duration: 2.2)
+        } else if chance(5) {
             thoughtEmoji = ["🍎", "🍰", "💭", "🍯", "🌿"].randomElement() ?? "💭"
             begin(.thinking, duration: 3.5)
-        } else if chance(3) {
+        } else if chance(1) {
             outfitSwapped = false
             begin(.changingOutfit, duration: 1.8)
+        } else if chance(9) {
+            startOrChange(.doing(.tea))
+        } else if chance(7) {
+            startOrChange(.doing(.exercise))
+        } else if chance(7) {
+            startOrChange(.doing(.read))
+        } else if chance(5) {
+            startOrChange(.doing(.water))
+        } else if chance(7) {
+            startOrChange(.doing(.sing))
         } else {
             beginResting(long: true)
         }

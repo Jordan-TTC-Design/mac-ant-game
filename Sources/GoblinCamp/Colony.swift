@@ -382,12 +382,18 @@ final class Colony {
 
     func tick(dt: Double, cursor: CGPoint = CGPoint(x: -10_000, y: -10_000), cursorSpeed: Double = 0) {
         guard isSimulating, !isPaused, let nest else { return }
-        let around = Surroundings(cursor: cursor, cursorSpeed: cursorSpeed, newestAnt: ants.last?.pos)
+        let outfits = Characters.current.outfits
+        let around = Surroundings(cursor: cursor, cursorSpeed: cursorSpeed, newestAnt: ants.last?.pos,
+                                  outfit: outfits.isEmpty ? "" : outfits[min(outfitIndex, outfits.count - 1)].id)
         if let event = queen?.update(dt: dt, walkable: walkable, around: around) {
             switch event {
-            case .outfitChange:
-                let count = Characters.current.outfits.count
-                if count > 1 { outfitIndex = (outfitIndex + Int.random(in: 1..<count)) % count } // always a different one
+            case .outfitChange(let wanted):
+                let outfits = Characters.current.outfits
+                if let wanted, let index = outfits.firstIndex(where: { $0.id == wanted }) {
+                    outfitIndex = index
+                } else if outfits.count > 1 {
+                    outfitIndex = (outfitIndex + Int.random(in: 1..<outfits.count)) % outfits.count // always a different one
+                }
             case .layEgg:
                 // she plants a flower next to her feet
                 if let queen { eggs.append(Egg(pos: CGPoint(x: queen.pos.x + [-14, 14].randomElement()!, y: queen.pos.y - 7))) }
