@@ -95,12 +95,21 @@ struct TerrainItem {
     var unlock = 0
 }
 
-/// A place in the camp window: the biome and everything on it, made from a seed. The same seed and size always give the same place, and
-/// a bigger window gives the same kind of place with the things spread out a little. `render` bakes the still parts into one picture.
+/// A place in the camp window: the biome and everything on it, made from a seed. The place is a fixed, large canvas centred on the nest,
+/// and the camp window only shows part of it: making the window bigger or smaller reveals or hides things but never changes them (so a
+/// felled tree stays felled). The same seed and nest always give the same place. `render` bakes the still parts into one picture.
 final class TerrainScene {
     let biome: Biome
     let seed: UInt64
-    let world: CGRect
+    /// The part goblins may walk in (the camp window), which changes as the window is resized.
+    var world: CGRect
+    /// The whole place: a fixed size round the nest.
+    let canvas: CGRect
+    let nest: CGPoint
+    /// About how many camp windows' worth of ground the canvas is, to scale how many things there are on it.
+    private var areaFactor: Double { Double(canvas.width * canvas.height) / 900_000 }
+    /// What is drawn now (set by `render`), so blobs that are off the screen are skipped.
+    private var renderBounds = CGRect.infinite
 
     private(set) var ponds: [Pond] = []
     private(set) var solids: [Solid] = []
@@ -158,7 +167,12 @@ final class TerrainScene {
     }
 
     /// What goblins must walk round now.
-    var obstacles: [Obstacle] { ponds as [Obstacle] + solids.filter { $0.unlock <= growth && !isCut($0) } as [Obstacle] + plantedSolids as [Obstacle] }
+    var obstacles: [Obstacle] {
+        let near = world.insetBy(dx: -80, dy: -80) // (only what is in or near the window matters to the goblins)
+        return ponds.filter { world.insetBy(dx: -80, dy: -80).intersects($0.picture) } as [Obstacle]
+            + solids.filter { $0.unlock <= growth && near.contains($0.center) && !isCut($0) } as [Obstacle]
+            + plantedSolids.filter { near.contains($0.center) } as [Obstacle]
+    }
 
     // MARK: What the goblins take
 
@@ -166,7 +180,7 @@ final class TerrainScene {
     func cut(at foot: CGPoint) -> Cut? {
         guard let life else { return nil }
         let f = fraction(foot)
-        return life.state.cuts.first { abs($0.fx - Double(f.x)) < 0.004 && abs($0.fy - Double(f.y)) < 0.004 }
+        return life.state.cuts.first { abs($0.fx - Double(f.x)) < 3 && abs($0.fy - Double(f.y)) < 3 }
     }
 
     private func isCut(_ solid: Solid) -> Bool {
@@ -186,20 +200,21 @@ final class TerrainScene {
 
     /// The trees and rocks goblins may work at now: not felled, not used up, and standing (a sapling is not a tree yet).
     func resourceSpots() -> [ResourceSpot] {
-        func id(_ p: CGPoint) -> Int { let f = fraction(p); return Int(f.x * 10_000) * 10_000 + Int(f.y * 10_000) }
+        func id(_ p: CGPoint) -> Int { let f = fraction(p); return (Int(f.x) + 5_000) * 10_000 + Int(f.y) + 5_000 }
         func stand(_ p: CGPoint, _ radius: CGFloat) -> CGPoint {
             let side: CGFloat = TerrainScene.hash(p) % 2 == 0 ? 1 : -1
             return CGPoint(x: p.x + side * (radius + 9), y: p.y - 3)
         }
         var spots: [ResourceSpot] = []
         for solid in solids where solid.resource != 0 && solid.unlock <= growth && !isCut(solid) {
-            guard let foot = solid.foot else { continue }
+            guard let foot = solid.foot, visible(foot) else { continue }
             spots.append(ResourceSpot(id: id(foot), kind: solid.resource == 1 ? .tree : .rock, foot: foot, standAt: stand(foot, solid.radius), planted: false))
         }
         if let life {
             let now = clock ?? TerrainClock.now
             for plant in life.state.plantings where plant.fell == nil && life.stage(of: plant, at: now) == .tree {
-                let foot = CGPoint(x: world.minX + CGFloat(plant.fx) * world.width, y: world.minY + CGFloat(plant.fy) * world.height)
+                let foot = point(plant.fx, plant.fy)
+                guard visible(foot) else { continue }
                 spots.append(ResourceSpot(id: id(foot), kind: .tree, foot: foot, standAt: stand(foot, 7), planted: true))
             }
         }
@@ -219,8 +234,7 @@ final class TerrainScene {
 
     /// A point (in the clearing) that is free for something `radius` wide, or nil. Used to plant saplings and to leave puddles.
     func freeSpot(_ rng: inout TerrainRandom, _ radius: CGFloat) -> CGPoint? {
-        let area = world.insetBy(dx: 44, dy: 56)
-        guard area.width > 100, area.height > 100 else { return nil }
+        let area = canvas.insetBy(dx: 44, dy: 56)
         for _ in 0..<30 {
             let p = CGPoint(x: area.minX + CGFloat(rng.next()) * area.width, y: area.minY + CGFloat(rng.next()) * area.height)
             if let clearing, hypot(p.x - clearing.center.x, p.y - clearing.center.y) < clearing.radius + radius + 12 { continue }
@@ -230,7 +244,16 @@ final class TerrainScene {
         return nil
     }
 
-    func fraction(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - world.minX) / world.width, y: (p.y - world.minY) / world.height) }
+    /// A point as an offset from the nest (that is how things the goblins changed are remembered, so they stay put when the window is resized).
+    func fraction(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x - nest.x, y: p.y - nest.y) }
+
+    private func point(_ fx: Double, _ fy: Double) -> CGPoint { CGPoint(x: nest.x + CGFloat(fx), y: nest.y + CGFloat(fy)) }
+
+    /// Whether something at `p` is inside the camp window (a little way in).
+    private func visible(_ p: CGPoint, margin: CGFloat = 16) -> Bool { world.insetBy(dx: margin, dy: margin).contains(p) }
+
+    /// The ponds in the camp window.
+    var visiblePonds: [Pond] { ponds.filter { world.intersects($0.picture) } }
 
     /// Called when the life changed: the trees that are up are obstacles now.
     func refreshLife() {
@@ -241,7 +264,8 @@ final class TerrainScene {
             guard plant.planted <= now else { return nil }
             let s = life.stage(of: plant, at: now)
             guard s == .young || s == .tree else { return nil }
-            return Solid(center: CGPoint(x: world.minX + CGFloat(plant.fx) * world.width, y: world.minY + CGFloat(plant.fy) * world.height + 3), radius: s == .tree ? 7 : 5)
+            let at = point(plant.fx, plant.fy)
+            return Solid(center: CGPoint(x: at.x, y: at.y + 3), radius: s == .tree ? 7 : 5)
         }
     }
 
@@ -258,6 +282,8 @@ final class TerrainScene {
         self.seed = seed
         self.biome = biome
         self.world = world
+        self.nest = nest
+        canvas = CGRect(x: nest.x - 1100, y: nest.y - 750, width: 2200, height: 1500)
         generate(nest: nest)
     }
 
@@ -265,9 +291,8 @@ final class TerrainScene {
 
     private func generate(nest: CGPoint) {
         var rng = TerrainRandom(seed: seed)
-        let inner = world.insetBy(dx: 36, dy: 36)
-        guard inner.width > 240, inner.height > 200 else { return } // too small for anything but grass
-        let big = world.width >= 380 && world.height >= 280
+        let inner = canvas.insetBy(dx: 36, dy: 36)
+        let big = true
         // where things may not go: the camp itself, and what is already there
         var taken: [(CGPoint, CGFloat)] = [(nest, 105)]
         func free(_ p: CGPoint, _ radius: CGFloat) -> Bool {
@@ -275,17 +300,21 @@ final class TerrainScene {
         }
         /// A free spot for something `radius` wide, wholly inside `area` (the clearing, by default kept off the forest edge).
         func spot(_ radius: CGFloat, tries: Int = 40, in area: CGRect? = nil) -> CGPoint? {
+            let everywhere = area == nil
             let area = area ?? inner
             guard area.width > 1, area.height > 1 else { return nil }
+            // a window's worth of things should land near the nest, where the camp window looks; the rest is spread over the whole canvas
+            let central = CGRect(x: nest.x - 600, y: nest.y - 420, width: 1200, height: 840).intersection(area)
             for _ in 0..<tries {
-                let p = CGPoint(x: area.minX + CGFloat(rng.next()) * area.width, y: area.minY + CGFloat(rng.next()) * area.height)
+                let pick = (everywhere && !central.isNull && rng.chance(0.4)) ? central : area
+                let p = CGPoint(x: pick.minX + CGFloat(rng.next()) * pick.width, y: pick.minY + CGFloat(rng.next()) * pick.height)
                 if free(p, radius) { return p }
             }
             return nil
         }
 
         // a stream across the clearing, with a bridge (frozen in the snow: walk right over it)
-        if big, biome != .swamp, world.width >= 520, world.height >= 380, rng.chance(0.3) { makeStream(&rng, nest: nest, taken: &taken) }
+        if biome != .swamp, rng.chance(0.45) { makeStream(&rng, nest: nest, taken: &taken) }
 
         makeCamp(&rng, nest: nest, inner: inner)
 
@@ -316,24 +345,24 @@ final class TerrainScene {
         case .swamp: patchColors = [NSColor(calibratedRed: 0.3, green: 0.24, blue: 0.13, alpha: 0.3), NSColor(calibratedRed: 0.46, green: 0.54, blue: 0.26, alpha: 0.22),
                                     NSColor(calibratedRed: 0.14, green: 0.2, blue: 0.12, alpha: 0.3)]
         }
-        for _ in 0..<Int(world.width * world.height / 14000) {
-            let c = CGPoint(x: world.minX + CGFloat(rng.next()) * world.width, y: world.minY + CGFloat(rng.next()) * world.height)
+        for _ in 0..<Int(canvas.width * canvas.height / 14000) {
+            let c = CGPoint(x: canvas.minX + CGFloat(rng.next()) * canvas.width, y: canvas.minY + CGFloat(rng.next()) * canvas.height)
             patches.append((c, CGFloat(rng.range(28, 90)), CGFloat(rng.range(16, 48)), patchColors[rng.int(0...(patchColors.count - 1))]))
         }
 
         // ponds: none to a few, small to big, anywhere (a swamp has several small murky ones)
         let pondCount: Int
         switch biome {
-        case .swamp: pondCount = rng.int(2...4)
-        case .meadow: pondCount = [0, 1, 1, 2][rng.int(0...3)]
-        case .forest: pondCount = [0, 0, 1, 2][rng.int(0...3)]
-        case .snow: pondCount = [0, 1, 1, 2][rng.int(0...3)]
+        case .swamp: pondCount = Int(Double(rng.int(2...4)) * areaFactor * 0.8)
+        case .meadow: pondCount = Int(Double([0, 1, 1, 2][rng.int(0...3)]) * areaFactor * 0.85 + (rng.chance(0.5) ? 1 : 0))
+        case .forest: pondCount = Int(Double([0, 0, 1, 2][rng.int(0...3)]) * areaFactor * 0.85 + (rng.chance(0.4) ? 1 : 0))
+        case .snow: pondCount = Int(Double([0, 1, 1, 2][rng.int(0...3)]) * areaFactor * 0.85 + (rng.chance(0.5) ? 1 : 0))
         }
         if big {
             for i in 0..<pondCount {
-                let maxW = min(biome == .swamp ? 150 : 270, world.width * 0.42)
+                let maxW: CGFloat = biome == .swamp ? 150 : 270
                 let w = CGFloat(rng.range(biome == .swamp ? 70 : 90, Double(max(100, maxW))))
-                let h = min(w * CGFloat(rng.range(0.5, 0.95)), world.height * 0.36)
+                let h = w * CGFloat(rng.range(0.5, 0.95))
                 let radius = max(w, h) / 2 + 24
                 guard let c = spot(radius, in: inner.insetBy(dx: w / 2 + 6, dy: h / 2 + 6)) else { continue }
                 let box = CGRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h)
@@ -351,7 +380,7 @@ final class TerrainScene {
         }
 
         // rocks: single boulders and little heaps of two or three
-        let rockGroups = biome == .snow ? rng.int(3...6) : biome == .swamp ? rng.int(1...3) : rng.int(2...5)
+        let rockGroups = Int(Double(biome == .snow ? rng.int(3...6) : biome == .swamp ? rng.int(1...3) : rng.int(2...5)) * areaFactor)
         for _ in 0..<rockGroups {
             guard let c = spot(34) else { continue }
             for k in 0..<rng.int(1...3) {
@@ -366,10 +395,10 @@ final class TerrainScene {
         // groves of trees, dense in a forest and thin in a swamp
         let groves: Int
         switch biome {
-        case .forest: groves = rng.int(3...6)
-        case .meadow: groves = rng.int(1...3)
-        case .snow: groves = rng.int(2...5)
-        case .swamp: groves = rng.int(2...4)
+        case .forest: groves = Int(Double(rng.int(3...6)) * areaFactor)
+        case .meadow: groves = Int(Double(rng.int(1...3)) * areaFactor)
+        case .snow: groves = Int(Double(rng.int(2...5)) * areaFactor)
+        case .swamp: groves = Int(Double(rng.int(2...4)) * areaFactor)
         }
         let treeKinds = biome == .forest ? 4 : biome == .swamp ? 5 : 3
         for _ in 0..<groves {
@@ -392,31 +421,32 @@ final class TerrainScene {
         }
 
         // bushes and logs lying about
-        for _ in 0..<rng.int(5...12) {
+        for _ in 0..<Int(Double(rng.int(5...12)) * areaFactor) {
             guard let c = spot(10, tries: 12) else { continue }
             lying.append(TerrainItem(sprite: "bush-\(biome.rawValue)-\(rng.int(0...1))", foot: c))
         }
-        for _ in 0..<rng.int(0...3) {
+        for _ in 0..<Int(Double(rng.int(0...3)) * areaFactor) {
             guard let c = spot(14, tries: 12) else { continue }
             lying.append(TerrainItem(sprite: "log-\(biome.rawValue)", foot: c))
         }
 
         // undergrowth: ferns and tufts of grass, stumps, and (now and then) a ring of standing stones
-        let fernCount = biome == .forest ? rng.int(14...28) : biome == .swamp ? rng.int(8...16) : biome == .meadow ? rng.int(4...10) : rng.int(2...5)
+        let fernCount = Int(Double(biome == .forest ? rng.int(14...28) : biome == .swamp ? rng.int(8...16) : biome == .meadow ? rng.int(4...10) : rng.int(2...5)) * areaFactor)
         for _ in 0..<fernCount {
             guard let c = spot(8, tries: 8) else { continue }
             lying.append(TerrainItem(sprite: "fern-\(biome.rawValue)-\(rng.int(0...1))", foot: c))
         }
-        for _ in 0..<Int(world.width * world.height / 9000) {
+        for _ in 0..<Int(canvas.width * canvas.height / 9000) {
             guard let c = spot(4, tries: 4) else { continue }
             lying.append(TerrainItem(sprite: "tuft-\(biome.rawValue)", foot: c))
         }
-        for _ in 0..<(biome == .forest ? rng.int(2...5) : rng.int(0...2)) {
+        for _ in 0..<Int(Double(biome == .forest ? rng.int(2...5) : rng.int(0...2)) * areaFactor) {
             guard let c = spot(10, tries: 10) else { continue }
             lying.append(TerrainItem(sprite: "stump-\(biome.rawValue)", foot: c))
             solids.append(Solid(center: CGPoint(x: c.x, y: c.y + 4), radius: 7))
         }
-        if big, rng.chance(0.5), let c = spot(50, tries: 20, in: inner.insetBy(dx: 40, dy: 40)) { // a landmark: standing stones in a ring
+        for _ in 0..<(rng.chance(0.85) ? Int(areaFactor * 0.6) : 0) { // landmarks: standing stones in a ring
+            guard let c = spot(50, tries: 20, in: inner.insetBy(dx: 40, dy: 40)) else { continue }
             let count = rng.int(3...5)
             for k in 0..<count {
                 let a = Double(k) / Double(count) * 2 * .pi + rng.range(-0.2, 0.2)
@@ -430,7 +460,7 @@ final class TerrainScene {
         // things drawn flat on the ground, by biome
         switch biome {
         case .meadow:
-            scatterMushrooms(&rng, clumps: rng.int(0...3), inner: inner)
+            scatterMushrooms(&rng, clumps: Int(Double(rng.int(0...3)) * areaFactor), inner: inner)
             let colors = [NSColor(calibratedRed: 0.95, green: 0.86, blue: 0.35, alpha: 1), NSColor(calibratedRed: 0.94, green: 0.47, blue: 0.6, alpha: 1),
                           NSColor.white, NSColor(calibratedRed: 0.6, green: 0.65, blue: 0.95, alpha: 1)]
             for _ in 0..<rng.int(3...7) { // flower patches
@@ -442,7 +472,7 @@ final class TerrainScene {
                 }
             }
         case .forest:
-            scatterMushrooms(&rng, clumps: rng.int(5...11), inner: inner)
+            scatterMushrooms(&rng, clumps: Int(Double(rng.int(5...11)) * areaFactor), inner: inner)
             for _ in 0..<rng.int(30...70) { // fallen leaves
                 dots.append((CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height),
                              rng.chance(0.5) ? NSColor(calibratedRed: 0.72, green: 0.5, blue: 0.2, alpha: 1) : NSColor(calibratedRed: 0.56, green: 0.4, blue: 0.16, alpha: 1)))
@@ -453,7 +483,7 @@ final class TerrainScene {
                 mounds.append((c, CGFloat(rng.range(18, 44)), CGFloat(rng.range(7, 14))))
             }
         case .swamp:
-            scatterMushrooms(&rng, clumps: rng.int(3...6), inner: inner)
+            scatterMushrooms(&rng, clumps: Int(Double(rng.int(3...6)) * areaFactor), inner: inner)
             for _ in 0..<rng.int(5...10) { // mud
                 let c = CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height)
                 mud.append((c, CGFloat(rng.range(14, 40)), CGFloat(rng.range(8, 18))))
@@ -557,20 +587,20 @@ final class TerrainScene {
         let horizontal = rng.chance(0.5)
         let width = CGFloat(rng.range(16, 26))
         // the line must pass well clear of the camp
-        let across = horizontal ? world.height : world.width
+        let across = horizontal ? canvas.height : canvas.width
         let lo = across * 0.15, hi = across * 0.85
         var offset = CGFloat(rng.range(Double(lo), Double(hi)))
-        let nestOffset = horizontal ? nest.y - world.minY : nest.x - world.minX
+        let nestOffset = horizontal ? nest.y - canvas.minY : nest.x - canvas.minX
         if abs(offset - nestOffset) < 130 { offset = nestOffset + (offset < nestOffset ? -1 : 1) * 130 }
         guard offset > lo * 0.8, offset < across - lo * 0.8 else { return }
         let phase = rng.range(0, 6.28), sway = CGFloat(rng.range(14, 34))
-        let length = horizontal ? world.width : world.height
+        let length = horizontal ? canvas.width : canvas.height
         var points: [CGPoint] = []
         let steps = Int(length / 8)
         for k in 0...steps {
             let along = CGFloat(k) / CGFloat(steps) * length
             let wobble = sin(along / 70 + CGFloat(phase)) * sway
-            let p = horizontal ? CGPoint(x: world.minX + along, y: world.minY + offset + wobble) : CGPoint(x: world.minX + offset + wobble, y: world.minY + along)
+            let p = horizontal ? CGPoint(x: canvas.minX + along, y: canvas.minY + offset + wobble) : CGPoint(x: canvas.minX + offset + wobble, y: canvas.minY + along)
             points.append(p)
         }
         streams.append((points, width))
@@ -600,6 +630,7 @@ final class TerrainScene {
         ctx.translateBy(x: -origin.x, y: -origin.y)
         ctx.interpolationQuality = .none
         let bounds = CGRect(x: origin.x, y: origin.y, width: size.width, height: size.height)
+        renderBounds = bounds
         let x = seasonPosition
         let now = clock ?? TerrainClock.now
 
@@ -663,7 +694,7 @@ final class TerrainScene {
         for bridge in bridges { paintBridge(bridge.center, bridge.angle, bridge.length) }
         // puddles left by the rain
         if let life {
-            for puddle in life.puddlePoints(in: world, now: now) { paintPuddle(puddle.center, puddle.radius, frozen: x >= 3.05 || biome == .snow) }
+            for puddle in life.puddlePoints(origin: nest, now: now) { paintPuddle(puddle.center, puddle.radius, frozen: x >= 3.05 || biome == .snow) }
         }
         // leaves lying under the trees in autumn
         let plantedItems = plantingItems(now: now)
@@ -682,7 +713,7 @@ final class TerrainScene {
         for pond in ponds { if let image = pond.image(frozen: frozen) { ctx.draw(image, in: pond.picture) } }
         drawFarm(in: ctx)
         for item in lying where item.unlock <= growth { draw(item, in: ctx, season: x) }
-        for item in plantedItems.lying + stumps { draw(item, in: ctx, season: x) }
+        for item in plantedItems.lying + stumps + seasonalCampItems(at: x) { draw(item, in: ctx, season: x) }
         for item in (trees).sorted(by: { $0.foot.y > $1.foot.y }) { draw(item, in: ctx, season: x) }
 
         // the light of the hour over all of it
@@ -691,6 +722,30 @@ final class TerrainScene {
             ctx.fill(bounds)
         }
         return ctx.makeImage()
+    }
+
+    // MARK: The camp through the year
+
+    /// Things the goblins put out at each time of year once the camp is a fair size: a snowman and a second pile of firewood in winter, a hay
+    /// bale and a heap of pumpkins in autumn. Where they go is fixed by the seed (behind the camp, away from the princess's side).
+    private func seasonalCampItems(at x: Double) -> [TerrainItem] {
+        guard growth >= 24 else { return [] }
+        var rng = TerrainRandom(seed: seed &+ 2024)
+        func spot(_ radius: Double) -> CGPoint {
+            let a = rng.range(2.2, 4.2) // the left and back of the camp
+            return CGPoint(x: nest.x + CGFloat(cos(a) * radius), y: nest.y + CGFloat(sin(a) * radius * 0.8))
+        }
+        let snowman = spot(rng.range(105, 135)), wood = spot(rng.range(90, 115)), hay = spot(rng.range(100, 130)), pumpkins = spot(rng.range(100, 130))
+        var items: [TerrainItem] = []
+        if x >= 3.0 || x < 0.25 {
+            items.append(TerrainItem(sprite: "snowman", foot: snowman))
+            items.append(TerrainItem(sprite: "firewood-\(biome.rawValue)", foot: wood))
+        }
+        if x >= 2.0, x < 3.3 {
+            items.append(TerrainItem(sprite: "hay", foot: hay))
+            if x >= 2.4 { items.append(TerrainItem(sprite: "pumpkins", foot: pumpkins)) }
+        }
+        return items
     }
 
     // MARK: The farm
@@ -707,7 +762,7 @@ final class TerrainScene {
     func plotInfos() -> [PlotInfo] {
         guard let life else { return [] }
         return plotSpots.enumerated().compactMap { i, plot in
-            guard plot.unlock <= growth, life.state.plots.indices.contains(i) else { return nil }
+            guard plot.unlock <= growth, visible(plot.center), life.state.plots.indices.contains(i) else { return nil }
             let side: CGFloat = TerrainScene.hash(plot.center) % 2 == 0 ? 1 : -1
             return PlotInfo(index: i, state: life.state.plots[i].state, crop: life.state.plots[i].crop,
                             standAt: CGPoint(x: plot.center.x + side * 14, y: plot.center.y - 7), face: CGPoint(x: plot.center.x + side * 6, y: plot.center.y + 10))
@@ -789,10 +844,11 @@ final class TerrainScene {
         guard amount > 0.02 else { return }
         var rng = TerrainRandom(seed: seed &+ 999)
         // low, ragged drifts that run together as more falls: a blue shadow under a white top, so it reads as snow lying on the ground
-        let count = Int(amount * Double(world.width * world.height) / 2600)
+        let count = Int(amount * Double(canvas.width * canvas.height) / 2600)
         for _ in 0..<count {
-            let c = CGPoint(x: world.minX + CGFloat(rng.next()) * world.width, y: world.minY + CGFloat(rng.next()) * world.height)
+            let c = CGPoint(x: canvas.minX + CGFloat(rng.next()) * canvas.width, y: canvas.minY + CGFloat(rng.next()) * canvas.height)
             let rx = CGFloat(rng.range(14, 38)), ry = rx * CGFloat(rng.range(0.22, 0.4))
+            guard renderBounds.insetBy(dx: -60, dy: -60).contains(c) else { continue } // (off the screen)
             let alpha = CGFloat(min(0.85, 0.3 + amount * 0.55))
             paintBlob(CGPoint(x: c.x, y: c.y - 2), rx + 2, ry + 1, NSColor(calibratedRed: 0.62, green: 0.74, blue: 0.9, alpha: alpha * 0.7), shadow: NSColor(calibratedRed: 0.62, green: 0.74, blue: 0.9, alpha: alpha * 0.7), feather: true)
             paintBlob(c, rx, ry, NSColor(calibratedRed: 0.98, green: 0.99, blue: 1, alpha: alpha), shadow: NSColor(calibratedRed: 0.9, green: 0.95, blue: 1, alpha: alpha), feather: true)
@@ -827,7 +883,7 @@ final class TerrainScene {
         guard let life else { return ([], []) }
         var up: [TerrainItem] = [], down: [TerrainItem] = []
         for plant in life.state.plantings where plant.planted <= now {
-            let foot = CGPoint(x: world.minX + CGFloat(plant.fx) * world.width, y: world.minY + CGFloat(plant.fy) * world.height)
+            let foot = point(plant.fx, plant.fy)
             let b = biome.rawValue
             switch life.stage(of: plant, at: now) {
             case .sprout: up.append(TerrainItem(sprite: "sprout-\(b)-\(plant.variant)", foot: foot))
@@ -858,6 +914,7 @@ final class TerrainScene {
 
     /// A blocky ellipse (whole 2-point squares) with a darker underside. `feather` thins its edge out, `speckle` mixes in other colours.
     private func paintBlob(_ c: CGPoint, _ rx: CGFloat, _ ry: CGFloat, _ color: NSColor, shadow: NSColor, feather: Bool = false, speckle: [NSColor] = []) {
+        guard renderBounds.insetBy(dx: -(rx + 8), dy: -(ry + 8)).contains(c) else { return } // (nothing to draw off the screen)
         var y = -ry
         while y <= ry {
             var x = -rx
@@ -903,7 +960,7 @@ final class TerrainScene {
         for (k, value) in cells {
             let x = Int(k >> 32), y = Int(Int32(truncatingIfNeeded: k))
             let cell = NSRect(x: CGFloat(x) * 2, y: CGFloat(y) * 2, width: 2, height: 2)
-            if value.1, let bank { bank.setFill() } else if let edge, value.0 > half - 2.2 { edge.setFill() } else { colors[(x + y * 3) % colors.count].setFill() }
+            if value.1, let bank { bank.setFill() } else if let edge, value.0 > half - 2.2 { edge.setFill() } else { colors[((x + y * 3) % colors.count + colors.count) % colors.count].setFill() } // (coordinates can be negative)
             cell.fill()
         }
     }
@@ -986,7 +1043,7 @@ enum TerrainArt {
         let kind = name.split(separator: "-").first.map(String.init) ?? ""
         switch kind {
         case "tent": return 1.5
-        case "totem", "rack", "menhir", "spears", "firewood", "stump", "fern", "tuft", "cattail": return 1.6
+        case "totem", "rack", "menhir", "spears", "firewood", "stump", "fern", "tuft", "cattail", "snowman", "hay", "pumpkins": return 1.6
         case "skull", "bones", "firepit", "log", "plot": return 1.5
         default: return name.hasPrefix("tree-swamp-3") || name.hasPrefix("tree-swamp-4") ? 1.35 : 2 // (the willows are big already)
         }

@@ -154,6 +154,13 @@ final class Colony {
         return fresh
     }
 
+    /// The camp window was resized: which trees, rocks and ponds are in it changed.
+    func refreshObstacles() {
+        scene?.refreshLife()
+        obstacles = scene?.obstacles ?? []
+        resourceTimer = 0
+    }
+
     private func lifeChanged() {
         scene?.refreshLife()
         obstacles = scene?.obstacles ?? []
@@ -585,6 +592,7 @@ final class Colony {
         guard raidTimer <= 0, let nest else { return }
         raidTimer = 4
         for i in creatures.indices where creatures[i].kind.hostile {
+            if creatures[i].kind.monster.nightOnly, !Colony.isNight { creatures[i].stay = 0 } // (bats go home at dawn)
             let d = hypot(creatures[i].pos.x - nest.x, creatures[i].pos.y - nest.y)
             guard d < 330 else { continue }
             creatures[i].scouted = true
@@ -595,7 +603,8 @@ final class Colony {
 
     /// A monster (or a pack of them) walks in from a screen edge, heading for the camp.
     func spawnMonsters(of kind: AnimalKind? = nil) {
-        guard nest != nil, let kind = kind ?? Animals.pick(monsters: true, minutes: playSeconds / 60, ants: peakAnts) else { return }
+        guard nest != nil, let kind = kind ?? Animals.pick(monsters: true, minutes: playSeconds / 60, ants: peakAnts, biome: scene?.biome.rawValue, night: Colony.isNight,
+                                                                   water: scene.map { !$0.visiblePonds.isEmpty } ?? false) else { return }
         let count = Int.random(in: kind.monster.pack)
         let before = creatures.count
         for _ in 0..<count { spawnAnimal(of: kind) }
@@ -1115,6 +1124,55 @@ final class Colony {
         onAntsChanged?()
     }
 
+    // MARK: Repairs
+
+    /// A piece that needs mending: worn by a goblin, or in the stock.
+    struct RepairJob {
+        enum Place { case worn(antID: Int, slot: GearSlot), stock(index: Int) }
+        let place: Place
+        let item: GearItem
+        let owner: String
+        var gear: Gear { item.gear! }
+    }
+
+    /// What it costs to mend a piece: a third of what it was made from (rounded up, at least one of each).
+    static func repairCost(_ gear: Gear) -> [(String, Int)] { gear.cost.map { ($0.0, max(1, Int((Double($0.1) / 3).rounded(.up)))) } }
+
+    func canAffordRepair(_ gear: Gear) -> Bool { Colony.repairCost(gear).allSatisfy { materials[$0.0, default: 0] >= $0.1 } }
+
+    /// The pieces below three quarters, worst first.
+    func repairJobs() -> [RepairJob] {
+        var jobs: [RepairJob] = []
+        for ant in ants where !ant.isDying {
+            for slot in GearSlot.allCases {
+                if let item = ant.item(in: slot), item.gear != nil, item.fraction < 0.75 { jobs.append(RepairJob(place: .worn(antID: ant.id, slot: slot), item: item, owner: ant.name)) }
+            }
+        }
+        for (i, item) in armory.enumerated() where item.gear != nil && item.fraction < 0.75 { jobs.append(RepairJob(place: .stock(index: i), item: item, owner: "庫存")) }
+        return jobs.sorted { $0.item.fraction < $1.item.fraction }
+    }
+
+    /// Mends a piece for its materials: it is as good as new again.
+    @discardableResult
+    func repair(_ job: RepairJob) -> Bool {
+        guard canAffordRepair(job.gear) else { return false }
+        for (id, count) in Colony.repairCost(job.gear) {
+            materials[id, default: 0] -= count
+            if materials[id] == 0 { materials[id] = nil }
+        }
+        switch job.place {
+        case .worn(let id, let slot):
+            guard let i = ants.firstIndex(where: { $0.id == id }), var item = ants[i].item(in: slot) else { return false }
+            item.left = job.gear.durability
+            _ = ants[i].equip(item)
+        case .stock(let index):
+            guard armory.indices.contains(index) else { return false }
+            armory[index].left = job.gear.durability
+        }
+        onAntsChanged?()
+        return true
+    }
+
     // MARK: Wear
 
     /// Gear that wore out and broke, and pieces made (for tests).
@@ -1148,6 +1206,13 @@ final class Colony {
         var pool: [GearSlot] = []
         for slot in [GearSlot.head, .chest, .chest, .legs, .feet, .hands] where ant.gear[slot.rawValue] != nil { pool.append(slot) }
         if let slot = pool.randomElement() { wear(slot, of: index, by: 1) }
+    }
+
+    /// Test aid: every worn piece is left with this fraction of its durability.
+    func debugWear(fraction: Double) {
+        for i in ants.indices {
+            for slot in GearSlot.allCases { if let item = ants[i].item(in: slot), let g = item.gear { ants[i].gearLeft[slot.rawValue] = g.durability * fraction } }
+        }
     }
 
     func debugStock(_ items: [String: Int]) { for (k, v) in items { larder[k, default: 0] += v } }
@@ -1453,7 +1518,7 @@ final class Colony {
         world.raining = isRaining
         world.fire = fire
         world.obstacles = obstacles
-        world.ponds = scene?.ponds ?? []
+        world.ponds = scene?.visiblePonds ?? []
         world.crowd = Double(visibleCount) / Double(visibleCap)
         world.night = Colony.isNight
         world.pit = peakAnts >= 5 && fire == nil ? scene?.firePit : nil

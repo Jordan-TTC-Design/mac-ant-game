@@ -59,9 +59,17 @@ final class Settings {
     /// (so the first monsters, the young growing up, the crops and the trees all keep pace with the size of the camp), and slower when slower.
     /// Weather and the seasons do not follow it. Kept between a quarter and four times; `CAMP_PACE` fixes it (tests).
     var pace: Double {
-        if let s = ProcessInfo.processInfo.environment["CAMP_PACE"], let v = Double(s), v > 0 { return v }
-        return min(4, max(0.25, 180 / max(1, spawnInterval)))
+        // read many times a frame, so it is worked out at most once a second
+        let now = CACurrentMediaTime()
+        if now - Settings.paceStamp > 1 || Settings.paceStamp == 0 {
+            Settings.paceStamp = now
+            if let v = Settings.paceOverride { Settings.paceCache = v } else { Settings.paceCache = min(4, max(0.25, 180 / max(1, spawnInterval))) }
+        }
+        return Settings.paceCache
     }
+    private static var paceCache = 1.0
+    private static var paceStamp = 0.0
+    private static let paceOverride: Double? = ProcessInfo.processInfo.environment["CAMP_PACE"].flatMap(Double.init).flatMap { $0 > 0 ? $0 : nil }
 
     /// The cap is remembered per character.
     private var maxAntsKey: String { "maxAnts.\(Characters.current.id)" }

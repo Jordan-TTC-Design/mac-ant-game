@@ -96,11 +96,12 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
             c.minWidth = 30
             return c
         }
-        table.addTableColumn(column("id", "#", 34))
-        table.addTableColumn(column("name", "名字", 104))
-        table.addTableColumn(column("breed", "品種", 52))
-        table.addTableColumn(column("life", "壽命", 70))
-        table.addTableColumn(column("stats", "速度 / 感知 / 搬運", 112))
+        table.addTableColumn(column("id", "#", 30))
+        table.addTableColumn(column("name", "名字", 92))
+        table.addTableColumn(column("breed", "品種", 44))
+        table.addTableColumn(column("state", "狀態", 66))
+        table.addTableColumn(column("gear", "裝備", 40))
+        table.addTableColumn(column("life", "壽命", 58))
         table.dataSource = self
         table.delegate = self
         table.rowHeight = 20
@@ -218,7 +219,8 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         case "id": text = "\(ant.id)"
         case "name": text = ant.name
         case "breed": text = breedName(of: ant)
-        default: text = String(format: "%.2f / %.2f / %d", t.speed, t.sense, t.carry)
+        case "state": text = ant.stateLabel
+        default: text = ant.isChild ? "-" : "\(ant.gear.count)/\(GearSlot.allCases.count)"
         }
         let id = NSUserInterfaceItemIdentifier("textCell")
         let field = (tableView.makeView(withIdentifier: id, owner: self) as? NSTextField) ?? {

@@ -96,6 +96,8 @@ struct TerrainLifeState: Codable {
     var cuts: [Cut] = []
     /// The state of each farm plot (by its number in the scene).
     var plots: [PlotState] = []
+    /// How places are recorded: 2 = as offsets in points from the nest (earlier saves used fractions of the window, which no longer mean anything).
+    var layout = 2
 
     init(seed: UInt64, epoch: Double, seasonOffset: Double, lastRoll: Double) {
         self.seed = seed
@@ -105,7 +107,7 @@ struct TerrainLifeState: Codable {
     }
 
     // (written by hand so that saves from before a field was added still load)
-    private enum Keys: String, CodingKey { case seed, epoch, seasonOffset, lastRoll, puddles, plantings, heat, heatTime, cuts, plots }
+    private enum Keys: String, CodingKey { case seed, epoch, seasonOffset, lastRoll, puddles, plantings, heat, heatTime, cuts, plots, layout }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -119,6 +121,13 @@ struct TerrainLifeState: Codable {
         heatTime = try c.decodeIfPresent(Double.self, forKey: .heatTime) ?? 0
         cuts = try c.decodeIfPresent([Cut].self, forKey: .cuts) ?? []
         plots = try c.decodeIfPresent([PlotState].self, forKey: .plots) ?? []
+        layout = try c.decodeIfPresent(Int.self, forKey: .layout) ?? 1
+        if layout < 2 { // positions from before the canvas mean nothing now: start those over
+            puddles = []
+            plantings = []
+            cuts = []
+            layout = 2
+        }
     }
 }
 
@@ -326,7 +335,7 @@ final class TerrainLife {
     /// A goblin felled a tree or took a piece of a rock at this spot (a fraction of the clearing). Returns the cut.
     @discardableResult
     func cut(kind: Int, at f: CGPoint, now: Double = TerrainClock.now) -> Cut {
-        if kind == 1, let i = state.cuts.firstIndex(where: { $0.kind == 1 && abs($0.fx - Double(f.x)) < 0.004 && abs($0.fy - Double(f.y)) < 0.004 }) {
+        if kind == 1, let i = state.cuts.firstIndex(where: { $0.kind == 1 && abs($0.fx - Double(f.x)) < 3 && abs($0.fy - Double(f.y)) < 3 }) {
             state.cuts[i].taken += 1
             version += 1
             onChange?()
@@ -342,7 +351,7 @@ final class TerrainLife {
 
     /// A planted tree that was felled falls like the ones that die: it lies there for a while and rots.
     func fellPlanting(nearFraction f: CGPoint, now: Double = TerrainClock.now) {
-        guard let i = state.plantings.firstIndex(where: { $0.fell == nil && abs($0.fx - Double(f.x)) < 0.004 && abs($0.fy - Double(f.y)) < 0.004 }) else { return }
+        guard let i = state.plantings.firstIndex(where: { $0.fell == nil && abs($0.fx - Double(f.x)) < 3 && abs($0.fy - Double(f.y)) < 3 }) else { return }
         state.plantings[i].fell = now
         version += 1
         onChange?()
@@ -364,14 +373,14 @@ final class TerrainLife {
 
     // MARK: Puddles
 
-    func puddlePoints(in world: CGRect, now: Double = TerrainClock.now) -> [(center: CGPoint, radius: CGFloat, wetness: Double)] {
+    func puddlePoints(origin: CGPoint, now: Double = TerrainClock.now) -> [(center: CGPoint, radius: CGFloat, wetness: Double)] {
         state.puddles.compactMap { p in
             let age = now - p.born
             guard age >= 0, age < p.life else { return nil }
             // it grows while it is filling and shrinks as it dries
             let fill = min(1, age / 600), dry = max(0, 1 - max(0, age - p.life * 0.55) / (p.life * 0.45))
             let wetness = min(fill, dry)
-            return (CGPoint(x: world.minX + CGFloat(p.fx) * world.width, y: world.minY + CGFloat(p.fy) * world.height), CGFloat(p.radius * (0.4 + 0.6 * wetness)), wetness)
+            return (CGPoint(x: origin.x + CGFloat(p.fx), y: origin.y + CGFloat(p.fy)), CGFloat(p.radius * (0.4 + 0.6 * wetness)), wetness)
         }
     }
 }

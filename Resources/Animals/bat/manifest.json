@@ -1,0 +1,63 @@
+{
+  "id": "bat",
+  "name": "蝙蝠",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 24,
+  "speed": 40,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 6,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 2,
+  "appearsAfter": 90,
+  "minAnts": 45,
+  "nightOnly": true,
+  "flies": true,
+  "damage": 1,
+  "attackEvery": 1.6,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "bite",
+  "splits": 0,
+  "pack": [
+    2,
+    4
+  ],
+  "drops": [
+    {
+      "id": "bat_wing",
+      "name": "蝙蝠翼",
+      "chance": 0.65,
+      "min": 1,
+      "max": 2,
+      "color": "#4e3e6e"
+    },
+    {
+      "id": "bat_fang",
+      "name": "蝙蝠牙",
+      "chance": 0.4,
+      "min": 1,
+      "max": 1,
+      "color": "#f2ecd6"
+    },
+    {
+      "id": "night_dust",
+      "name": "夜光粉",
+      "chance": 0.2,
+      "min": 1,
+      "max": 1,
+      "color": "#a890e0"
+    },
+    {
+      "id": "night_heart",
+      "name": "夜之心",
+      "chance": 0.03,
+      "min": 1,
+      "max": 1,
+      "color": "#d040a0"
+    }
+  ]
+}

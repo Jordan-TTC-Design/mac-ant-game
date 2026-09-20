@@ -26,6 +26,12 @@ struct MonsterTraits {
     /// `Colony.playSeconds`) and the camp has had this many goblins. Stronger monsters come later.
     var appearsAfter = 0.0
     var minAnts = 0
+    /// Where and when it comes: only in these biomes (empty = anywhere), only at night, only if the camp window has water (a frog).
+    var biomes: [String] = []
+    var nightOnly = false
+    var needsWater = false
+    /// Flies (a bat): hovers above the ground, flaps, and does not walk.
+    var flies = false
     /// Moves in hops (a slime).
     var hops = false
     /// How it attacks: the sheet's last two frames are its wind-up and its strike, and the motion follows the style.
@@ -95,8 +101,12 @@ enum Animals {
     static let all: [AnimalKind] = loadFolders()
 
     /// A random kind, weighted by how common each is: the peaceful ones (`monsters: false`) or the monsters.
-    static func pick(monsters: Bool = false, minutes: Double = .infinity, ants: Int = .max) -> AnimalKind? {
-        let pool = all.filter { $0.hostile == monsters && $0.monster.appearsAfter <= minutes && $0.monster.minAnts <= ants }
+    static func pick(monsters: Bool = false, minutes: Double = .infinity, ants: Int = .max, biome: String? = nil, night: Bool = false, water: Bool = true) -> AnimalKind? {
+        let pool = all.filter { kind in
+            let m = kind.monster
+            return kind.hostile == monsters && m.appearsAfter <= minutes && m.minAnts <= ants
+                && (m.biomes.isEmpty || biome == nil || m.biomes.contains(biome!)) && (!m.nightOnly || night) && (!m.needsWater || water)
+        }
         let total = pool.reduce(0) { $0 + $1.weight }
         guard total > 0 else { return nil }
         var roll = Double.random(in: 0..<total)
@@ -127,6 +137,10 @@ enum Animals {
         let hops: Bool?
         let appearsAfter: Double?
         let minAnts: Int?
+        let biomes: [String]?
+        let nightOnly: Bool?
+        let needsWater: Bool?
+        let flies: Bool?
         let walkFrames: Int?
         let attackStyle: String?
         let splits: Int?
@@ -167,6 +181,10 @@ enum Animals {
         monster.hops = m.hops ?? false
         monster.appearsAfter = m.appearsAfter ?? 0
         monster.minAnts = m.minAnts ?? 0
+        monster.biomes = m.biomes ?? []
+        monster.nightOnly = m.nightOnly ?? false
+        monster.needsWater = m.needsWater ?? false
+        monster.flies = m.flies ?? false
         monster.attackStyle = AttackStyle(rawValue: m.attackStyle ?? "") ?? .none
         monster.splits = m.splits ?? 0
         if let pack = m.pack, pack.count == 2, pack[0] <= pack[1] { monster.pack = pack[0]...pack[1] }
@@ -350,6 +368,7 @@ struct Creature {
             lift = kind.monster.hops ? 1.2 * scale * (1 + sin(hopClock * 9)) / 2 : 0 // a little bounce on the spot
             hopClock += dt
             legPhase = 0
+            if kind.monster.flies { lift = 8 + 2 * sin(hopClock * 5); legPhase = Double(Int(hopClock * 9) % 2) }
             return
         }
         var speed = kind.speed
@@ -370,6 +389,12 @@ struct Creature {
         if target != nil, nearest < reach * 0.8 { // close enough: stand and wait for the next attack
             if kind.monster.hops { legPhase = 0; lift = 0 }
             return
+        }
+        if kind.monster.flies { // a bat: flaps, hovers, and darts about
+            hopClock += dt
+            legPhase = Double(Int(hopClock * 9) % 2)
+            lift = 8 + 2 * sin(hopClock * 5)
+            if target == nil { heading += Double.random(in: -1...1) * 2.5 * dt }
         }
         if kind.monster.hops {
             hopClock += dt

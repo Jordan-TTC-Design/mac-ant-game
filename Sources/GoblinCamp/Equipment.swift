@@ -113,6 +113,8 @@ enum Gears {
              blurb: "鼠尾當弦，鼠牙當箭頭，可以從很遠的地方射。"),
         Gear(id: "core_staff", name: "核心法杖", slot: .weapon, might: 2.2, reach: 28, cost: [("slime_core", 2), ("slime_goo", 4), ("shiny_bead", 1)], look: .staff, color: rgb(60, 160, 216),
              blurb: "史萊姆核心在杖頭發著藍光，會射出光球。很稀有。"),
+        Gear(id: "night_dagger", name: "夜刃匕首", slot: .weapon, might: 1.9, speed: 0.04, cost: [("bat_fang", 4), ("night_dust", 1), ("scrap_iron", 3)], look: .dagger, color: rgb(150, 120, 200),
+             blurb: "用蝙蝠牙磨的匕首，沾了夜光粉，揮起來很輕。"),
         // shields
         Gear(id: "wood_shield", name: "木盾", slot: .shield, block: 0.15, cost: [("scrap_wood", 6), ("rat_pelt", 1)], look: .woodShield, color: rgb(170, 120, 68),
              blurb: "幾片木板釘成的圓盾。"),
@@ -134,6 +136,8 @@ enum Gears {
              blurb: "廢鐵拼成的胸甲，很硬但有點重。"),
         Gear(id: "gold_cloak", name: "金毛披風", slot: .chest, health: 2, cost: [("golden_fur", 1), ("rat_pelt", 4), ("rat_tail", 2)], look: .cloak, color: rgb(240, 192, 64),
              blurb: "閃著金光的披風。很稀有。"),
+        Gear(id: "bat_cloak", name: "蝙蝠翼披風", slot: .chest, health: 1.7, speed: 0.03, cost: [("bat_wing", 5), ("rat_pelt", 2), ("scrap_rag", 2)], look: .cloak, color: rgb(90, 70, 130),
+             blurb: "薄薄的蝙蝠翼縫成的披風，走路輕飄飄的。"),
         // legs
         Gear(id: "cloth_pants", name: "布褲", slot: .legs, health: 0.4, cost: [("scrap_rag", 4)], look: .pants, color: rgb(120, 130, 170),
              blurb: "碎布縫的褲子。"),
@@ -145,6 +149,8 @@ enum Gears {
         Gear(id: "leather_boots", name: "皮靴", slot: .feet, health: 0.3, speed: 0.08, cost: [("rat_pelt", 3), ("rat_tail", 1)], look: .boots, color: rgb(120, 82, 54),
              blurb: "鼠皮做的靴子，又快又耐穿。"),
         // hands
+        Gear(id: "frog_boots", name: "蛙皮靴", slot: .feet, health: 0.3, speed: 0.12, cost: [("frog_skin", 3), ("frog_leg", 1)], look: .boots, color: rgb(96, 168, 86),
+             blurb: "滑滑的蛙皮做的靴子，跳起來特別快。"),
         Gear(id: "pelt_wraps", name: "鼠皮護腕", slot: .hands, health: 0.5, cost: [("rat_pelt", 3), ("rat_fang", 1)], look: .gloves, color: rgb(160, 140, 122),
              blurb: "軟軟的皮護腕，不太好看但很耐咬。"),
         Gear(id: "iron_gauntlets", name: "鐵手甲", slot: .hands, might: 0.4, health: 0.4, cost: [("scrap_iron", 4), ("rat_pelt", 1)], look: .gauntlet, color: rgb(168, 174, 190),

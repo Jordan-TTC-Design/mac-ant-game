@@ -246,6 +246,7 @@ def main():
     sprites.update(make_camp())
     sprites.update(make_growth())
     sprites.update(make_farm())
+    sprites.update(make_seasonal())
     for name, img in sprites.items():
         img.save(os.path.join(OUT, name + ".png"))
     print("wrote", len(sprites), "sprites to", os.path.normpath(OUT))
@@ -702,6 +703,50 @@ def make_farm():
         for stage in range(3):
             sprites[f"crop-{kind}-{stage}"] = crop(kind, stage, random.Random(kind * 10 + stage))
     return sprites
+
+
+# ================================================================================================================
+# Seasonal things round the camp: a snowman (winter), a hay bale and pumpkins (autumn)
+# ================================================================================================================
+def snowman(rnd):
+    img = new(16, 22)
+    blob(img, 8, 14, 5, 5, [(206, 218, 236), (240, 246, 252), (255, 255, 255)], rnd)
+    blob(img, 8, 6, 3, 3, [(206, 218, 236), (240, 246, 252), (255, 255, 255)], rnd)
+    put(img, 7, 6, (30, 30, 34)); put(img, 9, 6, (30, 30, 34))
+    put(img, 8, 5, (236, 120, 40)); put(img, 9, 5, (236, 120, 40))            # carrot nose
+    for x in range(5, 12):
+        put(img, x, 9, (200, 50, 60))                                        # scarf
+    put(img, 5, 10, (200, 50, 60)); put(img, 5, 11, (200, 50, 60))
+    for k in range(4):
+        put(img, 3 - k, 12 - k // 2, (110, 74, 40)); put(img, 13 + k, 12 - k // 2, (110, 74, 40))   # stick arms
+    rect(img, 6, 0, 5, 2, (40, 36, 44)); rect(img, 5, 2, 7, 1, (40, 36, 44))  # a hat
+    put(img, 8, 13, (30, 30, 34)); put(img, 8, 15, (30, 30, 34))
+    outline(img, (60, 80, 110))
+    return img
+
+
+def hay(rnd):
+    img = new(20, 12)
+    blob(img, 10, 6, 9, 4, [(170, 132, 50), (222, 186, 84), (244, 216, 122)], rnd)
+    for x in range(3, 18, 3):
+        put(img, x, 4, (150, 112, 40)); put(img, x + 1, 8, (150, 112, 40))
+    rect(img, 4, 5, 12, 1, (150, 100, 44))                                   # a binding
+    outline(img, (90, 66, 30))
+    return img
+
+
+def pumpkins(rnd):
+    img = new(22, 12)
+    for cx, cy, r in ((6, 7, 4), (14, 6, 5), (10, 9, 3)):
+        blob(img, cx, cy, r, max(2, r - 1), [(190, 88, 18), (236, 130, 28), (250, 168, 60)], rnd)
+        put(img, cx, cy - r + 1, (60, 110, 50))
+    outline(img, (90, 44, 20))
+    return img
+
+
+def make_seasonal():
+    rnd = random.Random(31)
+    return {"snowman": snowman(rnd), "hay": hay(rnd), "pumpkins": pumpkins(rnd)}
 
 
 if __name__ == "__main__":

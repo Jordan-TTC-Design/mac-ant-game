@@ -1,0 +1,67 @@
+{
+  "id": "frog",
+  "name": "沼澤青蛙",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 40,
+  "speed": 16,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 11,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 2,
+  "appearsAfter": 60,
+  "minAnts": 35,
+  "biomes": [
+    "swamp",
+    "meadow",
+    "forest"
+  ],
+  "needsWater": true,
+  "damage": 1,
+  "attackEvery": 2.0,
+  "hops": true,
+  "walkFrames": 4,
+  "attackStyle": "bite",
+  "splits": 0,
+  "pack": [
+    1,
+    2
+  ],
+  "drops": [
+    {
+      "id": "frog_skin",
+      "name": "蛙皮",
+      "chance": 0.7,
+      "min": 1,
+      "max": 2,
+      "color": "#60a856"
+    },
+    {
+      "id": "frog_leg",
+      "name": "蛙腿",
+      "chance": 0.45,
+      "min": 1,
+      "max": 2,
+      "color": "#c8d890"
+    },
+    {
+      "id": "sticky_tongue",
+      "name": "黏舌",
+      "chance": 0.25,
+      "min": 1,
+      "max": 1,
+      "color": "#e86078"
+    },
+    {
+      "id": "golden_frog_eye",
+      "name": "金蛙眼",
+      "chance": 0.03,
+      "min": 1,
+      "max": 1,
+      "color": "#eec83c"
+    }
+  ]
+}

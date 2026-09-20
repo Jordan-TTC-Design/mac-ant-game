@@ -118,6 +118,23 @@ struct Ant {
         if case .activity(let kind, _) = mode { return kind }
         return nil
     }
+    /// What it is doing, in a word or two (for the roster).
+    var stateLabel: String {
+        if isDying { return "老去" }
+        if isChild { return sick > 0 ? "小・感冒" : "小孩" }
+        if let activity { return activity.label.replacingOccurrences(of: "耕田：", with: "") }
+        if isWounded { return "受傷" }
+        switch mode {
+        case .inNest, .inNestForHunt: return "在巢裡"
+        case .returningToNest: return "回巢"
+        case .hunting, .huntNews: return "打獵"
+        case .foraging, .feeding, .carryingNews: return "覓食"
+        case .hauling: return "搬運"
+        case .carryingPrincess, .waitingWithPrincess: return "扛公主"
+        default: return "走動"
+        }
+    }
+
     /// Seconds a caught fish is still held up, time spent in the current activity, and (asleep) which way it lies and when it turns over next.
     var catchShow = 0.0
     var activityClock = 0.0
@@ -134,7 +151,8 @@ struct Ant {
 
     /// A newborn is a small one for its first minutes: it plays near the nest, is minded by the grown ones, and takes no part in hunts or work.
     /// `CAMP_CHILD_MINUTES` changes how long (20).
-    static var childSeconds: Double { (Double(ProcessInfo.processInfo.environment["CAMP_CHILD_MINUTES"] ?? "") ?? 20) * 60 / Settings.shared.pace }
+    static var childSeconds: Double { childBase / Settings.shared.pace }
+    private static let childBase = (Double(ProcessInfo.processInfo.environment["CAMP_CHILD_MINUTES"] ?? "") ?? 20) * 60
     var isChild: Bool { age < Ant.childSeconds }
     /// `CAMP_CHILD_COLD_SCALE` makes the young catch colds more often (tests).
     static let childCatchScale = Double(ProcessInfo.processInfo.environment["CAMP_CHILD_COLD_SCALE"] ?? "") ?? 1

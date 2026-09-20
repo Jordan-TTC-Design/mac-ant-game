@@ -513,6 +513,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 for gear in Gears.all {
                     if case .made(_, let by) = self.colony.craft(gear) { log("craft \(gear.name) -> \(by)") } else { log("craft \(gear.name): not made") }
                 }
+                self.colony.debugWear(fraction: 0.4)
+                self.colony.debugAddMaterials(Dictionary(uniqueKeysWithValues: Materials.all.map { ($0.id, 4) }))
+                let jobs = self.colony.repairJobs()
+                if let job = jobs.first {
+                    let before = self.colony.materials
+                    let ok = self.colony.repair(job)
+                    log("repair jobs \(jobs.count); mended \(job.gear.name) (\(Int(job.item.fraction * 100))% -> \(ok ? "100" : "no")%), cost \(Colony.repairCost(job.gear).map { "\($0.0)×\($0.1)" }), stock changed \(before != self.colony.materials); jobs left \(self.colony.repairJobs().count)")
+                }
                 self.workshopWindow?.refresh()
             }
             after(5) {
@@ -693,7 +701,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         byActivity[what, default: 0] += 1
                         byBreed[breeds[min(a.breedIndex, breeds.count - 1)].name, default: [:]][what, default: 0] += 1
                     }
-                    log("t+\(k * 10 + 10)s hour \(Scenery.currentHour), \(c.ants.count) goblins: \(byActivity.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) | fish caught so far: \(c.foodDelivered) | wood \(c.materials["scrap_wood", default: 0]) iron \(c.materials["scrap_iron", default: 0]) crystal \(c.materials["crystal_shard", default: 0]) | larder \(c.larder) stews \(c.foods.filter { $0.kind == .stew }.count) | trees left \(c.scene?.resourceSpots().filter { $0.kind == .tree }.count ?? 0), rocks \(c.scene?.resourceSpots().filter { $0.kind == .rock }.count ?? 0), cuts \(c.life?.state.cuts.count ?? 0)")
+                    log("t+\(k * 10 + 10)s hour \(Scenery.currentHour), \(c.ants.count) goblins: \(byActivity.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) | fish caught so far: \(c.foodDelivered) | wood \(c.materials["scrap_wood", default: 0]) iron \(c.materials["scrap_iron", default: 0]) crystal \(c.materials["crystal_shard", default: 0]) | larder \(c.larder) stews \(c.foods.filter { $0.kind == .stew }.count) | world \(c.scene.map { "\(Int($0.world.width))x\(Int($0.world.height)) nest \(Int($0.nest.x)),\(Int($0.nest.y))" } ?? "-") | trees left \(c.scene?.resourceSpots().filter { $0.kind == .tree }.count ?? 0), rocks \(c.scene?.resourceSpots().filter { $0.kind == .rock }.count ?? 0), cuts \(c.life?.state.cuts.count ?? 0)")
                     for (breed, counts) in byBreed.sorted(by: { $0.key < $1.key }) { log("   \(breed): \(counts.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))") }
                 }
             }
@@ -845,6 +853,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         menu.autoenablesItems = false // enabled state of the game items is set in menuNeedsUpdate
 
+        // The menu is a short list you use all the time (pause, mode, the pomodoro, Claude Code) and a few groups for everything else.
+        func group(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+            let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: title)
+            sub.autoenablesItems = false
+            for item in items { sub.addItem(item) }
+            parent.submenu = sub
+            return parent
+        }
+        func sectionTitle(_ title: String) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            return item
+        }
+
         countItem.isEnabled = false
         menu.addItem(countItem)
         menu.addItem(.separator())
@@ -854,17 +877,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.colony.isPaused.toggle()
         }
         menu.addItem(pauseItem)
-        pickItem = ClosureMenuItem(title: "重新選擇蟻窩（清空螞蟻）") { [weak self] in self?.colony.beginPicking() }
-        menu.addItem(pickItem)
-        editItem = ClosureMenuItem(title: "編輯蟻窩位置") { [weak self] in
-            guard let self else { return }
-            if self.colony.phase == .editing { self.colony.endEditing() } else { self.colony.beginEditing() }
-        }
-        menu.addItem(editItem)
-        menu.addItem(foodMenu())
-        rosterItem = ClosureMenuItem(title: "名冊…") { [weak self] in self?.roster.toggle() }
-        menu.addItem(rosterItem)
-        menu.addItem(ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } })
+        menu.addItem(.separator())
+
+        // modes
         quietStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         quietStatusItem.isEnabled = false
         menu.addItem(quietStatusItem)
@@ -883,19 +898,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             modeMenuItems.append(item)
             menu.addItem(item)
         }
-        menu.addItem(choiceMenu(title: "切換模式後持續", options: AppDelegate.durationChoices,
-                                get: { self.settings.modeDuration }, set: { self.settings.modeDuration = $0 }))
-        menu.addItem(choiceMenu(title: "啟動時的模式",
-                                options: [("全開", "normal"), ("工作模式（預設）", "work"), ("節能模式", "saver"), ("專注模式", "focus")],
-                                get: { self.settings.startupMode }, set: { self.settings.startupMode = $0 }))
-        let hotkeys = ClosureMenuItem(title: "全域快捷鍵 ⌃⌥1～4 切換模式") { [weak self] in
-            self?.settings.hotkeysEnabled.toggle()
-            self?.applyHotkeys()
-        }
-        hotkeys.stateProvider = { self.settings.hotkeysEnabled }
-        menu.addItem(hotkeys)
         menu.addItem(.separator())
 
+        // tools you reach for while you work
+        menu.addItem(pomodoroMenu())
+        alertScreenItem = NSMenuItem(title: "提醒顯示的螢幕（番茄鐘與通知）", action: nil, keyEquivalent: "")
+        alertScreenItem.submenu = NSMenu(title: "提醒顯示的螢幕")
+        menu.addItem(group("Claude Code", [claudeConnectMenu(), notifyMenu(), .separator(), alertScreenItem]))
+        menu.addItem(.separator())
+
+        // the camp: what is in it and how it runs
+        pickItem = ClosureMenuItem(title: "重新選擇營地位置（清空哥布林）") { [weak self] in self?.colony.beginPicking() }
+        editItem = ClosureMenuItem(title: "編輯營地位置") { [weak self] in
+            guard let self else { return }
+            if self.colony.phase == .editing { self.colony.endEditing() } else { self.colony.beginEditing() }
+        }
         characterMenuItem = choiceMenu(title: "角色",
                                 options: Characters.all.map { ($0.name, $0.id) },
                                 get: { Characters.current.id }, set: { [weak self] in
@@ -903,73 +920,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     self?.characterChanged()
                                 })
         characterMenuItem.isHidden = Characters.all.count <= 1 // nothing to choose from with a single character
-        menu.addItem(characterMenuItem)
-        menu.addItem(spawnMenu())
-        menu.addItem(choiceMenu(title: "自然事件（動物、果樹）",
-                                options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
-                                get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 }))
-        let perfGuard = ClosureMenuItem(title: "效能保護（太卡時自動減少同時出現的哥布林）") { [weak self] in
-            guard let self else { return }
-            self.settings.perfGuard.toggle()
-            PerfGovernor.shared.enabled = self.settings.perfGuard
-        }
-        perfGuard.stateProvider = { self.settings.perfGuard }
-        PerfGovernor.shared.enabled = settings.perfGuard
-        menu.addItem(perfGuard)
-        menu.addItem(choiceMenu(title: "魔獸來襲（史萊姆、巨鼠…）",
-                                options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
-                                get: { self.settings.monsters }, set: { self.settings.monsters = $0 }))
-        capMenuItem = choiceMenu(title: "數量上限",
+        capMenuItem = choiceMenu(title: "哥布林數量上限",
                                  options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
-        menu.addItem(capMenuItem)
-        menu.addItem(nestImageMenu())
-        menu.addItem(pomodoroMenu())
-        menu.addItem(notifyMenu())
-        menu.addItem(claudeConnectMenu())
-        alertScreenItem = NSMenuItem(title: "提醒顯示的螢幕", action: nil, keyEquivalent: "")
-        alertScreenItem.submenu = NSMenu(title: "提醒顯示的螢幕")
-        menu.addItem(alertScreenItem)
+        let workshop = ClosureMenuItem(title: "工坊（做武器與裝備）…") { [weak self] in self?.showWorkshop() }
+        menu.addItem(group("營地", [
+            foodMenu(), workshop,
+            .separator(),
+            editItem, pickItem,
+            ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } },
+            nestImageMenu(),
+            .separator(),
+            spawnMenu(),
+            capMenuItem,
+            choiceMenu(title: "野生動物與果樹",
+                       options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
+                       get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 }),
+            choiceMenu(title: "魔獸來襲頻率",
+                       options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
+                       get: { self.settings.monsters }, set: { self.settings.monsters = $0 }),
+        ]))
+
+        // records: everything you can look up
+        rosterItem = ClosureMenuItem(title: "居民名冊…") { [weak self] in self?.roster.toggle() }
+        menu.addItem(group("名冊與圖鑑", [
+            rosterItem,
+            ClosureMenuItem(title: "魔獸與素材圖鑑…") { [weak self] in self?.showWarehouse() },
+            ClosureMenuItem(title: "每日統計…") { [weak self] in self?.showStats() },
+        ]))
+
+        // where and how the camp is shown
         desktopMenuItem = NSMenuItem(title: "哥布林出現在哪個桌面", action: nil, keyEquivalent: "")
         desktopMenuItem.submenu = NSMenu(title: "哥布林出現在哪個桌面")
-        menu.addItem(desktopMenuItem)
-        rangeMenuItem = NSMenuItem(title: "走動範圍與背景", action: nil, keyEquivalent: "")
-        rangeMenuItem.submenu = NSMenu(title: "走動範圍與背景")
-        menu.addItem(rangeMenuItem)
+        rangeMenuItem = NSMenuItem(title: "走動範圍與地圖", action: nil, keyEquivalent: "")
+        rangeMenuItem.submenu = NSMenu(title: "走動範圍與地圖")
         screenMenuItem = NSMenuItem(title: "哥布林出現在哪個螢幕", action: nil, keyEquivalent: "")
         screenMenuItem.submenu = NSMenu(title: "哥布林出現在哪個螢幕")
-        menu.addItem(screenMenuItem)
         let fullscreen = ClosureMenuItem(title: "全螢幕時自動專注（影片、簡報）") { [weak self] in
             guard let self else { return }
             self.settings.fullscreenFocus.toggle()
             if !self.settings.fullscreenFocus, self.fullscreenActive { self.fullscreenActive = false; self.applyQuietState() }
         }
         fullscreen.stateProvider = { self.settings.fullscreenFocus }
-        menu.addItem(fullscreen)
-        menu.addItem(launchAtLoginItem())
-        menu.addItem(ClosureMenuItem(title: "工坊（做武器與裝備）…") { [weak self] in self?.showWorkshop() })
-        menu.addItem(ClosureMenuItem(title: "倉庫與魔獸圖鑑…") { [weak self] in self?.showWarehouse() })
-        menu.addItem(ClosureMenuItem(title: "每日統計…") { [weak self] in self?.showStats() })
-        menu.addItem(.separator())
+        let perfGuard = ClosureMenuItem(title: "效能保護") { [weak self] in
+            guard let self else { return }
+            self.settings.perfGuard.toggle()
+            PerfGovernor.shared.enabled = self.settings.perfGuard
+        }
+        perfGuard.toolTip = "畫面太卡時，自動減少同時出現的哥布林（其他的回巢穴休息）"
+        perfGuard.stateProvider = { self.settings.perfGuard }
+        PerfGovernor.shared.enabled = settings.perfGuard
+        menu.addItem(group("顯示", [rangeMenuItem, screenMenuItem, desktopMenuItem, .separator(), fullscreen, perfGuard]))
 
+        // preferences
+        let hotkeys = ClosureMenuItem(title: "啟用全域快捷鍵（⌃⌥1～4）") { [weak self] in
+            self?.settings.hotkeysEnabled.toggle()
+            self?.applyHotkeys()
+        }
+        hotkeys.stateProvider = { self.settings.hotkeysEnabled }
         let save = ClosureMenuItem(title: "儲存進度") { [weak self] in
             guard let self else { return }
             self.settings.saveProgress.toggle()
             if self.settings.saveProgress { self.persist() } else { Persistence.clear() }
         }
         save.stateProvider = { self.settings.saveProgress }
-        menu.addItem(save)
+        menu.addItem(group("偏好設定", [
+            characterMenuItem,
+            choiceMenu(title: "啟動時的模式",
+                       options: [("全開", "normal"), ("工作模式（預設）", "work"), ("節能模式", "saver"), ("專注模式", "focus")],
+                       get: { self.settings.startupMode }, set: { self.settings.startupMode = $0 }),
+            choiceMenu(title: "切換模式後持續", options: AppDelegate.durationChoices,
+                       get: { self.settings.modeDuration }, set: { self.settings.modeDuration = $0 }),
+            hotkeys,
+            .separator(),
+            launchAtLoginItem(),
+            save,
+        ]))
         menu.addItem(.separator())
-        menu.addItem(.separator())
+
         menu.addItem(ClosureMenuItem(title: "說明手冊…") { [weak self] in self?.showManual() })
-        menu.addItem(ClosureMenuItem(title: "複製診斷資訊（哥布林閃爍或消失時用）") { [weak self] in
+        let diagnostics = ClosureMenuItem(title: "複製診斷資訊") { [weak self] in
             guard let self else { return }
             let extra = ["terrain: \(self.colony.scene.map { "\($0.summary), seed \($0.seed)" } ?? "none")",
                          "perf guard \(PerfGovernor.shared.enabled ? "on" : "off"): scale \(String(format: "%.2f", PerfGovernor.shared.scale)), last \(String(format: "%.1f", PerfGovernor.shared.lastMilliseconds)) ms per frame (budget \(PerfGovernor.budget))",
                          "mode \(String(describing: self.effectiveMode)) fullscreenActive \(self.fullscreenActive) camp hidden \(self.colony.campHidden) goblins \(self.colony.ants.count)"]
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(Diagnostics.report(settings: self.settings, extra: extra), forType: .string)
-        })
+        }
+        diagnostics.toolTip = "哥布林閃爍、消失或卡住時，把診斷資訊複製起來貼給開發者"
+        menu.addItem(diagnostics)
         menu.addItem(ClosureMenuItem(title: "關於哥布林營地（v\(versionText)）") { [weak self] in self?.showAbout() })
         menu.addItem(withTitle: "結束哥布林營地", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -1687,8 +1726,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let seed = UInt64(env["CAMP_TERRAIN_SEED"] ?? "") ?? settings.terrainSeed
         let biome = Biome(rawValue: env["CAMP_TERRAIN"] ?? settings.terrainBiome) ?? Biome.pick(seed: seed)
         let nest = colony.nest ?? CGPoint(x: world.midX, y: world.midY)
-        let key = "\(seed)-\(biome.rawValue)-\(Int(world.width / 12))x\(Int(world.height / 12))-\(Int(nest.x / 20))-\(Int(nest.y / 20))"
-        guard key != sceneKey else { return }
+        let key = "\(seed)-\(biome.rawValue)-\(Int(nest.x / 20))-\(Int(nest.y / 20))"
+        guard key != sceneKey else {
+            // only the window changed: the place stays as it is, and the window shows more or less of it
+            if let scene = colony.scene, scene.world != world {
+                scene.world = world
+                colony.refreshObstacles()
+            }
+            return
+        }
         sceneKey = key
         let scene = TerrainScene(seed: seed, biome: biome, world: world, nest: nest)
         scene.life = settings.terrainAlive ? colony.terrainLife(seed: seed) : nil
@@ -1760,40 +1806,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         sub.addItem(.separator())
         let sizes: [(String, Double)] = [("薄", 30), ("中（預設）", 42), ("厚", 54), ("很厚", 64)]
-        let sizeMenu = choiceMenu(title: "一條有多寬", options: sizes, get: { self.settings.rangeSize }, set: { [weak self] in self?.settings.rangeSize = $0; changed() })
+        let sizeMenu = choiceMenu(title: "條狀範圍的寬度", options: sizes, get: { self.settings.rangeSize }, set: { [weak self] in self?.settings.rangeSize = $0; changed() })
         sizeMenu.isEnabled = ["bottom", "right", "left"].contains(settings.rangeMode)
         sub.addItem(sizeMenu)
-        sub.addItem(choiceMenu(title: "背景", options: [("森林", "forest"), ("草地", "meadow"), ("沒有", "none")],
+        sub.addItem(choiceMenu(title: "條狀範圍的背景", options: [("森林", "forest"), ("草地", "meadow"), ("沒有", "none")],
                                get: { self.settings.scenery }, set: { [weak self] in self?.settings.scenery = $0; self?.redrawAll() }))
         sub.addItem(.separator())
+        // the camp window: shown or folded away, on top or not, and what its ground and sky are like
+        let windowMenu = NSMenu(title: "營地視窗")
+        windowMenu.autoenablesItems = false
         let toggle = ClosureMenuItem(title: settings.mapCollapsed ? "顯示營地視窗" : "收起營地視窗") { [weak self] in
             guard let self else { return }
             self.settings.mapCollapsed.toggle()
             self.updateMapWindow()
         }
         toggle.isEnabled = isWindowMode
-        sub.addItem(toggle)
-        let onTop = ClosureMenuItem(title: "營地視窗永遠在最上面") { [weak self] in
+        windowMenu.addItem(toggle)
+        let onTop = ClosureMenuItem(title: "永遠在最上面") { [weak self] in
             self?.settings.mapOnTop.toggle()
             self?.mapWindow?.applyLevel()
         }
         onTop.stateProvider = { self.settings.mapOnTop }
         onTop.isEnabled = isWindowMode
-        sub.addItem(onTop)
-        sub.addItem(.separator())
-        let weather = ClosureMenuItem(title: "偶爾下雨（哥布林會躲進營地）") { [weak self] in
-            self?.settings.weatherEnabled.toggle()
-            self?.redrawAll()
-        }
-        weather.stateProvider = { self.settings.weatherEnabled }
-        sub.addItem(weather)
-        sub.addItem(ClosureMenuItem(title: "現在下一場雨（試試看）") { [weak self] in
-            self?.colony.setWeather(.rain, forSeconds: 90)
-            self?.redrawAll()
-        })
-        sub.addItem(.separator())
-        let terrain = NSMenuItem(title: "營地視窗的地貌", action: nil, keyEquivalent: "")
-        let terrainMenu = NSMenu(title: "營地視窗的地貌")
+        windowMenu.addItem(onTop)
+        let reset = ClosureMenuItem(title: "回到右下角") { [weak self] in self?.mapWindow?.resetPosition() }
+        reset.isEnabled = isWindowMode
+        windowMenu.addItem(reset)
+        windowMenu.addItem(.separator())
+        let terrain = NSMenuItem(title: "地貌", action: nil, keyEquivalent: "")
+        let terrainMenu = NSMenu(title: "地貌")
+        terrainMenu.autoenablesItems = false
         for (title, id) in [("隨機（依種子）", "auto")] + Biome.allCases.map({ ($0.name, $0.rawValue) }) {
             let item = ClosureMenuItem(title: title) { [weak self] in
                 self?.settings.terrainBiome = id
@@ -1804,28 +1846,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             terrainMenu.addItem(item)
         }
         terrainMenu.addItem(.separator())
-        terrainMenu.addItem(ClosureMenuItem(title: "重新生成地貌（換一個新的樣子）") { [weak self] in
+        terrainMenu.addItem(ClosureMenuItem(title: "重新生成地貌") { [weak self] in
             self?.settings.terrainSeed = UInt64.random(in: 1...UInt64.max)
             self?.applyWalkable()
             self?.redrawAll()
         })
-        terrainMenu.addItem(.separator())
-        let alive = ClosureMenuItem(title: "場地持續變化（季節、雨後水窪、長樹苗、踩出小路）") { [weak self] in
+        terrain.submenu = terrainMenu
+        terrain.isEnabled = isWindowMode
+        windowMenu.addItem(terrain)
+        let alive = ClosureMenuItem(title: "場地隨時間變化") { [weak self] in
             guard let self else { return }
             self.settings.terrainAlive.toggle()
             self.sceneKey = ""
             self.applyWalkable()
             self.redrawAll()
         }
+        alive.toolTip = "四季、雨後水窪、樹苗長大、踩出來的小路"
         alive.stateProvider = { self.settings.terrainAlive }
-        terrainMenu.addItem(alive)
-        terrain.submenu = terrainMenu
-        terrain.isEnabled = isWindowMode
-        sub.addItem(terrain)
-        sub.addItem(.separator())
-        let reset = ClosureMenuItem(title: "營地視窗回到右下角") { [weak self] in self?.mapWindow?.resetPosition() }
-        reset.isEnabled = isWindowMode
-        sub.addItem(reset)
+        alive.isEnabled = isWindowMode
+        windowMenu.addItem(alive)
+        windowMenu.addItem(.separator())
+        let weather = ClosureMenuItem(title: "天氣：偶爾下雨") { [weak self] in
+            self?.settings.weatherEnabled.toggle()
+            self?.redrawAll()
+        }
+        weather.toolTip = "下雨時哥布林多半躲進巢穴"
+        weather.stateProvider = { self.settings.weatherEnabled }
+        windowMenu.addItem(weather)
+        windowMenu.addItem(ClosureMenuItem(title: "現在下一場雨（試試看）") { [weak self] in
+            self?.colony.setWeather(.rain, forSeconds: 90)
+            self?.redrawAll()
+        })
+        let windowItem = NSMenuItem(title: "營地視窗", action: nil, keyEquivalent: "")
+        windowItem.submenu = windowMenu
+        sub.addItem(windowItem)
     }
 
     private var screenMenuItem: NSMenuItem!
@@ -2066,7 +2120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func showWarehouse() {
         let alert = NSAlert()
-        alert.messageText = "倉庫與魔獸圖鑑"
+        alert.messageText = "魔獸與素材圖鑑"
         let total = colony.materials.values.reduce(0, +)
         alert.informativeText = "哥布林從魔獸身上搬回來的素材（共 \(total) 件）。之後可以拿來做武器與裝備。\n\n" + warehouseText()
         alert.addButton(withTitle: "好")
@@ -2143,7 +2197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// How often a new one is born: a few presets and a custom value.
     private func spawnMenu() -> NSMenuItem {
-        let parent = choiceMenu(title: "生成速度", options: AppDelegate.spawnPresets.map { ("每 \(IntervalFormat.text($0)) 一隻", $0) },
+        let parent = choiceMenu(title: "生成速度（也是遊戲節奏）", options: AppDelegate.spawnPresets.map { ("每 \(IntervalFormat.text($0)) 一隻", $0) },
                                 get: { self.settings.spawnInterval }, set: { self.settings.spawnInterval = $0 })
         customSpawnItem = ClosureMenuItem(title: "自訂…") { [weak self] in
             // let the menu close before the dialog opens

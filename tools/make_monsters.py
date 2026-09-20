@@ -27,6 +27,10 @@ PAL = {
     # rat
     "R": (52, 40, 40), "f": (150, 132, 122), "F": (108, 92, 84), "s": (196, 178, 164), "q": (232, 150, 164), "d": (204, 40, 52),
     "t": (250, 246, 232),
+    # bat
+    "b": (78, 62, 110), "B": (52, 40, 78), "p": (150, 122, 190), "y": (250, 220, 90),
+    # frog
+    "g": (96, 168, 86), "G": (60, 122, 60), "l": (170, 214, 130), "T": (232, 96, 120), "Y": (238, 200, 60),
 }
 
 
@@ -93,6 +97,48 @@ def rat(f):
     return c
 
 
+
+
+def bat(f):
+    """Frames 0-1: wings up, wings down (it flaps in the air); 2: wind-up (wings drawn back, mouth shut); 3: the dive (jaws open, fangs out)."""
+    c = Canvas()
+    ellipse(c, 8, 8, 3, 3.4, "b")                                   # the body
+    c.cells([(6, 4), (7, 3), (6, 3)], "b"); c.cells([(10, 4), (9, 3), (10, 3)], "b")   # ears
+    wing_y = {0: -3, 1: 3, 2: -4, 3: 1}[f]
+    for side in (-1, 1):
+        for k in range(1, 6):
+            x = 8 + side * (3 + k)
+            top = 7 + wing_y * (k / 5.0)
+            c.rect(x, int(min(top, 9)), x, int(max(top, 9)) + (1 if k < 4 else 0), "B" if k % 2 else "b")
+        c.put(8 + side * 4, 8, "p")
+    c.cells([(7, 7), (9, 7)], "y")                                   # eyes
+    c.put(7, 7, "d"); c.put(9, 7, "d")
+    if f == 3:
+        c.cells([(7, 10), (8, 10), (9, 10)], "k"); c.cells([(7, 11), (9, 11)], "t")   # fangs
+    else:
+        c.put(8, 10, "k")
+    c.outline()
+    return c
+
+
+def frog(f):
+    """Frames 0-3: the hop (crouch, spring, spring, land); 4: wind-up (mouth open, crouched); 5: the tongue lashes out."""
+    c = Canvas()
+    h = (3.0, 4.6, 4.4, 3.4, 3.0, 3.2)[f]
+    ellipse(c, 7, 13.5 - h, 5.2 + (0.8 if f in (0, 3, 4, 5) else -0.6), h, "g")     # body
+    ellipse(c, 6, 13.2 - h * 1.2, 2.2, 1.6, "l")                                   # a pale throat
+    for x in (4, 10):                                                              # eyes on top
+        c.put(x, int(13.5 - 2 * h) - 1, "l"); c.put(x, int(13.5 - 2 * h), "Y"); c.put(x, int(13.5 - 2 * h) + 1, "e")
+    for x, y in ((3, 12), (11, 12)):                                               # folded back legs
+        c.rect(x, y, x + 1, 13, "G")
+    if f == 4:
+        c.cells([(11, 9), (12, 9), (12, 10)], "k")                                 # mouth open
+    if f == 5:
+        c.cells([(12, 10), (13, 10), (14, 10), (15, 10)], "T"); c.put(15, 9, "T")  # the tongue
+    c.outline()
+    return c
+
+
 MONSTERS = [
     # id, name, draw, frames, manifest
     ("slime", "史萊姆", slime, 6, {
@@ -113,6 +159,26 @@ MONSTERS = [
             {"id": "rat_tail", "name": "鼠尾", "chance": 0.30, "min": 1, "max": 1, "color": "#e896a4"},
             {"id": "sharp_claw", "name": "斷爪", "chance": 0.15, "min": 1, "max": 1, "color": "#8a8a96"},
             {"id": "golden_fur", "name": "金毛", "chance": 0.03, "min": 1, "max": 1, "color": "#f0c040"},
+        ]}),
+    ("frog", "沼澤青蛙", frog, 6, {
+        "hp": 40, "speed": 16, "meat": 0, "aggressive": True, "weight": 2, "radius": 11, "pixelScale": 1.5,
+        "hostile": True, "level": 2, "appearsAfter": 60, "minAnts": 35, "biomes": ["swamp", "meadow", "forest"], "needsWater": True,
+        "damage": 1, "attackEvery": 2.0, "hops": True, "walkFrames": 4, "attackStyle": "bite", "splits": 0, "pack": [1, 2],
+        "drops": [
+            {"id": "frog_skin", "name": "蛙皮", "chance": 0.70, "min": 1, "max": 2, "color": "#60a856"},
+            {"id": "frog_leg", "name": "蛙腿", "chance": 0.45, "min": 1, "max": 2, "color": "#c8d890"},
+            {"id": "sticky_tongue", "name": "黏舌", "chance": 0.25, "min": 1, "max": 1, "color": "#e86078"},
+            {"id": "golden_frog_eye", "name": "金蛙眼", "chance": 0.03, "min": 1, "max": 1, "color": "#eec83c"},
+        ]}),
+    ("bat", "蝙蝠", bat, 4, {
+        "hp": 24, "speed": 40, "meat": 0, "aggressive": True, "weight": 2, "radius": 6, "pixelScale": 1.5,
+        "hostile": True, "level": 2, "appearsAfter": 90, "minAnts": 45, "nightOnly": True, "flies": True,
+        "damage": 1, "attackEvery": 1.6, "hops": False, "walkFrames": 2, "attackStyle": "bite", "splits": 0, "pack": [2, 4],
+        "drops": [
+            {"id": "bat_wing", "name": "蝙蝠翼", "chance": 0.65, "min": 1, "max": 2, "color": "#4e3e6e"},
+            {"id": "bat_fang", "name": "蝙蝠牙", "chance": 0.40, "min": 1, "max": 1, "color": "#f2ecd6"},
+            {"id": "night_dust", "name": "夜光粉", "chance": 0.20, "min": 1, "max": 1, "color": "#a890e0"},
+            {"id": "night_heart", "name": "夜之心", "chance": 0.03, "min": 1, "max": 1, "color": "#d040a0"},
         ]}),
 ]
 

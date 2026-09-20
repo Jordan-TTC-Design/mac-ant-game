@@ -73,6 +73,15 @@ final class WorkshopWindow: NSObject {
             }
             y += 6
         }
+        // repairs: worn pieces (on a goblin or in the stock), worst first
+        let jobs = colony.repairJobs()
+        if !jobs.isEmpty {
+            y += 6
+            y += label("修理（耐久低於 75% 的裝備，花三分之一的材料就能修好）", size: 14, bold: true).frame.height + 6
+            for job in jobs.prefix(10) { y += addRepairRow(job, to: holder, y: y, margin: margin, inner: inner) + 6 }
+            if jobs.count > 10 { y += label("…還有 \(jobs.count - 10) 件", color: .secondaryLabelColor).frame.height + 4 }
+            y += 6
+        }
         if !lastMessage.isEmpty {
             let f = label(lastMessage, bold: true, color: .systemGreen)
             y += f.frame.height
@@ -119,6 +128,36 @@ final class WorkshopWindow: NSObject {
         button.frame = NSRect(x: margin + inner - 96, y: y + (top - y) / 2 - 14, width: 96, height: 28)
         holder.addSubview(button)
         return top - y
+    }
+
+    /// One piece to mend: what, whose, how worn, what it costs, and the button.
+    private func addRepairRow(_ job: Colony.RepairJob, to holder: NSView, y: CGFloat, margin: CGFloat, inner: CGFloat) -> CGFloat {
+        let gear = job.gear
+        let affordable = colony.canAffordRepair(gear)
+        let title = NSTextField(labelWithString: "\(gear.name)　\(job.owner)　耐久 \(Int(job.item.fraction * 100))%")
+        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        title.frame = NSRect(x: margin, y: y, width: inner - 110, height: 16)
+        holder.addSubview(title)
+        let cost = NSMutableAttributedString()
+        for (i, (id, need)) in Colony.repairCost(gear).enumerated() {
+            let owned = colony.materials[id, default: 0]
+            if i > 0 { cost.append(NSAttributedString(string: "　")) }
+            cost.append(NSAttributedString(string: "\(Materials.info(id)?.name ?? id) \(owned)/\(need)", attributes: [
+                .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: owned >= need ? NSColor.systemGreen : NSColor.systemRed]))
+        }
+        let costLabel = NSTextField(labelWithAttributedString: cost)
+        costLabel.frame = NSRect(x: margin, y: y + 17, width: inner - 110, height: 16)
+        holder.addSubview(costLabel)
+        let button = ClosureButton(title: affordable ? "修理" : "材料不足") { [weak self] in
+            guard let self else { return }
+            self.lastMessage = self.colony.repair(job) ? "修好了 \(gear.name)（\(job.owner)）。" : "材料不夠。"
+            self.refresh()
+        }
+        button.isEnabled = affordable
+        button.bezelStyle = .rounded
+        button.frame = NSRect(x: margin + inner - 96, y: y + 3, width: 96, height: 28)
+        holder.addSubview(button)
+        return 34
     }
 
     private func make(_ gear: Gear) {
