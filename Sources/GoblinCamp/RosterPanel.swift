@@ -175,12 +175,18 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         let breed = breeds[min(ant.breedIndex, breeds.count - 1)]
         let t = ant.traits
         let left = max(0, t.lifespan - ant.age)
-        detail.stringValue = "\(ant.name)（#\(ant.id)）\(breed.name)　\(breed.blurb)\n"
-            + "年齡 \(IntervalFormat.text(ant.age.rounded()))，還剩約 \(IntervalFormat.text(left.rounded()))\n"
-            + String(format: "速度 ×%.2f　感知 ×%.2f　休息 ×%.2f\n", t.speed, t.sense, t.rest)
-            + "一次搬 \(t.carry) 份　叫同伴 +\(t.recruit)" + (ant.lifeFraction > Ant.elderStart ? "　（年老，走得慢）" : "")
-            + "\n" + (ant.gear.isEmpty ? "裝備：（沒有）" : "裝備：" + GearSlot.allCases.compactMap { slot in ant.item(in: slot).flatMap { item in item.gear.map { "\(slot.label) \($0.name) \(Int(item.fraction * 100))%" } } }.joined(separator: "　"))
-            + String(format: "\n出手 %.1f　血量 %.0f", ant.might, ant.maxHealth)
+        var text = "\(ant.name)（#\(ant.id)）\(breed.name)　\(breed.blurb)\n"
+        text += "年齡 \(IntervalFormat.text(ant.age.rounded()))，還剩約 \(IntervalFormat.text(left.rounded()))\n"
+        text += String(format: "速度 ×%.2f　感知 ×%.2f　休息 ×%.2f\n", t.speed, t.sense, t.rest)
+        text += "一次搬 \(t.carry) 份　叫同伴 +\(t.recruit)" + (ant.lifeFraction > Ant.elderStart ? "　（年老，走得慢）" : "")
+        var worn: [String] = []
+        for slot in GearSlot.allCases {
+            if let item = ant.item(in: slot), let gear = item.gear { worn.append("\(slot.label) \(gear.name) \(Int(item.fraction * 100))%") }
+        }
+        text += "\n" + (worn.isEmpty ? "裝備：（沒有）" : "裝備：" + worn.joined(separator: "　"))
+        text += String(format: "\n出手 %.1f　血量 %.0f", ant.might, ant.maxHealth)
+        if let activity = ant.activity { text += "\n現在：\(activity.label)" }
+        detail.stringValue = text
     }
 
     // MARK: Table

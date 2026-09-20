@@ -101,12 +101,17 @@ final class AntView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let drawStart = CACurrentMediaTime()
+        defer { PerfGovernor.shared.recordDraw(CACurrentMediaTime() - drawStart) }
         if toolsOnly {
             drawMessage()
             drawPomodoro()
             return
         }
-        if isMap { drawMapBackground() }
+        if isMap {
+            drawMapBackground()
+            drawAtmosphere()
+        }
         if colony.campHidden || !showsCamp { return } // the goblins are away
         defer { drawRain() } // over everything else
         switch colony.phase {
@@ -127,10 +132,25 @@ final class AntView: NSView {
     }
 
     /// Grass and a forest edge for the camp window.
+    /// The ground and everything on it is drawn once into a picture (`TerrainScene.render`) and only made again when the place, the window
+    /// size or the hour of the day changes; the water sparkle is drawn over it each frame.
+    private var terrainCache: (key: String, image: CGImage)?
+
     private func drawMapBackground() {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        if let ground = Scenery.ground() { Scenery.fillGround(ground, in: bounds, scale: 2, into: ctx) } else { NSColor(calibratedRed: 0.23, green: 0.45, blue: 0.24, alpha: 1).setFill(); bounds.fill() }
-        for pond in colony.obstacles { drawPond(pond) }
+        if let scene = colony.scene {
+            let scale = window?.backingScaleFactor ?? 2
+            let hour = Scenery.currentHour
+            let key = "\(ObjectIdentifier(scene).hashValue)-\(Int(bounds.width))x\(Int(bounds.height))-\(scale)-\(hour)-\(scene.stage)"
+            if terrainCache?.key != key { terrainCache = scene.render(size: bounds.size, origin: origin, scale: scale, hour: hour).map { (key, $0) } }
+            if let image = terrainCache?.image {
+                ctx.saveGState()
+                ctx.interpolationQuality = .none
+                ctx.draw(image, in: bounds)
+                ctx.restoreGState()
+            }
+            for pond in scene.ponds { drawPond(pond) }
+        } else if let ground = Scenery.ground() { Scenery.fillGround(ground, in: bounds, scale: 2, into: ctx) } else { NSColor(calibratedRed: 0.23, green: 0.45, blue: 0.24, alpha: 1).setFill(); bounds.fill() }
         let style = Settings.shared.scenery
         guard style != "none" else { return }
         // a forest all around the clearing, however big the window is: a row of trees behind at the top, a column down each side, and
@@ -149,17 +169,99 @@ final class AntView: NSView {
             Scenery.drawStrip(left, in: CGRect(x: 0, y: 0, width: CGFloat(left.width), height: bounds.height), side: .left, into: ctx)
             Scenery.drawStrip(right, in: CGRect(x: bounds.maxX - CGFloat(right.width), y: 0, width: CGFloat(right.width), height: bounds.height), side: .right, into: ctx)
         }
+        if let scene = colony.scene, scene.life != nil { // the forest round the clearing turns with the seasons too
+            let x = scene.seasonPosition
+            let tint: (NSColor, CGFloat)? = x >= 3.0 ? (NSColor(calibratedRed: 0.95, green: 0.98, blue: 1, alpha: 1), scene.biome == .snow ? 0.06 : 0.3)
+                : x >= 2.1 ? (NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.12, alpha: 1), CGFloat(min(0.3, (x - 2.1) * 0.35)))
+                : x < 0.4 ? (NSColor(calibratedRed: 0.95, green: 0.98, blue: 1, alpha: 1), CGFloat((0.4 - x) * 0.5)) : nil
+            if let (color, alpha) = tint, alpha > 0.01 {
+                color.withAlphaComponent(alpha).setFill()
+                NSRect(x: 0, y: 0, width: bounds.width, height: 54).fill()
+                NSRect(x: 0, y: bounds.maxY - 42, width: bounds.width, height: 42).fill()
+                NSRect(x: 0, y: 0, width: 42, height: bounds.height).fill()
+                NSRect(x: bounds.maxX - 42, y: 0, width: 42, height: bounds.height).fill()
+            }
+        }
+        if let (color, alpha) = colony.scene?.ringTint { // snow on the trees, murk in the swamp
+            color.withAlphaComponent(alpha).setFill()
+            NSRect(x: 0, y: 0, width: bounds.width, height: 54).fill()
+            NSRect(x: 0, y: bounds.maxY - 42, width: bounds.width, height: 42).fill()
+            NSRect(x: 0, y: 0, width: 42, height: bounds.height).fill()
+            NSRect(x: bounds.maxX - 42, y: 0, width: 42, height: bounds.height).fill()
+        }
     }
 
-    /// The pond (camp window only): its pixel picture, then a few twinkles and ripples that move.
+    /// Things in the air that go with the season and the hour: fog on a cool morning, fireflies on a warm night, falling leaves in autumn,
+    /// petals in spring, snow in winter. A few dozen specks at most, drawn over the ground and under the goblins.
+    private func drawAtmosphere() {
+        guard let scene = colony.scene, scene.life != nil, !colony.campHidden, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let x = scene.seasonPosition, hour = Scenery.currentHour
+        let t = Date().timeIntervalSinceReferenceDate
+        func unit(_ i: Int, _ salt: Double) -> CGFloat { CGFloat((sin(Double(i) * 12.9898 + salt * 78.233) * 43758.5453).truncatingRemainder(dividingBy: 1).magnitude) }
+        let area = bounds.insetBy(dx: 44, dy: 54)
+
+        // fog: on a cool morning, thickest in a swamp and in autumn and spring
+        if (5...9).contains(hour) {
+            let base: CGFloat = hour == 5 || hour == 9 ? 0.5 : 1
+            let kind: CGFloat = scene.biome == .swamp ? 1 : (x >= 2 && x < 3.2) || x < 0.9 ? 0.75 : 0.35
+            for i in 0..<7 {
+                let w = 320 + unit(i, 1) * 260, h = 70 + unit(i, 2) * 70
+                let cx = area.minX + ((unit(i, 3) * (area.width + w) + CGFloat(t) * (3 + unit(i, 4) * 3)).truncatingRemainder(dividingBy: area.width + w)) - w / 2
+                let cy = area.minY + unit(i, 5) * area.height
+                NSColor(calibratedWhite: 1, alpha: 0.11 * base * kind).setFill()
+                NSBezierPath(ovalIn: NSRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)).fill()
+                NSColor(calibratedWhite: 1, alpha: 0.07 * base * kind).setFill()
+                NSBezierPath(ovalIn: NSRect(x: cx - w * 0.36, y: cy - h * 0.3, width: w * 0.72, height: h * 0.6)).fill()
+            }
+        }
+        // fireflies: warm nights, near the water and the trees
+        if hour >= 19 || hour < 5, x >= 0.3, x < 2.9, scene.biome != .snow {
+            let count = x >= 0.9 && x < 2.0 ? 22 : 11
+            for i in 0..<count {
+                let bx = area.minX + unit(i, 6) * area.width, by = area.minY + unit(i, 7) * area.height
+                let px = bx + CGFloat(sin(t * 0.5 + Double(i))) * 26, py = by + CGFloat(cos(t * 0.37 + Double(i) * 1.7)) * 18
+                let blink = pow(max(0, sin(t * 1.1 + Double(i) * 2.3)), 3)
+                guard blink > 0.05 else { continue }
+                NSColor(calibratedRed: 0.85, green: 1, blue: 0.4, alpha: CGFloat(0.16 * blink)).setFill()
+                NSBezierPath(ovalIn: NSRect(x: px - 5, y: py - 5, width: 10, height: 10)).fill()
+                NSColor(calibratedRed: 0.95, green: 1, blue: 0.6, alpha: CGFloat(0.9 * blink)).setFill()
+                NSRect(x: px - 1, y: py - 1, width: 2, height: 2).fill()
+            }
+        }
+        // falling leaves (autumn) and petals (spring)
+        let autumn = x >= 2.05 && x < 3.1, spring = x >= 0.25 && x < 0.95 && scene.biome != .snow
+        if autumn || spring, hour >= 6, hour < 20 {
+            let colors: [NSColor] = autumn
+                ? [NSColor(calibratedRed: 0.92, green: 0.55, blue: 0.16, alpha: 1), NSColor(calibratedRed: 0.8, green: 0.28, blue: 0.14, alpha: 1), NSColor(calibratedRed: 0.94, green: 0.78, blue: 0.24, alpha: 1)]
+                : [NSColor(calibratedRed: 1, green: 0.78, blue: 0.86, alpha: 1), NSColor.white]
+            for i in 0..<(autumn ? 16 : 9) {
+                let speed = 16 + unit(i, 8) * 14
+                let y = bounds.maxY - 50 - CGFloat((Double(unit(i, 9)) * Double(bounds.height) + t * Double(speed)).truncatingRemainder(dividingBy: Double(bounds.height - 100)))
+                let px = area.minX + unit(i, 10) * area.width + CGFloat(sin(t * 0.9 + Double(i))) * 16
+                colors[i % colors.count].setFill()
+                NSRect(x: px, y: y, width: 3, height: 3).fill()
+            }
+        }
+        // snow: a gentle fall in winter (and in the snow country when it is cold enough)
+        if (x >= 3.0 || (scene.biome == .snow && x >= 2.6)) && !colony.isRaining { drawSnowfall(count: 34, speed: 26, t: t) }
+        _ = ctx
+    }
+
+    private func drawSnowfall(count: Int, speed: Double, t: Double) {
+        func unit(_ i: Int, _ salt: Double) -> CGFloat { CGFloat((sin(Double(i) * 12.9898 + salt * 78.233) * 43758.5453).truncatingRemainder(dividingBy: 1).magnitude) }
+        for i in 0..<count {
+            let v = speed * (0.6 + Double(unit(i, 11)))
+            let y = bounds.maxY - CGFloat((Double(unit(i, 12)) * Double(bounds.height) + t * v).truncatingRemainder(dividingBy: Double(bounds.height)))
+            let px = unit(i, 13) * bounds.width + CGFloat(sin(t * 0.7 + Double(i) * 1.3)) * 10
+            NSColor(calibratedWhite: 1, alpha: 0.85).setFill()
+            NSRect(x: px, y: y, width: i % 4 == 0 ? 3 : 2, height: i % 4 == 0 ? 3 : 2).fill()
+        }
+    }
+
+    /// The pond's twinkles and ripples that move (its picture is part of the baked ground).
     private func drawPond(_ pond: Pond) {
-        guard let ctx = NSGraphicsContext.current?.cgContext, let image = pond.image else { return }
         let pic = pond.picture.offsetBy(dx: -origin.x, dy: -origin.y)
         guard bounds.intersects(pic) else { return }
-        ctx.saveGState()
-        ctx.interpolationQuality = .none
-        ctx.draw(image, in: pic)
-        ctx.restoreGState()
         let t = Date().timeIntervalSinceReferenceDate
         for (k, g) in pond.glints.enumerated() {
             let at = CGPoint(x: pic.minX + g.x, y: pic.minY + g.y)
@@ -204,6 +306,12 @@ final class AntView: NSView {
     /// Rain falling on the camp window or on the strip along the screen (not across a whole screen, where it would hide your work).
     private func drawRain() {
         guard colony.isRaining, colony.phase != .idle else { return }
+        if isMap, let scene = colony.scene, scene.life != nil, scene.season == .winter || (scene.biome == .snow && scene.seasonPosition >= 2.6) {
+            NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.75, alpha: 0.10).setFill() // it snows instead
+            bounds.fill()
+            drawSnowfall(count: 130, speed: 60, t: colony.weatherAge)
+            return
+        }
         var rect: CGRect
         if isMap { rect = bounds } else if let strip = rangeRect {
             rect = CGRect(x: strip.minX - origin.x, y: strip.minY - origin.y, width: strip.width, height: strip.height)
@@ -486,14 +594,28 @@ final class AntView: NSView {
             }
             let pixel = role.pixelSize(scale: Double(scale))
             let size = CGFloat(role.frameSize) * pixel
+            let activity = ant.activity
+            if case .play? = activity { p.y += CGFloat(abs(sin(ant.activityClock * 7))) * 4 } // hops about
+            if case .sleep? = activity { // lying on its side, and turning over now and then; nothing else to draw
+                guard let lying = role.image(direction: .down, phase: 0) else { continue }
+                ctx.saveGState()
+                ctx.translateBy(x: p.x, y: p.y + size * 0.05)
+                ctx.rotate(by: ant.sleepFlip ? -.pi / 2 : .pi / 2)
+                ctx.draw(lying, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
+                ctx.restoreGState()
+                continue
+            }
             // the walk cycle advances with distance walked; standing still shows the first frame
             let phase = ant.moving ? ant.legPhase / 4 : 0
             guard let image = role.image(direction: ant.facing, phase: phase) else { continue }
             ctx.setAlpha(CGFloat(ant.fadeAlpha)) // the dying fade out
             ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size))
             ctx.setAlpha(1)
-            if !ant.gear.isEmpty || ant.swing > 0 { drawGear(ant, at: p, size: size, pixel: pixel) }
-            if ant.swing > 0 { drawSlash(ant, at: p, size: size, progress: swingProgress) }
+            if PerfGovernor.shared.showsDetail {
+                if !ant.gear.isEmpty || ant.swing > 0 { drawGear(ant, at: p, size: size, pixel: pixel) }
+                if ant.swing > 0 { drawSlash(ant, at: p, size: size, progress: swingProgress) }
+            }
+            if activity != nil || ant.catchShow > 0 { drawActivity(ant, at: p, size: size, pixel: pixel) }
             if let kind = ant.carrying { // held up over the head, side by side if it carries more than one
                 let pieces = max(1, ant.carriedPieces)
                 for k in 0..<pieces {
@@ -503,6 +625,77 @@ final class AntView: NSView {
             }
         }
         ctx.restoreGState()
+    }
+
+    /// What goes with an activity: a fishing rod and line, a book, dust from a scuffle, a crown over a golden goblin, a fish held up.
+    private func drawActivity(_ ant: Ant, at p: CGPoint, size: CGFloat, pixel u: CGFloat) {
+        let t = ant.activityClock
+        func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: NSColor) {
+            color.setFill()
+            NSRect(x: x - w * u / 2, y: y, width: w * u, height: h * u).fill()
+        }
+        switch ant.activity {
+        case .fish(let spot, let water)?:
+            // (only once it is sitting at its spot; on the way it just walks)
+            guard hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 6 else { break }
+            // the rod points out over the water, the line drops to a bobber that bobs, and a ring spreads now and then
+            let h = CGFloat(ant.heading)
+            let base = CGPoint(x: p.x + cos(h) * size * 0.28, y: p.y + size * 0.34)
+            let tip = CGPoint(x: base.x + cos(h) * 11, y: base.y + 10)
+            let bob = local(water)
+            let bobber = CGPoint(x: bob.x, y: bob.y + CGFloat(sin(t * 3)) * 0.8)
+            NSColor(calibratedRed: 0.45, green: 0.3, blue: 0.16, alpha: 1).setStroke()
+            let rod = NSBezierPath()
+            rod.move(to: base)
+            rod.line(to: tip)
+            rod.lineWidth = 1.4
+            rod.stroke()
+            NSColor(calibratedWhite: 0.95, alpha: 0.85).setStroke()
+            let line = NSBezierPath()
+            line.move(to: tip)
+            line.line(to: bobber)
+            line.lineWidth = 0.6
+            line.stroke()
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: NSRect(x: bobber.x - 2, y: bobber.y - 1, width: 4, height: 4)).fill()
+            NSColor(calibratedRed: 0.9, green: 0.2, blue: 0.2, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: bobber.x - 1.6, y: bobber.y + 0.4, width: 3.2, height: 2.4)).fill()
+            let ring = CGFloat((t * 0.5).truncatingRemainder(dividingBy: 1))
+            NSColor(calibratedWhite: 1, alpha: 0.5 * (1 - ring)).setStroke()
+            let spread = NSBezierPath(ovalIn: NSRect(x: bobber.x - 2 - ring * 7, y: bobber.y - 1 - ring * 3, width: 4 + ring * 14, height: 3 + ring * 6))
+            spread.lineWidth = 0.8
+            spread.stroke()
+        case .read?:
+            let book = CGPoint(x: p.x, y: p.y + size * 0.12)
+            rect(book.x, book.y, 7, 4.5, NSColor(calibratedRed: 0.35, green: 0.3, blue: 0.62, alpha: 1))
+            rect(book.x - 1.6 * u, book.y + 0.4 * u, 2.6, 3.6, NSColor(calibratedRed: 0.95, green: 0.92, blue: 0.82, alpha: 1))
+            rect(book.x + 1.6 * u, book.y + 0.4 * u, 2.6, 3.6, NSColor(calibratedRed: 0.95, green: 0.92, blue: 0.82, alpha: 1))
+            if Int(t * 0.6) % 3 == 0 { drawSpeck(at: CGPoint(x: p.x + size * 0.34, y: p.y + size * 0.95), radius: 1.3, color: NSColor.white.withAlphaComponent(0.8)) } // a thought
+        case .scuffle?:
+            // a little dust cloud between the two that puffs in and out
+            let h = CGFloat(ant.heading)
+            let centre = CGPoint(x: p.x + cos(h) * size * 0.4, y: p.y + size * 0.2 + sin(h) * size * 0.3)
+            for k in 0..<4 {
+                let a = CGFloat(t * 4) + CGFloat(k) * 1.6, r = 3 + CGFloat(sin(t * 6 + Double(k))) * 1.5
+                NSColor(calibratedWhite: 0.9, alpha: 0.5).setFill()
+                NSBezierPath(ovalIn: NSRect(x: centre.x + cos(a) * 5 - r, y: centre.y + sin(a) * 3 - r, width: r * 2, height: r * 2)).fill()
+            }
+        case .stroll?:
+            // a small gold crown
+            let crown = CGPoint(x: p.x, y: p.y + size * 0.88)
+            let gold = NSColor(calibratedRed: 0.98, green: 0.82, blue: 0.2, alpha: 1)
+            rect(crown.x, crown.y, 6, 1.6, gold)
+            for dx: CGFloat in [-2, 0, 2] { rect(crown.x + dx * u, crown.y + 1.6 * u, 1, 1.6, gold) }
+            rect(crown.x, crown.y + 0.4 * u, 1, 1, NSColor(calibratedRed: 0.85, green: 0.15, blue: 0.2, alpha: 1))
+        default: break
+        }
+        if ant.catchShow > 0 { // a fish held up
+            let fish = CGPoint(x: p.x, y: p.y + size * 0.95 + CGFloat(min(1, ant.catchShow)) * 2)
+            let silver = NSColor(calibratedRed: 0.72, green: 0.82, blue: 0.9, alpha: 1)
+            rect(fish.x, fish.y, 6, 2.4, silver)
+            rect(fish.x + 3.4 * u, fish.y + 0.2 * u, 2, 2, silver)
+            rect(fish.x - 1.6 * u, fish.y + 0.4 * u, 0.8, 0.8, NSColor(calibratedRed: 0.1, green: 0.1, blue: 0.15, alpha: 1))
+        }
     }
 
     /// The flash of a hit, by weapon: a curved slash (claws and blades), an arrow (bow) or a bolt of light (staff) flying to the target.

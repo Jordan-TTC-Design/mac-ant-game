@@ -578,6 +578,150 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        if let path = env["CAMP_TEST_SEASONS"] { // "path.png": one place over twelve days (a full year, three days a season), and twelve different places on one day (-variety.png)
+            after(1) {
+                let size = CGSize(width: 900, height: 640)
+                let world = CGRect(x: 54, y: 54, width: size.width - 108, height: size.height - 108)
+                let nest = CGPoint(x: size.width / 2, y: size.height / 2)
+                let biome = Biome(rawValue: env["CAMP_TERRAIN"] ?? "") ?? .meadow
+                let seed = UInt64(env["CAMP_TERRAIN_SEED"] ?? "") ?? 12
+                func sheet(_ cells: [(TerrainScene, String)], columns: Int, to file: String) {
+                    let cw = 450, ch = 320, rows = (cells.count + columns - 1) / columns
+                    guard let sheet = CGContext(data: nil, width: cw * columns, height: ch * rows, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
+                    sheet.interpolationQuality = .medium
+                    for (k, cell) in cells.enumerated() {
+                        if let image = cell.0.render(size: size, origin: .zero, scale: 1, hour: 12) {
+                            sheet.draw(image, in: CGRect(x: (k % columns) * cw, y: (rows - 1 - k / columns) * ch, width: cw, height: ch))
+                        }
+                        log("\(file.split(separator: "/").last ?? "") #\(k): \(cell.1)")
+                    }
+                    if let image = sheet.makeImage() { try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: file)) }
+                }
+                func evolve(_ scene: TerrainScene, life: TerrainLife, to time: Double, rainy: Bool) {
+                    life.advance(now: time, spot: { scene.freeSpot(&$0, $1) }, fraction: { scene.fraction($0) })
+                    if rainy { for k in 0..<5 { life.rain(dt: 45, now: time - Double(k) * 30, spot: { scene.freeSpot(&$0, $1) }, fraction: { scene.fraction($0) }) } }
+                    var trod: [CGPoint] = []
+                    for k in 0..<40 { let f = CGFloat(k) / 40; trod.append(CGPoint(x: nest.x + (nest.x - 260 - nest.x) * f, y: nest.y + (nest.y + 120 - nest.y) * f)) }
+                    life.tread(trod, seconds: 400, in: scene.world, now: time)
+                    scene.clock = time
+                    scene.refreshLife()
+                }
+                // one place over a year
+                let scene = TerrainScene(seed: seed, biome: biome, world: world, nest: nest)
+                scene.growth = 120
+                let life = TerrainLife(seed: seed, now: 0)
+                scene.life = life
+                var cells: [(TerrainScene, String)] = []
+                var frames: [CGImage] = []
+                for day in 0..<12 {
+                    let time = Double(day) * 86_400 + 43_200
+                    evolve(scene, life: life, to: time, rainy: [1, 5, 9].contains(day))
+                    // (drawn straight away: the place goes on changing after this day)
+                    guard let image = scene.render(size: size, origin: .zero, scale: 1, hour: 12) else { continue }
+                    frames.append(image)
+                    cells.append((scene, "day \(day + 1): \(scene.season.name) \(String(format: "%.2f", scene.seasonPosition)), \(life.state.plantings.count) plants, \(life.state.puddles.count) puddles"))
+                }
+                do {
+                    let cw = 450, ch = 320
+                    if let sheetCtx = CGContext(data: nil, width: cw * 4, height: ch * 3, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) {
+                        sheetCtx.interpolationQuality = .medium
+                        for (k, image) in frames.enumerated() { sheetCtx.draw(image, in: CGRect(x: (k % 4) * cw, y: (2 - k / 4) * ch, width: cw, height: ch)) }
+                        if let image = sheetCtx.makeImage() { try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
+                    }
+                    for (k, c) in cells.enumerated() { log("year #\(k): \(c.1)") }
+                }
+                // twelve different places on the same day
+                var variety: [(TerrainScene, String)] = []
+                for (row, b) in Biome.allCases.enumerated() {
+                    for k in 0..<3 {
+                        let sd = UInt64(row * 10 + k + 1) * 4813
+                        let sc = TerrainScene(seed: sd, biome: b, world: world, nest: nest)
+                        sc.growth = 120
+                        let lf = TerrainLife(seed: sd, now: 0)
+                        sc.life = lf
+                        evolve(sc, life: lf, to: 6.5 * 86_400, rainy: k == 1)
+                        variety.append((sc, "\(b.name) seed \(sd): \(sc.season.name), \(lf.state.plantings.count) plants"))
+                    }
+                }
+                sheet(variety, columns: 3, to: path.replacingOccurrences(of: ".png", with: "-variety.png"))
+                NSApp.terminate(nil)
+            }
+        }
+        if let path = env["CAMP_TEST_TERRAINSHEET"] { // "path.png": scenes for several seeds in every biome, drawn into one contact sheet (no window needed)
+            after(1) {
+                let size = CGSize(width: 900, height: 640)
+                let world = CGRect(x: 54, y: 54, width: size.width - 108, height: size.height - 108)
+                let seeds: [UInt64] = env["CAMP_TEST_GROWTH"] != nil ? [2, 2, 2, 2] : [1, 2, 3, 4]
+                let growths: [Int] = env["CAMP_TEST_GROWTH"] != nil ? [0, 20, 50, 120] : [200, 200, 200, 200]
+                let cw = 450, ch = 320
+                guard let sheet = CGContext(data: nil, width: cw * Biome.allCases.count, height: ch * seeds.count, bitsPerComponent: 8, bytesPerRow: 0,
+                                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
+                sheet.interpolationQuality = .medium
+                for (column, biome) in Biome.allCases.enumerated() {
+                    for (row, seed) in seeds.enumerated() {
+                        let scene = TerrainScene(seed: seed * 7919, biome: biome, world: world, nest: CGPoint(x: size.width / 2, y: size.height / 2))
+                        scene.growth = growths[row] // (rows are a young camp to an old one)
+                        log("\(biome.name) #\(seed): \(scene.summary), \(scene.solids.count) solid things")
+                        if let image = scene.render(size: size, origin: .zero, scale: 1, hour: 12) {
+                            sheet.draw(image, in: CGRect(x: column * cw, y: (seeds.count - 1 - row) * ch, width: cw, height: ch))
+                        }
+                    }
+                }
+                if let image = sheet.makeImage() {
+                    let rep = NSBitmapImageRep(cgImage: image)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                }
+                log("terrain sheet drawn")
+                NSApp.terminate(nil)
+            }
+        }
+        if env["CAMP_TEST_LIFE"] != nil { // what the goblins are doing with their spare time, by breed, every 10 seconds
+            for k in 1...9 {
+                after(Double(k) * 10 + 10) {
+                    let c = self.colony
+                    var byActivity: [String: Int] = [:], byBreed: [String: [String: Int]] = [:]
+                    let breeds = Characters.current.breeds
+                    for a in c.ants {
+                        let what = a.activity?.label ?? (a.isHidden ? "在巢裡" : "走動")
+                        byActivity[what, default: 0] += 1
+                        byBreed[breeds[min(a.breedIndex, breeds.count - 1)].name, default: [:]][what, default: 0] += 1
+                    }
+                    log("t+\(k * 10 + 10)s hour \(Scenery.currentHour), \(c.ants.count) goblins: \(byActivity.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) | fish caught so far: \(c.foodDelivered)")
+                    for (breed, counts) in byBreed.sorted(by: { $0.key < $1.key }) { log("   \(breed): \(counts.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))") }
+                }
+            }
+        }
+        if let path = env["CAMP_TEST_ACTSHOT"] { // "path": wait for a goblin sitting at its fishing spot, a reader, a sleeper and a boss, and draw the camp when there is one of each (or at 100 s)
+            for k in 1...100 {
+                after(Double(k) + 20) {
+                    guard !self.actShotDone, let view = self.mapWindow?.view else { return }
+                    let c = self.colony
+                    func at(_ pred: (Ant) -> Bool) -> Ant? { c.ants.first(where: pred) }
+                    let fisher = at { if case .fish(let spot, _)? = $0.activity { return hypot(spot.x - $0.pos.x, spot.y - $0.pos.y) < 6 } else { return false } }
+                    let reader = at { if case .read? = $0.activity { return true } else { return false } }
+                    let sleeper = at { if case .sleep? = $0.activity { return true } else { return false } }
+                    let boss = at { if case .stroll? = $0.activity { return true } else { return false } }
+                    guard (fisher != nil && reader != nil && sleeper != nil && boss != nil) || k == 100 else { return }
+                    self.actShotDone = true
+                    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
+                    let h = view.bounds.height
+                    func spot(_ label: String, _ a: Ant?) -> String { a.map { "\(label)=\(Int($0.pos.x * 2)),\(Int((h - $0.pos.y) * 2))" } ?? "" }
+                    log("activity shot: \(spot("fisher", fisher)) \(spot("reader", reader)) \(spot("sleeper", sleeper)) \(spot("boss", boss))")
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+        if env["CAMP_TEST_PERFGUARD"] != nil { // with a tiny CAMP_PERF_BUDGET: the guard should hold goblins back, then let them out again
+            for k in 1...12 {
+                after(Double(k) * 6) {
+                    let c = self.colony
+                    log("t+\(k * 6)s guard scale \(String(format: "%.2f", PerfGovernor.shared.scale)), \(String(format: "%.1f", PerfGovernor.shared.lastMilliseconds)) ms per frame, room for \(c.visibleCap), out walking \(c.visibleCount) of \(c.ants.count)")
+                }
+            }
+        }
         if env["CAMP_TEST_STUCK"] != nil { // find goblins that are out and about but have hardly moved in 15 s
             var before: [Int: CGPoint] = [:]
             func sample() { before = Dictionary(uniqueKeysWithValues: self.colony.ants.filter { !$0.isHidden }.map { ($0.id, $0.pos) }) }
@@ -585,7 +729,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 after(Double(round) * 30) { sample() }
                 after(Double(round) * 30 + 15) {
                     let c = self.colony
-                    let stuck = c.ants.filter { a in !a.isHidden && (before[a.id].map { hypot($0.x - a.pos.x, $0.y - a.pos.y) < 3 } ?? false) }
+                    let stuck = c.ants.filter { a in !a.isHidden && a.activity == nil && (before[a.id].map { hypot($0.x - a.pos.x, $0.y - a.pos.y) < 3 } ?? false) } // (goblins doing an activity stand still on purpose)
                     let nest = c.nest ?? .zero
                     log("stuck check \(round): \(stuck.count) of \(c.ants.filter { !$0.isHidden }.count) out and still; "
                         + stuck.prefix(8).map { "\(String(describing: $0.mode).prefix(16)) d_nest=\(Int(hypot($0.pos.x - nest.x, $0.pos.y - nest.y))) at (\(Int($0.pos.x)),\(Int($0.pos.y))) hp\(String(format: "%.1f", $0.health))" }.joined(separator: " | "))
@@ -739,6 +883,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(choiceMenu(title: "自然事件（動物、果樹）",
                                 options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
                                 get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 }))
+        let perfGuard = ClosureMenuItem(title: "效能保護（太卡時自動減少同時出現的哥布林）") { [weak self] in
+            guard let self else { return }
+            self.settings.perfGuard.toggle()
+            PerfGovernor.shared.enabled = self.settings.perfGuard
+        }
+        perfGuard.stateProvider = { self.settings.perfGuard }
+        PerfGovernor.shared.enabled = settings.perfGuard
+        menu.addItem(perfGuard)
         menu.addItem(choiceMenu(title: "魔獸來襲（史萊姆、巨鼠…）",
                                 options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
                                 get: { self.settings.monsters }, set: { self.settings.monsters = $0 }))
@@ -787,7 +939,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(ClosureMenuItem(title: "說明手冊…") { [weak self] in self?.showManual() })
         menu.addItem(ClosureMenuItem(title: "複製診斷資訊（哥布林閃爍或消失時用）") { [weak self] in
             guard let self else { return }
-            let extra = ["mode \(String(describing: self.effectiveMode)) fullscreenActive \(self.fullscreenActive) camp hidden \(self.colony.campHidden) goblins \(self.colony.ants.count)"]
+            let extra = ["terrain: \(self.colony.scene.map { "\($0.summary), seed \($0.seed)" } ?? "none")",
+                         "perf guard \(PerfGovernor.shared.enabled ? "on" : "off"): scale \(String(format: "%.2f", PerfGovernor.shared.scale)), last \(String(format: "%.1f", PerfGovernor.shared.lastMilliseconds)) ms per frame (budget \(PerfGovernor.budget))",
+                         "mode \(String(describing: self.effectiveMode)) fullscreenActive \(self.fullscreenActive) camp hidden \(self.colony.campHidden) goblins \(self.colony.ants.count)"]
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(Diagnostics.report(settings: self.settings, extra: extra), forType: .string)
         })
@@ -1498,23 +1652,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Tells the colony where it may walk; goblins, food and the nest that are elsewhere are moved onto the allowed screens.
-    private lazy var pondSeed: UInt64 = UInt64(ProcessInfo.processInfo.environment["CAMP_POND_SEED"] ?? "") ?? UInt64.random(in: 1...UInt64.max)
-    private var pond: Pond?
+    private var sceneKey = ""
+
+    /// The camp window is a place made from a seed (see `TerrainScene`); the seed is made once and kept, so the camp keeps its look.
+    /// `CAMP_TERRAIN_SEED` and `CAMP_TERRAIN` (a biome name) override it for tests.
+    private func updateScene(world: CGRect) {
+        let env = ProcessInfo.processInfo.environment
+        if settings.terrainSeed == 0 { settings.terrainSeed = UInt64.random(in: 1...UInt64.max) }
+        let seed = UInt64(env["CAMP_TERRAIN_SEED"] ?? "") ?? settings.terrainSeed
+        let biome = Biome(rawValue: env["CAMP_TERRAIN"] ?? settings.terrainBiome) ?? Biome.pick(seed: seed)
+        let nest = colony.nest ?? CGPoint(x: world.midX, y: world.midY)
+        let key = "\(seed)-\(biome.rawValue)-\(Int(world.width / 12))x\(Int(world.height / 12))-\(Int(nest.x / 20))-\(Int(nest.y / 20))"
+        guard key != sceneKey else { return }
+        sceneKey = key
+        let scene = TerrainScene(seed: seed, biome: biome, world: world, nest: nest)
+        scene.life = settings.terrainAlive ? colony.terrainLife(seed: seed) : nil
+        colony.scene = scene
+    }
 
     private func applyWalkable() {
         colony.centreWhenOutside = isWindowMode
-        colony.obstacles = []
         if isWindowMode {
             let world = ensureMapWindow().walkArea
-            // a pond in the clearing (its shape is made once per launch, so resizing the window only stretches it), if it is big
-            // enough and does not sit on the camp
-            let box = CGRect(x: world.minX + world.width * 0.08, y: world.minY + world.height * 0.66, width: min(170, world.width * 0.34), height: min(100, world.height * 0.2))
-            if world.width >= 380, world.height >= 280, !(colony.nest.map { box.insetBy(dx: -80, dy: -80).contains($0) } ?? false) {
-                if pond?.rect != box { pond = Pond(seed: pondSeed, rect: box) }
-                colony.obstacles = pond.map { [$0] } ?? []
-            }
+            updateScene(world: world)
             if let nest = colony.nest, !world.contains(nest) { colony.relocate(into: world) } else { colony.updateWalkable([world]) }
         } else {
+            colony.scene = nil
+            sceneKey = ""
             colony.updateWalkable(allowedScreens().map {
                 ScreenChoice.walkBand(of: ScreenChoice.range(for: $0, mode: settings.rangeMode, size: settings.rangeSize), mode: settings.rangeMode)
             })
@@ -1602,6 +1766,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.colony.setWeather(.rain, forSeconds: 90)
             self?.redrawAll()
         })
+        sub.addItem(.separator())
+        let terrain = NSMenuItem(title: "營地視窗的地貌", action: nil, keyEquivalent: "")
+        let terrainMenu = NSMenu(title: "營地視窗的地貌")
+        for (title, id) in [("隨機（依種子）", "auto")] + Biome.allCases.map({ ($0.name, $0.rawValue) }) {
+            let item = ClosureMenuItem(title: title) { [weak self] in
+                self?.settings.terrainBiome = id
+                self?.applyWalkable()
+                self?.redrawAll()
+            }
+            item.stateProvider = { self.settings.terrainBiome == id }
+            terrainMenu.addItem(item)
+        }
+        terrainMenu.addItem(.separator())
+        terrainMenu.addItem(ClosureMenuItem(title: "重新生成地貌（換一個新的樣子）") { [weak self] in
+            self?.settings.terrainSeed = UInt64.random(in: 1...UInt64.max)
+            self?.applyWalkable()
+            self?.redrawAll()
+        })
+        terrainMenu.addItem(.separator())
+        let alive = ClosureMenuItem(title: "場地持續變化（季節、雨後水窪、長樹苗、踩出小路）") { [weak self] in
+            guard let self else { return }
+            self.settings.terrainAlive.toggle()
+            self.sceneKey = ""
+            self.applyWalkable()
+            self.redrawAll()
+        }
+        alive.stateProvider = { self.settings.terrainAlive }
+        terrainMenu.addItem(alive)
+        terrain.submenu = terrainMenu
+        terrain.isEnabled = isWindowMode
+        sub.addItem(terrain)
         sub.addItem(.separator())
         let reset = ClosureMenuItem(title: "營地視窗回到右下角") { [weak self] in self?.mapWindow?.resetPosition() }
         reset.isEnabled = isWindowMode
@@ -1836,6 +2031,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return lines.isEmpty ? "還沒有魔獸資料。" : lines.joined(separator: "\n")
     }
 
+    private var actShotDone = false
     private var workshopWindow: WorkshopWindow?
 
     private func showWorkshop() {
@@ -2097,8 +2293,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the campfire party while the pomodoro rests
         if colony.pomodoro.isRest, !isHiddenByUser { if colony.fire == nil { colony.fire = colony.fireSpot() } } else if colony.fire != nil { colony.fire = nil }
         if !isFrozen, colony.isSimulating, !colony.isPaused {
+            let tickStart = CACurrentMediaTime()
             colony.tick(dt: dt, cursor: cursor, cursorSpeed: cursorSpeed)
-            if !isHiddenByUser { redrawAll() } // nothing to draw while the camp is away
+            if !isHiddenByUser {
+                redrawAll() // nothing to draw while the camp is away
+                PerfGovernor.shared.recordTick(CACurrentMediaTime() - tickStart)
+                PerfGovernor.shared.frameDone()
+            } else {
+                PerfGovernor.shared.reset()
+            }
         }
         let wanted = desiredFPS()
         if wanted != currentFPS { scheduleFrameTimer(fps: wanted) }

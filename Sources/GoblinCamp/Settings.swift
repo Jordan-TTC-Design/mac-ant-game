@@ -228,6 +228,25 @@ final class Settings {
     }
 
     /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.
+    /// The camp window's place: the seed it is made from (0 = not made yet) and which biome ("auto" = whatever the seed gives).
+    var terrainSeed: UInt64 {
+        get { UInt64(defaults.string(forKey: "terrainSeed") ?? "") ?? 0 }
+        set { defaults.set(String(newValue), forKey: "terrainSeed") }
+    }
+    /// The place keeps changing over the days (seasons, puddles, growing trees, worn ground).
+    var terrainAlive: Bool {
+        get { defaults.object(forKey: "terrainAlive") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "terrainAlive") }
+    }
+    var terrainBiome: String {
+        get { defaults.string(forKey: "terrainBiome") ?? "auto" }
+        set { defaults.set(newValue, forKey: "terrainBiome") }
+    }
+    /// Hold goblins back automatically when drawing gets heavy (see `PerfGovernor`).
+    var perfGuard: Bool {
+        get { defaults.object(forKey: "perfGuard") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "perfGuard") }
+    }
     /// How often monsters raid the camp: 0 never, 1 now and then, 2 (default) sometimes, 3 often.
     var monsters: Int {
         get { number("monsters", argument: "monsters").map { min(3, max(0, Int($0))) } ?? 2 }

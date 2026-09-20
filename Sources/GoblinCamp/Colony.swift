@@ -107,7 +107,9 @@ final class Colony {
     /// takes 600 and more, a strip along the bottom about 20). The rest wait in the nest and come out as others go in.
     var visibleCap: Int {
         let area = walkable.reduce(0) { $0 + Double($1.width * $1.height) }
-        return max(12, Int(Double(area / 2200) * (isRaining ? 0.35 : 1))) // most of them shelter in the nest while it rains
+        // most of them shelter in the nest while it rains; fewer when the machine is struggling (see `PerfGovernor`)
+        let perf = PerfGovernor.shared.factor
+        return max(Int(12 * perf), Int(Double(area / 2200) * (isRaining ? 0.35 : 1) * perf))
     }
 
     /// How fast goblins wander in the current range: full speed across a screen, a little slower in a strip or a small window
@@ -129,7 +131,61 @@ final class Colony {
     private(set) var weatherAge = 0.0
     /// The campfire party (while the pomodoro is resting) and the pond in the camp window.
     var fire: CGPoint?
-    var obstacles: [Pond] = []
+    var obstacles: [Obstacle] = []
+    /// The place the camp window is (its ground, trees, rocks and water); nil in the other ranges. Its water and solids are the obstacles.
+    var scene: TerrainScene? {
+        didSet {
+            scene?.growth = peakAnts
+            sceneStage = scene?.stage ?? 0
+            obstacles = scene?.obstacles ?? []
+        }
+    }
+    /// What changes in the camp window over the days (seasons, puddles, saplings, worn ground); made with the scene, kept in the save.
+    private(set) var life: TerrainLife?
+    private var savedLife: TerrainLifeState?
+    private var lifeTimer = 0.0, heatTimer = 0.0, rainTimer = 0.0
+
+    func terrainLife(seed: UInt64) -> TerrainLife {
+        if let life, life.state.seed == seed { return life }
+        let fresh = TerrainLife(seed: seed, state: savedLife)
+        savedLife = nil
+        fresh.onChange = { [weak self] in self?.lifeChanged() }
+        life = fresh
+        return fresh
+    }
+
+    private func lifeChanged() {
+        scene?.refreshLife()
+        obstacles = scene?.obstacles ?? []
+        sceneStage = scene?.stage ?? 0
+        onAntsChanged?() // so it is saved
+    }
+
+    /// The life of the camp window: what the goblins tread, the rain that leaves puddles, and what chance has done since last time.
+    private func updateTerrainLife(dt: Double) {
+        guard let scene, let life, !campHidden else { return }
+        heatTimer += dt
+        if heatTimer >= 0.5 {
+            life.tread(ants.filter { !$0.isHidden }.map(\.pos), seconds: heatTimer, in: scene.world)
+            heatTimer = 0
+        }
+        if isRaining {
+            rainTimer += dt
+            if rainTimer >= 1 {
+                life.rain(dt: rainTimer, spot: { scene.freeSpot(&$0, $1) }, fraction: { scene.fraction($0) })
+                rainTimer = 0
+            }
+        }
+        lifeTimer -= dt
+        if lifeTimer <= 0 {
+            lifeTimer = 30
+            life.advance(spot: { scene.freeSpot(&$0, $1) }, fraction: { scene.fraction($0) })
+        }
+    }
+
+    /// The most goblins the camp has ever had: what the camp has grown to (its tents, totem and the rest of it turn up as this grows).
+    private(set) var peakAnts = 0
+    private var sceneStage = 0
     var isRaining: Bool { weather == .rain }
 
     /// `CAMP_WEATHER=rain|clear` fixes the weather (tests); `CAMP_WEATHER_SCALE` makes it change faster.
@@ -156,6 +212,7 @@ final class Colony {
     /// A place near the nest, some way off, for the campfire: to the right, left, below or above, whichever is inside the range.
     func fireSpot() -> CGPoint? {
         guard let nest else { return nil }
+        if let pit = scene?.firePit, walkable.contains(where: { $0.insetBy(dx: 16, dy: 16).contains(pit) }) { return pit } // the ring of stones in the camp window
         let candidates = [CGPoint(x: nest.x + 90, y: nest.y - 10), CGPoint(x: nest.x - 90, y: nest.y - 10),
                           CGPoint(x: nest.x, y: nest.y - 60), CGPoint(x: nest.x, y: nest.y + 60)]
         return candidates.first { p in walkable.contains { $0.insetBy(dx: 16, dy: 16).contains(p) } && !obstacles.contains { $0.blocks(p, margin: 10) } } ?? candidates.last
@@ -330,6 +387,9 @@ final class Colony {
             recruitHunters(for: id, count: 5 + Int(creatures[i].hp / 3) + ants[index].traits.recruit)
         case .attack(let id):
             attack(creature: id, by: index)
+        case .caughtFish:
+            foodDelivered += 1 // a fish is food for the camp
+            addFloater("釣到魚了", .common, at: ants[index].pos)
         case .carrierArrived:
             carriersArrived += 1
         case .died:
@@ -706,6 +766,60 @@ final class Colony {
         onAntsChanged?()
     }
 
+    // MARK: Daily life
+
+    private var matchTimer = 0.0
+
+    /// Dark (goblins sleep more).
+    static var isNight: Bool {
+        let hour = Scenery.currentHour
+        return hour >= 20 || hour < 6
+    }
+
+    /// Pairs goblins up for a friendly scuffle, and gives the golden ones somebody to wait on them. Done every couple of seconds.
+    private func matchmake(world: AntWorld) {
+        guard world.activitiesOn, !monsterNear else { return }
+        func isIdle(_ i: Int) -> Bool {
+            if case .wandering = ants[i].mode { return !ants[i].isWounded && !ants[i].isCarryingPrincess }
+            return false
+        }
+        let idle = ants.indices.filter(isIdle)
+        guard idle.count >= 2 else { return }
+
+        // a scuffle: the strong ones start it most; the clever and the golden do not take part (nobody fights a golden one)
+        let scuffling = ants.filter { if case .activity(.scuffle, _) = $0.mode { return true } else { return false } }.count / 2
+        if scuffling < max(1, ants.count / 60), Double.random(in: 0..<1) < 0.5 {
+            let fighters = idle.filter { ants[$0].traits.personality != .calm && ants[$0].traits.personality != .boss }
+            let weights = fighters.map { ants[$0].traits.personality == .brute ? 4.0 : ants[$0].traits.personality == .lively ? 1.5 : 1.0 }
+            if !fighters.isEmpty {
+                var roll = Double.random(in: 0..<weights.reduce(0, +))
+                var starter = fighters[0]
+                for (k, i) in fighters.enumerated() { roll -= weights[k]; if roll < 0 { starter = i; break } }
+                let near = fighters.filter { $0 != starter && hypot(ants[$0].pos.x - ants[starter].pos.x, ants[$0].pos.y - ants[starter].pos.y) < 90 }
+                if let other = near.min(by: { hypot(ants[$0].pos.x - ants[starter].pos.x, ants[$0].pos.y - ants[starter].pos.y) < hypot(ants[$1].pos.x - ants[starter].pos.x, ants[$1].pos.y - ants[starter].pos.y) }) {
+                    let seconds = Double.random(in: 5...9)
+                    let a = ants[starter].id, b = ants[other].id
+                    ants[starter].begin(.scuffle(partner: b), world: world, seconds: seconds)
+                    ants[other].begin(.scuffle(partner: a), world: world, seconds: seconds)
+                }
+            }
+        }
+
+        // a golden goblin gets up and takes a stroll, and up to three of the common sort wait on it
+        for boss in idle where ants[boss].traits.personality == .boss && Double.random(in: 0..<1) < 0.25 {
+            let servants = idle.filter { i in
+                i != boss && ants[i].traits.personality != .calm && ants[i].traits.personality != .boss && isIdle(i)
+                    && hypot(ants[i].pos.x - ants[boss].pos.x, ants[i].pos.y - ants[boss].pos.y) < 220
+            }.sorted { hypot(ants[$0].pos.x - ants[boss].pos.x, ants[$0].pos.y - ants[boss].pos.y) < hypot(ants[$1].pos.x - ants[boss].pos.x, ants[$1].pos.y - ants[boss].pos.y) }.prefix(3)
+            guard !servants.isEmpty else { continue }
+            let seconds = Double.random(in: 20...40)
+            ants[boss].begin(.stroll, world: world, seconds: seconds)
+            let offsets = [CGPoint(x: -22, y: -8), CGPoint(x: 22, y: -8), CGPoint(x: 0, y: -26)]
+            for (k, i) in servants.enumerated() { ants[i].begin(.serve(boss: ants[boss].id, offset: offsets[k]), world: world, seconds: seconds) }
+            break // one court at a time is plenty
+        }
+    }
+
     // MARK: Workshop
 
     enum CraftResult {
@@ -892,6 +1006,9 @@ final class Colony {
         princessName = saved.princessName ?? ""
         materials = saved.materials ?? [:]
         kills = saved.kills ?? [:]
+        peakAnts = max(saved.peak ?? 0, saved.goblins?.count ?? saved.antCount)
+        savedLife = saved.terrain
+        scene?.growth = peakAnts
         armory = (saved.armoryItems ?? []).map { GearItem(id: $0.id, left: $0.left) }.filter { $0.gear != nil }
         for (id, count) in saved.armory ?? [:] where Gears.by(id: id) != nil { armory.append(contentsOf: Array(repeating: GearItem(id: id, left: nil), count: count)) }
 
@@ -929,7 +1046,7 @@ final class Colony {
                           goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name,
                                                     gear: savedGear(of: $0)) },
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
-                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) })
+                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, terrain: life?.state ?? savedLife, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) })
     }
 
     private func savedGear(of ant: Ant) -> [String: SavedGear]? {
@@ -1094,6 +1211,16 @@ final class Colony {
                 var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()))
                 if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) } // no room outside yet
                 ants.append(born)
+                if ants.count > peakAnts { // the camp grows: something new may turn up on the ground
+                    peakAnts = ants.count
+                    if let scene {
+                        scene.growth = peakAnts
+                        if scene.stage != sceneStage {
+                            sceneStage = scene.stage
+                            obstacles = scene.obstacles
+                        }
+                    }
+                }
                 if !armory.isEmpty { redistributeArmory() } // a newcomer with nothing gets a hand-me-down
                 if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: ants=\(ants.count)") }
                 queen?.greet(toward: nest)
@@ -1108,7 +1235,22 @@ final class Colony {
         world.raining = isRaining
         world.fire = fire
         world.obstacles = obstacles
+        world.ponds = scene?.ponds ?? []
         world.crowd = Double(visibleCount) / Double(visibleCap)
+        world.night = Colony.isNight
+        world.activitiesOn = !isRaining && fire == nil && world.crowd < 1.2
+        matchTimer -= dt
+        if matchTimer <= 0, !campHidden {
+            matchTimer = 2.5
+            matchmake(world: world)
+        }
+        for ant in ants { // (after matchmaking, so a new pair or court finds each other on its very first step)
+            switch ant.mode {
+            case .activity(.scuffle, _): world.partners[ant.id] = ant.pos
+            case .activity(.stroll, _): world.bosses[ant.id] = ant.pos
+            default: break
+            }
+        }
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
         world.healRate = tending ? 0.4 : 0.05
@@ -1125,6 +1267,7 @@ final class Colony {
         for (index, event) in events { handle(event, from: index) }
         moveCarriedPrincess()
         updateWildlife(dt: dt)
+        updateTerrainLife(dt: dt)
         // the dead leave the colony (highest index first so the others keep their places)
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)
         for index in gone.sorted(by: >) {

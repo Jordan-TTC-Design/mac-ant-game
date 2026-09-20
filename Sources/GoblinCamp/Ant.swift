@@ -7,7 +7,36 @@ import Foundation
 /// news, nestmates then set out along (roughly) the same line, ring the food, and carry pieces back one by one.
 /// Every so often an ant heads home to rest inside the nest for a while.
 struct Ant {
+    /// What a goblin does when it has nothing else to do.
+    enum Activity: Equatable {
+        case sleep
+        /// Fishing from `spot` on the bank, casting toward `water`.
+        case fish(spot: CGPoint, water: CGPoint)
+        case play
+        case read
+        /// A friendly scuffle (no harm done) with another goblin.
+        case scuffle(partner: Int)
+        /// A golden goblin walking about, waited on.
+        case stroll
+        /// Waiting on a golden goblin, keeping `offset` away from it.
+        case serve(boss: Int, offset: CGPoint)
+
+        var label: String {
+            switch self {
+            case .sleep: return "睡覺"
+            case .fish: return "釣魚"
+            case .play: return "玩耍"
+            case .read: return "看書"
+            case .scuffle: return "打鬧"
+            case .stroll: return "巡視（有人伺候）"
+            case .serve: return "伺候金皮"
+            }
+        }
+    }
+
     enum Mode {
+        /// Spending its spare time: sleeping, fishing, playing, reading, scuffling, or waiting on a golden goblin.
+        case activity(Activity, remaining: Double)
         case wandering
         /// Walking home to rest.
         case returningToNest
@@ -46,6 +75,7 @@ struct Ant {
         case foundCreature(Int)
         case huntNewsDelivered(Int)
         case attack(Int)
+        case caughtFish
     }
 
     /// How fast the two carriers walk the princess in, in points per second.
@@ -63,6 +93,19 @@ struct Ant {
     let traits: Traits
     /// Seconds lived.
     var age: Double
+    /// What it is doing with its spare time, if anything.
+    var activity: Activity? {
+        if case .activity(let kind, _) = mode { return kind }
+        return nil
+    }
+    /// Seconds a caught fish is still held up, time spent in the current activity, and (asleep) which way it lies and when it turns over next.
+    var catchShow = 0.0
+    var activityClock = 0.0
+    var sleepFlip = false
+    private var restless = Double.random(in: 6...20)
+    private var biteTimer = Double.random(in: 4...9)
+    private var scuffleTimer = 0.5
+
     /// Seconds left of the swing it makes when it hits something, and which way (the attack animation).
     static let swingTime = 0.32
     var swing = 0.0
@@ -209,12 +252,16 @@ struct Ant {
         facing = SpriteDirection(heading: heading, previous: facing)
         moving = false
         swing = max(0, swing - dt)
+        catchShow = max(0, catchShow - dt)
         age += ageDt
         if age >= traits.lifespan, !isDying, !isCarryingPrincess {
             if isHidden { return .died } // it went quietly in the nest
             mode = .dying(remaining: Ant.dyingTime)
         }
         switch mode {
+        case .activity(let kind, let remaining):
+            return updateActivity(kind, remaining: remaining, dt: dt, world: world)
+
         case .carryingPrincess(let target):
             // the two carriers walk in step, in a straight line, so the princess stays level between them
             let distance = hypot(target.x - pos.x, target.y - pos.y)
@@ -348,7 +395,123 @@ struct Ant {
 
     // MARK: Wandering
 
-    private mutating func updateWandering(dt: Double, world: AntWorld) -> Event? {
+    /// Something to do with its spare time, now and then: mostly sleep at night, play or fish by day, and each breed has its likes.
+    private mutating func pickActivity(dt: Double, world: AntWorld) -> Activity? {
+        guard world.activitiesOn, Double.random(in: 0..<1) < dt / 55 else { return nil }
+        let personality = traits.personality
+        var options: [(kind: Activity, weight: Double)] = []
+        options.append((.sleep, world.night ? (personality == .boss ? 2 : 6) : 0.4))
+        if !world.night {
+            switch personality {
+            case .boss: break // they are waited on instead (see the colony)
+            case .calm:
+                options.append((.read, 3.5))
+                options.append((.play, 0.5))
+            case .brute: options.append((.play, 0.8))
+            case .lively: options.append((.play, 4))
+            case .plain: options.append((.play, 2))
+            }
+            if personality != .boss, let spot = world.ponds.randomElement()?.fishingSpots.randomElement() {
+                options.append((.fish(spot: spot.spot, water: spot.water), personality == .calm ? 2 : personality == .lively ? 0.4 : 0.8))
+            }
+        }
+        var roll = Double.random(in: 0..<options.reduce(0) { $0 + $1.weight })
+        for option in options {
+            roll -= option.weight
+            if roll < 0 { return option.kind }
+        }
+        return nil
+    }
+
+    /// How long each kind of activity lasts, in seconds.
+    private static func duration(of kind: Activity, night: Bool) -> Double {
+        switch kind {
+        case .sleep: return night ? Double.random(in: 40...90) : Double.random(in: 15...30)
+        case .fish: return Double.random(in: 20...45)
+        case .play: return Double.random(in: 8...16)
+        case .read: return Double.random(in: 20...40)
+        case .scuffle, .stroll, .serve: return Double.random(in: 8...20)
+        }
+    }
+
+    /// One step of an activity. Anything that matters (a monster near, getting hurt) ends it.
+    private mutating func updateActivity(_ kind: Activity, remaining: Double, dt: Double, world: AntWorld) -> Event? {
+        activityClock += dt
+        if isWounded || world.creatures.contains(where: { $0.hostile && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < 150 }) { return giveUp() }
+        var left = remaining - dt
+        var event: Event?
+        switch kind {
+        case .sleep:
+            // lying still costs next to nothing; it only turns over now and then
+            health = min(maxHealth, health + dt * 0.08)
+            restless -= dt
+            if restless <= 0 {
+                restless = Double.random(in: 9...22)
+                sleepFlip.toggle()
+            }
+        case .fish(let spot, let water):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * world.pace, dt: dt)
+                left = remaining // the time only counts once it is sitting there
+            } else {
+                turn(toward: atan2(water.y - pos.y, water.x - pos.x), rate: 4, dt: dt)
+                biteTimer -= dt
+                if biteTimer <= 0 {
+                    biteTimer = Double.random(in: 6...14)
+                    if Double.random(in: 0..<1) < 0.5 {
+                        catchShow = 1.8
+                        event = .caughtFish
+                    }
+                }
+            }
+        case .play:
+            heading += 5 * dt // spins about on the spot, hopping (see the drawing)
+        case .read:
+            heading = -Double.pi / 2
+        case .scuffle(let partner):
+            guard let other = world.partners[partner] else { return giveUp() }
+            heading = atan2(other.y - pos.y, other.x - pos.x)
+            scuffleTimer -= dt
+            if scuffleTimer <= 0 {
+                scuffleTimer = Double.random(in: 0.7...1.3)
+                swing = Ant.swingTime
+                swingHeading = heading
+            }
+        case .stroll:
+            let result = updateWandering(dt: dt * 0.55, world: world, calm: true)
+            guard case .activity = mode else { return result } // it noticed something and went for it
+            event = result
+        case .serve(let boss, let offset):
+            guard let leader = world.bosses[boss] else { return giveUp() }
+            // keep its place beside the boss, but never outside the range (the boss may be at the edge)
+            var target = CGPoint(x: leader.x + offset.x, y: leader.y + offset.y)
+            if let rect = world.walkable.first(where: { $0.contains(leader) }) ?? world.walkable.first {
+                target = CGPoint(x: min(max(target.x, rect.minX + 10), rect.maxX - 10), y: min(max(target.y, rect.minY + 10), rect.maxY - 10))
+            }
+            let distance = hypot(target.x - pos.x, target.y - pos.y)
+            if distance > 4 {
+                walk(toward: target, distance: distance, speed: effectiveSpeed * 1.1, dt: dt)
+            } else {
+                turn(toward: atan2(leader.y - pos.y, leader.x - pos.x), rate: 4, dt: dt)
+            }
+        }
+        if left <= 0 {
+            mode = .wandering
+            heading = Double.random(in: 0..<(2 * .pi))
+            return event
+        }
+        mode = .activity(kind, remaining: left)
+        return event
+    }
+
+    /// Starts an activity (the colony does this for scuffles and for the golden ones and those who wait on them).
+    mutating func begin(_ kind: Activity, world: AntWorld, seconds: Double? = nil) {
+        activityClock = 0
+        mode = .activity(kind, remaining: seconds ?? Ant.duration(of: kind, night: world.night))
+    }
+
+    private mutating func updateWandering(dt: Double, world: AntWorld, calm: Bool = false) -> Event? {
         // Notice food only by walking into it.
         if let food = world.foods.first(where: { $0.amount > 0 && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.senseRadius(scale: world.foodScale) * traits.sense }) {
             if food.scouted || food.reported {
@@ -370,10 +533,16 @@ struct Ant {
             heading = atan2(world.nest.y - pos.y, world.nest.x - pos.x)
             return .foundCreature(animal.id)
         }
-        // Now and then go home for a rest (a lot more often when the range is full).
-        if Double.random(in: 0..<1) < dt / (world.raining ? 14 : (world.crowd > 1.5 ? 10 : (world.crowded ? 30 : 90))) * traits.rest {
-            mode = .returningToNest
-            return nil
+        if !calm {
+            // Now and then go home for a rest (a lot more often when the range is full).
+            if Double.random(in: 0..<1) < dt / (world.raining ? 14 : (world.crowd > 1.5 ? 10 : (world.crowded ? 30 : 90))) * traits.rest {
+                mode = .returningToNest
+                return nil
+            }
+            if let kind = pickActivity(dt: dt, world: world) {
+                begin(kind, world: world)
+                return nil
+            }
         }
 
         if pause > 0 {
@@ -397,10 +566,27 @@ struct Ant {
         }
 
         let step = effectiveSpeed * world.pace * dt
-        let stuckInPond = world.obstacles.contains { $0.blocks(pos, margin: 0) }
+        // Outside the range (or right at its edge) no step counts as "inside", so it would never move again: walk back in.
+        if !world.walkable.contains(where: { $0.insetBy(dx: 4, dy: 4).contains(pos) }) {
+            if let rect = world.walkable.min(by: { Ant.distance(from: pos, to: $0) < Ant.distance(from: pos, to: $1) }) {
+                let inside = CGPoint(x: min(max(pos.x, rect.minX + 8), rect.maxX - 8), y: min(max(pos.y, rect.minY + 8), rect.maxY - 8))
+                heading = atan2(inside.y - pos.y, inside.x - pos.x)
+                pos.x += cos(heading) * min(step, hypot(inside.x - pos.x, inside.y - pos.y))
+                pos.y += sin(heading) * min(step, hypot(inside.x - pos.x, inside.y - pos.y))
+                legPhase += step * 0.9
+                moving = true
+                return nil
+            }
+        }
+        // Keep a little clear of a pond. A goblin already within that little distance (it was fishing at the edge) may go anywhere that is
+        // not water, so it can get away from the shore; one that is in the water may go anywhere, to get out.
+        let inWater = world.obstacles.contains { $0.blocks(pos, margin: 0) }
+        let atShore = !inWater && world.obstacles.contains { $0.blocks(pos) }
         func allowed(_ p: CGPoint) -> Bool {
             guard world.walkable.contains(where: { $0.insetBy(dx: 4, dy: 4).contains(p) }) else { return false }
-            return stuckInPond || !world.obstacles.contains { $0.blocks(p) }
+            if inWater { return true }
+            let margin: CGFloat = atShore ? 0 : 3
+            return !world.obstacles.contains { $0.blocks(p, margin: margin) }
         }
         let next = CGPoint(x: pos.x + cos(heading) * step, y: pos.y + sin(heading) * step)
         if allowed(next) {
@@ -419,6 +605,10 @@ struct Ant {
             moving = true // keep the walking animation going through the bounce (stopping for a frame made it flicker)
         }
         return nil
+    }
+
+    private static func distance(from p: CGPoint, to r: CGRect) -> CGFloat {
+        hypot(max(r.minX - p.x, 0, p.x - r.maxX), max(r.minY - p.y, 0, p.y - r.maxY))
     }
 
     /// Keeps a heading close to the long side of a strip: forward or back along it, but never across.

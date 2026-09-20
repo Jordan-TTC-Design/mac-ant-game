@@ -2,7 +2,26 @@ import AppKit
 
 /// A pond with a natural outline: a random blob (no two are alike) with a sandy bank, stones, reeds, lily pads, and now and then a
 /// little island in the middle. Made from a seed; the goblins walk around it (`blocks`). Drawn as a small pixel picture.
-final class Pond {
+/// What the water looks like: clear (blue), frozen over (snow biome) or murky (swamp).
+enum WaterStyle {
+    case clear, ice, murk
+
+    typealias RGB = (UInt8, UInt8, UInt8)
+    /// Shallow to deep, and the pale line where the water meets the land.
+    var shades: (RGB, RGB, RGB, RGB) {
+        switch self {
+        case .clear: return ((128, 196, 208), (84, 160, 200), (58, 128, 188), (40, 100, 168))
+        case .ice: return ((226, 242, 250), (200, 228, 244), (176, 214, 238), (156, 200, 230))
+        case .murk: return ((112, 142, 98), (82, 114, 84), (58, 88, 66), (44, 68, 54))
+        }
+    }
+    var edge: RGB { self == .ice ? (250, 253, 255) : self == .murk ? (150, 176, 120) : (170, 218, 222) }
+    /// The bank: sand, snow, or mud.
+    var bank: (RGB, RGB) { self == .ice ? ((236, 242, 248), (206, 218, 232)) : self == .murk ? ((104, 92, 62), (80, 70, 48)) : ((168, 148, 100), (128, 106, 70)) }
+    var padColor: RGB { self == .murk ? (70, 130, 60) : (46, 148, 72) }
+}
+
+final class Pond: Obstacle {
     let rect: CGRect
     /// One art pixel, in points.
     static let cell: CGFloat = 2
@@ -34,7 +53,10 @@ final class Pond {
         mutating func range(_ a: Double, _ b: Double) -> Double { a + (b - a) * next() }
     }
 
-    init(seed: UInt64, rect: CGRect) {
+    let style: WaterStyle
+
+    init(seed: UInt64, rect: CGRect, style: WaterStyle = .clear) {
+        self.style = style
         self.seed = seed
         self.rect = rect
         cols = max(8, Int(rect.width / Pond.cell)) + 2 * Pond.margin
@@ -104,13 +126,28 @@ final class Pond {
             depth[idx(c, r)] = 0
         } }
         var pads: [CGPoint] = []
-        for _ in 0..<Int(rng.range(2, 5)) {
+        for _ in 0..<(style == .ice ? 0 : Int(rng.range(2, 5))) {
             for _ in 0..<30 {
                 let c = Int(rng.range(0, Double(cols))), r = Int(rng.range(0, Double(rows)))
                 if inside(c, r), water[idx(c, r)], depth[idx(c, r)] >= 3 { pads.append(CGPoint(x: c, y: r)); break }
             }
         }
-        render(&rng, pads: pads)
+        renderState = (rng, pads)
+        var copy = rng
+        render(&copy, pads: pads, style: style, keep: true)
+    }
+
+    private var renderState: (Random, [CGPoint])?
+    private var frozenImage: CGImage?
+
+    /// The picture with another kind of water (a pond that freezes over in winter): the same shape, stones and reeds, just iced.
+    func image(frozen: Bool) -> CGImage? {
+        guard frozen, style != .ice else { return image }
+        if let frozenImage { return frozenImage }
+        guard let (state, pads) = renderState else { return image }
+        var copy = state
+        render(&copy, pads: pads, style: .ice, keep: false)
+        return frozenImage
     }
 
     /// Fills in single-cell dents and removes single-cell spits.
@@ -168,7 +205,7 @@ final class Pond {
         }
     }
 
-    private func render(_ rng: inout Random, pads: [CGPoint]) {
+    private func render(_ rng: inout Random, pads: [CGPoint], style: WaterStyle, keep: Bool) {
         var pixels = [UInt8](repeating: 0, count: cols * rows * 4)
         func put(_ c: Int, _ r: Int, _ rgb: (UInt8, UInt8, UInt8), _ a: UInt8 = 255) {
             guard inside(c, r) else { return }
@@ -181,15 +218,15 @@ final class Pond {
                 let i = idx(c, r)
                 if water[i] {
                     let d = depth[i]
-                    let shade: (UInt8, UInt8, UInt8) = d <= 1 ? (128, 196, 208) : d <= 3 ? (84, 160, 200) : d <= 6 ? (58, 128, 188) : (40, 100, 168)
-                    put(c, r, shade)
-                    if d == 1 { put(c, r, (170, 218, 222)) } // a pale line where the water meets the land
+                    let shades = style.shades
+                    put(c, r, d <= 1 ? shades.0 : d <= 3 ? shades.1 : d <= 6 ? shades.2 : shades.3)
+                    if d == 1 { put(c, r, style.edge) } // a pale line where the water meets the land
                 } else if island[i] {
                     var edge = false
                     for (dc, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1)] where inside(c + dc, r + dr) && !island[idx(c + dc, r + dr)] { edge = true }
                     put(c, r, edge ? (150, 132, 88) : ((c + r * 3) % 7 == 0 ? (92, 160, 84) : (70, 140, 74)))
                 } else if bank[i] {
-                    put(c, r, (c * 5 + r * 3) % 9 == 0 ? (128, 106, 70) : (168, 148, 100), 255)
+                    put(c, r, (c * 5 + r * 3) % 9 == 0 ? style.bank.1 : style.bank.0, 255)
                 }
             }
         }
@@ -228,9 +265,9 @@ final class Pond {
         }
         for p in pads {
             let c = Int(p.x), r = Int(p.y)
-            for (dc, dr) in [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1)] where inside(c + dc, r + dr) && water[idx(c + dc, r + dr)] { put(c + dc, r + dr, (46, 148, 72)) }
-            put(c + 1, r + 1, (240, 140, 170))
-            glints.append(CGPoint(x: CGFloat(c) * Pond.cell, y: CGFloat(r) * Pond.cell))
+            for (dc, dr) in [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1)] where inside(c + dc, r + dr) && water[idx(c + dc, r + dr)] { put(c + dc, r + dr, style.padColor) }
+            if style != .ice { put(c + 1, r + 1, (240, 140, 170)) }
+            if keep { glints.append(CGPoint(x: CGFloat(c) * Pond.cell, y: CGFloat(r) * Pond.cell)) }
         }
         // a few bushes on the island
         if island.contains(true) {
@@ -244,14 +281,33 @@ final class Pond {
         // the glints that twinkle
         for _ in 0..<10 {
             let c = Int(rng.range(0, Double(cols))), r = Int(rng.range(0, Double(rows)))
-            if inside(c, r), water[idx(c, r)], depth[idx(c, r)] >= 3 { glints.append(CGPoint(x: CGFloat(c) * Pond.cell, y: CGFloat(r) * Pond.cell)) }
+            if inside(c, r), water[idx(c, r)], depth[idx(c, r)] >= 3, keep { glints.append(CGPoint(x: CGFloat(c) * Pond.cell, y: CGFloat(r) * Pond.cell)) }
         }
         pixels.withUnsafeMutableBytes { buffer in
             let ctx = CGContext(data: buffer.baseAddress, width: cols, height: rows, bitsPerComponent: 8, bytesPerRow: cols * 4,
                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-            image = ctx?.makeImage()
+            if keep { image = ctx?.makeImage() } else { frozenImage = ctx?.makeImage() }
         }
     }
+
+    /// Places to fish from: a spot on the bank right at the water's edge and the water point to cast at (a few steps out), spread round the shore.
+    private(set) lazy var fishingSpots: [(spot: CGPoint, water: CGPoint)] = {
+        let pic = picture
+        var found: [(CGPoint, CGPoint)] = []
+        for r in 1..<(rows - 1) {
+            for c in 1..<(cols - 1) where bank[idx(c, r)] {
+                for (dc, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1)] where water[idx(c + dc, r + dr)] {
+                    // only where it is deep a few cells out, and not too many (every 4th cell of the shore)
+                    guard (c + r) % 4 == 0, inside(c + dc * 4, r + dr * 4), water[idx(c + dc * 4, r + dr * 4)] else { continue }
+                    let spot = CGPoint(x: pic.minX + (CGFloat(c) + 0.5) * Pond.cell, y: pic.minY + (CGFloat(r) + 0.5) * Pond.cell)
+                    let target = CGPoint(x: pic.minX + (CGFloat(c + dc * 4) + 0.5) * Pond.cell, y: pic.minY + (CGFloat(r + dr * 4) + 0.5) * Pond.cell)
+                    found.append((spot, target))
+                    break
+                }
+            }
+        }
+        return found
+    }()
 
     /// Whether a goblin at `p` (in the same coordinates as `rect`) would be in the water or on the island (keeping a cell or two away).
     func blocks(_ p: CGPoint, margin: CGFloat = 3) -> Bool {

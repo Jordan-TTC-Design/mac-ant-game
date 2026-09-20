@@ -45,6 +45,10 @@ struct SavedState: Codable {
     /// What the goblins brought home from monsters (material id → count) and how many of each monster fell.
     var materials: [String: Int]?
     var kills: [String: Int]?
+    /// The most goblins the camp has ever had (the camp window's camp grows with it).
+    var peak: Int?
+    /// What has happened to the camp window's place over the days (see `TerrainLife`).
+    var terrain: TerrainLifeState?
     /// Gear back in the nest that nobody needed (gear id → count).
     var armory: [String: Int]?
     /// The same with wear (newer saves).

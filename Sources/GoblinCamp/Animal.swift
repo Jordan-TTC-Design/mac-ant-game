@@ -184,6 +184,8 @@ struct CreatureInfo {
     let radius: Double
     /// Somebody already knows about it, so a goblin that meets it joins in instead of running home with the news.
     let alerted: Bool
+    /// A monster (goblins drop what they are doing when one comes close).
+    var hostile = false
 }
 
 /// What a raiding monster can see: where the camp is and where the goblins out walking are.
@@ -243,7 +245,7 @@ struct Creature {
         heading = atan2(enter.y - start.y, enter.x - start.x)
     }
 
-    var info: CreatureInfo { CreatureInfo(id: id, pos: pos, radius: kind.radius, alerted: scouted || reported) }
+    var info: CreatureInfo { CreatureInfo(id: id, pos: pos, radius: kind.radius, alerted: scouted || reported, hostile: kind.hostile) }
 
     mutating func takeStrike() -> Bool {
         defer { strike = false }

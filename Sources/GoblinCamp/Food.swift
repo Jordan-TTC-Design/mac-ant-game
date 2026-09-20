@@ -118,11 +118,19 @@ struct AntWorld {
     /// A campfire party (during the pomodoro rest): wanderers drift toward it and mill around it.
     var fire: CGPoint?
     /// Places wanderers keep out of (a pond).
-    var obstacles: [Pond] = []
+    var obstacles: [Obstacle] = []
+    /// The ponds among them (goblins fish from their banks).
+    var ponds: [Pond] = []
     /// How full the range is: goblins out walking divided by how many fit. Over 1, goblins rest in the nest longer and go back sooner.
     var crowd = 0.0
     /// Health regained per second inside the nest (faster while the princess is looking after them).
     var healRate = 0.05
+    /// Night time (goblins sleep more), and whether they may start something to pass the time (not while it rains, in a crowd, or at the campfire party).
+    var night = false
+    var activitiesOn = true
+    /// Where the goblins that are scuffling with each other are (by id), and where the golden ones being waited on are.
+    var partners: [Int: CGPoint] = [:]
+    var bosses: [Int: CGPoint] = [:]
     var crowded: Bool { crowd >= 1 }
 
     enum Axis { case horizontal, vertical }

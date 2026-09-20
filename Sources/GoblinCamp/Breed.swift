@@ -51,8 +51,32 @@ struct Breed {
     static let plain = Breed(id: "common", name: "平民", weight: 100, prosperityBoost: 0, stats: BreedStats(), sprites: nil, blurb: "")
 }
 
+/// What a breed is like in daily life: what it likes to do when there is nothing to do, and who it picks fights with.
+enum Personality {
+    case plain
+    /// The clever ones: no scuffles; they read, fish and think.
+    case calm
+    /// The strong ones: love a scuffle.
+    case brute
+    /// The quick ones: love to play and run about.
+    case lively
+    /// The golden ones: they do not scuffle with the common sort, they give orders and are waited on.
+    case boss
+
+    init(breedID: String) {
+        switch breedID {
+        case "sage": self = .calm
+        case "brute": self = .brute
+        case "scout": self = .lively
+        case "golden": self = .boss
+        default: self = .plain
+        }
+    }
+}
+
 /// The numbers one individual actually plays with: its breed's stats with a little personal variation.
 struct Traits {
+    let personality: Personality
     let speed: Double
     let sense: Double
     let rest: Double
@@ -75,7 +99,7 @@ struct Traits {
         var rng = SeededRandom(seed: seed)
         func jitter(_ spread: Double) -> Double { 1 + (rng.next() * 2 - 1) * spread }
         let stats = breed.stats
-        return Traits(speed: stats.speed * jitter(0.08), sense: stats.sense * jitter(0.08), rest: stats.rest * jitter(0.15),
+        return Traits(personality: Personality(breedID: breed.id), speed: stats.speed * jitter(0.08), sense: stats.sense * jitter(0.08), rest: stats.rest * jitter(0.15),
                       carry: stats.carry, recruit: stats.recruit, might: stats.might * jitter(0.10), maxHealth: stats.health,
                       lifespan: baseLifespan * stats.lifespan * jitter(0.10))
     }
@@ -86,6 +110,18 @@ enum Breeding {
     /// birth has a small chance of a random "mutation" into any non-plain breed.
     static func roll(from breeds: [Breed], delivered: Int) -> Int {
         guard breeds.count > 1 else { return 0 }
+        // `CAMP_BREEDS=common:40,scout:20,sage:15,golden:5`: fixed shares by breed id (tests)
+        if let spec = ProcessInfo.processInfo.environment["CAMP_BREEDS"] {
+            var shares: [String: Double] = [:]
+            for part in spec.split(separator: ",") {
+                let pair = part.split(separator: ":")
+                if pair.count == 2, let v = Double(pair[1]) { shares[String(pair[0])] = v }
+            }
+            let weights = breeds.map { shares[$0.id] ?? 0 }
+            var pick = Double.random(in: 0..<max(0.001, weights.reduce(0, +)))
+            for (i, w) in weights.enumerated() { pick -= w; if pick < 0 { return i } }
+            return 0
+        }
         if Double.random(in: 0..<1) < 0.02 { return Int.random(in: 1..<breeds.count) }
         let wealth = min(2.0, Double(delivered) / 60) // 0 ... 2, reached after 120 pieces
         let weights = breeds.enumerated().map { $0.offset == 0 ? $0.element.weight : $0.element.weight * (1 + wealth * $0.element.prosperityBoost) }
