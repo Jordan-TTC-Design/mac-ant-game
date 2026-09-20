@@ -28,7 +28,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         panel.isReleasedWhenClosed = false
         // above the transparent overlay windows, which sit at the status-bar level
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces]
         panel.minSize = NSSize(width: 300, height: 320)
         buildContent()
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
@@ -97,10 +97,10 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
             return c
         }
         table.addTableColumn(column("id", "#", 34))
-        table.addTableColumn(column("name", "名字", 62))
+        table.addTableColumn(column("name", "名字", 104))
         table.addTableColumn(column("breed", "品種", 52))
         table.addTableColumn(column("life", "壽命", 70))
-        table.addTableColumn(column("stats", "速度 / 感知 / 搬運", 140))
+        table.addTableColumn(column("stats", "速度 / 感知 / 搬運", 112))
         table.dataSource = self
         table.delegate = self
         table.rowHeight = 20

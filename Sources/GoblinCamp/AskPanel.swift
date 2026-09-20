@@ -7,6 +7,8 @@ enum AskAnswer {
     case reply(String)
     /// "I'll look myself": bring the terminal forward and let Claude Code's own prompt handle it.
     case look
+    /// Allow it, and let this kind of thing through for the rest of the conversation.
+    case allowAndRemember
     /// Closed without an answer.
     case dismiss
 }
@@ -58,7 +60,8 @@ final class PillButton: NSView {
 /// A real window (the overlay lets every click through), non-activating so it does not pull focus from the terminal
 /// until the player clicks into the text field.
 final class AskPanel: NSPanel {
-    static let width: CGFloat = 280
+    /// Wider when there is an extra "allow and remember" button.
+    static func width(for message: Message) -> CGFloat { message.interaction == .decision && !message.remember.isEmpty ? 372 : 280 }
     private let onAnswer: (AskAnswer) -> Void
     private var field: NSTextField?
 
@@ -67,13 +70,13 @@ final class AskPanel: NSPanel {
     /// The panel's size for a message (before it is placed).
     static func size(for message: Message) -> NSSize {
         let padding: CGFloat = 12
-        let textWidth = width - padding * 2
+        let textWidth = width(for: message) - padding * 2
         var height = padding * 2 + 16 // title
         height += textHeight(message.text, font: .systemFont(ofSize: 14, weight: .semibold), width: textWidth) + 4
-        if !message.context.isEmpty { height += textHeight(message.context, font: .monospacedSystemFont(ofSize: 11, weight: .regular), width: textWidth, lines: 3) + 4 }
+        if !message.displayContext.isEmpty { height += textHeight(message.displayContext, font: .monospacedSystemFont(ofSize: 11, weight: .regular), width: textWidth, lines: 4) + 4 }
         height += message.interaction == .reply ? 28 + 8 : 0
         height += 28 + 4 // button row
-        return NSSize(width: width, height: ceil(height))
+        return NSSize(width: width(for: message), height: ceil(height))
     }
 
     private static func textHeight(_ string: String, font: NSFont, width: CGFloat, lines: Int = 6) -> CGFloat {
@@ -88,7 +91,7 @@ final class AskPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        collectionBehavior = [.canJoinAllSpaces, .stationary]
         isFloatingPanel = true
         hidesOnDeactivate = false
         contentView = build(message, size: frame.size)
@@ -124,11 +127,11 @@ final class AskPanel: NSPanel {
         let mainHeight = AskPanel.textHeight(message.text, font: mainFont, width: textWidth)
         y -= mainHeight + 4
         root.addSubview(label(message.text, font: mainFont, color: NSColor(calibratedWhite: 0.12, alpha: 1), frame: NSRect(x: padding, y: y, width: textWidth, height: mainHeight)))
-        if !message.context.isEmpty {
+        if !message.displayContext.isEmpty {
             let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-            let h = AskPanel.textHeight(message.context, font: font, width: textWidth, lines: 3)
+            let h = AskPanel.textHeight(message.displayContext, font: font, width: textWidth, lines: 4)
             y -= h + 4
-            root.addSubview(label(message.context, font: font, color: NSColor(calibratedWhite: 0.38, alpha: 1), frame: NSRect(x: padding, y: y, width: textWidth, height: h), lines: 3))
+            root.addSubview(label(message.displayContext, font: font, color: NSColor(calibratedWhite: 0.38, alpha: 1), frame: NSRect(x: padding, y: y, width: textWidth, height: h), lines: 4))
         }
         if message.interaction == .reply {
             y -= 28 + 8
@@ -148,9 +151,11 @@ final class AskPanel: NSPanel {
         let ink = NSColor(calibratedWhite: 0.12, alpha: 1)
         let specs: [(String, NSColor, NSColor, () -> Void)]
         if message.interaction == .decision {
-            specs = [("允許", green, .white, { [weak self] in self?.onAnswer(.allow) }),
-                     ("拒絕", red, .white, { [weak self] in self?.onAnswer(.deny) }),
+            var list: [(String, NSColor, NSColor, () -> Void)] = [("允許", green, .white, { [weak self] in self?.onAnswer(.allow) })]
+            if !message.remember.isEmpty { list.append(("允許並記住", NSColor(calibratedRed: 0.13, green: 0.45, blue: 0.22, alpha: 1), .white, { [weak self] in self?.onAnswer(.allowAndRemember) })) }
+            list += [("拒絕", red, .white, { [weak self] in self?.onAnswer(.deny) }),
                      ("自己去看", grey, ink, { [weak self] in self?.onAnswer(.look) })]
+            specs = list
         } else {
             specs = [("送出", green, .white, { [weak self] in self?.sendReply() }),
                      ("自己去看", grey, ink, { [weak self] in self?.onAnswer(.look) }),

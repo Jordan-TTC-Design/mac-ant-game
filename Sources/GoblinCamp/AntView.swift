@@ -82,8 +82,13 @@ final class AntView: NSView {
 
     // MARK: Drawing
 
+    /// False while this screen is on a desktop the player did not pick for the goblins.
+    var showsCamp = true {
+        didSet { if showsCamp != oldValue { needsDisplay = true } }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        if colony.campHidden { // the goblins are away, but the pomodoro and the popups stay
+        if colony.campHidden || !showsCamp { // the goblins are away, but the pomodoro and the popups stay
             drawMessage()
             drawPomodoro()
             return

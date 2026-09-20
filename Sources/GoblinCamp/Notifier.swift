@@ -105,6 +105,10 @@ struct Message {
     let askID: String?
     /// A short line under the words (what Claude wants to run).
     let context: String
+    /// What "allow and remember" would let through for the rest of this conversation (empty: no such button).
+    var remember = ""
+    /// The line under the words: what Claude wants to do, and what "remember" would allow.
+    var displayContext: String { remember.isEmpty ? context : (context.isEmpty ? "" : context + "\n") + "本次對話都允許：" + remember }
     let screen: CGRect
     var pos: CGPoint
     var phase: Phase = .walkingIn

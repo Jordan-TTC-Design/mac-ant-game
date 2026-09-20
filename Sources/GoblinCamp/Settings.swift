@@ -114,7 +114,10 @@ final class Settings {
     }
     /// A full-screen window (video, slideshow) counts as focus mode: everything goes quiet.
     var fullscreenFocus: Bool {
-        get { defaults.object(forKey: "fullscreenFocus") as? Bool ?? true }
+        get {
+            if let forced = ProcessInfo.processInfo.environment["CAMP_FULLSCREEN_FOCUS"] { return forced != "0" } // tests
+            return defaults.object(forKey: "fullscreenFocus") as? Bool ?? true
+        }
         set { defaults.set(newValue, forKey: "fullscreenFocus") }
     }
 
@@ -152,6 +155,17 @@ final class Settings {
     var askWait: Double {
         get { min(120, max(5, defaults.object(forKey: "askWait") as? Double ?? 30)) }
         set { defaults.set(newValue, forKey: "askWait") }
+    }
+
+    /// The goblins show on every desktop (Space), or only on the ones in `desktops`.
+    var desktopsAll: Bool {
+        get { defaults.object(forKey: "desktopsAll") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "desktopsAll") }
+    }
+    /// Which desktops (1 = "桌面 1") show the goblins when `desktopsAll` is off. Desktop 1 by default.
+    var desktops: [Int] {
+        get { (defaults.array(forKey: "desktops") as? [Int]) ?? [1] }
+        set { defaults.set(newValue, forKey: "desktops") }
     }
 
     /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.

@@ -303,6 +303,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         if env["CAMP_TEST_AWAY"] != nil { after(12) { self.setMode(.work, for: 62) } } // work mode for just over a minute, to see the summary
+        if env["CAMP_TEST_ASKFAKE"] != nil { // show a permission question with an "allow and remember" button, as if a hook had asked
+            after(4) {
+                self.handleAsk([URLQueryItem(name: "id", value: "test-\(UUID().uuidString)"), URLQueryItem(name: "kind", value: "permission"),
+                                URLQueryItem(name: "project", value: "my-app"), URLQueryItem(name: "app", value: "com.apple.Terminal"),
+                                URLQueryItem(name: "text", value: "執行：git push origin main"), URLQueryItem(name: "remember", value: "Bash(git push:*)")])
+            }
+        }
         if let path = env["CAMP_TEST_MANUAL"] { // open the manual and draw its window into a PNG
             after(2) {
                 self.showManual()
@@ -313,6 +320,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     log("manual drawn")
                     NSApp.terminate(nil)
                 }
+            }
+        }
+        if env["CAMP_TEST_FSSPACE"] != nil { // a real full-screen Space (like a full-screen video): are our windows on screen in it?
+            after(3) {
+                let cover = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 500, height: 300), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                cover.collectionBehavior = [.fullScreenPrimary]
+                cover.title = "GoblinCamp test"
+                cover.makeKeyAndOrderFront(nil)
+                func ours() -> Int {
+                    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+                    return list.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == getpid() && ($0[kCGWindowLayer as String] as? Int) != nil && ($0[kCGWindowName as String] as? String) != "GoblinCamp test" }.count
+                }
+                log("before full screen: overlay windows on the active Space: \(self.windows.filter { $0.isVisible && $0.isOnActiveSpace }.count) of \(self.windows.count)")
+                cover.toggleFullScreen(nil)
+                after(3.5) { log("in a full-screen Space: overlay windows on the active Space: \(self.windows.filter { $0.isVisible && $0.isOnActiveSpace }.count) of \(self.windows.count), mode \(String(describing: self.effectiveMode))") }
+                after(4) { cover.toggleFullScreen(nil) }
+                after(7.5) { log("back: overlay windows on the active Space: \(self.windows.filter { $0.isVisible && $0.isOnActiveSpace }.count)"); cover.close(); NSApp.terminate(nil) }
             }
         }
         if let s = env["CAMP_TEST_NAMES"] { // "set": rename the princess and the first goblin at 20 s and save; "show": print the names at 4 s
@@ -353,6 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let answer: AskAnswer
                 switch s {
                 case "allow": answer = .allow
+                case "allowRemember": answer = .allowAndRemember
                 case "deny": answer = .deny
                 case "look": answer = .look
                 case let r where r.hasPrefix("reply:"): answer = .reply(String(r.dropFirst(6)))
@@ -525,6 +550,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alertScreenItem = NSMenuItem(title: "提醒顯示的螢幕", action: nil, keyEquivalent: "")
         alertScreenItem.submenu = NSMenu(title: "提醒顯示的螢幕")
         menu.addItem(alertScreenItem)
+        desktopMenuItem = NSMenuItem(title: "哥布林出現在哪個桌面", action: nil, keyEquivalent: "")
+        desktopMenuItem.submenu = NSMenu(title: "哥布林出現在哪個桌面")
+        menu.addItem(desktopMenuItem)
         let fullscreen = ClosureMenuItem(title: "全螢幕時自動專注（影片、簡報）") { [weak self] in
             guard let self else { return }
             self.settings.fullscreenFocus.toggle()
@@ -716,7 +744,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var askPanelID: String?
 
     private static var repliesDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GoblinCamp/replies")
+        if let custom = ProcessInfo.processInfo.environment["CAMP_DATA_DIR"] { return URL(fileURLWithPath: custom).appendingPathComponent("replies") }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GoblinCamp/replies")
     }
 
     /// Files the waiting hook script polls: `<id>.ack` (we got the question) and `<id>.json` (the answer).
@@ -771,6 +800,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var message = Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: app,
                               screen: alertScreenFrame(), interaction: kind == .permission ? .decision : .reply, askID: id, context: context, talkTime: wait)
         message.name = name
+        message.remember = kind == .permission ? String((value("remember") ?? "").filter { !$0.isNewline }.prefix(60)) : ""
         colony.stage.enqueue(message)
         redrawAll()
     }
@@ -805,6 +835,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let app = colony.stage.current?.appBundleID
         switch answer {
         case .allow: finishAsk(id, ["action": "allow"])
+        case .allowAndRemember: finishAsk(id, ["action": "allowRemember"])
         case .deny: finishAsk(id, ["action": "deny"])
         case .reply(let text): finishAsk(id, ["action": "reply", "text": text])
         case .look:
@@ -849,7 +880,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panel.backgroundColor = .clear
             panel.hasShadow = false
             panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
             let view = ClickCatcher()
             view.onClick = { [weak self] in self?.messageClicked() }
             panel.contentView = view
@@ -1202,13 +1233,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func startFullscreenWatch() {
-        fullscreenTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            guard let self, self.settings.fullscreenFocus || self.fullscreenActive else { return }
-            let now = self.fullscreenWindowUp()
-            guard now != self.fullscreenActive else { return }
-            self.fullscreenActive = now
-            if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: full screen \(now ? "on" : "off"), mode now \(String(describing: self.effectiveMode))") }
-            self.applyQuietState()
+        // react at once when the desktop changes, and check twice a second as a backup
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.checkFullscreenAndDesktops() }
+        center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in self?.checkFullscreenAndDesktops() }
+        fullscreenTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.checkFullscreenAndDesktops() }
+        checkFullscreenAndDesktops()
+    }
+
+    /// Whether goblins may be drawn on this screen right now (the desktop it shows is one the player picked, and it is not a full-screen app).
+    private func showsCamp(on screen: NSScreen) -> Bool {
+        if [.choosingNest, .editing, .placingFood].contains(colony.phase) { return true } // picking a spot works on any desktop
+        guard let info = Spaces.info(for: screen) else { return true }
+        if info.isFullScreen { return false }
+        if settings.desktopsAll { return true }
+        guard let number = info.desktop else { return true }
+        return settings.desktops.contains(number)
+    }
+
+    private func checkFullscreenAndDesktops() {
+        for (window, screen) in zip(windows, NSScreen.screens) { (window.contentView as? AntView)?.showsCamp = showsCamp(on: screen) }
+        guard settings.fullscreenFocus || fullscreenActive else { return }
+        let now = fullscreenWindowUp() || Spaces.anyFullScreen
+        if now != fullscreenActive {
+            fullscreenActive = now
+            if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: full screen \(now ? "on" : "off"), mode now \(String(describing: effectiveMode))") }
+            applyQuietState()
         }
     }
 
@@ -1222,6 +1272,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case let name: if let match = screens.first(where: { $0.localizedName == name }) { return match.frame }
         }
         return screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.frame ?? fallback
+    }
+
+    private var desktopMenuItem: NSMenuItem!
+
+    /// "Which desktop": all of them, or a tick per desktop ("桌面 1", "桌面 2"…). Desktop 1 only by default.
+    private func rebuildDesktopMenu() {
+        guard let sub = desktopMenuItem.submenu else { return }
+        sub.removeAllItems()
+        let count = Spaces.desktopCount
+        guard count > 0 else {
+            let note = NSMenuItem(title: "（這台 Mac 查不到桌面資訊，會出現在所有桌面）", action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            sub.addItem(note)
+            return
+        }
+        let all = ClosureMenuItem(title: "所有桌面") { [weak self] in
+            self?.settings.desktopsAll.toggle()
+            self?.checkFullscreenAndDesktops()
+        }
+        all.stateProvider = { self.settings.desktopsAll }
+        sub.addItem(all)
+        sub.addItem(.separator())
+        for number in 1...count {
+            let item = ClosureMenuItem(title: "桌面 \(number)") { [weak self] in
+                guard let self else { return }
+                var list = self.settings.desktops
+                if let i = list.firstIndex(of: number) { if list.count > 1 { list.remove(at: i) } } else { list.append(number); list.sort() }
+                self.settings.desktops = list
+                self.settings.desktopsAll = false
+                self.checkFullscreenAndDesktops()
+            }
+            item.stateProvider = { !self.settings.desktopsAll && self.settings.desktops.contains(number) }
+            sub.addItem(item)
+        }
+        sub.addItem(.separator())
+        let note = NSMenuItem(title: "沒勾選的桌面沒有哥布林，但番茄鐘與通知照常出現", action: nil, keyEquivalent: "")
+        note.isEnabled = false
+        sub.addItem(note)
     }
 
     private func rebuildAlertScreenMenu() {
@@ -1418,6 +1506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         quietStatusItem.isHidden = status.isEmpty
         quietStatusItem.title = status.joined(separator: "　·　")
         rebuildAlertScreenMenu()
+        rebuildDesktopMenu()
         refreshClaudeStatus()
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
         nestMenuItem.title = "\(home)外觀"
@@ -1596,5 +1685,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             windows.first?.makeKeyAndOrderFront(nil)
         }
         updateCount()
+        checkFullscreenAndDesktops()
     }
 }
