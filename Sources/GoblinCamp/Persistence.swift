@@ -6,7 +6,7 @@ struct SavedGoblin: Codable {
     var breed: String
     var age: Double
     var seed: UInt64
-    /// Only stored when the player renamed it; otherwise the name comes from the seed.
+    /// Always stored, so a later change to the name generator never renames anyone. Older saves lack it: the name then comes from the seed.
     var name: String?
 }
 

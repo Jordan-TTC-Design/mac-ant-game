@@ -531,7 +531,7 @@ final class Colony {
         guard let nest else { return nil }
         let breeds = self.breeds
         return SavedState(nestX: nest.x, nestY: nest.y, antCount: ants.count,
-                          goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name == Names.goblin(seed: $0.seed) ? nil : $0.name) },
+                          goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name) },
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName)
     }
 
@@ -539,7 +539,15 @@ final class Colony {
     private func makeAnt(at pos: CGPoint, breedIndex: Int? = nil, age: Double = 0, seed: UInt64? = nil, id: Int? = nil, name: String? = nil) -> Ant {
         let breeds = self.breeds
         let index = min(breedIndex ?? Breeding.roll(from: breeds, delivered: foodDelivered), breeds.count - 1)
-        let seed = seed ?? UInt64.random(in: 0...UInt64(UInt32.max))
+        var seed = seed ?? UInt64.random(in: 0...UInt64(UInt32.max))
+        if id == nil { // a birth: try for a name nobody living has yet (a restored goblin keeps its seed and so its name)
+            let taken = Set(ants.map(\.name))
+            var tries = 0
+            while taken.contains(Names.goblin(seed: seed)), tries < 40 {
+                seed = UInt64.random(in: 0...UInt64(UInt32.max))
+                tries += 1
+            }
+        }
         let traits = Traits.make(for: breeds[index], seed: seed)
         let ant = Ant(at: pos, id: id ?? nextAntID, breedIndex: index, traits: traits, seed: seed, age: age, name: name)
         if id == nil { nextAntID += 1 }
