@@ -108,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.onChange = { [weak self] in
             self?.syncWindows()
             self?.persist()
+            if self?.colony.needsPrincessName == true { DispatchQueue.main.async { self?.nameThePrincess(firstTime: true) } }
         }
         colony.onAntsChanged = { [weak self] in
             self?.updateCount()
@@ -116,6 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncWindows()
         updateCount()
         startFrameTimer()
+        // a camp from before names existed: ask once, soon after the app is up
+        if colony.nest != nil, colony.princessName.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.nameThePrincess(firstTime: true) } }
         applyHotkeys()
         // rest in the chosen mode (a brand new camp starts with everything on, so the first nest can be picked and watched)
         if colony.nest != nil || ProcessInfo.processInfo.environment["CAMP_START_MODE"] != nil, let mode = baseMode {
@@ -300,6 +303,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         if env["CAMP_TEST_AWAY"] != nil { after(12) { self.setMode(.work, for: 62) } } // work mode for just over a minute, to see the summary
+        if let path = env["CAMP_TEST_MANUAL"] { // open the manual and draw its window into a PNG
+            after(2) {
+                self.showManual()
+                after(1) {
+                    guard let view = self.manualWindow?.contentViewForTesting, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
+                    log("manual drawn")
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+        if let s = env["CAMP_TEST_NAMES"] { // "set": rename the princess and the first goblin at 20 s and save; "show": print the names at 4 s
+            if s == "set" {
+                after(20) {
+                    self.colony.princessName = "小茉"
+                    if let first = self.colony.ants.first { self.colony.rename(antID: first.id, to: "波波") }
+                    self.persist()
+                    log("names set: princess \(self.colony.princessName), goblins \(self.colony.ants.map(\.name).prefix(3))")
+                    NSApp.terminate(nil)
+                }
+            } else {
+                after(4) { log("names loaded: princess '\(self.colony.princessName)', goblins \(self.colony.ants.map(\.name).prefix(3)), pending prompt \(self.colony.needsPrincessName)") ; NSApp.terminate(nil) }
+            }
+        }
         if let s = env["CAMP_TEST_STATS"], let t = Double(s) { after(t) { let x = Stats.shared.summary(); log("stats today: \(x.today) | week first line: \(x.week.split(separator: "\n").first ?? "")") } }
         if let s = env["CAMP_TEST_POMODORO"] { // "focusMinutes,restMinutes" (fractions allowed), started at 3 s
             let parts = s.split(separator: ",").compactMap { Double($0) }
@@ -442,6 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(foodMenu())
         rosterItem = ClosureMenuItem(title: "名冊…") { [weak self] in self?.roster.toggle() }
         menu.addItem(rosterItem)
+        menu.addItem(ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } })
         quietStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         quietStatusItem.isEnabled = false
         menu.addItem(quietStatusItem)
@@ -515,6 +544,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         save.stateProvider = { self.settings.saveProgress }
         menu.addItem(save)
         menu.addItem(.separator())
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(title: "說明手冊…") { [weak self] in self?.showManual() })
+        menu.addItem(ClosureMenuItem(title: "關於哥布林營地（v\(versionText)）") { [weak self] in self?.showAbout() })
         menu.addItem(withTitle: "結束哥布林營地", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         statusItem.menu = menu
@@ -657,20 +689,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if forced == nil, let last = lastNotify[kind], Date().timeIntervalSince(last) < 6 { return }
         lastNotify[kind] = Date()
         let screen = alertScreenFrame()
-        let (speaker, breedIndex) = pickSpeaker(forced)
-        colony.stage.enqueue(Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: appBundleID, screen: screen))
+        let (speaker, breedIndex, name) = pickSpeaker(forced)
+        var message = Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: appBundleID, screen: screen)
+        message.name = name
+        colony.stage.enqueue(message)
         redrawAll()
     }
 
     /// Who speaks: now and then the princess, otherwise one of the living goblins (so rare breeds turn up when you have them).
-    private func pickSpeaker(_ forced: Speaker? = nil) -> (Speaker, Int) {
+    private func pickSpeaker(_ forced: Speaker? = nil) -> (Speaker, Int, String) {
         let character = Characters.current
-        if let forced { return (forced, character.breedIndex(id: forced.id)) }
-        if Double.random(in: 0..<1) < 0.25 { return (Speakers.princess, 0) }
+        if let forced { return (forced, character.breedIndex(id: forced.id), forced.isPrincess ? colony.princessName : "") }
+        if Double.random(in: 0..<1) < 0.25 { return (Speakers.princess, 0, colony.princessName) }
         if let ant = colony.ants.randomElement() {
-            return (Speakers.forBreed(character.breeds[min(ant.breedIndex, character.breeds.count - 1)].id), ant.breedIndex)
+            return (Speakers.forBreed(character.breeds[min(ant.breedIndex, character.breeds.count - 1)].id), ant.breedIndex, ant.name)
         }
-        return (Speakers.common, 0)
+        return (Speakers.common, 0, "")
     }
 
     // MARK: Questions from hooks (answer on the bubble)
@@ -731,11 +765,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return finishAsk(id, ["action": "none"])
         }
         guard !colony.stage.isFull else { return finishAsk(id, ["action": "none"]) }
-        let (speaker, breedIndex) = pickSpeaker()
+        let (speaker, breedIndex, name) = pickSpeaker()
         let wait = min(settings.askWait, Double(value("wait") ?? "") ?? 60)
         pendingAsks.insert(id)
-        colony.stage.enqueue(Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: app,
-                                     screen: alertScreenFrame(), interaction: kind == .permission ? .decision : .reply, askID: id, context: context, talkTime: wait))
+        var message = Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: app,
+                              screen: alertScreenFrame(), interaction: kind == .permission ? .decision : .reply, askID: id, context: context, talkTime: wait)
+        message.name = name
+        colony.stage.enqueue(message)
         redrawAll()
     }
 
@@ -868,6 +904,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sub.addItem(ClosureMenuItem(title: "試試看：壯碩哥布林") { [weak self] in self?.notify(.permission, project: "測試", appBundleID: "com.apple.Terminal", speaker: Speakers.brute) })
         parent.submenu = sub
         return parent
+    }
+
+    // MARK: Names
+
+    /// Asks what the princess is called. At the start of a new camp the game waits (paused) until she has a name.
+    /// Tests (`CAMP_NO_SAVE`, `CAMP_AUTO_NEST`) never see the dialog: she just gets a name.
+    private var naming = false
+
+    private func nameThePrincess(firstTime: Bool) {
+        guard !naming else { return }
+        naming = true
+        defer { naming = false }
+        let env = ProcessInfo.processInfo.environment
+        if env["CAMP_NO_SAVE"] != nil || env["CAMP_AUTO_NEST"] != nil {
+            if colony.princessName.isEmpty { colony.princessName = Names.randomPrincess() }
+            colony.needsPrincessName = false
+            persist()
+            return
+        }
+        let wasPaused = colony.isPaused
+        colony.isPaused = true
+        defer { colony.isPaused = wasPaused; colony.needsPrincessName = false; persist(); redrawAll() }
+        var suggestion = colony.princessName.isEmpty ? Names.randomPrincess() : colony.princessName
+        while true {
+            let alert = NSAlert()
+            alert.messageText = firstTime ? "幫被抓來的公主取個名字" : "公主的名字"
+            alert.informativeText = "哥布林們會這樣叫她，通知泡泡裡也會用她的名字。之後可以在選單「公主的名字…」修改。"
+            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+            field.stringValue = suggestion
+            field.placeholderString = "最多 8 個字"
+            alert.accessoryView = field
+            alert.addButton(withTitle: "好")
+            alert.addButton(withTitle: firstTime ? "換一個" : "取消")
+            if firstTime { alert.addButton(withTitle: "先叫她公主") }
+            alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            alert.window.initialFirstResponder = field
+            NSApp.activate(ignoringOtherApps: true)
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                let name = Names.clean(field.stringValue)
+                colony.princessName = name.isEmpty ? (colony.princessName.isEmpty ? "公主" : colony.princessName) : name
+                return
+            case .alertSecondButtonReturn:
+                if !firstTime { return }
+                suggestion = Names.randomPrincess(except: field.stringValue)
+            default:
+                colony.princessName = "公主"
+                return
+            }
+        }
+    }
+
+    // MARK: About and manual
+
+    private var manualWindow: ManualWindow?
+
+    private var versionText: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"
+    }
+
+    private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        let credits = NSMutableAttributedString(string: "住在 Mac 選單列的點陣風哥布林桌面小遊戲，也是會跳出來提醒你的番茄鐘與 Claude 通知小工具。\n\n資料存放在 ~/Library/Application Support/GoblinCamp。\n沒有連上網路，也不會傳送任何資料。",
+                                                 attributes: [.font: NSFont.systemFont(ofSize: 11)])
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "哥布林營地", .applicationVersion: versionText, .version: "", .credits: credits])
+    }
+
+    private func showManual() {
+        if manualWindow == nil { manualWindow = ManualWindow() }
+        manualWindow?.present()
     }
 
     // MARK: Connecting Claude Code
@@ -1052,8 +1158,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if died > 0 { parts.append("老死 \(died) 隻") }
         var text = "回來啦！這 \(minutes >= 60 ? "\(minutes / 60) 小時 \(minutes % 60) 分" : "\(minutes) 分鐘")，營地" + (parts.isEmpty ? "沒有變化" : parts.joined(separator: "、"))
         if gone.missed > 0 { text += "；錯過 \(gone.missed) 則 Claude 通知" }
-        colony.stage.enqueue(Message(kind: .done, speaker: Speakers.princess, breedIndex: 0, project: "", appBundleID: nil,
-                                     screen: alertScreenFrame(), text: text + "。", silent: true))
+        var message = Message(kind: .done, speaker: Speakers.princess, breedIndex: 0, project: "", appBundleID: nil,
+                              screen: alertScreenFrame(), text: text + "。", silent: true)
+        message.name = colony.princessName
+        colony.stage.enqueue(message)
     }
 
     private func noteMissed() {

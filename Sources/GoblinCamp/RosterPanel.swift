@@ -2,7 +2,7 @@ import AppKit
 
 /// A tall panel docked at the right edge of the screen that lists everyone in the camp. Picking a row rings that
 /// goblin on screen, so you can find it among the others.
-final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     private let colony: Colony
     private let panel: NSPanel
     private let summary = NSTextField(wrappingLabelWithString: "")
@@ -97,6 +97,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             return c
         }
         table.addTableColumn(column("id", "#", 34))
+        table.addTableColumn(column("name", "名字", 62))
         table.addTableColumn(column("breed", "品種", 52))
         table.addTableColumn(column("life", "壽命", 70))
         table.addTableColumn(column("stats", "速度 / 感知 / 搬運", 140))
@@ -174,7 +175,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         let breed = breeds[min(ant.breedIndex, breeds.count - 1)]
         let t = ant.traits
         let left = max(0, t.lifespan - ant.age)
-        detail.stringValue = "#\(ant.id) \(breed.name)　\(breed.blurb)\n"
+        detail.stringValue = "\(ant.name)（#\(ant.id)）\(breed.name)　\(breed.blurb)\n"
             + "年齡 \(IntervalFormat.text(ant.age.rounded()))，還剩約 \(IntervalFormat.text(left.rounded()))\n"
             + String(format: "速度 ×%.2f　感知 ×%.2f　休息 ×%.2f\n", t.speed, t.sense, t.rest)
             + "一次搬 \(t.carry) 份　叫同伴 +\(t.recruit)" + (ant.lifeFraction > Ant.elderStart ? "　（年老，走得慢）" : "")
@@ -207,6 +208,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         let text: String
         switch column.identifier.rawValue {
         case "id": text = "\(ant.id)"
+        case "name": text = ant.name
         case "breed": text = breedName(of: ant)
         default: text = String(format: "%.2f / %.2f / %d", t.speed, t.sense, t.carry)
         }
@@ -219,7 +221,19 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             return f
         }()
         field.stringValue = text
+        // the name can be typed over (double-click it)
+        field.isEditable = column.identifier.rawValue == "name"
+        field.delegate = self
+        field.tag = ant.id
+        field.font = column.identifier.rawValue == "name" ? .systemFont(ofSize: 12) : .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         return field
+    }
+
+    /// A name was typed over in the table.
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field.isEditable else { return }
+        colony.rename(antID: field.tag, to: field.stringValue)
+        reload()
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {

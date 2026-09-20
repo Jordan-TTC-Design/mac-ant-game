@@ -119,7 +119,7 @@ final class AskPanel: NSPanel {
         // laid out from the top down
         var y = size.height - padding
         y -= 16
-        root.addSubview(label(message.speaker.title, font: .systemFont(ofSize: 11, weight: .semibold), color: message.accent, frame: NSRect(x: padding, y: y, width: textWidth, height: 16)))
+        root.addSubview(label(message.title, font: .systemFont(ofSize: 11, weight: .semibold), color: message.accent, frame: NSRect(x: padding, y: y, width: textWidth, height: 16)))
         let mainFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
         let mainHeight = AskPanel.textHeight(message.text, font: mainFont, width: textWidth)
         y -= mainHeight + 4

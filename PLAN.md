@@ -338,3 +338,12 @@ Characters/<id>/
 - 目的：同事不需要開終端機。選單「連接 Claude Code」：說明視窗 → 按「連接」→ `HookInstaller` 寫 `~/.claude/hooks/goblincamp-hook.sh`（記著遊戲目前的位置，找不到就安靜退出）、備份並更新 `settings.json`（只加減自己的 hook，用 `goblincamp-hook.sh`、`goblin-notify.sh`、`goblin-ask.sh` 當記號，舊版寫的也會一起換掉）；也可以只裝一般提醒、或移除。設定檔不是正確 JSON 時直接停下。從「App Translocation」的暫時位置執行時，請使用者先搬到「應用程式」。
 - 原本的 Python 腳本改成遊戲執行檔的 `--hook` 模式（`HookCLI.swift`，不依賴 Python），`tools/goblin-*.sh` 只留成轉接腳本，讓舊設定還能用；`tools/install-hooks.sh` 移除。
 - 已驗證：對假的 `~/.claude`（`CAMP_CLAUDE_DIR`）安裝、重複安裝、只裝提醒、移除，其他設定與別人的 hook 都保留；`--hook` 五種情況的輸出（允許、拒絕、自己去看、回覆、遊戲沒開時立刻結束）。沒驗證：用真滑鼠按選單的實際視窗，以及真的 Claude Code 載入這些 hook。
+
+
+## 版本、說明手冊、名字（2026-09，v0.2.0）
+
+- **版本**：`Info.plist` 升到 0.2.0（build 2）；選單「關於哥布林營地（v0.2.0）」用系統的關於視窗；說明手冊標題也顯示版本。之後每次發新版要改 `CFBundleShortVersionString`，`./build.sh --release` 的 zip 檔名會跟著變。
+- **說明手冊**：選單「說明手冊…」，`ManualWindow.swift`，內容寫在 `sections`（開始玩、四種狀態、番茄鐘、連接 Claude Code、哥布林與公主、營地與自然事件、資料更新移除、常見問題），改功能時要記得同步改這裡。已畫成 PNG 確認排版。
+- **名字**：`Names.swift`。哥布林的名字由自己的 seed 產生（兩個音節加偶爾一個字尾），所以重開後還是同一個名字；被玩家改過的才存進 `state.json`（`SavedGoblin.name`，選填，舊存檔讀得進）。公主的名字存在 `SavedState.princessName`（選填）。第一次玩（新營地）時，放好營地後遊戲先暫停、問公主的名字（好／換一個／先叫她公主）；舊存檔第一次打開新版時也會問一次；名冊可以連按兩下改哥布林名字；選中的哥布林頭上會顯示名字；通知泡泡標題用「名字・品種」。
+- 已驗證：名字存檔與重新載入（用 `CAMP_DATA_DIR` 隔離）、手冊排版。**沒驗證**：實際看到「幫公主取名字」的對話框並打字（測試模式會略過它）、名冊裡連按兩下改名、關於視窗。
+- 還沒做（想法）：哥布林名字出現在番茄鐘的哥布林旁、通知台詞偶爾叫名字、幫營地取名、更多名字風格。

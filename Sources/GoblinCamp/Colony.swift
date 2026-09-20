@@ -51,6 +51,10 @@ final class Colony {
     private(set) var deaths = 0
     /// How many goblins wild animals have killed.
     private(set) var slain = 0
+    /// What the princess is called ("" until the player names her).
+    var princessName = ""
+    /// A new camp was just started and the player has not named the princess yet.
+    var needsPrincessName = false
     /// Popups for Claude notifications (not part of the simulation, so they work while paused).
     let stage = MessageStage()
     /// The pomodoro goblin with the clock.
@@ -257,6 +261,7 @@ final class Colony {
         spawnTimer = 0
         beginCarrying(to: point)
         primeWildlifeTimers()
+        needsPrincessName = true
         onChange?()
     }
 
@@ -498,6 +503,7 @@ final class Colony {
         phase = .running
         queen = Queen.settled(nest: nest)
         foodDelivered = saved.delivered ?? 0
+        princessName = saved.princessName ?? ""
 
         func scattered() -> CGPoint {
             let angle = Double.random(in: 0..<(2 * .pi))
@@ -507,7 +513,7 @@ final class Colony {
         }
         if let goblins = saved.goblins {
             ants = goblins.prefix(settings.maxAnts).map { g in
-                makeAnt(at: scattered(), breedIndex: breeds.firstIndex { $0.id == g.breed } ?? 0, age: g.age, seed: g.seed, id: g.id)
+                makeAnt(at: scattered(), breedIndex: breeds.firstIndex { $0.id == g.breed } ?? 0, age: g.age, seed: g.seed, id: g.id, name: g.name)
             }
             nextAntID = max(saved.nextID ?? 1, (goblins.map(\.id).max() ?? 0) + 1)
         } else {
@@ -525,17 +531,17 @@ final class Colony {
         guard let nest else { return nil }
         let breeds = self.breeds
         return SavedState(nestX: nest.x, nestY: nest.y, antCount: ants.count,
-                          goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed) },
-                          delivered: foodDelivered, nextID: nextAntID)
+                          goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name == Names.goblin(seed: $0.seed) ? nil : $0.name) },
+                          delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName)
     }
 
     /// Births and restores both go through here so every individual gets its traits the same way.
-    private func makeAnt(at pos: CGPoint, breedIndex: Int? = nil, age: Double = 0, seed: UInt64? = nil, id: Int? = nil) -> Ant {
+    private func makeAnt(at pos: CGPoint, breedIndex: Int? = nil, age: Double = 0, seed: UInt64? = nil, id: Int? = nil, name: String? = nil) -> Ant {
         let breeds = self.breeds
         let index = min(breedIndex ?? Breeding.roll(from: breeds, delivered: foodDelivered), breeds.count - 1)
         let seed = seed ?? UInt64.random(in: 0...UInt64(UInt32.max))
         let traits = Traits.make(for: breeds[index], seed: seed)
-        let ant = Ant(at: pos, id: id ?? nextAntID, breedIndex: index, traits: traits, seed: seed, age: age)
+        let ant = Ant(at: pos, id: id ?? nextAntID, breedIndex: index, traits: traits, seed: seed, age: age, name: name)
         if id == nil { nextAntID += 1 }
         return ant
     }
@@ -592,6 +598,14 @@ final class Colony {
 
     private func clearDecorations() {
         eggs = []
+    }
+
+    /// The player renamed a goblin (empty puts back the name it was born with).
+    func rename(antID: Int, to text: String) {
+        guard let i = ants.firstIndex(where: { $0.id == antID }) else { return }
+        let name = Names.clean(text)
+        ants[i].name = name.isEmpty ? Names.goblin(seed: ants[i].seed) : name
+        onAntsChanged?()
     }
 
     func debugForceQueen(_ name: String) {

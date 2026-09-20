@@ -75,8 +75,12 @@ struct Ant {
     var legPhase: Double = Double.random(in: 0...(2 * .pi))
     private let wobblePhase = Double.random(in: 0...(2 * .pi))
 
-    init(at pos: CGPoint, id: Int, breedIndex: Int, traits: Traits, seed: UInt64, age: Double = 0) {
+    /// Its name: made from its seed, or what the player called it.
+    var name: String
+
+    init(at pos: CGPoint, id: Int, breedIndex: Int, traits: Traits, seed: UInt64, age: Double = 0, name: String? = nil) {
         self.id = id
+        self.name = name ?? Names.goblin(seed: seed)
         self.breedIndex = breedIndex
         self.traits = traits
         self.seed = seed

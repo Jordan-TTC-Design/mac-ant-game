@@ -92,6 +92,8 @@ struct Message {
     /// Which breed's sprite to use (ignored for the princess).
     let breedIndex: Int
     let text: String
+    /// Who exactly is talking (a goblin's own name, or the princess's); empty falls back to the kind of goblin.
+    var name = ""
     /// A note without sound (the summary when coming back).
     let silent: Bool
     /// The project (folder) the Claude session works in, if the hook told us.
@@ -131,6 +133,9 @@ struct Message {
 
     var heading: Double { phase == .leaving ? 0 : .pi }
 
+    /// The heading of the bubble: "咕嚕・壯碩哥布林" or "艾莉雅・公主".
+    var title: String { name.isEmpty ? speaker.title : "\(name)・\(speaker.isPrincess ? "公主" : speaker.title)" }
+
     var accent: NSColor {
         kind == .permission ? NSColor(calibratedRed: 0.95, green: 0.55, blue: 0.1, alpha: 1)
                             : NSColor(calibratedRed: 0.25, green: 0.65, blue: 0.3, alpha: 1)
@@ -139,7 +144,7 @@ struct Message {
     /// The bubble's content: who is talking, what they say, and where (project) and what a click does.
     var attributed: NSAttributedString {
         let full = NSMutableAttributedString()
-        full.append(NSAttributedString(string: "\(speaker.title)\n", attributes: [
+        full.append(NSAttributedString(string: "\(title)\n", attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .semibold), .foregroundColor: accent]))
         full.append(NSAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)]))

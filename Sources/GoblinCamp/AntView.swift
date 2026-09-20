@@ -283,7 +283,10 @@ final class AntView: NSView {
 
         if let id = colony.selectedAntID, let ant = colony.ants.first(where: { $0.id == id }) {
             let p = local(ant.pos)
-            if onScreen.contains(p) { drawSelectionRing(at: p) }
+            if onScreen.contains(p) {
+                drawSelectionRing(at: p)
+                drawPill(ant.name, center: NSPoint(x: p.x, y: p.y + 34), fontSize: 11)
+            }
         }
 
         drawWoundedMarks(onScreen: onScreen)
