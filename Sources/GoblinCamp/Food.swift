@@ -102,6 +102,27 @@ struct AntWorld {
     let creatures: [CreatureInfo]
     /// Food size follows the ant-size setting a little, so big ants do not swamp small food.
     let foodScale: Double
+    /// How fast wandering goes in this kind of range: a little slower in a strip or a small window than across a whole screen.
+    var pace = 1.0
+    /// How full the range is: goblins out walking divided by how many fit. Over 1, goblins rest in the nest longer and go back sooner.
+    var crowd = 0.0
+    var crowded: Bool { crowd >= 1 }
+
+    enum Axis { case horizontal, vertical }
+
+    /// The long direction of the range at this spot, if the range is a strip (much longer than wide).
+    func axis(at p: CGPoint) -> Axis? {
+        guard let rect = walkable.first(where: { $0.contains(p) }) else { return nil }
+        if rect.width >= rect.height * 2 { return .horizontal }
+        if rect.height >= rect.width * 2 { return .vertical }
+        return nil
+    }
+
+    /// How wide the strip is across (its short side) at this spot.
+    func thickness(at p: CGPoint) -> Double {
+        guard let rect = walkable.first(where: { $0.contains(p) }) else { return 1000 }
+        return Double(min(rect.width, rect.height))
+    }
 
     /// The animal with this id, if it is still about.
     func creature(_ id: Int) -> CreatureInfo? {

@@ -157,6 +157,46 @@ final class Settings {
         set { defaults.set(newValue, forKey: "askWait") }
     }
 
+    /// Where the goblins may walk on their screen: "screen" (all of it), "bottom", "right", "left" (a strip of `rangeSize` points),
+    /// or "window" (inside the little camp window).
+    var rangeMode: String {
+        get { defaults.string(forKey: "rangeMode") ?? "screen" }
+        set { defaults.set(newValue, forKey: "rangeMode") }
+    }
+    var rangeSize: Double {
+        get { min(64, max(30, defaults.object(forKey: "rangeSize") as? Double ?? 42)) }
+        set { defaults.set(newValue, forKey: "rangeSize") }
+    }
+    /// The scenery in a strip or the map window: "forest", "meadow" or "none".
+    var scenery: String {
+        get { defaults.string(forKey: "scenery") ?? "forest" }
+        set { defaults.set(newValue, forKey: "scenery") }
+    }
+    /// The camp window stays above other windows.
+    var mapOnTop: Bool {
+        get { defaults.object(forKey: "mapOnTop") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "mapOnTop") }
+    }
+    /// The player closed (folded away) the camp window.
+    var mapCollapsed: Bool {
+        get { defaults.object(forKey: "mapCollapsed") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "mapCollapsed") }
+    }
+    var mapFrame: String? {
+        get { defaults.string(forKey: "mapFrame") }
+        set { defaults.set(newValue, forKey: "mapFrame") }
+    }
+
+    /// Which screens the goblins live on: "nest" (the camp's own screen, default), "all", or "list" (`screenNames`).
+    var screenMode: String {
+        get { defaults.string(forKey: "screenMode") ?? "nest" }
+        set { defaults.set(newValue, forKey: "screenMode") }
+    }
+    var screenNames: [String] {
+        get { (defaults.array(forKey: "screenNames") as? [String]) ?? [] }
+        set { defaults.set(newValue, forKey: "screenNames") }
+    }
+
     /// The goblins show on every desktop (Space), or only on the ones in `desktops`.
     var desktopsAll: Bool {
         get { defaults.object(forKey: "desktopsAll") as? Bool ?? false }

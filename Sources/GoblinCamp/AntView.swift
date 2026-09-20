@@ -14,8 +14,17 @@ final class AntView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// Set for the camp window: it shows the camp's own little world (fixed origin) instead of a piece of the screen.
+    var originOverride: CGPoint?
+    var isMap = false
+    /// This view only draws the pomodoro and the popups (the tools overlay), not the camp.
+    var toolsOnly = false
+    /// The strip of this screen the goblins walk in (global coordinates), when they are limited to one; drawn with scenery.
+    var rangeRect: CGRect?
+    var rangeSide: Scenery.Side = .bottom
+
     /// Global position of this view's bottom-left corner.
-    private var origin: CGPoint { window?.frame.origin ?? .zero }
+    private var origin: CGPoint { originOverride ?? window?.frame.origin ?? .zero }
 
     // MARK: Input
 
@@ -44,7 +53,11 @@ final class AntView: NSView {
     /// Event position in global screen coordinates. Uses the window the drag started in, so it stays correct
     /// even when the pointer has moved onto another screen.
     private func screenLocation(of event: NSEvent) -> CGPoint {
-        window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
+        if let override = originOverride {
+            let local = convert(event.locationInWindow, from: nil)
+            return CGPoint(x: override.x + local.x, y: override.y + local.y)
+        }
+        return window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -88,11 +101,13 @@ final class AntView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        if colony.campHidden || !showsCamp { // the goblins are away, but the pomodoro and the popups stay
+        if toolsOnly {
             drawMessage()
             drawPomodoro()
             return
         }
+        if isMap { drawMapBackground() }
+        if colony.campHidden || !showsCamp { return } // the goblins are away
         switch colony.phase {
         case .idle:
             break
@@ -108,8 +123,39 @@ final class AntView: NSView {
             drawColony()
             drawFoodHint()
         }
-        drawMessage()
-        drawPomodoro()
+    }
+
+    /// Grass and a forest edge for the camp window.
+    private func drawMapBackground() {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        if let ground = Scenery.ground() { Scenery.fillGround(ground, in: bounds, scale: 2, into: ctx) } else { NSColor(calibratedRed: 0.23, green: 0.45, blue: 0.24, alpha: 1).setFill(); bounds.fill() }
+        let style = Settings.shared.scenery
+        guard style != "none" else { return }
+        // a forest all around the clearing, however big the window is: a row of trees behind at the top, a column down each side, and
+        // the edge with the grass along the bottom
+        let size = 54
+        if let tile = Scenery.tile(style: "forest", size: size, side: .bottom) {
+            let h = CGFloat(tile.height)
+            // the top row: the same trees with their grass cut off, standing at the top edge
+            ctx.saveGState()
+            ctx.clip(to: CGRect(x: 0, y: bounds.maxY - (h - 12), width: bounds.width, height: h - 12))
+            Scenery.drawStrip(tile, in: CGRect(x: 0, y: bounds.maxY - h + 12, width: bounds.width, height: h), side: .bottom, into: ctx)
+            ctx.restoreGState()
+            Scenery.drawStrip(tile, in: CGRect(x: 0, y: 0, width: bounds.width, height: h), side: .bottom, into: ctx)
+        }
+        if let left = Scenery.tile(style: "forest", size: 42, side: .left), let right = Scenery.tile(style: "forest", size: 42, side: .right) {
+            Scenery.drawStrip(left, in: CGRect(x: 0, y: 0, width: CGFloat(left.width), height: bounds.height), side: .left, into: ctx)
+            Scenery.drawStrip(right, in: CGRect(x: bounds.maxX - CGFloat(right.width), y: 0, width: CGFloat(right.width), height: bounds.height), side: .right, into: ctx)
+        }
+    }
+
+    /// The forest or meadow along the strip the goblins walk in.
+    private func drawStripScenery() {
+        guard let rect = rangeRect, Settings.shared.scenery != "none", let ctx = NSGraphicsContext.current?.cgContext,
+              let tile = Scenery.tile(style: Settings.shared.scenery, size: Int(rangeSide == .bottom ? rect.height : rect.width), side: rangeSide) else { return }
+        let local = CGRect(x: rect.minX - origin.x, y: rect.minY - origin.y, width: rect.width, height: rect.height)
+        guard bounds.intersects(local) else { return }
+        Scenery.drawStrip(tile, in: local, side: rangeSide, into: ctx)
     }
 
     /// Seven-segment digit layouts: top, top-left, top-right, middle, bottom-left, bottom-right, bottom.
@@ -258,6 +304,7 @@ final class AntView: NSView {
     }
 
     private func drawColony() {
+        if !isMap { drawStripScenery() }
         if let nest = colony.nest {
             drawNest(at: CGPoint(x: nest.x - origin.x, y: nest.y - origin.y), antCount: colony.ants.count)
         }
@@ -341,7 +388,7 @@ final class AntView: NSView {
             let size = CGFloat(role.frameSize) * pixel
             // the walk cycle advances with distance walked; standing still shows the first frame
             let phase = ant.moving ? ant.legPhase / 4 : 0
-            guard let image = role.image(direction: SpriteDirection(heading: ant.heading), phase: phase) else { continue }
+            guard let image = role.image(direction: ant.facing, phase: phase) else { continue }
             ctx.setAlpha(CGFloat(ant.fadeAlpha)) // the dying fade out
             ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size))
             ctx.setAlpha(1)
@@ -389,7 +436,7 @@ final class AntView: NSView {
             image = posed
         } else {
             let phase = q.walking ? q.legPhase / 3 : 0
-            guard let walking = role.image(direction: SpriteDirection(heading: q.heading), phase: phase) else { return }
+            guard let walking = role.image(direction: q.facing, phase: phase) else { return }
             image = walking
         }
         var rect = CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size)

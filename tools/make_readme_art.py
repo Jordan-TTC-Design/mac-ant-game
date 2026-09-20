@@ -419,7 +419,48 @@ def ask_img():
     a.save(os.path.join(OUT, "ask.png"))
 
 
-ALL = {"ask": ask_img, "cover": cover, "characters": characters, "princess": princess_img, "camps": camps_img, "wildlife": wildlife_img,
+def range_img():
+    """A desktop with the goblins walking along a forest strip at the bottom, and the camp window with its own map."""
+    from PIL import Image as _I
+    W, H = 400, 172
+    a = Art(W, H, 4)
+    backdrop(a, 33)
+    a.text("走動範圍：底部一條，或是獨立的營地視窗", 10, 5, size=14, color=GOLD, outline=DARK)
+    # left: a desktop with a code window and the forest strip along the bottom
+    dx, dy, dw, dh = 8, 26, 236, 140
+    desktop(a, dx, dy, dw, dh)
+    forest_tile = _I.open(os.path.join(RES, "Scenery", "forest-64.png")).convert("RGBA")
+    strip_h = 34
+    small = forest_tile.resize((forest_tile.width // 2, forest_tile.height // 2), _I.NEAREST)
+    for x in range(dx, dx + dw, small.width):
+        a.sprite(small.crop((0, small.height - strip_h, min(small.width, dx + dw - x), small.height)), x, dy + dh, bottom_center=False) if False else None
+    tile = forest_tile.crop((0, 8, 128, 64))
+    for x in range(dx, dx + dw, 128):
+        piece = tile.crop((0, 0, min(128, dx + dw - x), tile.height))
+        a.sprite(piece, x, dy + dh - piece.height, bottom_center=False)
+    for i, (x, b) in enumerate([(40, "worker"), (80, "scout"), (128, "brute"), (170, "sage"), (206, "golden")]):
+        a.shadow(x, dy + dh - 3, 12); a.sprite(goblin(b, "side" if i % 2 else "down", i % 4), x, dy + dh - 1)
+    a.sprite(camp("cave", 2), dx + 108, dy + dh - 6)
+    a.text("底部一條（也可以是右邊、左邊）", dx + 4, dy + dh - 66, size=12, color=WHITE, outline=(24, 60, 30, 255)) if False else None
+    # right: the camp window
+    wx, wy, ww, wh = 256, 40, 136, 100
+    a.rect(wx, wy, ww, 9, (60, 60, 68, 255))
+    for k in range(3):
+        a.rect(wx + 3 + k * 5, wy + 3, 3, 3, [(240, 96, 88, 255), (244, 190, 80, 255), (96, 200, 100, 255)][k])
+    ground = _I.open(os.path.join(RES, "Scenery", "ground.png")).convert("RGBA")
+    for yy in range(wy + 9, wy + wh, 32):
+        for xx in range(wx, wx + ww, 32):
+            a.sprite(ground.crop((0, 0, min(32, wx + ww - xx), min(32, wy + wh - yy))), xx, yy, bottom_center=False)
+    ftile = forest_tile.crop((0, 8, 128, 64))
+    a.sprite(ftile.crop((0, 0, ww, ftile.height)), wx, wy + wh - ftile.height, bottom_center=False)
+    a.sprite(camp("mound", 1), wx + 68, wy + 60)
+    for x, y, b in [(wx + 30, wy + 34, "worker"), (wx + 104, wy + 30, "scout"), (wx + 50, wy + 78, "brute"), (wx + 96, wy + 84, "sage")]:
+        a.shadow(x, y, 10); a.sprite(goblin(b, "down", 1), x, y)
+    a.text("可拖、可縮放、可收起", wx + 8, wy + wh + 6, size=12, color=WHITE, outline=DARK)
+    a.save(os.path.join(OUT, "range.png"))
+
+
+ALL = {"range": range_img, "ask": ask_img, "cover": cover, "characters": characters, "princess": princess_img, "camps": camps_img, "wildlife": wildlife_img,
        "modes": modes_img, "pomodoro": pomodoro_img, "notify": notify_img}
 
 

@@ -153,7 +153,11 @@ struct Ant {
     }
 
     /// `ageDt` is real elapsed time (a life is counted in real time, whatever the speed setting).
+    /// Which way it faces, with a little stickiness (see `SpriteDirection.init(heading:previous:)`).
+    private(set) var facing = SpriteDirection.down
+
     mutating func update(dt: Double, ageDt: Double, world: AntWorld) -> Event? {
+        facing = SpriteDirection(heading: heading, previous: facing)
         moving = false
         age += ageDt
         if age >= traits.lifespan, !isDying, !isCarryingPrincess {
@@ -249,6 +253,10 @@ struct Ant {
                 mode = .inNest(remaining: left, thenForage: thenForage)
                 return nil
             }
+            if world.crowded, thenForage == nil { // no room outside: stay in a while longer
+                mode = .inNest(remaining: Double.random(in: 4...9), thenForage: nil)
+                return nil
+            }
             // step out of the hole
             pos = CGPoint(x: world.nest.x + CGFloat.random(in: -3...3), y: world.nest.y + CGFloat.random(in: -3...3))
             if let id = thenForage, let food = world.food(id) {
@@ -312,8 +320,8 @@ struct Ant {
             heading = atan2(world.nest.y - pos.y, world.nest.x - pos.x)
             return .foundCreature(animal.id)
         }
-        // Now and then go home for a rest.
-        if Double.random(in: 0..<1) < dt / 90 * traits.rest {
+        // Now and then go home for a rest (a lot more often when the range is full).
+        if Double.random(in: 0..<1) < dt / (world.crowd > 1.5 ? 10 : (world.crowded ? 30 : 90)) * traits.rest {
             mode = .returningToNest
             return nil
         }
@@ -328,17 +336,41 @@ struct Ant {
             return nil
         }
         heading += Double.random(in: -1...1) * 3.0 * dt
+        // in a long thin range (a strip along the screen) walk along it, back and forth, instead of turning every which way
+        if let axis = world.axis(at: pos) { heading = Ant.keep(heading, along: axis, reach: world.thickness(at: pos) < 60 ? 0.2 : 0.45) }
 
-        let step = effectiveSpeed * dt
+        let step = effectiveSpeed * world.pace * dt
+        func allowed(_ p: CGPoint) -> Bool { world.walkable.contains { $0.insetBy(dx: 4, dy: 4).contains(p) } }
         let next = CGPoint(x: pos.x + cos(heading) * step, y: pos.y + sin(heading) * step)
-        if world.walkable.contains(where: { $0.insetBy(dx: 4, dy: 4).contains(next) }) {
+        if allowed(next) {
             pos = next
-            legPhase += effectiveSpeed * dt * 0.9
+            legPhase += step * 0.9
             moving = true
         } else {
-            heading += .pi + Double.random(in: -0.6...0.6) // bounce off the screen edge
+            // bounce off the wall like a ball (turn round only the way that was blocked), and slide along it meanwhile;
+            // turning half a circle on the spot, as it used to, made goblins spin against the walls of a small range
+            let alongX = CGPoint(x: next.x, y: pos.y), alongY = CGPoint(x: pos.x, y: next.y)
+            let xOK = allowed(alongX), yOK = allowed(alongY)
+            if xOK && !yOK { heading = -heading } else if yOK && !xOK { heading = .pi - heading } else { heading += .pi }
+            heading += Double.random(in: -0.15...0.15)
+            if xOK { pos = alongX } else if yOK { pos = alongY }
+            legPhase += step * 0.9
+            moving = true // keep the walking animation going through the bounce (stopping for a frame made it flicker)
         }
         return nil
+    }
+
+    /// Keeps a heading close to the long side of a strip: forward or back along it, but never across.
+    private static func keep(_ heading: Double, along axis: AntWorld.Axis, reach: Double) -> Double {
+        func wrap(_ a: Double) -> Double { atan2(sin(a), cos(a)) }
+        switch axis {
+        case .horizontal:
+            let target = cos(heading) >= 0 ? 0.0 : Double.pi
+            return target + max(-reach, min(reach, wrap(heading - target)))
+        case .vertical:
+            let target = sin(heading) >= 0 ? Double.pi / 2 : -Double.pi / 2
+            return target + max(-reach, min(reach, wrap(heading - target)))
+        }
     }
 
     // MARK: Walking

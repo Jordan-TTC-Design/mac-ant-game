@@ -199,7 +199,8 @@ struct Creature {
         let rect = walkable.first { $0.contains(p) } ?? walkable.first ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let sides: [(CGFloat, CGPoint)] = [(p.x - rect.minX, CGPoint(x: rect.minX - 40, y: p.y)), (rect.maxX - p.x, CGPoint(x: rect.maxX + 40, y: p.y)),
                                            (p.y - rect.minY, CGPoint(x: p.x, y: rect.minY - 40)), (rect.maxY - p.y, CGPoint(x: p.x, y: rect.maxY + 40))]
-        return sides.min { $0.0 < $1.0 }!.1
+        let allowed = Colony.entrySides(of: rect)
+        return sides.enumerated().filter { allowed.contains($0.offset) }.map(\.element).min { $0.0 < $1.0 }!.1
     }
 
     /// Steps toward a point; true once there.

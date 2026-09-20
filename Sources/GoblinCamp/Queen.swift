@@ -240,19 +240,26 @@ struct Queen {
     }
 
     /// Where she stands when idle: beside the camp, not in front of its entrance.
-    static func homeSpot(for nest: CGPoint) -> CGPoint { CGPoint(x: nest.x + 30, y: nest.y - 6) }
+    /// Beside the camp on the right when there is room; if that would be off the screen or outside a narrow range (a strip down the
+    /// screen edge), on the left, below or above it. Always somewhere she can be seen.
+    static func homeSpot(for nest: CGPoint, walkable: [CGRect] = []) -> CGPoint {
+        let candidates = [CGPoint(x: nest.x + 30, y: nest.y - 6), CGPoint(x: nest.x - 30, y: nest.y - 6),
+                          CGPoint(x: nest.x, y: nest.y - 34), CGPoint(x: nest.x, y: nest.y + 34)]
+        if walkable.isEmpty { return candidates[0] }
+        return candidates.first { p in walkable.contains { $0.insetBy(dx: 12, dy: 12).contains(p) } } ?? candidates[0]
+    }
 
     /// Starts out being carried toward `nest`; `Colony` moves her with her carriers until they set her down.
-    init(carriedTo nest: CGPoint) {
+    init(carriedTo nest: CGPoint, walkable: [CGRect] = []) {
         self.nest = nest
-        home = Queen.homeSpot(for: nest)
+        home = Queen.homeSpot(for: nest, walkable: walkable)
         heading = 0
         pos = nest
     }
 
     /// Already at home (restored colony).
-    static func settled(nest: CGPoint) -> Queen {
-        var q = Queen(carriedTo: nest)
+    static func settled(nest: CGPoint, walkable: [CGRect] = []) -> Queen {
+        var q = Queen(carriedTo: nest, walkable: walkable)
         q.setDown()
         return q
     }
@@ -272,7 +279,11 @@ struct Queen {
 
     // MARK: Update
 
+    /// Which way she faces, with a little stickiness so she does not flick between sideways and front while turning.
+    private(set) var facing = SpriteDirection.down
+
     mutating func update(dt: Double, walkable: [CGRect], around: Surroundings = Surroundings()) -> Event? {
+        facing = SpriteDirection(heading: heading, previous: facing)
         clock += dt
         walking = false
         currentOutfit = around.outfit

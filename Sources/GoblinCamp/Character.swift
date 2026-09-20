@@ -3,6 +3,20 @@ import AppKit
 enum SpriteDirection {
     case down, up, left, right
 
+    /// Like `init(heading:)`, but it holds on to `previous` until the heading has clearly moved on, so a character walking along a
+    /// diagonal (or swaying a little, or bumping a wall) does not flick between facing sideways and facing the screen.
+    init(heading: Double, previous: SpriteDirection) {
+        let c = cos(heading), s = sin(heading)
+        let margin = 1.6
+        switch previous {
+        case .left where c < 0 && abs(s) <= abs(c) * 1.15 * margin: self = .left
+        case .right where c >= 0 && abs(s) <= abs(c) * 1.15 * margin: self = .right
+        case .up where s > 0 && abs(s) * margin > abs(c) * 1.15: self = .up
+        case .down where s <= 0 && abs(s) * margin > abs(c) * 1.15: self = .down
+        default: self.init(heading: heading)
+        }
+    }
+
     /// Which way to face for a heading (radians, 0 = +x, screen y points up). Sideways is favoured a little
     /// so a wandering character does not flicker between sideways and front/back.
     init(heading: Double) {

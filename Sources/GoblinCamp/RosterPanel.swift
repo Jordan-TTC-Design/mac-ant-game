@@ -27,7 +27,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         // above the transparent overlay windows, which sit at the status-bar level
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        panel.level = Levels.panel
         panel.collectionBehavior = [.canJoinAllSpaces]
         panel.minSize = NSSize(width: 300, height: 320)
         buildContent()

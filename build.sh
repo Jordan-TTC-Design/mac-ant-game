@@ -25,6 +25,7 @@ mkdir -p "$APP/Contents/Resources"
 cp -R Resources/Characters "$APP/Contents/Resources/Characters"
 cp -R Resources/Camps "$APP/Contents/Resources/Camps"
 cp -R Resources/Animals "$APP/Contents/Resources/Animals"
+cp -R Resources/Scenery "$APP/Contents/Resources/Scenery"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$APP"
 # let macOS know this copy handles goblincamp:// links (Claude Code hooks use them)

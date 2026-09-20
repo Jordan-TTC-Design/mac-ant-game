@@ -80,6 +80,27 @@ final class Colony {
 
     /// Screen frames ants may walk on. Change it through `updateWalkable`.
     private(set) var walkable: [CGRect] = []
+    /// How many goblins are out walking now (not resting in the nest).
+    var visibleCount: Int { ants.reduce(0) { $0 + ($1.isHidden ? 0 : 1) } }
+
+    /// How many goblins fit out walking in the current range: about one per 2200 square points, at least 12 (a whole screen
+    /// takes 600 and more, a strip along the bottom about 20). The rest wait in the nest and come out as others go in.
+    var visibleCap: Int {
+        let area = walkable.reduce(0) { $0 + Double($1.width * $1.height) }
+        return max(12, Int(area / 2200))
+    }
+
+    /// How fast goblins wander in the current range: full speed across a screen, a little slower in a strip or a small window
+    /// (they would be bumping into the edges all the time).
+    var pace: Double {
+        if walkable.isEmpty { return 1 }
+        if walkable.allSatisfy({ ScreenChoice.isStrip($0) }) { return 0.75 }
+        let area = walkable.reduce(0) { $0 + Double($1.width * $1.height) }
+        return area < 700_000 ? 0.85 : 1
+    }
+
+    /// In the camp window, a spot outside the world means "the middle of it" (not the nearest corner).
+    var centreWhenOutside = false
 
     /// Called on phase changes so the app can switch input mode and redraw.
     var onChange: (() -> Void)?
@@ -125,7 +146,7 @@ final class Colony {
         guard phase == .editing else { return }
         let spot = isWalkable(point) ? point : nearestWalkable(to: point)
         nest = spot
-        queen = Queen.settled(nest: spot)
+        queen = Queen.settled(nest: spot, walkable: walkable)
     }
 
     /// The drag finished: let the app save the new spot.
@@ -254,6 +275,7 @@ final class Colony {
             foods[i].scouted = false
             foods[i].reported = false
         }
+        let point = walkable.isEmpty ? point : snapToWalkable(point) // the carriers must head for where the camp will really be
         nest = point
         phase = .running
         clearDecorations()
@@ -274,17 +296,18 @@ final class Colony {
             (point.y - rect.minY, CGPoint(x: point.x, y: rect.minY - 30)),
             (rect.maxY - point.y, CGPoint(x: point.x, y: rect.maxY + 30)),
         ]
-        return sides.min { $0.distance < $1.distance }!.spot
+        let allowed = Colony.entrySides(of: rect)
+        return sides.enumerated().filter { allowed.contains($0.offset) }.map(\.element).min { $0.distance < $1.distance }!.spot
     }
 
     /// The opening: two goblins come in from the nearest screen edge carrying the princess (a captive, over their
     /// heads) to the camp. They become the camp's first two inhabitants once they set her down.
     private func beginCarrying(to nest: CGPoint) {
-        let home = Queen.homeSpot(for: nest)
+        let home = Queen.homeSpot(for: nest, walkable: walkable)
         let start = nearestEdgePoint(to: nest)
         let dx = home.x - start.x, dy = home.y - start.y, length = max(1, hypot(dx, dy))
         let direction = CGPoint(x: dx / length, y: dy / length)
-        queen = Queen(carriedTo: nest)
+        queen = Queen(carriedTo: nest, walkable: walkable)
         carrierIDs = []
         carriersArrived = 0
         for offset in [CGFloat(9), CGFloat(-9)] { // one in front, one behind, along the way they walk
@@ -357,13 +380,14 @@ final class Colony {
     func spawnAnimal(of kind: AnimalKind? = nil) {
         guard let nest, let kind = kind ?? Animals.pick() else { return }
         let rect = walkable.randomElement() ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        // it walks in from a random edge toward somewhere inside
+        // it walks in from a random edge (only the ends of a strip) toward somewhere inside
+        func spread(_ low: CGFloat, _ high: CGFloat) -> CGFloat { low < high ? CGFloat.random(in: low...high) : (low + high) / 2 }
         let start: CGPoint, inward: CGPoint
-        switch Int.random(in: 0..<4) {
-        case 0: start = CGPoint(x: rect.minX - 30, y: CGFloat.random(in: rect.minY + 80...rect.maxY - 80)); inward = CGPoint(x: 1, y: 0)
-        case 1: start = CGPoint(x: rect.maxX + 30, y: CGFloat.random(in: rect.minY + 80...rect.maxY - 80)); inward = CGPoint(x: -1, y: 0)
-        case 2: start = CGPoint(x: CGFloat.random(in: rect.minX + 80...rect.maxX - 80), y: rect.minY - 30); inward = CGPoint(x: 0, y: 1)
-        default: start = CGPoint(x: CGFloat.random(in: rect.minX + 80...rect.maxX - 80), y: rect.maxY + 30); inward = CGPoint(x: 0, y: -1)
+        switch Colony.entrySides(of: rect).randomElement() ?? 0 {
+        case 0: start = CGPoint(x: rect.minX - 30, y: spread(rect.minY + 40, rect.maxY - 40)); inward = CGPoint(x: 1, y: 0)
+        case 1: start = CGPoint(x: rect.maxX + 30, y: spread(rect.minY + 40, rect.maxY - 40)); inward = CGPoint(x: -1, y: 0)
+        case 2: start = CGPoint(x: spread(rect.minX + 40, rect.maxX - 40), y: rect.minY - 30); inward = CGPoint(x: 0, y: 1)
+        default: start = CGPoint(x: spread(rect.minX + 40, rect.maxX - 40), y: rect.maxY + 30); inward = CGPoint(x: 0, y: -1)
         }
         let depth = CGFloat.random(in: 140...320)
         var target = CGPoint(x: start.x + inward.x * depth, y: start.y + inward.y * depth)
@@ -501,7 +525,7 @@ final class Colony {
     func restore(nest: CGPoint, saved: SavedState) {
         self.nest = nest
         phase = .running
-        queen = Queen.settled(nest: nest)
+        queen = Queen.settled(nest: nest, walkable: walkable)
         foodDelivered = saved.delivered ?? 0
         princessName = saved.princessName ?? ""
 
@@ -562,13 +586,38 @@ final class Colony {
 
     /// Screens were added or removed: anything left outside the new screens is moved to the nearest one,
     /// so the nest and its ants survive unplugging a monitor.
+    /// Which sides animals and the carriers may come in from: 0 left, 1 right, 2 bottom, 3 top. A strip only has its two ends.
+    static func entrySides(of rect: CGRect) -> [Int] {
+        if rect.width >= rect.height * 2 { return [0, 1] }
+        if rect.height >= rect.width * 2 { return [2, 3] }
+        return [0, 1, 2, 3]
+    }
+
+    /// The camp window (a small fixed-size world of its own): put the nest in the middle and everyone around it.
+    func relocate(into rect: CGRect) {
+        walkable = [rect]
+        guard let old = nest else { return }
+        let centre = CGPoint(x: rect.midX, y: rect.midY)
+        let dx = centre.x - old.x, dy = centre.y - old.y
+        nest = centre
+        queen = Queen.settled(nest: centre, walkable: walkable)
+        let radius = max(20, min(rect.width, rect.height) * 0.3)
+        for i in ants.indices {
+            let a = Double.random(in: 0..<(2 * .pi)), r = Double.random(in: 0...1).squareRoot() * radius
+            ants[i].pos = CGPoint(x: centre.x + cos(a) * r, y: centre.y + sin(a) * r)
+        }
+        for i in foods.indices { foods[i].pos = nearestWalkable(to: CGPoint(x: foods[i].pos.x + dx, y: foods[i].pos.y + dy)) }
+        creatures.removeAll()
+        onAntsChanged?()
+    }
+
     func updateWalkable(_ rects: [CGRect]) {
         walkable = rects
         guard nest != nil, !rects.isEmpty else { return }
         if let nest, !isWalkable(nest) {
-            let moved = nearestWalkable(to: nest)
+            let moved = snapToWalkable(nest)
             self.nest = moved
-            queen = Queen.settled(nest: moved)
+            queen = Queen.settled(nest: moved, walkable: walkable)
         }
         for i in ants.indices where !isWalkable(ants[i].pos) {
             ants[i].pos = nearestWalkable(to: ants[i].pos)
@@ -577,6 +626,16 @@ final class Colony {
             foods[i].pos = nearestWalkable(to: foods[i].pos)
         }
         onAntsChanged?() // saves the (possibly moved) nest
+    }
+
+    /// The nearest place inside the walkable areas; in a strip the camp sits in the middle of it, not on its edge.
+    private func snapToWalkable(_ p: CGPoint) -> CGPoint {
+        if centreWhenOutside, !isWalkable(p), let world = walkable.first { return CGPoint(x: world.midX, y: world.midY) }
+        var moved = isWalkable(p) ? p : nearestWalkable(to: p)
+        if !isWalkable(p), let strip = walkable.first(where: { $0.insetBy(dx: -1, dy: -1).contains(moved) }), ScreenChoice.isStrip(strip) {
+            if strip.width >= strip.height { moved.y = strip.midY } else { moved.x = strip.midX }
+        }
+        return moved
     }
 
     private func isWalkable(_ p: CGPoint) -> Bool {
@@ -653,7 +712,9 @@ final class Colony {
             if spawnTimer >= settings.spawnInterval {
                 spawnTimer = 0
                 let jitter = { CGFloat.random(in: -4...4) }
-                ants.append(makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter())))
+                var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()))
+                if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) } // no room outside yet
+                ants.append(born)
                 if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: ants=\(ants.count)") }
                 queen?.greet(toward: nest)
                 if Colony.milestones.contains(ants.count) { queen?.celebrate() }
@@ -661,7 +722,9 @@ final class Colony {
             }
         }
         let antDt = dt * settings.speedMultiplier
-        let world = AntWorld(nest: nest, walkable: walkable, foods: foods, creatures: creatures.map(\.info), foodScale: Colony.foodScale(settings.antScale))
+        var world = AntWorld(nest: nest, walkable: walkable, foods: foods, creatures: creatures.map(\.info), foodScale: Colony.foodScale(settings.antScale))
+        world.pace = pace
+        world.crowd = Double(visibleCount) / Double(visibleCap)
         let ageDt = dt * Colony.timeScale
         var events: [(index: Int, event: Ant.Event)] = []
         for i in ants.indices {

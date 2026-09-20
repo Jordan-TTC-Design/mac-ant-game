@@ -90,7 +90,7 @@ final class AskPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        level = Levels.panel
         collectionBehavior = [.canJoinAllSpaces, .stationary]
         isFloatingPanel = true
         hidesOnDeactivate = false

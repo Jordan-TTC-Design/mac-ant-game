@@ -2,6 +2,8 @@ import AppKit
 
 @_silgen_name("CGSMainConnectionID") private func CGSMainConnectionID() -> Int32
 @_silgen_name("CGSCopyManagedDisplaySpaces") private func CGSCopyManagedDisplaySpaces(_ connection: Int32) -> CFArray?
+@_silgen_name("CGSAddWindowsToSpaces") private func CGSAddWindowsToSpaces(_ connection: Int32, _ windows: CFArray, _ spaces: CFArray)
+@_silgen_name("CGSRemoveWindowsFromSpaces") private func CGSRemoveWindowsFromSpaces(_ connection: Int32, _ windows: CFArray, _ spaces: CFArray)
 
 /// Which macOS desktop ("桌面 1", "桌面 2"…) each screen is showing, so the goblins can stay on the desktops the player picked.
 /// macOS has no public API for this; these are read-only calls into the window server that many utilities use. If they ever
@@ -28,6 +30,37 @@ enum Spaces {
             return all.first { (($0["Display Identifier"] as? String) ?? "").caseInsensitiveCompare(text) == .orderedSame }
         }
         return nil
+    }
+
+    /// Puts `window` on exactly these desktops of `screen` (1 = "桌面 1"; nil = every desktop) and nowhere else, full-screen Spaces
+    /// included. The window then simply is not there on any other desktop, which no polling can beat (there is not even a frame of
+    /// it while the desktops slide past). `alsoActive` adds the desktop being shown now (for picking a spot).
+    /// Nothing here can fail loudly: when no plan can be made the caller keeps the window on all desktops and hides the goblins by drawing.
+    /// The Space ids a window should be on (and all Space ids of that screen), or nil when that cannot be found out.
+    static func plan(on screen: NSScreen, desktops wanted: Set<Int>?, alsoActive: Bool) -> (target: [Int], all: [Int])? {
+        guard fake == nil else { return nil }
+        let all = displays()
+        guard let entry = entry(for: screen, in: all), let spaces = entry["Spaces"] as? [[String: Any]] else { return nil }
+        let ids = spaces.compactMap { $0["ManagedSpaceID"] as? Int }
+        let desktopIDs = spaces.filter { (($0["type"] as? Int) ?? 0) == 0 }.compactMap { $0["ManagedSpaceID"] as? Int }
+        guard !ids.isEmpty, !desktopIDs.isEmpty else { return nil }
+        var target: [Int] = wanted == nil ? desktopIDs : desktopIDs.enumerated().filter { wanted!.contains($0.offset + 1) }.map(\.element)
+        if alsoActive, let current = entry["Current Space"] as? [String: Any], let id = current["ManagedSpaceID"] as? Int, desktopIDs.contains(id), !target.contains(id) { target.append(id) }
+        return (target.sorted(), ids)
+    }
+
+    /// Moves `window` to the planned Spaces. Returns false if the window is not ready.
+    @discardableResult
+    static func apply(_ plan: (target: [Int], all: [Int]), to window: NSWindow) -> Bool {
+        guard window.windowNumber > 0 else { return false }
+        let target = plan.target, ids = plan.all
+        let connection = CGSMainConnectionID()
+        let list = [NSNumber(value: window.windowNumber)] as CFArray
+        // add first, then remove: the window is never without a desktop in between
+        if !target.isEmpty { CGSAddWindowsToSpaces(connection, list, target.map { NSNumber(value: $0) } as CFArray) }
+        let others = ids.filter { !target.contains($0) }
+        if !others.isEmpty { CGSRemoveWindowsFromSpaces(connection, list, others.map { NSNumber(value: $0) } as CFArray) }
+        return true
     }
 
     /// The desktop this screen is on now, or nil if that cannot be found out.

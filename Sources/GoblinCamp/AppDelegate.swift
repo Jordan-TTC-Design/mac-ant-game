@@ -29,6 +29,10 @@ final class ClickCatcher: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var windows: [OverlayWindow] = []
+    /// A second, see-through window per screen for the pomodoro and the popups; it is on every desktop, the camp overlay is not.
+    private var toolWindows: [OverlayWindow] = []
+    /// Whether windows can be put on chosen desktops at all (else the goblins are hidden by not drawing them).
+    private var spaceAssignWorks = true
     private let colony = Colony()
     private let settings = Settings.shared
     private var frameTimer: Timer?
@@ -108,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.onChange = { [weak self] in
             self?.syncWindows()
             self?.persist()
+            self?.applyWalkable() // the home screen follows the camp when it is moved
             if self?.colony.needsPrincessName == true { DispatchQueue.main.async { self?.nameThePrincess(firstTime: true) } }
         }
         colony.onAntsChanged = { [weak self] in
@@ -185,8 +190,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             let nest = self.colony.nest ?? CGPoint(x: NSScreen.main?.frame.midX ?? 0, y: NSScreen.main?.frame.midY ?? 0)
             for (i, window) in self.windows.enumerated() where window.frame.contains(nest) {
-                guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber),
-                                                       [.boundsIgnoreFraming, .bestResolution]) else { continue }
+                func capture(_ w: NSWindow) -> CGImage? {
+                    CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(w.windowNumber), [.boundsIgnoreFraming, .bestResolution])
+                }
+                guard var cg = capture(window) else { continue }
+                if i < self.toolWindows.count, let tools = capture(self.toolWindows[i]) { // the pomodoro and popups live in their own window: lay it over
+                    let combined = NSImage(size: NSSize(width: cg.width, height: cg.height))
+                    combined.lockFocus()
+                    NSImage(cgImage: cg, size: combined.size).draw(in: NSRect(origin: .zero, size: combined.size))
+                    NSImage(cgImage: tools, size: combined.size).draw(in: NSRect(origin: .zero, size: combined.size))
+                    combined.unlockFocus()
+                    if let merged = combined.cgImage(forProposedRect: nil, context: nil, hints: nil) { cg = merged }
+                }
                 let scale = CGFloat(cg.width) / window.frame.width
                 let half: CGFloat = 130
                 // crop (image origin is top-left) around the nest, or keep the whole screen, then paint over grey
@@ -310,6 +325,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                 URLQueryItem(name: "text", value: "執行：git push origin main"), URLQueryItem(name: "remember", value: "Bash(git push:*)")])
             }
         }
+        if env["CAMP_TEST_SPIN"] != nil { // how often do goblins change the way they face? spinning shows up as a big number; the worst ones are listed with what they were doing
+            var last: [Int: SpriteDirection] = [:], changes: [Int: Int] = [:], modes: [Int: [String: Int]] = [:]
+            var samples = 0
+            after(10) {
+                Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+                    samples += 1
+                    for ant in self.colony.ants where !ant.isHidden {
+                        let d = ant.facing
+                        let mode = String(String(describing: ant.mode).prefix(11))
+                        if let before = last[ant.id], before != d { changes[ant.id, default: 0] += 1; modes[ant.id, default: [:]][mode, default: 0] += 1 }
+                        last[ant.id] = d
+                    }
+                    if samples >= 400 { // 20 seconds
+                        timer.invalidate()
+                        let ranked = changes.sorted { $0.value > $1.value }
+                        let avg = ranked.isEmpty ? 0 : Double(ranked.map(\.value).reduce(0, +)) / Double(ranked.count) / 20
+                        let c = self.colony
+                        let outside = c.ants.filter { a in !a.isHidden && !c.walkable.contains { $0.insetBy(dx: -8, dy: -8).contains(a.pos) } }.count
+                        let queenIn = c.queen.map { q in c.walkable.contains { $0.insetBy(dx: -4, dy: -4).contains(q.pos) } && NSScreen.screens.contains { $0.frame.insetBy(dx: 6, dy: 6).contains(q.pos) } } ?? true
+                        let nestIn = c.nest.map { n in c.walkable.contains { $0.insetBy(dx: -2, dy: -2).contains(n) } } ?? false
+                        log(String(format: "walkable %@ | pace %.2f | nest inside %@, princess inside %@, carried %@ | goblins %d (out walking %d, room for %d), outside the range %d | animals %d, foods %@, slain %d",
+                                   c.walkable.map { "\(Int($0.width))x\(Int($0.height))" }.joined(separator: ","), c.pace, nestIn ? "yes" : "NO", queenIn ? "yes" : "NO",
+                                   c.queen?.isCarried == true ? "STILL" : "no", c.ants.count, c.ants.filter { !$0.isHidden }.count, c.visibleCap, outside, c.creatures.count,
+                                   c.foods.map { "\($0.kind.rawValue)x\($0.amount)" }.joined(separator: ","), c.slain))
+                        log(String(format: "facing changes per second: average %.2f over %d goblins", avg, last.count))
+                        for (id, n) in ranked.prefix(5) { log(String(format: "  goblin %d: %.2f per second, during %@", id, Double(n) / 20, "\(modes[id] ?? [:])")) }
+                        NSApp.terminate(nil)
+                    }
+                }
+            }
+        }
+        if env["CAMP_TEST_QUEEN"] != nil { // where is the princess and what is she doing, every 4 s from 12 s on
+            for k in 0..<14 {
+                after(12 + Double(k) * 4) {
+                    guard let q = self.colony.queen, let nest = self.colony.nest else { return }
+                    log(String(format: "princess: %@ at (%.0f, %.0f), %.0f from the nest, heading %.1f, carried %@", q.stateName, q.pos.x, q.pos.y, hypot(q.pos.x - nest.x, q.pos.y - nest.y), q.heading, q.isCarried ? "yes" : "no"))
+                }
+            }
+        }
+        if env["CAMP_TEST_MAPRESIZE"] != nil { // make the camp window small, then big, and watch how many goblins are out walking
+            func report(_ label: String) { log("\(label): out walking \(self.colony.visibleCount) of \(self.colony.ants.count), room for \(self.colony.visibleCap), world \(self.colony.walkable.map { "\(Int($0.width))x\(Int($0.height))" })") }
+            after(20) { report("big window (start)") }
+            after(21) { self.mapWindow?.window.setContentSize(NSSize(width: 300, height: 220)) }
+            after(24) { report("just made small") }
+            after(45) { report("small, 24 s later") }
+            after(46) { self.mapWindow?.window.setContentSize(NSSize(width: 900, height: 700)) }
+            after(49) { report("just made big") }
+            after(75) { report("big, 29 s later"); NSApp.terminate(nil) }
+        }
+        if env["CAMP_TEST_MAPMIN"] != nil { // shrink the camp window to the Dock at 8 s: it must stay there
+            after(8) { self.mapWindow?.window.miniaturize(nil) }
+            after(13) { log("camp window after minimising: miniaturized \(self.mapWindow?.window.isMiniaturized == true), collapsed setting \(self.settings.mapCollapsed)") }
+        }
+        if let path = env["CAMP_TEST_MAPSHOT"] { // draw the camp window into a PNG at 25 s
+            after(25) {
+                guard let view = self.mapWindow?.view, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return log("no camp window") }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
+                log("camp window drawn: world \(self.mapWindow!.world), nest \(String(describing: self.colony.nest)), goblins \(self.colony.ants.count), visible \(self.mapWindow!.isVisible)")
+                NSApp.terminate(nil)
+            }
+        }
         if let path = env["CAMP_TEST_MANUAL"] { // open the manual and draw its window into a PNG
             after(2) {
                 self.showManual()
@@ -321,6 +398,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     NSApp.terminate(nil)
                 }
             }
+        }
+        if env["CAMP_TEST_SCREENCHOICE"] != nil { // the rules for which screens the goblins may use, with two made-up screens
+            let a = ScreenChoice.Screen(name: "內建", frame: CGRect(x: 0, y: 0, width: 1470, height: 956))
+            let b = ScreenChoice.Screen(name: "外接", frame: CGRect(x: 1470, y: 0, width: 1920, height: 1080))
+            func names(_ r: [ScreenChoice.Screen]) -> String { r.map(\.name).joined(separator: "+") }
+            log("nest on 內建, mode nest -> \(names(ScreenChoice.allowed([a, b], nest: CGPoint(x: 100, y: 100), mode: "nest", names: [])))")
+            log("nest on 外接, mode nest -> \(names(ScreenChoice.allowed([a, b], nest: CGPoint(x: 2000, y: 100), mode: "nest", names: [])))")
+            log("no nest yet, mode nest -> \(names(ScreenChoice.allowed([a, b], nest: nil, mode: "nest", names: [])))")
+            log("mode all -> \(names(ScreenChoice.allowed([a, b], nest: CGPoint(x: 100, y: 100), mode: "all", names: [])))")
+            log("mode list [外接] -> \(names(ScreenChoice.allowed([a, b], nest: CGPoint(x: 100, y: 100), mode: "list", names: ["外接"])))")
+            log("mode list [] (nothing ticked) -> \(names(ScreenChoice.allowed([a, b], nest: nil, mode: "list", names: [])))")
+            log("mode list [unplugged screen] -> \(names(ScreenChoice.allowed([a, b], nest: nil, mode: "list", names: ["舊螢幕"])))")
+            log("one screen only, mode list [外接] -> \(names(ScreenChoice.allowed([a], nest: nil, mode: "list", names: ["外接"])))")
+            NSApp.terminate(nil)
         }
         if env["CAMP_TEST_FSSPACE"] != nil { // a real full-screen Space (like a full-screen video): are our windows on screen in it?
             after(3) {
@@ -553,6 +644,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         desktopMenuItem = NSMenuItem(title: "哥布林出現在哪個桌面", action: nil, keyEquivalent: "")
         desktopMenuItem.submenu = NSMenu(title: "哥布林出現在哪個桌面")
         menu.addItem(desktopMenuItem)
+        rangeMenuItem = NSMenuItem(title: "走動範圍與背景", action: nil, keyEquivalent: "")
+        rangeMenuItem.submenu = NSMenu(title: "走動範圍與背景")
+        menu.addItem(rangeMenuItem)
+        screenMenuItem = NSMenuItem(title: "哥布林出現在哪個螢幕", action: nil, keyEquivalent: "")
+        screenMenuItem.submenu = NSMenu(title: "哥布林出現在哪個螢幕")
+        menu.addItem(screenMenuItem)
         let fullscreen = ClosureMenuItem(title: "全螢幕時自動專注（影片、簡報）") { [weak self] in
             guard let self else { return }
             self.settings.fullscreenFocus.toggle()
@@ -574,6 +671,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(title: "說明手冊…") { [weak self] in self?.showManual() })
+        menu.addItem(ClosureMenuItem(title: "複製診斷資訊（哥布林閃爍或消失時用）") { [weak self] in
+            guard let self else { return }
+            let extra = ["mode \(String(describing: self.effectiveMode)) fullscreenActive \(self.fullscreenActive) camp hidden \(self.colony.campHidden) goblins \(self.colony.ants.count)"]
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(Diagnostics.report(settings: self.settings, extra: extra), forType: .string)
+        })
         menu.addItem(ClosureMenuItem(title: "關於哥布林營地（v\(versionText)）") { [weak self] in self?.showAbout() })
         menu.addItem(withTitle: "結束哥布林營地", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -669,7 +772,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.accessoryView = box
         alert.addButton(withTitle: "開始")
         alert.addButton(withTitle: "取消")
-        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        alert.window.level = Levels.panel
         alert.window.initialFirstResponder = focus
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -677,7 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let error = NSAlert()
             error.messageText = "看不懂這些分鐘數"
             error.informativeText = "專注請填 1 到 99，休息請填 0 到 60。"
-            error.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            error.window.level = Levels.panel
             error.runModal()
             return
         }
@@ -879,7 +982,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panel.isOpaque = false
             panel.backgroundColor = .clear
             panel.hasShadow = false
-            panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            panel.level = Levels.panel
             panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
             let view = ClickCatcher()
             view.onClick = { [weak self] in self?.messageClicked() }
@@ -969,7 +1072,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.addButton(withTitle: "好")
             alert.addButton(withTitle: firstTime ? "換一個" : "取消")
             if firstTime { alert.addButton(withTitle: "先叫她公主") }
-            alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            alert.window.level = Levels.panel
             alert.window.initialFirstResponder = field
             NSApp.activate(ignoringOtherApps: true)
             switch alert.runModal() {
@@ -1054,7 +1157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = title
         alert.informativeText = text
         buttons.forEach { alert.addButton(withTitle: $0) }
-        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        alert.window.level = Levels.panel
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -1160,11 +1263,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             askPanelID = nil
             GoblinVoice.shared.stop()
             windows.forEach { $0.orderOut(nil) }
+            toolWindows.forEach { $0.orderOut(nil) }
         } else {
             missedNotifications = 0
             windows.forEach { $0.orderFrontRegardless() }
+            toolWindows.forEach { $0.orderFrontRegardless() }
         }
         if mode != nil { roster.hide() }
+        updateMapWindow()
         if mode != nil, away == nil { away = (Date(), colony.ants.count, colony.deaths, 0) }
         if mode == nil, let gone = away {
             away = nil
@@ -1215,10 +1321,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Full screen, screens
 
     /// True when some other app has a window covering a whole screen (a full-screen video, a slideshow).
-    private func fullscreenWindowUp() -> Bool {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
+    private func fullscreenWindowUp(on screens: [NSScreen]) -> Bool {
+        guard !screens.isEmpty, let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
               let mainHeight = NSScreen.screens.first?.frame.height else { return false }
-        let frames = NSScreen.screens.map { CGRect(x: $0.frame.minX, y: mainHeight - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height) }
+        let frames = screens.map { CGRect(x: $0.frame.minX, y: mainHeight - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height) }
         let me = ProcessInfo.processInfo.processIdentifier
         for window in list {
             guard (window[kCGWindowLayer as String] as? Int) == 0,
@@ -1235,15 +1341,151 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func startFullscreenWatch() {
         // react at once when the desktop changes, and check twice a second as a backup
         let center = NSWorkspace.shared.notificationCenter
-        center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.checkFullscreenAndDesktops() }
+        center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.checkFullscreenAndDesktops(immediate: true) }
         center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in self?.checkFullscreenAndDesktops() }
         fullscreenTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.checkFullscreenAndDesktops() }
         checkFullscreenAndDesktops()
     }
 
+    /// The screens the goblins may be on (see `ScreenChoice`).
+    private func allowedScreens() -> [ScreenChoice.Screen] {
+        let all = NSScreen.screens.map { ScreenChoice.Screen(name: $0.localizedName, frame: $0.frame, visible: $0.visibleFrame) }
+        return ScreenChoice.allowed(all, nest: colony.nest, mode: settings.screenMode, names: settings.screenNames)
+    }
+
+    /// Tells the colony where it may walk; goblins, food and the nest that are elsewhere are moved onto the allowed screens.
+    private func applyWalkable() {
+        colony.centreWhenOutside = isWindowMode
+        if isWindowMode {
+            let world = ensureMapWindow().walkArea
+            if let nest = colony.nest, !world.contains(nest) { colony.relocate(into: world) } else { colony.updateWalkable([world]) }
+        } else {
+            colony.updateWalkable(allowedScreens().map {
+                ScreenChoice.walkBand(of: ScreenChoice.range(for: $0, mode: settings.rangeMode, size: settings.rangeSize), mode: settings.rangeMode)
+            })
+        }
+    }
+
+    // MARK: Range and the camp window
+
+    private var mapWindow: MapWindow?
+    private var isWindowMode: Bool { settings.rangeMode == "window" }
+
+    @discardableResult
+    private func ensureMapWindow() -> MapWindow {
+        if let mapWindow { return mapWindow }
+        let created = MapWindow(colony: colony)
+        created.onResize = { [weak self] in self?.applyWalkable(); self?.redrawAll() }
+        mapWindow = created
+        return created
+    }
+
+    /// The camp window shows when it should: window mode, not folded away, not in a quiet mode, on an allowed desktop,
+    /// and never over a full-screen app. Picking a spot always brings it up.
+    private func updateMapWindow() {
+        guard isWindowMode else { mapWindow?.hide(); return }
+        let map = ensureMapWindow()
+        let picking = [.choosingNest, .editing, .placingFood].contains(colony.phase)
+        var visible = !settings.mapCollapsed
+        if effectiveMode != nil { visible = false }
+        if !spaceAssignWorks, let screen = map.window.screen ?? NSScreen.main, let info = Spaces.info(for: screen) {
+            if info.isFullScreen { visible = false } else if !settings.desktopsAll, let n = info.desktop, !settings.desktops.contains(n) { visible = false }
+        }
+        if picking { visible = true }
+        if visible { map.show() } else { map.hide() }
+    }
+
+    private var rangeMenuItem: NSMenuItem!
+
+    /// "Walking range": all of the screen, a strip along the bottom or a side (with a forest or meadow), or the camp window.
+    private func rebuildRangeMenu() {
+        guard let sub = rangeMenuItem.submenu else { return }
+        sub.removeAllItems()
+        func changed() { applyWalkable(); checkFullscreenAndDesktops(immediate: true); redrawAll() }
+        let modes = [("整個螢幕", "screen"), ("底部一條", "bottom"), ("右邊一條", "right"), ("左邊一條", "left"), ("獨立的營地視窗（可以收起來）", "window")]
+        for (label, mode) in modes {
+            let item = ClosureMenuItem(title: label) { [weak self] in
+                guard let self else { return }
+                let entering = mode == "window" && self.settings.rangeMode != "window"
+                self.settings.rangeMode = mode
+                if entering { self.settings.mapCollapsed = false }
+                changed()
+            }
+            item.stateProvider = { self.settings.rangeMode == mode }
+            sub.addItem(item)
+        }
+        sub.addItem(.separator())
+        let sizes: [(String, Double)] = [("薄", 30), ("中（預設）", 42), ("厚", 54), ("很厚", 64)]
+        let sizeMenu = choiceMenu(title: "一條有多寬", options: sizes, get: { self.settings.rangeSize }, set: { [weak self] in self?.settings.rangeSize = $0; changed() })
+        sizeMenu.isEnabled = ["bottom", "right", "left"].contains(settings.rangeMode)
+        sub.addItem(sizeMenu)
+        sub.addItem(choiceMenu(title: "背景", options: [("森林", "forest"), ("草地", "meadow"), ("沒有", "none")],
+                               get: { self.settings.scenery }, set: { [weak self] in self?.settings.scenery = $0; self?.redrawAll() }))
+        sub.addItem(.separator())
+        let toggle = ClosureMenuItem(title: settings.mapCollapsed ? "顯示營地視窗" : "收起營地視窗") { [weak self] in
+            guard let self else { return }
+            self.settings.mapCollapsed.toggle()
+            self.updateMapWindow()
+        }
+        toggle.isEnabled = isWindowMode
+        sub.addItem(toggle)
+        let onTop = ClosureMenuItem(title: "營地視窗永遠在最上面") { [weak self] in
+            self?.settings.mapOnTop.toggle()
+            self?.mapWindow?.applyLevel()
+        }
+        onTop.stateProvider = { self.settings.mapOnTop }
+        onTop.isEnabled = isWindowMode
+        sub.addItem(onTop)
+        let reset = ClosureMenuItem(title: "營地視窗回到右下角") { [weak self] in self?.mapWindow?.resetPosition() }
+        reset.isEnabled = isWindowMode
+        sub.addItem(reset)
+    }
+
+    private var screenMenuItem: NSMenuItem!
+
+    /// "Which screen": the camp's own screen (the home), all screens, or ticked screens.
+    private func rebuildScreenMenu() {
+        guard let sub = screenMenuItem.submenu else { return }
+        sub.removeAllItems()
+        let screens = NSScreen.screens
+        guard screens.count > 1 else {
+            let note = NSMenuItem(title: "（只有一個螢幕）", action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            sub.addItem(note)
+            return
+        }
+        func choose(_ mode: String) { settings.screenMode = mode; applyWalkable(); checkFullscreenAndDesktops(); redrawAll() }
+        let home = ClosureMenuItem(title: "家（營地）所在的螢幕（預設）") { choose("nest") }
+        home.stateProvider = { self.settings.screenMode == "nest" }
+        sub.addItem(home)
+        let all = ClosureMenuItem(title: "所有螢幕") { choose("all") }
+        all.stateProvider = { self.settings.screenMode == "all" }
+        sub.addItem(all)
+        sub.addItem(.separator())
+        for screen in screens {
+            let name = screen.localizedName
+            let item = ClosureMenuItem(title: "螢幕：\(name)") { [weak self] in
+                guard let self else { return }
+                var names = self.settings.screenMode == "list" ? self.settings.screenNames : self.allowedScreens().map(\.name)
+                if let i = names.firstIndex(of: name) { if names.count > 1 { names.remove(at: i) } } else { names.append(name) }
+                self.settings.screenNames = names
+                choose("list")
+            }
+            item.stateProvider = { self.allowedScreens().contains { $0.name == name } }
+            sub.addItem(item)
+        }
+        sub.addItem(.separator())
+        let note = NSMenuItem(title: "其他螢幕不會有哥布林，可以專心工作（番茄鐘與通知另外設定）", action: nil, keyEquivalent: "")
+        note.isEnabled = false
+        sub.addItem(note)
+    }
+
     /// Whether goblins may be drawn on this screen right now (the desktop it shows is one the player picked, and it is not a full-screen app).
     private func showsCamp(on screen: NSScreen) -> Bool {
-        if [.choosingNest, .editing, .placingFood].contains(colony.phase) { return true } // picking a spot works on any desktop
+        if isWindowMode { return false } // the camp lives in its own window
+        if [.choosingNest, .editing, .placingFood].contains(colony.phase) { return true } // picking a spot works on any desktop or screen
+        if !allowedScreens().contains(where: { $0.frame == screen.frame }) { return false } // a screen the goblins do not live on
+        if spaceAssignWorks { return true } // the desktops are handled by where the window lives
         guard let info = Spaces.info(for: screen) else { return true }
         if info.isFullScreen { return false }
         if settings.desktopsAll { return true }
@@ -1251,14 +1493,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return settings.desktops.contains(number)
     }
 
-    private func checkFullscreenAndDesktops() {
-        for (window, screen) in zip(windows, NSScreen.screens) { (window.contentView as? AntView)?.showsCamp = showsCamp(on: screen) }
-        guard settings.fullscreenFocus || fullscreenActive else { return }
-        let now = fullscreenWindowUp() || Spaces.anyFullScreen
-        if now != fullscreenActive {
-            fullscreenActive = now
-            if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: full screen \(now ? "on" : "off"), mode now \(String(describing: effectiveMode))") }
-            applyQuietState()
+    /// A change seen while polling has to show up on two checks in a row (about a second) before it is used, so a value that flips
+    /// back and forth (moving the mouse across screens, apps coming and going) cannot make the goblins blink. A change the system
+    /// announces itself (a desktop switch, a screen change) is used at once.
+    private var pending: [Int: (value: Bool, count: Int)] = [:]
+    private var pendingFullscreen = 0
+
+    private func steady(_ key: Int, _ value: Bool) -> Bool {
+        if pending[key]?.value == value { pending[key]!.count += 1 } else { pending[key] = (value, 1) }
+        guard pending[key]!.count >= 2 else { return false }
+        pending.removeValue(forKey: key)
+        return true
+    }
+
+    private func checkFullscreenAndDesktops(immediate: Bool = false) {
+        let screens = NSScreen.screens
+        let allowed = allowedScreens()
+        for (i, pair) in zip(windows, screens).enumerated() {
+            guard let view = pair.0.contentView as? AntView else { continue }
+            let screen = pair.1
+            let wanted = showsCamp(on: screen)
+            if wanted == view.showsCamp {
+                pending.removeValue(forKey: i)
+            } else if immediate || steady(i, wanted) {
+                view.showsCamp = wanted
+                Diagnostics.note("screen \(i) \(screen.localizedName): goblins \(wanted ? "shown" : "hidden") (\(immediate ? "announced" : "steady"))")
+            }
+            // the strip this screen's goblins walk in, for the scenery
+            if !isWindowMode, ["bottom", "right", "left"].contains(settings.rangeMode), allowed.contains(where: { $0.frame == screen.frame }),
+               let s = allowed.first(where: { $0.frame == screen.frame }) {
+                view.rangeRect = ScreenChoice.range(for: s, mode: settings.rangeMode, size: settings.rangeSize)
+                view.rangeSide = Scenery.Side(rawValue: settings.rangeMode == "bottom" ? "" : "_\(settings.rangeMode)") ?? .bottom
+            } else {
+                view.rangeRect = nil
+            }
+        }
+        // a full-screen app only matters on a screen the goblins live on
+        if settings.fullscreenFocus || fullscreenActive {
+            let mine = screens.filter { screen in isWindowMode ? screen == (mapWindow?.window.screen ?? NSScreen.main) : allowed.contains { $0.frame == screen.frame } }
+            let space = mine.contains { Spaces.info(for: $0)?.isFullScreen == true }
+            let now = space || fullscreenWindowUp(on: mine)
+            if now == fullscreenActive {
+                pendingFullscreen = 0
+            } else {
+                pendingFullscreen += 1
+                // a full-screen Space is certain; anything else must be seen twice
+                if immediate || space || pendingFullscreen >= 2 {
+                    pendingFullscreen = 0
+                    fullscreenActive = now
+                    Diagnostics.note("full screen \(now ? "on" : "off") (\(space ? "Space" : "window")), mode \(String(describing: effectiveMode))")
+                    applyQuietState()
+                }
+            }
+        }
+        updateSpaceAssignment()
+        updateMapWindow()
+    }
+
+    /// Puts the camp overlay windows (and the camp window) on exactly the desktops the player picked, so on any other desktop, and in
+    /// full-screen Spaces, they are simply not there: nothing to hide, nothing that can show for a moment while the desktops slide.
+    private func updateSpaceAssignment() {
+        let picking = [.choosingNest, .editing, .placingFood].contains(colony.phase) // picking a spot must work wherever you are
+        let numbers: Set<Int>? = settings.desktopsAll ? nil : Set(settings.desktops)
+        var works = true
+        func place(_ window: NSWindow, on screen: NSScreen, key: inout String) {
+            guard let plan = Spaces.plan(on: screen, desktops: numbers, alsoActive: picking) else { works = false; return }
+            let text = plan.target.map(String.init).joined(separator: ",") + "/" + plan.all.map(String.init).joined(separator: ",")
+            guard text != key else { return }
+            if Spaces.apply(plan, to: window) { key = text; Diagnostics.note("\(window.title.isEmpty ? "overlay" : window.title) placed on desktops \(plan.target)") }
+        }
+        for (window, screen) in zip(windows, NSScreen.screens) { place(window, on: screen, key: &window.placedOn) }
+        if isWindowMode, let map = mapWindow, let screen = map.window.screen ?? NSScreen.main { place(map.window, on: screen, key: &map.placedOn) }
+        if works != spaceAssignWorks {
+            spaceAssignWorks = works
+            let behavior: NSWindow.CollectionBehavior = works ? [.stationary, .ignoresCycle] : [.canJoinAllSpaces, .stationary, .ignoresCycle]
+            windows.forEach { $0.collectionBehavior = behavior }
+            mapWindow?.window.collectionBehavior = works ? [] : [.canJoinAllSpaces]
+            Diagnostics.note("placing windows on chosen desktops \(works ? "works" : "is not available; hiding by drawing instead")")
         }
     }
 
@@ -1271,7 +1582,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "cursor": break
         case let name: if let match = screens.first(where: { $0.localizedName == name }) { return match.frame }
         }
-        return screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.frame ?? fallback
+        // the screen under the mouse, but not one that is showing a full-screen app (popups must not land on a video)
+        let usable = screens.filter { Spaces.info(for: $0)?.isFullScreen != true }
+        return usable.first { $0.frame.contains(NSEvent.mouseLocation) }?.frame ?? usable.first?.frame ?? fallback
     }
 
     private var desktopMenuItem: NSMenuItem!
@@ -1333,7 +1646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let alert = NSAlert()
                 alert.messageText = "無法設定開機啟動"
                 alert.informativeText = "\(error.localizedDescription)\n\n可以到「系統設定 → 一般 → 登入項目」自己加入或移除。"
-                alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+                alert.window.level = Levels.panel
                 alert.runModal()
             }
         }
@@ -1347,7 +1660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = "每日統計"
         alert.informativeText = "今天\n\(text.today)\n\n近 7 天\n\(text.week)"
         alert.addButton(withTitle: "好")
-        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        alert.window.level = Levels.panel
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
@@ -1390,7 +1703,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         // Overlay windows sit at the status-bar level; keep the panel above them.
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        panel.level = Levels.panel
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if NestImageStore.importImage(from: url) {
@@ -1400,7 +1713,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let alert = NSAlert()
             alert.messageText = "無法讀取這張圖片"
             alert.informativeText = "請換一張 PNG 或 JPG 試試。"
-            alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            alert.window.level = Levels.panel
             alert.runModal()
         }
     }
@@ -1430,7 +1743,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.accessoryView = field
         alert.addButton(withTitle: "好")
         alert.addButton(withTitle: "取消")
-        alert.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        alert.window.level = Levels.panel
         alert.window.initialFirstResponder = field
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -1440,7 +1753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let error = NSAlert()
             error.messageText = "看不懂這個時間"
             error.informativeText = "請輸入像 45、30s、5m、1.5h 這樣的時間（1 秒到 24 小時）。"
-            error.window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            error.window.level = Levels.panel
             error.runModal()
         }
     }
@@ -1507,6 +1820,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         quietStatusItem.title = status.joined(separator: "　·　")
         rebuildAlertScreenMenu()
         rebuildDesktopMenu()
+        rebuildScreenMenu()
+        rebuildRangeMenu()
         refreshClaudeStatus()
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
         nestMenuItem.title = "\(home)外觀"
@@ -1645,6 +1960,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func redrawAll() {
         windows.forEach { $0.contentView?.needsDisplay = true }
+        toolWindows.forEach { $0.contentView?.needsDisplay = true }
+        if mapWindow?.isVisible == true { mapWindow?.view.needsDisplay = true }
     }
 
     private func updateCount() {
@@ -1664,27 +1981,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func rebuildOverlays() {
         windows.forEach { $0.close() }
-        colony.updateWalkable(NSScreen.screens.map(\.frame))
+        toolWindows.forEach { $0.close() }
+        applyWalkable()
         windows = NSScreen.screens.map { screen in
             let window = OverlayWindow(screen: screen)
             window.contentView = AntView(frame: NSRect(origin: .zero, size: screen.frame.size), colony: colony)
             if !isSilenced { window.orderFrontRegardless() }
             return window
         }
+        toolWindows = NSScreen.screens.map { screen in
+            let window = OverlayWindow(screen: screen, tools: true)
+            let view = AntView(frame: NSRect(origin: .zero, size: screen.frame.size), colony: colony)
+            view.toolsOnly = true
+            window.contentView = view
+            if !isSilenced { window.orderFrontRegardless() }
+            return window
+        }
+        updateSpaceAssignment()
     }
 
     /// Sync window input mode with the game phase and redraw.
     private func syncWindows() {
         let picking = [.choosingNest, .editing, .placingFood].contains(colony.phase) // overlay must capture the mouse
         for window in windows {
-            window.acceptsInput = picking
+            window.acceptsInput = picking && !isWindowMode
             window.contentView?.needsDisplay = true
         }
         if picking, !isHiddenByUser {
             NSApp.activate(ignoringOtherApps: true)
-            windows.first?.makeKeyAndOrderFront(nil)
+            if isWindowMode { updateMapWindow(); mapWindow?.window.makeKeyAndOrderFront(nil) } else { windows.first?.makeKeyAndOrderFront(nil) }
         }
         updateCount()
         checkFullscreenAndDesktops()
+    }
+}
+
+private extension NSRect {
+    /// This rectangle (in screen coordinates, origin at the bottom left of the main screen) as CoreGraphics wants it (origin top left).
+    func flippedForCG() -> CGRect {
+        let mainHeight = NSScreen.screens.first?.frame.height ?? maxY
+        return CGRect(x: minX, y: mainHeight - maxY, width: width, height: height)
     }
 }
