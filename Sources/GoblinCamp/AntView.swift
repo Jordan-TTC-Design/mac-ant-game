@@ -108,6 +108,7 @@ final class AntView: NSView {
         }
         if isMap { drawMapBackground() }
         if colony.campHidden || !showsCamp { return } // the goblins are away
+        defer { drawRain() } // over everything else
         switch colony.phase {
         case .idle:
             break
@@ -129,6 +130,7 @@ final class AntView: NSView {
     private func drawMapBackground() {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         if let ground = Scenery.ground() { Scenery.fillGround(ground, in: bounds, scale: 2, into: ctx) } else { NSColor(calibratedRed: 0.23, green: 0.45, blue: 0.24, alpha: 1).setFill(); bounds.fill() }
+        for pond in colony.obstacles { drawPond(pond) }
         let style = Settings.shared.scenery
         guard style != "none" else { return }
         // a forest all around the clearing, however big the window is: a row of trees behind at the top, a column down each side, and
@@ -147,6 +149,85 @@ final class AntView: NSView {
             Scenery.drawStrip(left, in: CGRect(x: 0, y: 0, width: CGFloat(left.width), height: bounds.height), side: .left, into: ctx)
             Scenery.drawStrip(right, in: CGRect(x: bounds.maxX - CGFloat(right.width), y: 0, width: CGFloat(right.width), height: bounds.height), side: .right, into: ctx)
         }
+    }
+
+    /// The pond (camp window only): its pixel picture, then a few twinkles and ripples that move.
+    private func drawPond(_ pond: Pond) {
+        guard let ctx = NSGraphicsContext.current?.cgContext, let image = pond.image else { return }
+        let pic = pond.picture.offsetBy(dx: -origin.x, dy: -origin.y)
+        guard bounds.intersects(pic) else { return }
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: pic)
+        ctx.restoreGState()
+        let t = Date().timeIntervalSinceReferenceDate
+        for (k, g) in pond.glints.enumerated() {
+            let at = CGPoint(x: pic.minX + g.x, y: pic.minY + g.y)
+            let phase = (t * 0.35 + Double(k) * 0.37).truncatingRemainder(dividingBy: 1)
+            if k % 2 == 0 { // a ring that grows and fades
+                let w = 4 + CGFloat(phase) * 12, h = w * 0.45
+                NSColor(calibratedWhite: 1, alpha: 0.55 * (1 - phase)).setStroke()
+                let ring = NSBezierPath(ovalIn: NSRect(x: at.x - w / 2, y: at.y - h / 2, width: w, height: h))
+                ring.lineWidth = 1
+                ring.stroke()
+            } else if phase < 0.25 { // a quick twinkle
+                NSColor.white.setFill()
+                NSRect(x: at.x, y: at.y, width: 2, height: 2).fill()
+            }
+        }
+    }
+
+    /// The campfire party: logs, a flickering flame, a warm glow and a few sparks.
+    private func drawFire(at p: CGPoint) {
+        guard bounds.insetBy(dx: -80, dy: -80).contains(p) else { return }
+        let t = Date().timeIntervalSinceReferenceDate
+        for (radius, alpha) in [(52.0, 0.07), (36.0, 0.10), (22.0, 0.14)] {
+            NSColor(calibratedRed: 1, green: 0.62, blue: 0.2, alpha: CGFloat(alpha)).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x - CGFloat(radius), y: p.y - CGFloat(radius) * 0.6 + 6, width: CGFloat(radius) * 2, height: CGFloat(radius) * 1.2)).fill()
+        }
+        NSColor(calibratedRed: 0.36, green: 0.23, blue: 0.13, alpha: 1).setFill()
+        NSRect(x: p.x - 9, y: p.y - 3, width: 18, height: 3).fill()
+        NSRect(x: p.x - 7, y: p.y - 1, width: 14, height: 3).fill()
+        let frame = Int(t * 8) % 3
+        func flame(_ dx: CGFloat, _ h: CGFloat, _ w: CGFloat, _ c: NSColor) { c.setFill(); NSRect(x: p.x + dx - w / 2, y: p.y + 1, width: w, height: h).fill() }
+        flame(-4, [9, 7, 10][frame], 5, NSColor(calibratedRed: 0.94, green: 0.47, blue: 0.12, alpha: 1))
+        flame(4, [7, 10, 8][frame], 5, NSColor(calibratedRed: 0.94, green: 0.47, blue: 0.12, alpha: 1))
+        flame(0, [12, 14, 11][frame], 6, NSColor(calibratedRed: 0.98, green: 0.65, blue: 0.16, alpha: 1))
+        flame(0, [6, 7, 8][frame], 3, NSColor(calibratedRed: 1, green: 0.92, blue: 0.55, alpha: 1))
+        NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1).setFill()
+        for k in 0..<3 { // sparks
+            let phase = (t * 0.9 + Double(k) * 0.33).truncatingRemainder(dividingBy: 1)
+            NSRect(x: p.x + CGFloat(k - 1) * 6 + CGFloat(sin(t * 3 + Double(k))) * 3, y: p.y + 12 + CGFloat(phase) * 26, width: 2, height: 2).fill()
+        }
+    }
+
+    /// Rain falling on the camp window or on the strip along the screen (not across a whole screen, where it would hide your work).
+    private func drawRain() {
+        guard colony.isRaining, colony.phase != .idle else { return }
+        var rect: CGRect
+        if isMap { rect = bounds } else if let strip = rangeRect {
+            rect = CGRect(x: strip.minX - origin.x, y: strip.minY - origin.y, width: strip.width, height: strip.height)
+            if rangeSide == .bottom { rect.size.height += 70 } // the rain comes down from above the trees
+        } else { return }
+        guard bounds.intersects(rect), let ctx = NSGraphicsContext.current?.cgContext else { return }
+        ctx.saveGState()
+        ctx.clip(to: rect)
+        NSColor(calibratedRed: 0.08, green: 0.12, blue: 0.28, alpha: 0.16).setFill()
+        rect.fill()
+        let t = colony.weatherAge
+        let count = min(240, max(20, Int(rect.width * rect.height / 2600)))
+        ctx.setLineWidth(1.2)
+        ctx.setStrokeColor(NSColor(calibratedRed: 0.65, green: 0.78, blue: 0.96, alpha: 0.75).cgColor)
+        func unit(_ i: Int, _ salt: Double) -> CGFloat { CGFloat((sin(Double(i) * 12.9898 + salt) * 43758.5453).truncatingRemainder(dividingBy: 1).magnitude) }
+        for i in 0..<count {
+            let speed = 240 + 90 * unit(i, 1)
+            let x = rect.minX + unit(i, 0) * rect.width
+            let y = rect.maxY - CGFloat((Double(unit(i, 2) * rect.height) + t * Double(speed)).truncatingRemainder(dividingBy: Double(rect.height)))
+            ctx.move(to: CGPoint(x: x, y: y))
+            ctx.addLine(to: CGPoint(x: x - 2, y: y - 7))
+        }
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     /// The forest or meadow along the strip the goblins walk in.
@@ -178,7 +259,7 @@ final class AntView: NSView {
         let pixel = role.pixelSize(scale: 1.6)
         let size = CGFloat(role.frameSize) * pixel
         let walking = pomodoro.arriving || pomodoro.leaving
-        let resting = pomodoro.phase == .rest
+        let resting = pomodoro.isRest
         // the goblin hops when the rest starts
         let hop: CGFloat = pomodoro.shake > 0 || resting ? abs(CGFloat(sin(Date().timeIntervalSinceReferenceDate * (pomodoro.shake > 0 ? 10 : 3)))) * (pomodoro.shake > 0 ? 6 : 2) : 0
         let direction: SpriteDirection = walking ? (pomodoro.leaving ? .right : .left) : .down
@@ -200,23 +281,29 @@ final class AntView: NSView {
         let body = NSRect(x: p.x - bodyW / 2 + shakeX, y: p.y + size * 0.8 + hop, width: bodyW, height: bodyH)
         NSColor(calibratedWhite: 0.14, alpha: 1).setFill()
         NSBezierPath(roundedRect: body, xRadius: 6, yRadius: 6).fill()
-        let lit = resting ? NSColor(calibratedRed: 0.10, green: 0.30, blue: 0.45, alpha: 1)
+        let lit = pomodoro.paused ? NSColor(calibratedWhite: 0.30, alpha: 1)
+                          : resting ? NSColor(calibratedRed: 0.10, green: 0.30, blue: 0.45, alpha: 1)
                           : (seconds <= 60 ? NSColor(calibratedRed: 0.70, green: 0.08, blue: 0.08, alpha: 1)
                                            : NSColor(calibratedRed: 0.10, green: 0.22, blue: 0.10, alpha: 1))
         let glass = NSRect(x: body.minX + 5, y: body.minY + 5, width: bodyW - 10, height: bodyH - 20)
-        (resting ? NSColor(calibratedRed: 0.70, green: 0.86, blue: 0.95, alpha: 1) : NSColor(calibratedRed: 0.74, green: 0.84, blue: 0.62, alpha: 1)).setFill()
+        (pomodoro.paused ? NSColor(calibratedWhite: 0.80, alpha: 1) : resting ? NSColor(calibratedRed: 0.70, green: 0.86, blue: 0.95, alpha: 1) : NSColor(calibratedRed: 0.74, green: 0.84, blue: 0.62, alpha: 1)).setFill()
         NSBezierPath(roundedRect: glass, xRadius: 3, yRadius: 3).fill()
 
         // label on the bezel: what the clock is counting
-        let label = (resting ? "休息" : "專注") as NSString
+        let title: String
+        if pomodoro.paused { title = "暫停" } else if pomodoro.phase == .longRest { title = "長休息" } else if resting { title = "休息" }
+        else { title = pomodoro.rounds > 1 ? "專注\(pomodoro.round)/\(pomodoro.rounds)" : "專注" }
+        let label = title as NSString
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .bold), .foregroundColor: NSColor.white]
         label.draw(at: NSPoint(x: body.minX + 7, y: body.maxY - 15), withAttributes: attrs)
-        // progress along the top edge
+        // progress along the top edge, after the label (which is longer with "2/4" or "長休息")
+        let barX = body.minX + 7 + ceil(label.size(withAttributes: attrs).width) + 5
+        let barW = max(8, body.maxX - 7 - barX)
         let progress = CGFloat(max(0, min(1, 1 - pomodoro.remaining / pomodoro.phaseLength)))
         NSColor(calibratedWhite: 0.35, alpha: 1).setFill()
-        NSRect(x: body.minX + 40, y: body.maxY - 10, width: bodyW - 47, height: 3).fill()
+        NSRect(x: barX, y: body.maxY - 10, width: barW, height: 3).fill()
         (resting ? NSColor(calibratedRed: 0.4, green: 0.75, blue: 0.95, alpha: 1) : NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.4, alpha: 1)).setFill()
-        NSRect(x: body.minX + 40, y: body.maxY - 10, width: (bodyW - 47) * progress, height: 3).fill()
+        NSRect(x: barX, y: body.maxY - 10, width: barW * progress, height: 3).fill()
 
         // MM:SS in seven segments
         let minutes = min(99, seconds / 60), rest = seconds % 60
@@ -308,6 +395,7 @@ final class AntView: NSView {
         if let nest = colony.nest {
             drawNest(at: CGPoint(x: nest.x - origin.x, y: nest.y - origin.y), antCount: colony.ants.count)
         }
+        if let fire = colony.fire { drawFire(at: CGPoint(x: fire.x - origin.x, y: fire.y - origin.y)) }
         let scale = CGFloat(Settings.shared.antScale)
         let onScreen = bounds.insetBy(dx: -20, dy: -20)
         let foodScale = CGFloat(Colony.foodScale(Settings.shared.antScale))

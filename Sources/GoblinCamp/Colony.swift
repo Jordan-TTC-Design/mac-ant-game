@@ -87,7 +87,7 @@ final class Colony {
     /// takes 600 and more, a strip along the bottom about 20). The rest wait in the nest and come out as others go in.
     var visibleCap: Int {
         let area = walkable.reduce(0) { $0 + Double($1.width * $1.height) }
-        return max(12, Int(area / 2200))
+        return max(12, Int(Double(area / 2200) * (isRaining ? 0.35 : 1))) // most of them shelter in the nest while it rains
     }
 
     /// How fast goblins wander in the current range: full speed across a screen, a little slower in a strip or a small window
@@ -97,6 +97,48 @@ final class Colony {
         if walkable.allSatisfy({ ScreenChoice.isStrip($0) }) { return 0.75 }
         let area = walkable.reduce(0) { $0 + Double($1.width * $1.height) }
         return area < 700_000 ? 0.85 : 1
+    }
+
+    // MARK: Weather, fire, pond
+
+    enum Weather { case clear, rain }
+    private(set) var weather = Weather.clear
+    /// The first spell of clear weather after starting the app lasts 20 to 60 minutes.
+    private var weatherTimer = Double.random(in: 20...60) * 60
+    /// Seconds since the weather began, for the rain animation.
+    private(set) var weatherAge = 0.0
+    /// The campfire party (while the pomodoro is resting) and the pond in the camp window.
+    var fire: CGPoint?
+    var obstacles: [Pond] = []
+    var isRaining: Bool { weather == .rain }
+
+    /// `CAMP_WEATHER=rain|clear` fixes the weather (tests); `CAMP_WEATHER_SCALE` makes it change faster.
+    private static let forcedWeather = ProcessInfo.processInfo.environment["CAMP_WEATHER"]
+    private static let weatherScale = Double(ProcessInfo.processInfo.environment["CAMP_WEATHER_SCALE"] ?? "") ?? 1
+
+    func setWeather(_ new: Weather, forSeconds seconds: Double) {
+        weather = new
+        weatherTimer = seconds
+        weatherAge = 0
+    }
+
+    /// Clear spells last 40 to 120 minutes, rain 8 to 20 (real time); off when the setting is off.
+    private func updateWeather(dt: Double) {
+        if let forced = Colony.forcedWeather { weather = forced == "rain" ? .rain : .clear; weatherAge += dt; return }
+        guard settings.weatherEnabled else { weather = .clear; return }
+        weatherAge += dt
+        weatherTimer -= dt * Colony.weatherScale
+        if weatherTimer <= 0 {
+            if weather == .clear { setWeather(.rain, forSeconds: Double.random(in: 8...20) * 60) } else { setWeather(.clear, forSeconds: Double.random(in: 40...120) * 60) }
+        }
+    }
+
+    /// A place near the nest, some way off, for the campfire: to the right, left, below or above, whichever is inside the range.
+    func fireSpot() -> CGPoint? {
+        guard let nest else { return nil }
+        let candidates = [CGPoint(x: nest.x + 90, y: nest.y - 10), CGPoint(x: nest.x - 90, y: nest.y - 10),
+                          CGPoint(x: nest.x, y: nest.y - 60), CGPoint(x: nest.x, y: nest.y + 60)]
+        return candidates.first { p in walkable.contains { $0.insetBy(dx: 16, dy: 16).contains(p) } && !obstacles.contains { $0.blocks(p, margin: 10) } } ?? candidates.last
     }
 
     /// In the camp window, a spot outside the world means "the middle of it" (not the nearest corner).
@@ -721,9 +763,13 @@ final class Colony {
                 onAntsChanged?()
             }
         }
+        updateWeather(dt: dt)
         let antDt = dt * settings.speedMultiplier
         var world = AntWorld(nest: nest, walkable: walkable, foods: foods, creatures: creatures.map(\.info), foodScale: Colony.foodScale(settings.antScale))
         world.pace = pace
+        world.raining = isRaining
+        world.fire = fire
+        world.obstacles = obstacles
         world.crowd = Double(visibleCount) / Double(visibleCap)
         let ageDt = dt * Colony.timeScale
         var events: [(index: Int, event: Ant.Event)] = []

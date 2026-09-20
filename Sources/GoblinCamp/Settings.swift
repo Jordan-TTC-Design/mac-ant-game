@@ -102,6 +102,14 @@ final class Settings {
         get { min(99, max(1, defaults.object(forKey: "pomodoroFocus") as? Double ?? 25)) }
         set { defaults.set(newValue, forKey: "pomodoroFocus") }
     }
+    var pomodoroRounds: Int {
+        get { min(12, max(1, defaults.object(forKey: "pomodoroRounds") as? Int ?? 4)) }
+        set { defaults.set(newValue, forKey: "pomodoroRounds") }
+    }
+    var pomodoroLongRest: Double {
+        get { min(60, max(0, defaults.object(forKey: "pomodoroLongRest") as? Double ?? 15)) }
+        set { defaults.set(newValue, forKey: "pomodoroLongRest") }
+    }
     var pomodoroRest: Double {
         get { min(60, max(0, defaults.object(forKey: "pomodoroRest") as? Double ?? 5)) }
         set { defaults.set(newValue, forKey: "pomodoroRest") }
@@ -139,6 +147,11 @@ final class Settings {
     var pomodoroWorkMode: Bool {
         get { defaults.object(forKey: "pomodoroWorkMode") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "pomodoroWorkMode") }
+    }
+    /// When the pomodoro rests and it switched to work mode by itself, open the camp again for the campfire party.
+    var pomodoroRestParty: Bool {
+        get { defaults.object(forKey: "pomodoroRestParty") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "pomodoroRestParty") }
     }
     /// The ⌃⌥1–4 shortcuts for the four modes.
     var hotkeysEnabled: Bool {
@@ -195,6 +208,12 @@ final class Settings {
     var screenNames: [String] {
         get { (defaults.array(forKey: "screenNames") as? [String]) ?? [] }
         set { defaults.set(newValue, forKey: "screenNames") }
+    }
+
+    /// Now and then it rains in the camp (the goblins go and shelter in the nest).
+    var weatherEnabled: Bool {
+        get { defaults.object(forKey: "weatherEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "weatherEnabled") }
     }
 
     /// The goblins show on every desktop (Space), or only on the ones in `desktops`.

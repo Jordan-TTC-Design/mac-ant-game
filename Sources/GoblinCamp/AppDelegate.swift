@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pomodoroStatusItem: NSMenuItem!
     private var pomodoroStopItem: ClosureMenuItem!
     private var pomodoroTodayItem: NSMenuItem!
+    private var pomodoroPauseItem: ClosureMenuItem!
+    private var pomodoroSkipItem: ClosureMenuItem!
     private var pomodoroSpeaker = Speakers.common
     private var modeMenuItems: [ClosureMenuItem] = []
     /// What happened while the camp was away (hidden), for the summary when it comes back.
@@ -327,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if env["CAMP_TEST_SPIN"] != nil { // how often do goblins change the way they face? spinning shows up as a big number; the worst ones are listed with what they were doing
             var last: [Int: SpriteDirection] = [:], changes: [Int: Int] = [:], modes: [Int: [String: Int]] = [:]
+            var trail: [Int: [String]] = [:]
             var samples = 0
             after(10) {
                 Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
@@ -336,6 +339,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         let mode = String(String(describing: ant.mode).prefix(11))
                         if let before = last[ant.id], before != d { changes[ant.id, default: 0] += 1; modes[ant.id, default: [:]][mode, default: 0] += 1 }
                         last[ant.id] = d
+                        var t = trail[ant.id] ?? []
+                        t.append(String(format: "(%.0f,%.0f) h=%.2f %@", ant.pos.x, ant.pos.y, ant.heading, "\(d)"))
+                        if t.count > 14 { t.removeFirst() }
+                        trail[ant.id] = t
                     }
                     if samples >= 400 { // 20 seconds
                         timer.invalidate()
@@ -350,6 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                    c.queen?.isCarried == true ? "STILL" : "no", c.ants.count, c.ants.filter { !$0.isHidden }.count, c.visibleCap, outside, c.creatures.count,
                                    c.foods.map { "\($0.kind.rawValue)x\($0.amount)" }.joined(separator: ","), c.slain))
                         log(String(format: "facing changes per second: average %.2f over %d goblins", avg, last.count))
+                        if let worst = ranked.first { log("  the worst one, last samples: \((trail[worst.key] ?? []).joined(separator: " | "))") }
                         for (id, n) in ranked.prefix(5) { log(String(format: "  goblin %d: %.2f per second, during %@", id, Double(n) / 20, "\(modes[id] ?? [:])")) }
                         NSApp.terminate(nil)
                     }
@@ -378,12 +386,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(8) { self.mapWindow?.window.miniaturize(nil) }
             after(13) { log("camp window after minimising: miniaturized \(self.mapWindow?.window.isMiniaturized == true), collapsed setting \(self.settings.mapCollapsed)") }
         }
+        if let size = env["CAMP_TEST_MAPSIZE"]?.split(separator: "x").compactMap({ Double($0) }), size.count == 2 { // "WxH": size the camp window at 1 s
+            after(1) { self.mapWindow?.window.setContentSize(NSSize(width: size[0], height: size[1])) }
+        }
         if let path = env["CAMP_TEST_MAPSHOT"] { // draw the camp window into a PNG at 25 s
-            after(25) {
+            after(Double(env["CAMP_TEST_MAPSHOT_AT"] ?? "") ?? 25) {
                 guard let view = self.mapWindow?.view, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return log("no camp window") }
                 view.cacheDisplay(in: view.bounds, to: rep)
                 if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
-                log("camp window drawn: world \(self.mapWindow!.world), nest \(String(describing: self.colony.nest)), goblins \(self.colony.ants.count), visible \(self.mapWindow!.isVisible)")
+                log("camp window drawn: world \(self.mapWindow!.world), nest \(String(describing: self.colony.nest)), goblins \(self.colony.ants.count), visible \(self.mapWindow!.isVisible), in the pond \(self.colony.ants.filter { a in self.colony.obstacles.contains { $0.blocks(a.pos, margin: 0) } }.count)")
                 NSApp.terminate(nil)
             }
         }
@@ -447,6 +458,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let s = env["CAMP_TEST_POMODORO"] { // "focusMinutes,restMinutes" (fractions allowed), started at 3 s
             let parts = s.split(separator: ",").compactMap { Double($0) }
             if parts.count == 2 { after(3) { self.startPomodoro(focus: parts[0], rest: parts[1]) } }
+            if parts.count == 4 { after(3) { self.startPomodoro(focus: parts[0], rest: parts[1], rounds: Int(parts[2]), longRest: parts[3]) } }
+            if env["CAMP_TEST_PAUSE"] != nil { // pause for 4 s at 6 s, then skip the rest of that part at 12 s
+                after(6) { self.colony.pomodoro.pause(); log("paused: \(Int(self.colony.pomodoro.remaining)) s left, phase \(String(describing: self.colony.pomodoro.phase))") }
+                after(9) { log("still paused: \(Int(self.colony.pomodoro.remaining)) s left") }
+                after(10) { self.colony.pomodoro.resume(); log("resumed: \(Int(self.colony.pomodoro.remaining)) s left") }
+                after(12) { self.colony.pomodoro.skip(); log("skipped") }
+            }
         }
         if let s = env["CAMP_TEST_HOOKINSTALL"] { // "interactive", "simple", "uninstall" or "status", against CAMP_CLAUDE_DIR
             after(1) {
@@ -701,10 +719,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.startPomodoro(focus: focus, rest: rest)
             })
         }
+        sub.addItem(ClosureMenuItem(title: "經典：專注 25／休息 5，連續 4 輪，最後長休息 15 分鐘") { [weak self] in
+            self?.startPomodoro(focus: 25, rest: 5, rounds: 4, longRest: 15)
+        })
         sub.addItem(ClosureMenuItem(title: "自訂…") { [weak self] in
             DispatchQueue.main.async { self?.askCustomPomodoro() }
         })
         sub.addItem(.separator())
+        let party = ClosureMenuItem(title: "休息時顯示營地（營火晚會）") { [weak self] in self?.settings.pomodoroRestParty.toggle() }
+        party.stateProvider = { self.settings.pomodoroRestParty }
+        sub.addItem(party)
         let auto = ClosureMenuItem(title: "開始時自動進入工作模式") { [weak self] in self?.settings.pomodoroWorkMode.toggle() }
         auto.stateProvider = { self.settings.pomodoroWorkMode }
         sub.addItem(auto)
@@ -719,11 +743,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         sub.addItem(pomodoroStopItem)
+        pomodoroPauseItem = ClosureMenuItem(title: "暫停") { [weak self] in
+            guard let pomodoro = self?.colony.pomodoro else { return }
+            if pomodoro.paused { pomodoro.resume() } else { pomodoro.pause() }
+            self?.redrawAll()
+        }
+        sub.insertItem(pomodoroPauseItem, at: sub.index(of: pomodoroStopItem))
+        pomodoroSkipItem = ClosureMenuItem(title: "跳過這一段") { [weak self] in self?.colony.pomodoro.skip() }
+        sub.insertItem(pomodoroSkipItem, at: sub.index(of: pomodoroStopItem))
         parent.submenu = sub
         return parent
     }
 
-    func startPomodoro(focus: Double, rest: Double) {
+    func startPomodoro(focus: Double, rest: Double, rounds: Int = 1, longRest: Double = 0) {
         let screen = alertScreenFrame()
         var breedIndex = 0
         pomodoroSpeaker = Speakers.common
@@ -732,7 +764,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             breedIndex = ant.breedIndex
             pomodoroSpeaker = Speakers.forBreed(character.breeds[min(breedIndex, character.breeds.count - 1)].id)
         }
-        colony.pomodoro.start(focusMinutes: focus, restMinutes: rest, screen: screen, breedIndex: breedIndex)
+        colony.pomodoro.start(focusMinutes: focus, restMinutes: rest, rounds: rounds, longRestMinutes: longRest, screen: screen, breedIndex: breedIndex)
         // a pomodoro means work: from the everything-on mode it switches to work mode, and back again when it is over
         if settings.pomodoroWorkMode, userMode == nil, !fullscreenActive {
             setMode(.work, automatic: true)
@@ -747,8 +779,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             pomodoroChangedMode = false
             setMode(nil, automatic: true)
         }
+        // a rest opens the camp again (a campfire party!) if the pomodoro is the one that put it away; the next round puts it away again
+        if pomodoroChangedMode, settings.pomodoroRestParty {
+            if event == .restBegan || event == .longRestBegan { setMode(nil, automatic: true) }
+            if event == .focusBegan { setMode(.work, automatic: true) }
+        }
         if isSilenced {
-            if event == .restBegan || event == .finished { noteMissed(); flashStatusIcon() } // no sound, only the icon blinks
+            if event == .restBegan || event == .longRestBegan || event == .finished { noteMissed(); flashStatusIcon() } // no sound, only the icon blinks
+            else if event == .focusBegan { flashStatusIcon() }
             return
         }
         if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: pomodoro \(event)") }
@@ -759,16 +797,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func askCustomPomodoro() {
         let alert = NSAlert()
         alert.messageText = "自訂番茄鐘"
-        alert.informativeText = "專注與休息各幾分鐘？（專注 1～99 分鐘，休息 0～60 分鐘，休息填 0 表示不休息）"
-        let focus = NSTextField(frame: NSRect(x: 0, y: 30, width: 220, height: 24))
-        let rest = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-        focus.placeholderString = "專注分鐘"
-        rest.placeholderString = "休息分鐘"
-        focus.stringValue = String(format: "%g", settings.pomodoroFocus)
-        rest.stringValue = String(format: "%g", settings.pomodoroRest)
-        let box = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 56))
-        box.addSubview(focus)
-        box.addSubview(rest)
+        alert.informativeText = "專注 1～99 分鐘；休息 0～60 分鐘（0 表示不休息）；連續幾輪 1～12；最後一輪之後的長休息 0～60 分鐘（只有連續 2 輪以上才有）。"
+        func field(_ y: CGFloat, _ label: String, _ value: String) -> NSTextField {
+            let f = NSTextField(frame: NSRect(x: 90, y: y, width: 130, height: 24))
+            f.stringValue = value
+            return f
+        }
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: 230, height: 116))
+        let focus = field(90, "專注", String(format: "%g", settings.pomodoroFocus))
+        let rest = field(60, "休息", String(format: "%g", settings.pomodoroRest))
+        let rounds = field(30, "輪數", "\(settings.pomodoroRounds)")
+        let longRest = field(0, "長休息", String(format: "%g", settings.pomodoroLongRest))
+        for (i, (text, f)) in [("專注（分）", focus), ("休息（分）", rest), ("連續幾輪", rounds), ("長休息（分）", longRest)].enumerated() {
+            let l = NSTextField(labelWithString: text)
+            l.frame = NSRect(x: 0, y: CGFloat(90 - i * 30) + 3, width: 88, height: 18)
+            box.addSubview(l)
+            box.addSubview(f)
+        }
         alert.accessoryView = box
         alert.addButton(withTitle: "開始")
         alert.addButton(withTitle: "取消")
@@ -776,17 +821,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.window.initialFirstResponder = focus
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard let f = Double(focus.stringValue), (1...99).contains(f), let r = Double(rest.stringValue), (0...60).contains(r) else {
+        guard let f = Double(focus.stringValue), (1...99).contains(f), let r = Double(rest.stringValue), (0...60).contains(r),
+              let n = Int(rounds.stringValue), (1...12).contains(n), let l = Double(longRest.stringValue), (0...60).contains(l) else {
             let error = NSAlert()
-            error.messageText = "看不懂這些分鐘數"
-            error.informativeText = "專注請填 1 到 99，休息請填 0 到 60。"
+            error.messageText = "看不懂這些數字"
+            error.informativeText = "專注請填 1 到 99，休息 0 到 60，輪數 1 到 12，長休息 0 到 60。"
             error.window.level = Levels.panel
             error.runModal()
             return
         }
         settings.pomodoroFocus = f
         settings.pomodoroRest = r
-        startPomodoro(focus: f, rest: r)
+        settings.pomodoroRounds = n
+        settings.pomodoroLongRest = l
+        startPomodoro(focus: f, rest: r, rounds: n, longRest: l)
     }
 
     // MARK: Claude notifications
@@ -1354,10 +1402,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Tells the colony where it may walk; goblins, food and the nest that are elsewhere are moved onto the allowed screens.
+    private lazy var pondSeed: UInt64 = UInt64(ProcessInfo.processInfo.environment["CAMP_POND_SEED"] ?? "") ?? UInt64.random(in: 1...UInt64.max)
+    private var pond: Pond?
+
     private func applyWalkable() {
         colony.centreWhenOutside = isWindowMode
+        colony.obstacles = []
         if isWindowMode {
             let world = ensureMapWindow().walkArea
+            // a pond in the clearing (its shape is made once per launch, so resizing the window only stretches it), if it is big
+            // enough and does not sit on the camp
+            let box = CGRect(x: world.minX + world.width * 0.08, y: world.minY + world.height * 0.66, width: min(170, world.width * 0.34), height: min(100, world.height * 0.2))
+            if world.width >= 380, world.height >= 280, !(colony.nest.map { box.insetBy(dx: -80, dy: -80).contains($0) } ?? false) {
+                if pond?.rect != box { pond = Pond(seed: pondSeed, rect: box) }
+                colony.obstacles = pond.map { [$0] } ?? []
+            }
             if let nest = colony.nest, !world.contains(nest) { colony.relocate(into: world) } else { colony.updateWalkable([world]) }
         } else {
             colony.updateWalkable(allowedScreens().map {
@@ -1436,6 +1495,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         onTop.stateProvider = { self.settings.mapOnTop }
         onTop.isEnabled = isWindowMode
         sub.addItem(onTop)
+        sub.addItem(.separator())
+        let weather = ClosureMenuItem(title: "偶爾下雨（哥布林會躲進營地）") { [weak self] in
+            self?.settings.weatherEnabled.toggle()
+            self?.redrawAll()
+        }
+        weather.stateProvider = { self.settings.weatherEnabled }
+        sub.addItem(weather)
+        sub.addItem(ClosureMenuItem(title: "現在下一場雨（試試看）") { [weak self] in
+            self?.colony.setWeather(.rain, forSeconds: 90)
+            self?.redrawAll()
+        })
+        sub.addItem(.separator())
         let reset = ClosureMenuItem(title: "營地視窗回到右下角") { [weak self] in self?.mapWindow?.resetPosition() }
         reset.isEnabled = isWindowMode
         sub.addItem(reset)
@@ -1797,9 +1868,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pomodoroStatusItem.isHidden = !pomodoro.isRunning
         if let phase = pomodoro.phase {
             let left = Int(pomodoro.remaining.rounded(.up))
-            pomodoroStatusItem.title = "\(phase == .focus ? "專注中" : "休息中")，剩 \(String(format: "%d:%02d", left / 60, left % 60))"
+            let name = phase == .focus ? "專注中" : (phase == .longRest ? "長休息中" : "休息中")
+            let round = pomodoro.rounds > 1 && phase == .focus ? " 第 \(pomodoro.round)／\(pomodoro.rounds) 輪" : ""
+            pomodoroStatusItem.title = (pomodoro.paused ? "已暫停：" : "") + "\(name)\(round)，剩 \(String(format: "%d:%02d", left / 60, left % 60))"
         }
         pomodoroStopItem.isEnabled = pomodoro.isRunning
+        pomodoroPauseItem.isEnabled = pomodoro.isRunning
+        pomodoroPauseItem.title = pomodoro.paused ? "繼續" : "暫停"
+        pomodoroSkipItem.isEnabled = pomodoro.isRunning
         let today = Stats.shared.today
         pomodoroTodayItem.title = "今天已完成 \(today.pomodoros) 個，專注 \(Stats.minutes(today.focusSeconds))"
         pauseItem.title = colony.isPaused ? "繼續" : "暫停"
@@ -1889,6 +1965,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for id in pendingAsks where !colony.stage.hasAsk(id) || colony.stage.isLeaving(ask: id) { // nobody answered in time (or it was cleared)
             finishAsk(id, ["action": "none"])
         }
+        // the campfire party while the pomodoro rests
+        if colony.pomodoro.isRest, !isHiddenByUser { if colony.fire == nil { colony.fire = colony.fireSpot() } } else if colony.fire != nil { colony.fire = nil }
         if !isFrozen, colony.isSimulating, !colony.isPaused {
             colony.tick(dt: dt, cursor: cursor, cursorSpeed: cursorSpeed)
             if !isHiddenByUser { redrawAll() } // nothing to draw while the camp is away

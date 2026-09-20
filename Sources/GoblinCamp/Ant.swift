@@ -321,7 +321,7 @@ struct Ant {
             return .foundCreature(animal.id)
         }
         // Now and then go home for a rest (a lot more often when the range is full).
-        if Double.random(in: 0..<1) < dt / (world.crowd > 1.5 ? 10 : (world.crowded ? 30 : 90)) * traits.rest {
+        if Double.random(in: 0..<1) < dt / (world.raining ? 14 : (world.crowd > 1.5 ? 10 : (world.crowded ? 30 : 90))) * traits.rest {
             mode = .returningToNest
             return nil
         }
@@ -336,11 +336,22 @@ struct Ant {
             return nil
         }
         heading += Double.random(in: -1...1) * 3.0 * dt
-        // in a long thin range (a strip along the screen) walk along it, back and forth, instead of turning every which way
-        if let axis = world.axis(at: pos) { heading = Ant.keep(heading, along: axis, reach: world.thickness(at: pos) < 60 ? 0.2 : 0.45) }
+        if let fire = world.fire {
+            // the campfire party: drift toward the fire, then mill around it (a ring 30 to 75 points out)
+            let d = hypot(fire.x - pos.x, fire.y - pos.y)
+            if d > 75 { turn(toward: atan2(fire.y - pos.y, fire.x - pos.x), rate: 1.8, dt: dt) }
+            else if d < 30 { turn(toward: atan2(pos.y - fire.y, pos.x - fire.x), rate: 2.5, dt: dt) }
+        } else if let axis = world.axis(at: pos) {
+            // in a long thin range (a strip along the screen) walk along it, back and forth, instead of turning every which way
+            heading = Ant.keep(heading, along: axis, reach: world.thickness(at: pos) < 60 ? 0.2 : 0.45)
+        }
 
         let step = effectiveSpeed * world.pace * dt
-        func allowed(_ p: CGPoint) -> Bool { world.walkable.contains { $0.insetBy(dx: 4, dy: 4).contains(p) } }
+        let stuckInPond = world.obstacles.contains { $0.blocks(pos, margin: 0) }
+        func allowed(_ p: CGPoint) -> Bool {
+            guard world.walkable.contains(where: { $0.insetBy(dx: 4, dy: 4).contains(p) }) else { return false }
+            return stuckInPond || !world.obstacles.contains { $0.blocks(p) }
+        }
         let next = CGPoint(x: pos.x + cos(heading) * step, y: pos.y + sin(heading) * step)
         if allowed(next) {
             pos = next

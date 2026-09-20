@@ -104,6 +104,12 @@ struct AntWorld {
     let foodScale: Double
     /// How fast wandering goes in this kind of range: a little slower in a strip or a small window than across a whole screen.
     var pace = 1.0
+    /// It is raining: goblins go back to the nest much more often.
+    var raining = false
+    /// A campfire party (during the pomodoro rest): wanderers drift toward it and mill around it.
+    var fire: CGPoint?
+    /// Places wanderers keep out of (a pond).
+    var obstacles: [Pond] = []
     /// How full the range is: goblins out walking divided by how many fit. Over 1, goblins rest in the nest longer and go back sooner.
     var crowd = 0.0
     var crowded: Bool { crowd >= 1 }
