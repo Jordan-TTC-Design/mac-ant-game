@@ -245,6 +245,7 @@ def main():
     sprites = make_all()
     sprites.update(make_camp())
     sprites.update(make_growth())
+    sprites.update(make_farm())
     for name, img in sprites.items():
         img.save(os.path.join(OUT, name + ".png"))
     print("wrote", len(sprites), "sprites to", os.path.normpath(OUT))
@@ -624,6 +625,82 @@ def make_growth():
             sprites[f"sprout-{biome}-{v}"] = sprout(biome, rnd, v)
             sprites[f"sapling-{biome}-{v}"] = sapling(biome, rnd, v)
             sprites[f"young-{biome}-{v}"] = young(biome, rnd, v)
+    return sprites
+
+
+# ================================================================================================================
+# The farm: a tilled plot (soil in furrows), and three crops (wheat, pumpkin, greens) in three stages: sprout, growing, ripe
+# ================================================================================================================
+SOIL = {"meadow": [(112, 80, 48), (96, 68, 40), (130, 96, 60)], "forest": [(100, 72, 44), (86, 60, 36), (118, 86, 54)],
+        "snow": [(120, 96, 76), (104, 82, 64), (140, 114, 92)], "swamp": [(88, 68, 44), (74, 56, 36), (104, 82, 54)]}
+
+
+def plot(biome, rnd):
+    """A tilled bed: rows of turned earth between low ridges, with a stake at each corner."""
+    W, H = 30, 20
+    img = new(W, H)
+    cols = SOIL[biome]
+    for y in range(H):
+        for x in range(W):
+            if x in (0, W - 1) or y in (0, H - 1):
+                put(img, x, y, cols[1])
+            else:
+                put(img, x, y, cols[0] if (y // 3) % 2 == 0 else cols[2])
+                if rnd.random() < 0.08:
+                    put(img, x, y, cols[1])
+    for x in range(1, W - 1):
+        if (x // 5) % 2 == 0:
+            put(img, x, 2, cols[2])
+    for cx, cy in ((0, 0), (W - 1, 0), (0, H - 1), (W - 1, H - 1)):
+        rect(img, cx - (1 if cx else 0), cy - 3, 2, 4, WOOD)
+    outline(img, (44, 30, 22))
+    return img
+
+
+def crop(kind, stage, rnd):
+    """kind 0 wheat, 1 pumpkin, 2 greens; stage 0 sprout, 1 growing, 2 ripe. Drawn as one clump standing on its bottom centre."""
+    img = new(12, 16)
+    cx = 6
+    if kind == 0:  # wheat: green stalks turning gold with a head of grain
+        h = (4, 9, 13)[stage]
+        for dx in (-3, -1, 1, 3):
+            top = 15 - h + abs(dx) // 2
+            for y in range(top, 16):
+                put(img, cx + dx, y, (96, 160, 70) if stage < 2 else (196, 164, 70))
+            if stage == 2:
+                for k in range(3):
+                    put(img, cx + dx, top - k, (230, 196, 90)); put(img, cx + dx + (1 if k == 1 else 0), top - k, (230, 196, 90))
+    elif kind == 1:  # pumpkin: broad leaves, and a round orange pumpkin when ripe
+        leaf = (70, 140, 60)
+        for dx in range(-4, 5):
+            put(img, cx + dx, 15 - (abs(dx) // 3), leaf)
+            if stage >= 1:
+                put(img, cx + dx, 14 - (abs(dx) // 2), leaf)
+        if stage == 2:
+            blob(img, cx, 12, 4, 3, [(196, 92, 20), (238, 132, 28), (250, 168, 60)], rnd)
+            put(img, cx, 8, (60, 110, 50)); put(img, cx, 9, (60, 110, 50))
+        elif stage == 1:
+            blob(img, cx, 13, 2, 2, [(90, 130, 40), (120, 168, 60), (150, 190, 80)], rnd)
+    else:  # greens: a leafy rosette with a red root showing when ripe
+        h = (3, 6, 9)[stage]
+        for k in range(-h // 2, h // 2 + 1):
+            put(img, cx + k, 15 - h + abs(k), (84, 168, 84))
+            put(img, cx + k, 15 - h + abs(k) + 1, (60, 140, 66))
+        for y in range(15 - h + 2, 16):
+            put(img, cx, y, (70, 150, 70))
+        if stage == 2:
+            rect(img, cx - 1, 13, 3, 3, (206, 60, 70)); put(img, cx, 16 - 1, (150, 40, 50))
+    outline(img, (30, 60, 36))
+    return img
+
+
+def make_farm():
+    sprites = {}
+    for biome in BIOMES:
+        sprites[f"plot-{biome}"] = plot(biome, random.Random(sum(map(ord, biome)) + 77))
+    for kind in range(3):
+        for stage in range(3):
+            sprites[f"crop-{kind}-{stage}"] = crop(kind, stage, random.Random(kind * 10 + stage))
     return sprites
 
 

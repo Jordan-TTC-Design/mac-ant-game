@@ -12,6 +12,8 @@
   "pixelScale": 1.5,
   "hostile": true,
   "level": 1,
+  "appearsAfter": 30,
+  "minAnts": 25,
   "damage": 1,
   "attackEvery": 2.4,
   "hops": true,

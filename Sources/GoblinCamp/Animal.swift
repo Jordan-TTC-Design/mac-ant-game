@@ -22,6 +22,10 @@ struct MonsterTraits {
     var damage = 1.0
     /// Seconds between its attacks.
     var attackEvery = 2.0
+    /// The first monsters come after the camp has had time to grow: only once the game has run this many minutes (game time, see
+    /// `Colony.playSeconds`) and the camp has had this many goblins. Stronger monsters come later.
+    var appearsAfter = 0.0
+    var minAnts = 0
     /// Moves in hops (a slime).
     var hops = false
     /// How it attacks: the sheet's last two frames are its wind-up and its strike, and the motion follows the style.
@@ -91,8 +95,8 @@ enum Animals {
     static let all: [AnimalKind] = loadFolders()
 
     /// A random kind, weighted by how common each is: the peaceful ones (`monsters: false`) or the monsters.
-    static func pick(monsters: Bool = false) -> AnimalKind? {
-        let pool = all.filter { $0.hostile == monsters }
+    static func pick(monsters: Bool = false, minutes: Double = .infinity, ants: Int = .max) -> AnimalKind? {
+        let pool = all.filter { $0.hostile == monsters && $0.monster.appearsAfter <= minutes && $0.monster.minAnts <= ants }
         let total = pool.reduce(0) { $0 + $1.weight }
         guard total > 0 else { return nil }
         var roll = Double.random(in: 0..<total)
@@ -121,6 +125,8 @@ enum Animals {
         let damage: Double?
         let attackEvery: Double?
         let hops: Bool?
+        let appearsAfter: Double?
+        let minAnts: Int?
         let walkFrames: Int?
         let attackStyle: String?
         let splits: Int?
@@ -159,6 +165,8 @@ enum Animals {
         monster.damage = m.damage ?? 1
         monster.attackEvery = m.attackEvery ?? 2
         monster.hops = m.hops ?? false
+        monster.appearsAfter = m.appearsAfter ?? 0
+        monster.minAnts = m.minAnts ?? 0
         monster.attackStyle = AttackStyle(rawValue: m.attackStyle ?? "") ?? .none
         monster.splits = m.splits ?? 0
         if let pack = m.pack, pack.count == 2, pack[0] <= pack[1] { monster.pack = pack[0]...pack[1] }

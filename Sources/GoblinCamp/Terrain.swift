@@ -48,11 +48,18 @@ final class Solid: Obstacle {
     let radius: CGFloat
     /// The camp's belongings only turn up as the camp grows: this is the size (most goblins it has ever had) it takes.
     let unlock: Int
+    /// For trees (1) and rocks (2) the goblins may fell or mine: where it stands, and (rocks) which size it started as.
+    var resource = 0
+    var foot: CGPoint?
+    var size = 0
 
-    init(center: CGPoint, radius: CGFloat, unlock: Int = 0) {
+    init(center: CGPoint, radius: CGFloat, unlock: Int = 0, resource: Int = 0, foot: CGPoint? = nil, size: Int = 0) {
         self.center = center
         self.radius = radius
         self.unlock = unlock
+        self.resource = resource
+        self.foot = foot
+        self.size = size
     }
 
     func blocks(_ p: CGPoint, margin: CGFloat) -> Bool {
@@ -108,6 +115,10 @@ final class TerrainScene {
     private var mounds: [(center: CGPoint, rx: CGFloat, ry: CGFloat)] = []
     private var mud: [(center: CGPoint, rx: CGFloat, ry: CGFloat)] = []
     private var rings: [(center: CGPoint, radius: CGFloat)] = []
+    /// Mushrooms lying about, in clumps of a few near trees and stumps, or alone (never a neat pattern, except now and then a fairy ring).
+    private var mushrooms: [(pos: CGPoint, size: Int, kind: Int)] = []
+    /// Farm plots near the camp (where their bottom edge is centred), and the size of camp at which each is dug.
+    private(set) var plotSpots: [(center: CGPoint, unlock: Int)] = []
     /// Big soft patches that break up the ground (lighter and darker grass, bare earth, moss, mud…).
     private var patches: [(center: CGPoint, rx: CGFloat, ry: CGFloat, color: NSColor)] = []
     /// The bare trampled earth round the camp.
@@ -147,7 +158,64 @@ final class TerrainScene {
     }
 
     /// What goblins must walk round now.
-    var obstacles: [Obstacle] { ponds as [Obstacle] + solids.filter { $0.unlock <= growth } as [Obstacle] + plantedSolids as [Obstacle] }
+    var obstacles: [Obstacle] { ponds as [Obstacle] + solids.filter { $0.unlock <= growth && !isCut($0) } as [Obstacle] + plantedSolids as [Obstacle] }
+
+    // MARK: What the goblins take
+
+    /// What the goblins have taken from where `foot` is, if anything.
+    func cut(at foot: CGPoint) -> Cut? {
+        guard let life else { return nil }
+        let f = fraction(foot)
+        return life.state.cuts.first { abs($0.fx - Double(f.x)) < 0.004 && abs($0.fy - Double(f.y)) < 0.004 }
+    }
+
+    private func isCut(_ solid: Solid) -> Bool {
+        guard solid.resource != 0, let foot = solid.foot, let c = cut(at: foot) else { return false }
+        return solid.resource == 1 ? c.kind == 0 : (c.kind == 1 && c.taken > solid.size)
+    }
+
+    struct ResourceSpot {
+        enum Kind { case tree, rock }
+        let id: Int
+        let kind: Kind
+        let foot: CGPoint
+        /// Where a goblin stands to work at it.
+        let standAt: CGPoint
+        let planted: Bool
+    }
+
+    /// The trees and rocks goblins may work at now: not felled, not used up, and standing (a sapling is not a tree yet).
+    func resourceSpots() -> [ResourceSpot] {
+        func id(_ p: CGPoint) -> Int { let f = fraction(p); return Int(f.x * 10_000) * 10_000 + Int(f.y * 10_000) }
+        func stand(_ p: CGPoint, _ radius: CGFloat) -> CGPoint {
+            let side: CGFloat = TerrainScene.hash(p) % 2 == 0 ? 1 : -1
+            return CGPoint(x: p.x + side * (radius + 9), y: p.y - 3)
+        }
+        var spots: [ResourceSpot] = []
+        for solid in solids where solid.resource != 0 && solid.unlock <= growth && !isCut(solid) {
+            guard let foot = solid.foot else { continue }
+            spots.append(ResourceSpot(id: id(foot), kind: solid.resource == 1 ? .tree : .rock, foot: foot, standAt: stand(foot, solid.radius), planted: false))
+        }
+        if let life {
+            let now = clock ?? TerrainClock.now
+            for plant in life.state.plantings where plant.fell == nil && life.stage(of: plant, at: now) == .tree {
+                let foot = CGPoint(x: world.minX + CGFloat(plant.fx) * world.width, y: world.minY + CGFloat(plant.fy) * world.height)
+                spots.append(ResourceSpot(id: id(foot), kind: .tree, foot: foot, standAt: stand(foot, 7), planted: true))
+            }
+        }
+        return spots
+    }
+
+    /// The scene item for a static thing that has been cut: nothing, a stump, or a smaller rock.
+    private func afterCut(_ item: TerrainItem) -> (item: TerrainItem?, stump: TerrainItem?) {
+        guard let c = cut(at: item.foot) else { return (item, nil) }
+        if item.sprite.hasPrefix("tree-"), c.kind == 0 { return (nil, TerrainItem(sprite: "stump-\(biome.rawValue)", foot: item.foot)) }
+        if item.sprite.hasPrefix("rock-"), c.kind == 1, let size = Int(item.sprite.suffix(1)) {
+            let left = size - c.taken
+            return left < 0 ? (nil, nil) : (TerrainItem(sprite: "rock-\(biome.rawValue)-\(left)", foot: item.foot, unlock: item.unlock), nil)
+        }
+        return (item, nil)
+    }
 
     /// A point (in the clearing) that is free for something `radius` wide, or nil. Used to plant saplings and to leave puddles.
     func freeSpot(_ rng: inout TerrainRandom, _ radius: CGFloat) -> CGPoint? {
@@ -167,6 +235,7 @@ final class TerrainScene {
     /// Called when the life changed: the trees that are up are obstacles now.
     func refreshLife() {
         guard let life else { plantedSolids = []; return }
+        life.ensurePlots(plotSpots.count)
         let now = clock ?? TerrainClock.now
         plantedSolids = life.state.plantings.compactMap { plant in
             guard plant.planted <= now else { return nil }
@@ -219,6 +288,21 @@ final class TerrainScene {
         if big, biome != .swamp, world.width >= 520, world.height >= 380, rng.chance(0.3) { makeStream(&rng, nest: nest, taken: &taken) }
 
         makeCamp(&rng, nest: nest, inner: inner)
+
+        // farm plots a little way from the camp, dug as it grows (one, two or three)
+        if big {
+            for k in 0..<rng.int(1...3) {
+                for _ in 0..<25 {
+                    let a = rng.range(0, 2 * .pi), r = rng.range(135, 230)
+                    let p = CGPoint(x: nest.x + CGFloat(cos(a) * r), y: nest.y + CGFloat(sin(a) * r) * 0.8)
+                    if free(p, 46) {
+                        plotSpots.append((p, [26, 52, 88][k]))
+                        taken.append((p, 46))
+                        break
+                    }
+                }
+            }
+        }
 
         // big soft patches over the ground so it is not one flat colour
         let patchColors: [NSColor]
@@ -274,7 +358,7 @@ final class TerrainScene {
                 let size = rng.int(0...2)
                 let foot = CGPoint(x: c.x + CGFloat(rng.range(-22, 22)) * (k > 0 ? 1 : 0), y: c.y + CGFloat(rng.range(-10, 10)) * (k > 0 ? 1 : 0))
                 standing.append(TerrainItem(sprite: "rock-\(biome.rawValue)-\(size)", foot: foot))
-                solids.append(Solid(center: CGPoint(x: foot.x, y: foot.y + 4), radius: CGFloat([9, 14, 20][size])))
+                solids.append(Solid(center: CGPoint(x: foot.x, y: foot.y + 4), radius: CGFloat([9, 14, 20][size]), resource: 2, foot: foot, size: size))
             }
             taken.append((c, 30))
         }
@@ -299,7 +383,7 @@ final class TerrainScene {
                     if free(p, 8), placed.allSatisfy({ hypot($0.x - p.x, $0.y - p.y) > 26 }) {
                         placed.append(p)
                         standing.append(TerrainItem(sprite: "tree-\(biome.rawValue)-\(rng.int(0...(treeKinds - 1)))", foot: p))
-                        solids.append(Solid(center: p, radius: 6))
+                        solids.append(Solid(center: p, radius: 6, resource: 1, foot: p))
                         break
                     }
                 }
@@ -346,6 +430,7 @@ final class TerrainScene {
         // things drawn flat on the ground, by biome
         switch biome {
         case .meadow:
+            scatterMushrooms(&rng, clumps: rng.int(0...3), inner: inner)
             let colors = [NSColor(calibratedRed: 0.95, green: 0.86, blue: 0.35, alpha: 1), NSColor(calibratedRed: 0.94, green: 0.47, blue: 0.6, alpha: 1),
                           NSColor.white, NSColor(calibratedRed: 0.6, green: 0.65, blue: 0.95, alpha: 1)]
             for _ in 0..<rng.int(3...7) { // flower patches
@@ -357,9 +442,7 @@ final class TerrainScene {
                 }
             }
         case .forest:
-            for _ in 0..<rng.int(1...3) { // fairy rings
-                if let c = spot(26, tries: 12) { rings.append((c, CGFloat(rng.range(14, 24)))) }
-            }
+            scatterMushrooms(&rng, clumps: rng.int(5...11), inner: inner)
             for _ in 0..<rng.int(30...70) { // fallen leaves
                 dots.append((CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height),
                              rng.chance(0.5) ? NSColor(calibratedRed: 0.72, green: 0.5, blue: 0.2, alpha: 1) : NSColor(calibratedRed: 0.56, green: 0.4, blue: 0.16, alpha: 1)))
@@ -370,6 +453,7 @@ final class TerrainScene {
                 mounds.append((c, CGFloat(rng.range(18, 44)), CGFloat(rng.range(7, 14))))
             }
         case .swamp:
+            scatterMushrooms(&rng, clumps: rng.int(3...6), inner: inner)
             for _ in 0..<rng.int(5...10) { // mud
                 let c = CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height)
                 mud.append((c, CGFloat(rng.range(14, 40)), CGFloat(rng.range(8, 18))))
@@ -393,6 +477,34 @@ final class TerrainScene {
         }
 
         standing.sort { $0.foot.y > $1.foot.y } // from the top of the screen down, so the nearer ones are drawn last
+    }
+
+    /// Mushrooms in clumps of one to six, each of its own size and mostly one colour, most of them at the foot of a tree, a stump, a log or a rock
+    /// (that is where they grow), the rest in the open. Only about one place in eight has a fairy ring.
+    private func scatterMushrooms(_ rng: inout TerrainRandom, clumps: Int, inner: CGRect) {
+        let prefixes = ["tree-", "stump-", "log-", "rock-"]
+        let hosts = (standing + lying).filter { item in prefixes.contains { item.sprite.hasPrefix($0) } }
+        for _ in 0..<clumps {
+            var anchor = CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height)
+            if !hosts.isEmpty, rng.chance(0.65) {
+                let host = hosts[rng.int(0...(hosts.count - 1))]
+                anchor = CGPoint(x: host.foot.x + CGFloat(rng.range(-24, 24)), y: host.foot.y + CGFloat(rng.range(-10, 6)))
+            }
+            let kind = rng.int(0...3)
+            for _ in 0..<rng.int(1...6) {
+                let p = CGPoint(x: anchor.x + CGFloat(rng.range(-12, 12)), y: anchor.y + CGFloat(rng.range(-7, 7)))
+                mushrooms.append((p, rng.int(0...2), rng.chance(0.75) ? kind : rng.int(0...3)))
+            }
+        }
+        if rng.chance(0.12), let c = self.freeCentre(&rng, inner: inner) { rings.append((c, CGFloat(rng.range(14, 24)))) }
+    }
+
+    private func freeCentre(_ rng: inout TerrainRandom, inner: CGRect) -> CGPoint? {
+        for _ in 0..<12 {
+            let p = CGPoint(x: inner.minX + 40 + CGFloat(rng.next()) * (inner.width - 80), y: inner.minY + 40 + CGFloat(rng.next()) * (inner.height - 80))
+            if !solids.contains(where: { $0.blocks(p, margin: 26) }) && !ponds.contains(where: { $0.blocks(p, margin: 30) }) { return p }
+        }
+        return nil
     }
 
     /// The goblins' camp: trampled earth round the nest, a stone fire ring, hide tents, a totem, a drying rack, wood, bones and spears.
@@ -536,6 +648,9 @@ final class TerrainScene {
             NSRect(x: point.x, y: point.y, width: 3, height: 3).fill()
         }
         for ring in rings { paintMushroomRing(ring.center, ring.radius) }
+        // (more of them after summer, none under snow)
+        let mushroomDensity: Double = x >= 3.05 ? 0 : x >= 2 ? 1 : x < 0.3 ? 0.2 : biome == .swamp ? 0.9 : 0.55
+        for m in mushrooms where Double(TerrainScene.hash(m.pos) % 100) < mushroomDensity * 100 { paintMushroom(m.pos, size: m.size, kind: m.kind) }
         for stream in streams {
             if biome == .snow || x >= 3.05 { // (a stream freezes over in winter)
                 paintBand(stream.points, width: stream.width, colors: [NSColor(calibratedRed: 0.84, green: 0.93, blue: 0.98, alpha: 1), NSColor(calibratedRed: 0.76, green: 0.88, blue: 0.96, alpha: 1)],
@@ -552,14 +667,22 @@ final class TerrainScene {
         }
         // leaves lying under the trees in autumn
         let plantedItems = plantingItems(now: now)
-        let trees = standing.filter { $0.unlock <= growth } + plantedItems.standing
+        var stumps: [TerrainItem] = []
+        var trees: [TerrainItem] = []
+        for item in standing where item.unlock <= growth {
+            let result = afterCut(item)
+            if let kept = result.item { trees.append(kept) }
+            if let stump = result.stump { stumps.append(stump) }
+        }
+        trees += plantedItems.standing
         if x >= 2.1, x < 3.6 { paintLeafPiles(trees, amount: min(1, (x - 2.1) / 0.9)) }
         NSGraphicsContext.restoreGraphicsState()
 
         let frozen = x >= 3.05 && biome != .snow
         for pond in ponds { if let image = pond.image(frozen: frozen) { ctx.draw(image, in: pond.picture) } }
+        drawFarm(in: ctx)
         for item in lying where item.unlock <= growth { draw(item, in: ctx, season: x) }
-        for item in plantedItems.lying { draw(item, in: ctx, season: x) }
+        for item in plantedItems.lying + stumps { draw(item, in: ctx, season: x) }
         for item in (trees).sorted(by: { $0.foot.y > $1.foot.y }) { draw(item, in: ctx, season: x) }
 
         // the light of the hour over all of it
@@ -568,6 +691,59 @@ final class TerrainScene {
             ctx.fill(bounds)
         }
         return ctx.makeImage()
+    }
+
+    // MARK: The farm
+
+    struct PlotInfo {
+        let index: Int
+        let state: Int
+        let crop: Int
+        let standAt: CGPoint
+        let face: CGPoint
+    }
+
+    /// The plots that have been dug, with what state they are in and where a goblin stands to work at them.
+    func plotInfos() -> [PlotInfo] {
+        guard let life else { return [] }
+        return plotSpots.enumerated().compactMap { i, plot in
+            guard plot.unlock <= growth, life.state.plots.indices.contains(i) else { return nil }
+            let side: CGFloat = TerrainScene.hash(plot.center) % 2 == 0 ? 1 : -1
+            return PlotInfo(index: i, state: life.state.plots[i].state, crop: life.state.plots[i].crop,
+                            standAt: CGPoint(x: plot.center.x + side * 14, y: plot.center.y - 7), face: CGPoint(x: plot.center.x + side * 6, y: plot.center.y + 10))
+        }
+    }
+
+    /// Where the n-th plant of a plot stands (two rows of up to four).
+    private func cropSpot(_ plot: CGPoint, _ n: Int) -> CGPoint {
+        CGPoint(x: plot.x - 17 + CGFloat(n % 4) * 11.5 + (n >= 4 ? 5 : 0), y: plot.y + 3 + CGFloat(n / 4) * 11)
+    }
+
+    private func drawFarm(in ctx: CGContext) {
+        guard !plotSpots.isEmpty else { return }
+        for (i, plot) in plotSpots.enumerated() where plot.unlock <= growth {
+            draw(TerrainItem(sprite: "plot-\(biome.rawValue)", foot: plot.center), in: ctx)
+            guard let life, life.state.plots.indices.contains(i) else { continue }
+            let s = life.state.plots[i]
+            switch s.state {
+            case 0: // fallow: weeds coming up
+                ctx.setFillColor(NSColor(calibratedRed: 0.36, green: 0.62, blue: 0.3, alpha: 1).cgColor)
+                for n in 0..<7 { ctx.fill(CGRect(x: plot.center.x - 18 + CGFloat(n) * 6 + CGFloat(TerrainScene.hash(CGPoint(x: n, y: i)) % 3), y: plot.center.y + 5 + CGFloat(n % 3) * 6, width: 2, height: 3)) }
+            case 2: // sown: seeds on the earth
+                ctx.setFillColor(NSColor(calibratedRed: 0.86, green: 0.78, blue: 0.5, alpha: 1).cgColor)
+                for n in 0..<s.density * 2 { ctx.fill(CGRect(x: plot.center.x - 17 + CGFloat(n % 8) * 5 + CGFloat(n % 3), y: plot.center.y + 4 + CGFloat(n / 8) * 9 + CGFloat(n % 2) * 2, width: 2, height: 2)) }
+            case 3, 4, 5:
+                let fraction = s.state == 3 ? s.progress / max(1, s.hoursNeeded * 3600) : 1
+                let stage = s.state == 4 ? 2 : (fraction < 0.4 ? 0 : 1)
+                let name = "crop-\(s.crop)-\(s.state == 5 ? 1 : stage)"
+                guard let image = s.state == 5 ? TerrainArt.image(name, mode: .bare) : TerrainArt.image(name) else { continue }
+                for n in 0..<s.density {
+                    let at = cropSpot(plot.center, n)
+                    ctx.draw(image, in: CGRect(x: at.x - CGFloat(image.width) * 0.625, y: at.y, width: CGFloat(image.width) * 1.25, height: CGFloat(image.height) * 1.25))
+                }
+            default: break
+            }
+        }
     }
 
     // MARK: Seasons
@@ -757,6 +933,32 @@ final class TerrainScene {
         }
     }
 
+    /// One mushroom: a pale stem and a cap (red with white spots, brown, tan or purple), in three sizes, with a little shadow.
+    private func paintMushroom(_ p: CGPoint, size: Int, kind: Int) {
+        let capW = CGFloat([5, 7, 10][size]), stem = CGFloat([2, 3, 4][size])
+        NSColor(calibratedWhite: 0, alpha: 0.2).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - capW / 2 - 1, y: p.y - 2, width: capW + 2, height: 3)).fill()
+        NSColor(calibratedRed: 0.95, green: 0.92, blue: 0.83, alpha: 1).setFill()
+        NSRect(x: p.x - 1, y: p.y, width: 2, height: stem).fill()
+        let cap: NSColor
+        switch kind {
+        case 0: cap = NSColor(calibratedRed: 0.86, green: 0.2, blue: 0.2, alpha: 1)
+        case 1: cap = NSColor(calibratedRed: 0.6, green: 0.4, blue: 0.22, alpha: 1)
+        case 2: cap = NSColor(calibratedRed: 0.86, green: 0.76, blue: 0.56, alpha: 1)
+        default: cap = NSColor(calibratedRed: 0.62, green: 0.42, blue: 0.74, alpha: 1)
+        }
+        cap.setFill()
+        NSRect(x: p.x - capW / 2, y: p.y + stem, width: capW, height: 2).fill()
+        NSRect(x: p.x - capW / 2 + 1, y: p.y + stem + 2, width: capW - 2, height: 1.5).fill()
+        (cap.blended(withFraction: 0.35, of: .black) ?? cap).setFill()
+        NSRect(x: p.x - capW / 2, y: p.y + stem, width: capW, height: 0.8).fill()
+        if kind == 0 {
+            NSColor.white.setFill()
+            NSRect(x: p.x - capW / 2 + 1, y: p.y + stem + 1, width: 1, height: 1).fill()
+            if size > 0 { NSRect(x: p.x + 1, y: p.y + stem + 2, width: 1, height: 1).fill() }
+        }
+    }
+
     private func paintMushroomRing(_ c: CGPoint, _ radius: CGFloat) {
         let count = Int(radius / 2.4) + 4
         for k in 0..<count {
@@ -785,7 +987,7 @@ enum TerrainArt {
         switch kind {
         case "tent": return 1.5
         case "totem", "rack", "menhir", "spears", "firewood", "stump", "fern", "tuft", "cattail": return 1.6
-        case "skull", "bones", "firepit", "log": return 1.5
+        case "skull", "bones", "firepit", "log", "plot": return 1.5
         default: return name.hasPrefix("tree-swamp-3") || name.hasPrefix("tree-swamp-4") ? 1.35 : 2 // (the willows are big already)
         }
     }

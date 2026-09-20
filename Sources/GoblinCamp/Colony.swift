@@ -185,6 +185,9 @@ final class Colony {
 
     /// The most goblins the camp has ever had: what the camp has grown to (its tents, totem and the rest of it turn up as this grows).
     private(set) var peakAnts = 0
+    /// Game time: seconds the camp has been going (only while the app runs). Things arrive by it: animals after a few minutes, the first
+    /// monsters after half an hour, stronger ones later. `CAMP_WILD_SCALE` runs it faster (tests).
+    private(set) var playSeconds = 0.0
     private var sceneStage = 0
     var isRaining: Bool { weather == .rain }
 
@@ -321,7 +324,7 @@ final class Colony {
         guard want > 0 else { return }
 
         var inside: [Int] = [], nearby: [(index: Int, distance: Double)] = []
-        for (i, ant) in ants.enumerated() {
+        for (i, ant) in ants.enumerated() where !ant.isChild {
             switch ant.mode {
             case .inNest(_, nil): inside.append(i)
             case .wandering:
@@ -387,9 +390,18 @@ final class Colony {
             recruitHunters(for: id, count: 5 + Int(creatures[i].hp / 3) + ants[index].traits.recruit)
         case .attack(let id):
             attack(creature: id, by: index)
+        case .gathered(let kind, let id, let face, _):
+            finishGathering(kind: kind, id: id, foot: CGPoint(x: face.x, y: face.y - 6), by: index)
         case .caughtFish:
-            foodDelivered += 1 // a fish is food for the camp
+            // a fish goes into the larder, for the stew (if it is full the goblins simply eat it)
+            if larder["fish", default: 0] < Colony.larderLimit { larder["fish", default: 0] += 1 } else { foodDelivered += 1 }
             addFloater("釣到魚了", .common, at: ants[index].pos)
+        case .cooked(let pot):
+            finishCooking(at: pot)
+        case .tended(let child):
+            tend(child: child, by: index)
+        case .farmed(let plot, let action):
+            finishFarming(plot: plot, action: action, by: index)
         case .carrierArrived:
             carriersArrived += 1
         case .died:
@@ -441,6 +453,7 @@ final class Colony {
         carriersArrived = 0
         for offset in [CGFloat(9), CGFloat(-9)] { // one in front, one behind, along the way they walk
             var ant = makeAnt(at: CGPoint(x: start.x + direction.x * offset, y: start.y + direction.y * offset), breedIndex: 0)
+            ant.age = max(ant.age, Ant.childSeconds + 5) // the two who carry the princess in are grown up
             ant.mode = .carryingPrincess(target: CGPoint(x: home.x + direction.x * offset, y: home.y + direction.y * offset))
             ants.append(ant)
             carrierIDs.append(ant.id)
@@ -473,7 +486,7 @@ final class Colony {
         // animals and monsters (monsters go after the goblins that are out walking, or the nest)
         var raid: RaidInfo?
         if let nest, creatures.contains(where: { $0.kind.hostile }) {
-            raid = RaidInfo(nest: nest, prey: ants.filter { !$0.isHidden && !$0.isDying && !$0.isWounded }.map(\.pos))
+            raid = RaidInfo(nest: nest, prey: ants.filter { !$0.isHidden && !$0.isDying && !$0.isWounded && !$0.isChild }.map(\.pos))
         }
         for i in creatures.indices.reversed() {
             if creatures[i].update(dt: dt, walkable: walkable, raid: raid) {
@@ -489,7 +502,7 @@ final class Colony {
         healPulses.removeAll { $0 > 1.2 }
         // trees grow fruit
         for i in foods.indices where foods[i].isTree && foods[i].amount < foods[i].capacity {
-            foods[i].regrow -= dt * Colony.wildScale
+            foods[i].regrow -= dt * Colony.wildScale * settings.pace
             if foods[i].regrow <= 0 {
                 foods[i].amount += 1
                 foods[i].regrow = Colony.treeRegrowTime
@@ -498,9 +511,9 @@ final class Colony {
             }
         }
 
-        guard level > 0, ants.count >= 6, queen?.isCarried == false else { return }
-        animalTimer -= dt * Colony.wildScale
-        treeTimer -= dt * Colony.wildScale
+        guard level > 0, ants.count >= 6, playSeconds >= 6 * 60, queen?.isCarried == false else { return }
+        animalTimer -= dt * Colony.wildScale * settings.pace
+        treeTimer -= dt * Colony.wildScale * settings.pace
         if animalTimer < 0 {
             if animalTimer < -1_000_000 || creatures.count < Colony.maxAnimals[level] { spawnAnimal() }
             animalTimer = Colony.animalEvery[level] * Double.random(in: 0.6...1.4)
@@ -558,8 +571,11 @@ final class Colony {
     /// called out when one gets close to the camp.
     private func updateMonsters(dt: Double) {
         let level = settings.monsters
-        guard level > 0, !campHidden, ants.count >= 8, queen?.isCarried == false else { return }
-        monsterTimer -= dt * Colony.wildScale
+        // Nothing comes for a young camp: the game must have run a while (the first raid comes half an hour to an hour in) and the camp must
+        // have had some numbers to defend itself. The first one is then after a random wait, never at once.
+        guard level > 0, !campHidden, ants.count >= 12, peakAnts >= 25, playSeconds >= 30 * 60, queen?.isCarried == false else { return }
+        if monsterTimer == -1 { monsterTimer = Colony.monsterEvery[level] * Double.random(in: 0.4...1.2) }
+        monsterTimer -= dt * Colony.wildScale * settings.pace
         if monsterTimer < 0 {
             if monsterTimer < -1_000_000 || creatures.filter({ $0.kind.hostile }).count < Colony.maxMonsters[level] { spawnMonsters() }
             monsterTimer = Colony.monsterEvery[level] * Double.random(in: 0.6...1.4)
@@ -579,7 +595,7 @@ final class Colony {
 
     /// A monster (or a pack of them) walks in from a screen edge, heading for the camp.
     func spawnMonsters(of kind: AnimalKind? = nil) {
-        guard nest != nil, let kind = kind ?? Animals.pick(monsters: true) else { return }
+        guard nest != nil, let kind = kind ?? Animals.pick(monsters: true, minutes: playSeconds / 60, ants: peakAnts) else { return }
         let count = Int.random(in: kind.monster.pack)
         let before = creatures.count
         for _ in 0..<count { spawnAnimal(of: kind) }
@@ -595,7 +611,7 @@ final class Colony {
         let monster = creatures[index]
         let reach = monster.kind.radius * monster.scale + 14
         var best: (index: Int, distance: Double)?
-        for (i, ant) in ants.enumerated() where !ant.isHidden && !ant.isDying && !ant.isWounded {
+        for (i, ant) in ants.enumerated() where !ant.isHidden && !ant.isDying && !ant.isWounded && !ant.isChild {
             let d = Double(hypot(ant.pos.x - monster.pos.x, ant.pos.y - monster.pos.y))
             if d < reach, d < (best?.distance ?? .infinity) { best = (i, d) }
         }
@@ -643,7 +659,7 @@ final class Colony {
         let want = min(count, Colony.maxHunters - hunters(of: id))
         guard want > 0 else { return }
         var inside: [Int] = [], nearby: [(index: Int, distance: Double)] = []
-        for (i, ant) in ants.enumerated() where !ant.isWounded {
+        for (i, ant) in ants.enumerated() where !ant.isWounded && !ant.isChild {
             switch ant.mode {
             case .inNest(_, nil): inside.append(i)
             case .wandering:
@@ -740,10 +756,25 @@ final class Colony {
             }
         }
         let luck = monster.generation == 0 ? 1.0 : 0.5 // the small ones are worth less
+        let first = dropLoot(Materials.roll(monster.kind.monster.drops + Materials.scraps, luck: luck).map { ($0.id, $0.count) }, at: monster.pos)
+        for i in ants.indices {
+            switch ants[i].mode {
+            case .hunting(let target, _), .inNestForHunt(_, let target), .huntNews(let target):
+                if target == monster.id, let first { ants[i].mode = .foraging(food: first, slot: Double.random(in: 0..<(2 * .pi))) }
+                else if target == monster.id { ants[i].mode = .wandering }
+            default: break
+            }
+        }
+        onAntsChanged?()
+    }
+
+    /// Leaves piles of materials on the ground (one per material) for the goblins to carry home. Returns the id of the first pile.
+    @discardableResult
+    private func dropLoot(_ items: [(id: String, count: Int)], at position: CGPoint) -> Int? {
         var first: Int?
-        for (n, drop) in Materials.roll(monster.kind.monster.drops + Materials.scraps, luck: luck).enumerated() {
+        for (n, drop) in items.enumerated() {
             let angle = Double(n) * 1.7 + Double.random(in: 0..<1), spread = 9 + Double(n) * 3
-            var pile = FoodSource(id: nextFoodID, kind: .loot, pos: CGPoint(x: monster.pos.x + cos(angle) * spread, y: monster.pos.y + sin(angle) * spread), amount: drop.count)
+            var pile = FoodSource(id: nextFoodID, kind: .loot, pos: CGPoint(x: position.x + cos(angle) * spread, y: position.y + sin(angle) * spread), amount: drop.count)
             pile.origin = .loot
             pile.capacityOverride = drop.count
             pile.material = drop.id
@@ -755,14 +786,197 @@ final class Colony {
             if first == nil { first = nextFoodID }
             nextFoodID += 1
         }
-        for i in ants.indices {
-            switch ants[i].mode {
-            case .hunting(let target, _), .inNestForHunt(_, let target), .huntNews(let target):
-                if target == monster.id, let first { ants[i].mode = .foraging(food: first, slot: Double.random(in: 0..<(2 * .pi))) }
-                else if target == monster.id { ants[i].mode = .wandering }
-            default: break
+        return first
+    }
+
+    // MARK: The larder and the cooking
+
+    /// What is stored for cooking (fish, vegetables), and how much of each the larder holds.
+    private(set) var larder: [String: Int] = [:]
+    static let larderLimit = 16
+    var larderTotal: Int { larder.values.reduce(0, +) }
+
+    /// The stew is done. How it turned out is up to chance: mostly fine, sometimes wonderful, sometimes burnt, now and then the pot is tipped over.
+    /// The dish is a pile of stew beside the fire ring for the goblins to carry home.
+    private func finishCooking(at pot: CGPoint) {
+        let used = min(larderTotal, Int.random(in: 2...4))
+        guard used >= 2 else { return addFloater("沒有食材可以煮", .common, at: pot) }
+        var fish = 0, veg = 0
+        for _ in 0..<used {
+            // take from whichever there is more of (a mixed pot when both are stocked)
+            let pick = (larder["fish", default: 0] > larder["veg", default: 0]) == (Double.random(in: 0..<1) < 0.75) ? "fish" : "veg"
+            let key = larder[pick, default: 0] > 0 ? pick : (pick == "fish" ? "veg" : "fish")
+            guard larder[key, default: 0] > 0 else { continue }
+            larder[key]! -= 1
+            if larder[key] == 0 { larder[key] = nil }
+            if key == "fish" { fish += 1 } else { veg += 1 }
+        }
+        let name = fish > 0 && veg > 0 ? "魚菜燉鍋" : fish > 0 ? "魚湯" : "蔬菜燉菜"
+        var pieces = (fish + veg) * 2 + Int.random(in: 0...3)
+        let roll = Double.random(in: 0..<1)
+        let message: String
+        if roll < 0.05 { pieces = 0; message = "打翻了鍋子…" }
+        else if roll < 0.22 { pieces = max(1, pieces / 2); message = "\(name)燒焦了" }
+        else if roll > 0.85 { pieces = pieces * 3 / 2; message = "香噴噴的\(name)！" }
+        else { message = "煮好了\(name)" }
+        addFloater(message, roll > 0.85 ? .uncommon : .common, at: pot)
+        if pieces > 0 {
+            var stew = FoodSource(id: nextFoodID, kind: .stew, pos: CGPoint(x: pot.x + CGFloat.random(in: -12...12), y: pot.y - 6), amount: pieces)
+            stew.capacityOverride = pieces
+            stew.scouted = true
+            stew.reported = true
+            foods.append(stew)
+            let id = nextFoodID
+            nextFoodID += 1
+            recruit(for: id, count: min(6, pieces)) // the smell brings them
+        }
+        onAntsChanged?()
+    }
+
+    // MARK: The young ones
+
+    private var childTimer = 0.0
+    private var knownChildren = Set<Int>()
+
+    /// A grown one has minded a young one: it grows up a little faster, and if it has a cold it usually gets better.
+    private func tend(child id: Int, by index: Int) {
+        guard let c = ants.firstIndex(where: { $0.id == id }), ants[c].isChild else { return }
+        ants[c].age += 45
+        if ants[c].sick > 0, Double.random(in: 0..<1) < 0.7 {
+            ants[c].sick = 0
+            addFloater("\(ants[c].name) 退燒了", .uncommon, at: ants[c].pos)
+        } else if Double.random(in: 0..<1) < 0.25 {
+            addFloater("小哥布林笑了", .common, at: ants[c].pos)
+        }
+    }
+
+    /// Every few seconds: a young one may catch a cold (a matter of chance; it lasts about six minutes unless it is minded), and the ones that
+    /// have just grown up are noticed.
+    private func updateChildren(dt: Double) {
+        childTimer -= dt
+        guard childTimer <= 0 else { return }
+        childTimer = 5
+        var now = Set<Int>()
+        for i in ants.indices where ants[i].isChild {
+            now.insert(ants[i].id)
+            if ants[i].sick <= 0, Double.random(in: 0..<1) < 0.001 * Ant.childCatchScale { ants[i].sick = Double.random(in: 300...420) }
+        }
+        for id in knownChildren.subtracting(now) {
+            if let a = ants.first(where: { $0.id == id }), Double.random(in: 0..<1) < 0.4 { addFloater("\(a.name) 長大了", .uncommon, at: a.pos) }
+        }
+        knownChildren = now
+    }
+
+    // MARK: The farm
+
+    private var plotCache: [TerrainScene.PlotInfo] = []
+
+    /// A goblin has done a job at a plot. Tilling turns fallow or withered ground into a bed; sowing puts in a crop that suits the season (a
+    /// poor sowing comes up thin); watering helps what grows along (usually); harvesting fills the larder (now and then a giant pumpkin).
+    private func finishFarming(plot index: Int, action: Int, by ant: Int) {
+        guard let scene, let life, life.state.plots.indices.contains(index) else { return }
+        let spot = scene.plotSpots.indices.contains(index) ? scene.plotSpots[index].center : ants[ant].pos
+        let now = TerrainClock.now
+        var message = ""
+        switch action {
+        case 0:
+            life.setPlot(index) { $0 = PlotState(state: 1, changed: now) }
+            message = Double.random(in: 0..<1) < 0.1 ? "石頭好多，翻好了土" : "翻好了土"
+        case 1:
+            let season = scene.season
+            // what suits the season: greens in spring and autumn, wheat and pumpkins in summer
+            let roll = Double.random(in: 0..<1)
+            let crop: Int
+            switch season {
+            case .spring: crop = roll < 0.6 ? 2 : 0
+            case .summer: crop = roll < 0.4 ? 1 : roll < 0.8 ? 0 : 2
+            default: crop = roll < 0.7 ? 2 : 0
+            }
+            let thin = Double.random(in: 0..<1) < 0.12
+            life.setPlot(index) { $0 = PlotState(state: 2, crop: crop, density: thin ? Int.random(in: 3...4) : Int.random(in: 5...8), changed: now, progress: 0, pace: Double.random(in: 0.8...1.3)) }
+            message = thin ? "種子撒得稀稀的" : "播下了種子"
+        case 3:
+            if life.state.plots[index].state == 3, Double.random(in: 0..<1) < 0.8 {
+                life.setPlot(index) { $0.progress += Double.random(in: 1...3) * 3600 }
+                message = "澆了水"
+            }
+        default:
+            guard life.state.plots[index].state == 4 else { return }
+            let plot = life.state.plots[index]
+            var yield = plot.density / 2 + Int.random(in: 0...2) + (ants[ant].traits.personality == .calm ? 1 : 0)
+            var giant = false
+            if plot.crop == 1, Double.random(in: 0..<1) < 0.05 { yield *= 2; giant = true }
+            life.setPlot(index) { $0 = PlotState(state: 0, changed: now) }
+            let room = Colony.larderLimit + 8 - larder["veg", default: 0]
+            larder["veg", default: 0] += min(max(0, room), yield)
+            if yield > room { foodDelivered += yield - max(0, room) }
+            message = giant ? "超大的南瓜！收成 +\(yield)" : "收成 +\(yield)"
+        }
+        if !message.isEmpty { addFloater(message, message.contains("超大") ? .rare : .common, at: spot) }
+        resourceTimer = 0
+        onAntsChanged?()
+    }
+
+    // MARK: Working the land (felling and mining)
+
+    /// The trees and rocks that may be worked, refreshed every couple of seconds.
+    private var resourceCache: [TerrainScene.ResourceSpot] = []
+    private var resourceTimer = 0.0
+
+    /// A goblin has finished at a tree or a rock. What comes of it is a matter of chance: a tree may fall, give only some branches, or turn
+    /// out too hard; a rock may give iron, nothing but rubble, or one big chunk; now and then there is a bees' nest or a shard of crystal,
+    /// and now and then somebody gets hurt. Trees are never felled below six standing, so the place never goes bare.
+    private func finishGathering(kind: Int, id: Int, foot: CGPoint, by index: Int) {
+        guard let scene, let life, let spot = scene.resourceSpots().first(where: { $0.id == id }) else { return } // somebody got there first
+        let strong = ants[index].traits.might >= 1.3
+        var items: [(id: String, count: Int)] = []
+        var message = ""
+        if kind == 0 {
+            let trees = scene.resourceSpots().filter { $0.kind == .tree }.count
+            let roll = Double.random(in: 0..<1)
+            // the fewer trees are left, the less likely one falls (and never below six)
+            let plenty = min(1, Double(trees - 6) / 8)
+            if roll < (strong ? 0.68 : 0.58) * plenty, trees > 6 {
+                items.append(("scrap_wood", Int.random(in: 3...6) + (strong ? 1 : 0)))
+                message = "砍倒了一棵樹"
+                if spot.planted { life.fellPlanting(nearFraction: scene.fraction(spot.foot)) } else { life.cut(kind: 0, at: scene.fraction(spot.foot)) }
+            } else if roll < 0.9 {
+                items.append(("scrap_wood", Int.random(in: 1...2)))
+                message = "砍下了一些樹枝"
+            } else {
+                message = "木頭太硬，砍不動"
+            }
+            if Double.random(in: 0..<1) < 0.05, !foods.contains(where: { hypot($0.pos.x - foot.x, $0.pos.y - foot.y) < 40 }) { // a bees' nest
+                var honey = FoodSource(id: nextFoodID, kind: .honey, pos: nearestWalkable(to: CGPoint(x: foot.x + 14, y: foot.y - 10)), amount: 8)
+                honey.capacityOverride = 8
+                honey.scouted = true
+                honey.reported = true
+                foods.append(honey)
+                nextFoodID += 1
+                message = "找到蜂巢了！"
+            }
+        } else {
+            let roll = Double.random(in: 0..<1)
+            if roll < 0.68 {
+                items.append(("scrap_iron", Int.random(in: 1...3)))
+                message = "敲下了一些鐵"
+                if Double.random(in: 0..<1) < 0.55 { life.cut(kind: 1, at: scene.fraction(spot.foot)) } // the rock shrinks
+            } else if roll < 0.9 {
+                message = "只有碎石"
+            } else {
+                items.append(("scrap_iron", Int.random(in: 3...5)))
+                message = "敲下了一大塊！"
+                life.cut(kind: 1, at: scene.fraction(spot.foot))
+            }
+            if Double.random(in: 0..<1) < Materials.finds[0].chance {
+                items.append((Materials.finds[0].id, 1))
+                message = "挖到晶石了！"
             }
         }
+        if !items.isEmpty { dropLoot(items, at: foot) }
+        if !message.isEmpty { addFloater(message, message.contains("晶") || message.contains("蜂") ? .rare : .common, at: foot) }
+        if Double.random(in: 0..<1) < 0.02 { hurt(ant: index) } // a blow on the wrong thing, a stone rolling
+        resourceTimer = 0
         onAntsChanged?()
     }
 
@@ -936,6 +1150,8 @@ final class Colony {
         if let slot = pool.randomElement() { wear(slot, of: index, by: 1) }
     }
 
+    func debugStock(_ items: [String: Int]) { for (k, v) in items { larder[k, default: 0] += v } }
+
     /// Test aid: everybody gets a full set of gear.
     func debugEquipEveryone() {
         let ids = ["long_sword", "wood_shield", "iron_helm", "leather_armor", "leather_pants", "leather_boots", "iron_gauntlets"]
@@ -1007,6 +1223,8 @@ final class Colony {
         materials = saved.materials ?? [:]
         kills = saved.kills ?? [:]
         peakAnts = max(saved.peak ?? 0, saved.goblins?.count ?? saved.antCount)
+        playSeconds = saved.playSeconds ?? 0
+        larder = saved.larder ?? [:]
         savedLife = saved.terrain
         scene?.growth = peakAnts
         armory = (saved.armoryItems ?? []).map { GearItem(id: $0.id, left: $0.left) }.filter { $0.gear != nil }
@@ -1046,7 +1264,7 @@ final class Colony {
                           goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name,
                                                     gear: savedGear(of: $0)) },
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
-                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, terrain: life?.state ?? savedLife, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) })
+                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: life?.state ?? savedLife, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) })
     }
 
     private func savedGear(of ant: Ant) -> [String: SavedGear]? {
@@ -1238,6 +1456,38 @@ final class Colony {
         world.ponds = scene?.ponds ?? []
         world.crowd = Double(visibleCount) / Double(visibleCap)
         world.night = Colony.isNight
+        world.pit = peakAnts >= 5 && fire == nil ? scene?.firePit : nil
+        let cooking = ants.contains { if case .activity(.cook, _) = $0.mode { return true } else { return false } }
+        world.cookSlots = larderTotal >= 2 && !cooking ? 1 : 0
+        resourceTimer -= dt
+        if resourceTimer <= 0 {
+            resourceTimer = 2
+            resourceCache = scene?.resourceSpots() ?? []
+            plotCache = scene?.plotInfos() ?? []
+        }
+        var minded = Set<Int>()
+        for ant in ants { if case .activity(.mind(let child), _) = ant.mode { minded.insert(child) } }
+        var childInfo: [Int: (pos: CGPoint, sick: Bool)] = [:]
+        for ant in ants where ant.isChild && !ant.isHidden { childInfo[ant.id] = (ant.pos, ant.sick > 0) }
+        if !childInfo.isEmpty {
+            world.children = childInfo
+            world.unminded = Set(childInfo.keys).subtracting(minded)
+        }
+        var busyPlots = Set<Int>()
+        for ant in ants { if case .activity(.farm(let plot, _, _, _), _) = ant.mode { busyPlots.insert(plot) } }
+        if !plotCache.isEmpty {
+            world.plots = plotCache.filter { !busyPlots.contains($0.index) }
+            world.farmSlots = max(0, max(1, ants.count / 30) - busyPlots.count)
+            world.canSow = scene?.season != .winter
+        }
+        let working = Set(ants.compactMap { ant -> Int? in
+            if case .activity(.gather(_, _, _, let id, _), _) = ant.mode { return id }
+            return nil
+        })
+        if !working.isEmpty || !resourceCache.isEmpty {
+            world.resources = resourceCache.filter { !working.contains($0.id) }
+            world.gatherSlots = peakAnts >= 12 ? max(0, max(1, ants.count / 25) - working.count) : 0 // (a tiny camp has no time for it)
+        }
         world.activitiesOn = !isRaining && fire == nil && world.crowd < 1.2
         matchTimer -= dt
         if matchTimer <= 0, !campHidden {
@@ -1268,6 +1518,8 @@ final class Colony {
         moveCarriedPrincess()
         updateWildlife(dt: dt)
         updateTerrainLife(dt: dt)
+        updateChildren(dt: dt)
+        playSeconds += dt * Colony.wildScale * settings.pace
         // the dead leave the colony (highest index first so the others keep their places)
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)
         for index in gone.sorted(by: >) {

@@ -395,6 +395,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 view.cacheDisplay(in: view.bounds, to: rep)
                 if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
                 log("camp window drawn: world \(self.mapWindow!.world), nest \(String(describing: self.colony.nest)), goblins \(self.colony.ants.count), visible \(self.mapWindow!.isVisible), in the pond \(self.colony.ants.filter { a in self.colony.obstacles.contains { $0.blocks(a.pos, margin: 0) } }.count)")
+                let h = view.bounds.height
+                log("plots: \((self.colony.scene?.plotSpots ?? []).enumerated().map { "\($0.offset)@\(Int($0.element.center.x * 2)),\(Int((h - $0.element.center.y) * 2)) unlock \($0.element.unlock) state \(self.colony.life?.state.plots.indices.contains($0.offset) == true ? self.colony.life!.state.plots[$0.offset].state : -1)" })")
                 NSApp.terminate(nil)
             }
         }
@@ -676,6 +678,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 NSApp.terminate(nil)
             }
         }
+        if let stock = env["CAMP_TEST_LARDER"], env["CAMP_TEST_LIFE"] != nil {
+            after(3) { self.colony.debugStock(Dictionary(uniqueKeysWithValues: stock.split(separator: ",").compactMap { part -> (String, Int)? in
+                let pair = part.split(separator: ":"); return pair.count == 2 ? (String(pair[0]), Int(pair[1]) ?? 0) : nil })) }
+        }
         if env["CAMP_TEST_LIFE"] != nil { // what the goblins are doing with their spare time, by breed, every 10 seconds
             for k in 1...9 {
                 after(Double(k) * 10 + 10) {
@@ -687,7 +693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         byActivity[what, default: 0] += 1
                         byBreed[breeds[min(a.breedIndex, breeds.count - 1)].name, default: [:]][what, default: 0] += 1
                     }
-                    log("t+\(k * 10 + 10)s hour \(Scenery.currentHour), \(c.ants.count) goblins: \(byActivity.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) | fish caught so far: \(c.foodDelivered)")
+                    log("t+\(k * 10 + 10)s hour \(Scenery.currentHour), \(c.ants.count) goblins: \(byActivity.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) | fish caught so far: \(c.foodDelivered) | wood \(c.materials["scrap_wood", default: 0]) iron \(c.materials["scrap_iron", default: 0]) crystal \(c.materials["crystal_shard", default: 0]) | larder \(c.larder) stews \(c.foods.filter { $0.kind == .stew }.count) | trees left \(c.scene?.resourceSpots().filter { $0.kind == .tree }.count ?? 0), rocks \(c.scene?.resourceSpots().filter { $0.kind == .rock }.count ?? 0), cuts \(c.life?.state.cuts.count ?? 0)")
                     for (breed, counts) in byBreed.sorted(by: { $0.key < $1.key }) { log("   \(breed): \(counts.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))") }
                 }
             }
@@ -722,6 +728,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        if let label = env["CAMP_TEST_WATCH"], let path = env["CAMP_TEST_WATCHSHOT"] { // draw the camp the moment a goblin is doing this (by its label, e.g. 煮飯), and say where
+            if let stock = env["CAMP_TEST_LARDER"] {
+                after(3) { self.colony.debugStock(Dictionary(uniqueKeysWithValues: stock.split(separator: ",").compactMap { part -> (String, Int)? in
+                    let pair = part.split(separator: ":"); return pair.count == 2 ? (String(pair[0]), Int(pair[1]) ?? 0) : nil })) }
+            }
+            var done = false
+            for k in 1...170 {
+                after(Double(k) + 8) {
+                    guard !done, let view = self.mapWindow?.view else { return }
+                    guard let ant = self.colony.ants.first(where: { $0.activity?.label.contains(label) == true && $0.moving == false }) else { return }
+                    done = true
+                    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }
+                    log("watch shot: \(label) at \(Int(ant.pos.x * 2)),\(Int((view.bounds.height - ant.pos.y) * 2)), larder \(self.colony.larder), stews \(self.colony.foods.filter { $0.kind == .stew }.count)")
+                    NSApp.terminate(nil)
+                }
+            }
+        }
         if env["CAMP_TEST_STUCK"] != nil { // find goblins that are out and about but have hardly moved in 15 s
             var before: [Int: CGPoint] = [:]
             func sample() { before = Dictionary(uniqueKeysWithValues: self.colony.ants.filter { !$0.isHidden }.map { ($0.id, $0.pos) }) }
@@ -748,7 +773,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     after(Double(k) * 3) {
                         let c = self.colony
                         let modes = Dictionary(grouping: c.ants.map { String(describing: $0.mode).prefix(12) }, by: { $0 }).mapValues(\.count)
-                        log("t+\(k * 3)s princess \(c.queen?.stateName ?? "-") animals \(c.creatures.map { "\($0.kind.id) hp\(Int($0.hp))\($0.engaged > 0 ? " fighting" : "")\($0.attackClock != nil ? " attacking" : "")" }) foods \(c.foods.map { "\($0.kind.rawValue)x\($0.amount)" }) slain \(c.slain) wounded \(c.ants.filter(\.isWounded).count) goblins \(c.ants.count) mats \(c.materials.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }) kills \(c.kills) \(modes)")
+                        log("t+\(k * 3)s game \(Int(c.playSeconds))s pace \(String(format: "%.2f", Settings.shared.pace)) cap \(c.visibleCap) out \(c.visibleCount) perf \(String(format: "%.2f", PerfGovernor.shared.factor)) princess \(c.queen?.stateName ?? "-") animals \(c.creatures.map { "\($0.kind.id) hp\(Int($0.hp))\($0.engaged > 0 ? " fighting" : "")\($0.attackClock != nil ? " attacking" : "")" }) foods \(c.foods.map { "\($0.kind.rawValue)x\($0.amount)" }) slain \(c.slain) wounded \(c.ants.filter(\.isWounded).count) goblins \(c.ants.count) mats \(c.materials.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }) kills \(c.kills) \(modes)")
                     }
                 }
             }

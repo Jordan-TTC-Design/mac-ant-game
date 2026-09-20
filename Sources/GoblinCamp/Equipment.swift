@@ -101,6 +101,8 @@ enum Gears {
              blurb: "斷爪磨得很利，握柄包著鼠皮。"),
         Gear(id: "long_sword", name: "長劍", slot: .weapon, might: 1.7, cost: [("scrap_iron", 6), ("rat_pelt", 2), ("scrap_wood", 1)], look: .longSword, color: rgb(206, 212, 224),
              blurb: "比短劍長一截，砍得更重。"),
+        Gear(id: "crystal_blade", name: "晶刃", slot: .weapon, might: 2.5, cost: [("scrap_iron", 5), ("crystal_shard", 2), ("rat_pelt", 1)], look: .longSword, color: rgb(120, 218, 240),
+             blurb: "劍身嵌著挖出來的碎晶，會發出淡淡的藍光。很稀有。"),
         Gear(id: "twin_blades", name: "雙刀", slot: .weapon, grip: .two, might: 2.1, cost: [("scrap_iron", 5), ("rat_fang", 4), ("rat_pelt", 2)], look: .twinBlades, color: rgb(196, 204, 216),
              blurb: "兩手各一把，出手快，沒有手拿盾。"),
         Gear(id: "great_sword", name: "雙手劍", slot: .weapon, grip: .two, might: 2.8, cost: [("scrap_iron", 9), ("rat_fang", 4), ("rat_pelt", 3)], look: .greatSword, color: rgb(214, 220, 232),

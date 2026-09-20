@@ -1,7 +1,7 @@
 import AppKit
 
 enum FoodKind: String, CaseIterable {
-    case water, honey, fruit, meat, loot
+    case water, honey, fruit, meat, loot, stew
 
     /// What the player can put down from the menu (fruit and meat turn up by themselves).
     static let placeable: [FoodKind] = [.water, .honey]
@@ -13,6 +13,7 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return "果實"
         case .meat: return "肉"
         case .loot: return "素材"
+        case .stew: return "燉菜"
         }
     }
 
@@ -23,6 +24,7 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return "🍎"
         case .meat: return "🍖"
         case .loot: return "💎"
+        case .stew: return "🍲"
         }
     }
 
@@ -34,6 +36,7 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return 6
         case .meat: return 12
         case .loot: return 1
+        case .stew: return 10
         }
     }
 
@@ -45,6 +48,7 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return 10 // the foot of the tree
         case .meat: return 7
         case .loot: return 5
+        case .stew: return 8
         }
     }
 
@@ -56,6 +60,7 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return NSColor(calibratedRed: 0.88, green: 0.2, blue: 0.2, alpha: 1)
         case .meat: return NSColor(calibratedRed: 0.72, green: 0.3, blue: 0.24, alpha: 1)
         case .loot: return NSColor(calibratedRed: 0.95, green: 0.82, blue: 0.3, alpha: 1)
+        case .stew: return NSColor(calibratedRed: 0.86, green: 0.55, blue: 0.22, alpha: 1)
         }
     }
 }
@@ -128,7 +133,20 @@ struct AntWorld {
     /// Night time (goblins sleep more), and whether they may start something to pass the time (not while it rains, in a crowd, or at the campfire party).
     var night = false
     var activitiesOn = true
+    /// The stone ring where the goblins cook (once the camp has one), and whether a cook may start now (something in the larder, nobody at the pot).
+    var pit: CGPoint?
+    var cookSlots = 0
+    /// The farm plots nobody is working now, how many more goblins may set out to farm, and whether anything can be sown (not in winter).
+    var plots: [TerrainScene.PlotInfo] = []
+    var farmSlots = 0
+    var canSow = true
+    /// The young ones out and about (by id: where, and whether it is ill), and which of them nobody is minding.
+    var children: [Int: (pos: CGPoint, sick: Bool)] = [:]
+    var unminded: Set<Int> = []
     /// Where the goblins that are scuffling with each other are (by id), and where the golden ones being waited on are.
+    /// The trees and rocks goblins may work at (nobody is at them now), and how many more may set out to (a few at a time, not the whole camp).
+    var resources: [TerrainScene.ResourceSpot] = []
+    var gatherSlots = 0
     var partners: [Int: CGPoint] = [:]
     var bosses: [Int: CGPoint] = [:]
     var crowded: Bool { crowd >= 1 }

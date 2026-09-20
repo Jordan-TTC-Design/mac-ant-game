@@ -51,11 +51,17 @@ enum Materials {
         DropSpec(id: "scrap_iron", name: "廢鐵", chance: 0.45, min: 1, max: 2, color: "#8a929e"),
     ]
 
+    /// Rare things the goblins turn up while working: a sliver of crystal in a rock.
+    static let finds: [DropSpec] = [
+        DropSpec(id: "crystal_shard", name: "碎晶", chance: 0.04, min: 1, max: 1, color: "#6ad8f0"),
+    ]
+
     /// Every material any loaded monster can drop.
     static let all: [MaterialInfo] = {
         var seen = Set<String>()
         var result: [MaterialInfo] = scraps.map { MaterialInfo(id: $0.id, name: $0.name, rarity: $0.rarity, color: color($0.color, rarity: $0.rarity), source: "各種魔獸") }
         seen.formUnion(scraps.map(\.id))
+        for find in finds { result.append(MaterialInfo(id: find.id, name: find.name, rarity: find.rarity, color: color(find.color, rarity: find.rarity), source: "採礦")); seen.insert(find.id) }
         for kind in Animals.all where kind.hostile {
             for drop in kind.monster.drops where seen.insert(drop.id).inserted {
                 result.append(MaterialInfo(id: drop.id, name: drop.name, rarity: drop.rarity, color: color(drop.color, rarity: drop.rarity), source: kind.name))

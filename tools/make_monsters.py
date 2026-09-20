@@ -8,7 +8,7 @@ A monster is an animal folder (see make_animals.py) whose manifest.json has a fe
   hostile (true), level, damage (health a goblin loses per hit), attackEvery (seconds), hops (moves in hops),
   splits (how many smaller ones it breaks into), pack [min, max] (how many come together), and
   drops: a list of {id, name, chance 0..1, min, max, color "#rrggbb"}. A drop's rarity comes from its chance:
-  50% and up is common, 15%-50% uncommon, below that rare. Monsters need at least three drops. `hp` is how much damage it takes (a goblin hits for 1 to 2 about once a second, so 30 is a few seconds for a
+  50% and up is common, 15%-50% uncommon, below that rare. Monsters need at least three drops. `appearsAfter` (minutes of game time) and `minAnts` (goblins the camp has had) say when they may first turn up. `hp` is how much damage it takes (a goblin hits for 1 to 2 about once a second, so 30 is a few seconds for a
 squad of eight); each kind has its own.
 Each sheet holds the walk frames first (`walkFrames`), then two attack poses: the wind-up and the strike. `attackStyle` (slam, bite)
 decides the motion the game gives them. The slime hops (four walk frames); the rat scurries (two).
@@ -97,7 +97,7 @@ MONSTERS = [
     # id, name, draw, frames, manifest
     ("slime", "史萊姆", slime, 6, {
         "hp": 60, "speed": 15, "meat": 0, "aggressive": True, "weight": 3, "radius": 7, "pixelScale": 1.5,
-        "hostile": True, "level": 1, "damage": 1, "attackEvery": 2.4, "hops": True, "walkFrames": 4, "attackStyle": "slam", "splits": 2, "pack": [1, 1],
+        "hostile": True, "level": 1, "appearsAfter": 30, "minAnts": 25, "damage": 1, "attackEvery": 2.4, "hops": True, "walkFrames": 4, "attackStyle": "slam", "splits": 2, "pack": [1, 1],
         "drops": [
             {"id": "slime_goo", "name": "黏液", "chance": 0.85, "min": 1, "max": 3, "color": "#68d078"},
             {"id": "slime_core", "name": "史萊姆核心", "chance": 0.30, "min": 1, "max": 1, "color": "#3aa0d8"},
@@ -106,7 +106,7 @@ MONSTERS = [
         ]}),
     ("giant_rat", "巨鼠", rat, 4, {
         "hp": 30, "speed": 34, "meat": 0, "aggressive": True, "weight": 3, "radius": 6, "pixelScale": 1.5,
-        "hostile": True, "level": 1, "damage": 1, "attackEvery": 1.3, "hops": False, "walkFrames": 2, "attackStyle": "bite", "splits": 0, "pack": [2, 3],
+        "hostile": True, "level": 1, "appearsAfter": 75, "minAnts": 40, "damage": 1, "attackEvery": 1.3, "hops": False, "walkFrames": 2, "attackStyle": "bite", "splits": 0, "pack": [2, 3],
         "drops": [
             {"id": "rat_fang", "name": "鼠牙", "chance": 0.75, "min": 1, "max": 2, "color": "#f4efdc"},
             {"id": "rat_pelt", "name": "鼠皮", "chance": 0.50, "min": 1, "max": 1, "color": "#a08c7c"},

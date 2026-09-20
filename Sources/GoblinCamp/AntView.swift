@@ -582,6 +582,8 @@ final class AntView: NSView {
         let lastBreed = character.breeds.count - 1
         ctx.saveGState()
         ctx.interpolationQuality = .none // keep the pixels sharp
+        var minded = Set<Int>() // young ones being minded (they get a heart)
+        for other in colony.ants { if case .activity(.mind(let child), _) = other.mode { minded.insert(child) } }
         for ant in colony.ants where !ant.isHidden {
             var p = local(ant.pos)
             guard onScreen.contains(p), let role = character.breeds[min(ant.breedIndex, lastBreed)].sprites else { continue }
@@ -592,7 +594,7 @@ final class AntView: NSView {
                 p.x += CGFloat(cos(ant.swingHeading)) * lunge
                 p.y += CGFloat(sin(ant.swingHeading)) * lunge
             }
-            let pixel = role.pixelSize(scale: Double(scale))
+            let pixel = role.pixelSize(scale: Double(scale)) * (ant.isChild ? 0.62 : 1) // the young ones are small
             let size = CGFloat(role.frameSize) * pixel
             let activity = ant.activity
             if case .play? = activity { p.y += CGFloat(abs(sin(ant.activityClock * 7))) * 4 } // hops about
@@ -611,7 +613,27 @@ final class AntView: NSView {
             ctx.setAlpha(CGFloat(ant.fadeAlpha)) // the dying fade out
             ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size))
             ctx.setAlpha(1)
-            if PerfGovernor.shared.showsDetail {
+            if ant.isChild {
+                if ant.sick > 0 { // a cold: a green tinge, a drip at the nose and now and then a sneeze
+                    NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.4, alpha: 0.25).setFill()
+                    NSBezierPath(ovalIn: NSRect(x: p.x - size * 0.4, y: p.y - size * 0.1, width: size * 0.8, height: size * 0.9)).fill()
+                    NSColor(calibratedRed: 0.6, green: 0.85, blue: 0.5, alpha: 1).setFill()
+                    NSRect(x: p.x + size * 0.15, y: p.y + size * 0.35, width: 1.5, height: 2.5).fill()
+                    if Int(Date().timeIntervalSinceReferenceDate * 1.5 + Double(ant.id)) % 5 == 0 {
+                        NSColor(calibratedWhite: 1, alpha: 0.7).setFill()
+                        NSRect(x: p.x + size * 0.45, y: p.y + size * 0.3, width: 3, height: 2).fill()
+                        NSRect(x: p.x + size * 0.6, y: p.y + size * 0.4, width: 2, height: 2).fill()
+                    }
+                }
+                if minded.contains(ant.id) { // a heart floating up
+                    let bob = CGFloat(sin(Date().timeIntervalSinceReferenceDate * 3 + Double(ant.id))) * 1.5
+                    NSColor(calibratedRed: 0.95, green: 0.3, blue: 0.4, alpha: 1).setFill()
+                    let hx = p.x - 2.5, hy = p.y + size * 0.85 + bob
+                    NSRect(x: hx, y: hy + 1.5, width: 2, height: 2).fill(); NSRect(x: hx + 3, y: hy + 1.5, width: 2, height: 2).fill()
+                    NSRect(x: hx, y: hy + 0.5, width: 5, height: 1.5).fill(); NSRect(x: hx + 1, y: hy - 0.5, width: 3, height: 1).fill()
+                }
+            }
+            if PerfGovernor.shared.showsDetail, !ant.isChild {
                 if !ant.gear.isEmpty || ant.swing > 0 { drawGear(ant, at: p, size: size, pixel: pixel) }
                 if ant.swing > 0 { drawSlash(ant, at: p, size: size, progress: swingProgress) }
             }
@@ -628,6 +650,8 @@ final class AntView: NSView {
     }
 
     /// What goes with an activity: a fishing rod and line, a book, dust from a scuffle, a crown over a golden goblin, a fish held up.
+    private func dirSign(_ ant: Ant) -> CGFloat { cos(ant.heading) >= 0 ? 1 : -1 }
+
     private func drawActivity(_ ant: Ant, at p: CGPoint, size: CGFloat, pixel u: CGFloat) {
         let t = ant.activityClock
         func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: NSColor) {
@@ -665,6 +689,120 @@ final class AntView: NSView {
             let spread = NSBezierPath(ovalIn: NSRect(x: bobber.x - 2 - ring * 7, y: bobber.y - 1 - ring * 3, width: 4 + ring * 14, height: 3 + ring * 6))
             spread.lineWidth = 0.8
             spread.stroke()
+        case .gather(let job, let spot, let face, _, _)?:
+            // the tool: an axe or a pickaxe, raised and brought down at each blow; chips or sparks fly from where it lands
+            guard hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 8, let ctx = NSGraphicsContext.current?.cgContext else { break }
+            let dir: CGFloat = cos(ant.heading) >= 0 ? 1 : -1
+            let progress = ant.swing > 0 ? CGFloat(1 - ant.swing / Ant.swingTime) : 0
+            ctx.saveGState()
+            ctx.translateBy(x: p.x + dir * size * 0.3, y: p.y + size * 0.3)
+            ctx.rotate(by: dir * (0.9 - 2.3 * progress))
+            let steel = NSColor(calibratedRed: 0.72, green: 0.75, blue: 0.82, alpha: 1)
+            rect(0, 0, 1.3, 7, NSColor(calibratedRed: 0.5, green: 0.34, blue: 0.18, alpha: 1))
+            if job == 0 { // an axe: the head on one side, its edge lit
+                rect(dir * 1.5 * u, 5 * u, 3, 2.6, steel)
+                rect(dir * 2.6 * u, 5 * u, 1, 2.6, NSColor.white)
+            } else { // a pickaxe: a curved bar across the top
+                rect(0, 6 * u, 6, 1.4, steel)
+                rect(-2.6 * u, 5.4 * u, 1, 1.4, steel); rect(2.6 * u, 5.4 * u, 1, 1.4, steel)
+            }
+            ctx.restoreGState()
+            if progress > 0.55, progress < 0.95 {
+                let hit = local(face)
+                let fly = (progress - 0.55) / 0.4
+                for k in 0..<5 {
+                    let a = Double(k) * 1.3 + Double(ant.gatherHits)
+                    let x = hit.x + CGFloat(cos(a)) * (3 + fly * 9) * (k % 2 == 0 ? 1 : -1)
+                    let y = hit.y - 6 + CGFloat(sin(a)) * (2 + fly * 8) + CGFloat(fly) * 4
+                    (job == 0 ? (k % 2 == 0 ? NSColor(calibratedRed: 0.72, green: 0.52, blue: 0.3, alpha: 1) : NSColor(calibratedRed: 0.86, green: 0.72, blue: 0.5, alpha: 1))
+                        : (k % 2 == 0 ? NSColor(calibratedRed: 1, green: 0.88, blue: 0.4, alpha: 1) : NSColor(calibratedWhite: 0.8, alpha: 1))).withAlphaComponent(1 - fly * 0.6).setFill()
+                    NSRect(x: x, y: y, width: 2, height: 2).fill()
+                }
+            }
+        case .farm(let plot, let action, let spot, let face)?:
+            // hoe, seed, basket or watering can: the tool for the job, and what flies up or falls from it
+            guard hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 8, let ctx = NSGraphicsContext.current?.cgContext else { break }
+            let dir: CGFloat = cos(ant.heading) >= 0 ? 1 : -1
+            let progress = ant.swing > 0 ? CGFloat(1 - ant.swing / Ant.swingTime) : 0
+            let target = local(face)
+            let hand = CGPoint(x: p.x + dir * size * 0.3, y: p.y + size * 0.3)
+            switch action {
+            case 0: // a hoe
+                ctx.saveGState()
+                ctx.translateBy(x: hand.x, y: hand.y)
+                ctx.rotate(by: dir * (0.9 - 2.2 * progress))
+                rect(0, 0, 1.3, 7, NSColor(calibratedRed: 0.5, green: 0.34, blue: 0.18, alpha: 1))
+                rect(dir * 1.4 * u, 6 * u, 3.2, 1.4, NSColor(calibratedRed: 0.62, green: 0.65, blue: 0.7, alpha: 1))
+                ctx.restoreGState()
+                if progress > 0.55, progress < 0.95 {
+                    for k in 0..<4 {
+                        let a = Double(k) * 1.6 + Double(ant.id)
+                        NSColor(calibratedRed: 0.5, green: 0.36, blue: 0.22, alpha: 0.9).setFill()
+                        NSRect(x: target.x + CGFloat(cos(a)) * (3 + (progress - 0.55) * 14), y: target.y + CGFloat(sin(a)) * 3 + (progress - 0.55) * 10, width: 2, height: 2).fill()
+                    }
+                }
+            case 1: // sowing: a handful of seed thrown out
+                if progress > 0.15 {
+                    let f = (progress - 0.15) / 0.85
+                    for k in 0..<6 {
+                        let t2 = f + CGFloat(k) * 0.04
+                        NSColor(calibratedRed: 0.9, green: 0.82, blue: 0.5, alpha: 1 - f * 0.4).setFill()
+                        NSRect(x: hand.x + (target.x - hand.x) * min(1, t2) + CGFloat(k % 3 - 1) * 3, y: hand.y + (target.y - hand.y) * min(1, t2) + CGFloat(sin(Double(t2) * .pi)) * 8, width: 2, height: 2).fill()
+                    }
+                }
+            case 3: // a watering can
+                let tilt = CGFloat(0.6)
+                ctx.saveGState()
+                ctx.translateBy(x: hand.x + dir * 2, y: hand.y)
+                ctx.rotate(by: -dir * tilt)
+                rect(0, 0, 6, 4, NSColor(calibratedRed: 0.55, green: 0.6, blue: 0.68, alpha: 1))
+                rect(dir * 4.4 * u, 2 * u, 1.2, 4, NSColor(calibratedRed: 0.45, green: 0.5, blue: 0.58, alpha: 1))
+                ctx.restoreGState()
+                for k in 0..<7 {
+                    let phase = (t * 1.6 + Double(k) / 7).truncatingRemainder(dividingBy: 1)
+                    NSColor(calibratedRed: 0.5, green: 0.74, blue: 0.96, alpha: 0.9).setFill()
+                    NSRect(x: hand.x + dir * 9 + (target.x - hand.x - dir * 9) * CGFloat(phase), y: hand.y + 3 - CGFloat(phase) * (hand.y - target.y + 3), width: 1.6, height: 2.4).fill()
+                }
+            default: // harvest: a basket at its side, and what it pulls up
+                NSColor(calibratedRed: 0.66, green: 0.48, blue: 0.26, alpha: 1).setFill()
+                NSRect(x: p.x - dir * size * 0.42 - 4, y: p.y + size * 0.05, width: 8, height: 5).fill()
+                NSColor(calibratedRed: 0.42, green: 0.3, blue: 0.16, alpha: 1).setFill()
+                NSRect(x: p.x - dir * size * 0.42 - 4, y: p.y + size * 0.05 + 4, width: 8, height: 1).fill()
+                let colors = [NSColor(calibratedRed: 0.92, green: 0.78, blue: 0.3, alpha: 1), NSColor(calibratedRed: 0.95, green: 0.55, blue: 0.16, alpha: 1), NSColor(calibratedRed: 0.4, green: 0.72, blue: 0.4, alpha: 1)]
+                if progress > 0.2, progress < 0.95 {
+                    colors[plot % 3].setFill()
+                    NSRect(x: target.x - 2 + (p.x - target.x) * progress * 0.4, y: target.y + progress * 14, width: 4, height: 4).fill()
+                }
+            }
+        case .cook(let spot, let pot)?:
+            // a little fire under the pot, the pot itself, steam, and the spoon the cook stirs with
+            guard hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 8 else { break }
+            let c = local(pot)
+            for (k, flame) in [(-6.0, 4.0), (-2.0, 7.0), (2.0, 5.0), (6.0, 3.5)].enumerated() {
+                let wag = CGFloat(sin(t * 9 + Double(k) * 2)) * 1.2
+                NSColor(calibratedRed: 0.98, green: 0.5, blue: 0.12, alpha: 1).setFill()
+                NSRect(x: c.x + CGFloat(flame.0) - 1.5, y: c.y - 2, width: 3, height: CGFloat(flame.1) + wag).fill()
+                NSColor(calibratedRed: 1, green: 0.85, blue: 0.3, alpha: 1).setFill()
+                NSRect(x: c.x + CGFloat(flame.0) - 0.5, y: c.y - 2, width: 1.2, height: CGFloat(flame.1) * 0.5).fill()
+            }
+            NSColor(calibratedRed: 0.16, green: 0.15, blue: 0.18, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: c.x - 9, y: c.y + 2, width: 18, height: 11)).fill()
+            NSColor(calibratedRed: 0.86, green: 0.5, blue: 0.2, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: c.x - 7, y: c.y + 8, width: 14, height: 5)).fill()
+            NSColor(calibratedRed: 0.3, green: 0.28, blue: 0.32, alpha: 1).setFill()
+            NSRect(x: c.x - 11, y: c.y + 8, width: 3, height: 2).fill(); NSRect(x: c.x + 8, y: c.y + 8, width: 3, height: 2).fill()
+            for k in 0..<4 {
+                let phase = (t * 0.7 + Double(k) * 0.25).truncatingRemainder(dividingBy: 1)
+                NSColor(calibratedWhite: 1, alpha: 0.45 * CGFloat(1 - phase)).setFill()
+                NSBezierPath(ovalIn: NSRect(x: c.x - 6 + CGFloat(k) * 4 + CGFloat(sin(t * 2 + Double(k))) * 2, y: c.y + 14 + CGFloat(phase) * 18, width: 5, height: 4)).fill()
+            }
+            let stir = CGFloat(sin(t * 4)) * 5
+            NSColor(calibratedRed: 0.6, green: 0.42, blue: 0.22, alpha: 1).setStroke()
+            let spoon = NSBezierPath()
+            spoon.move(to: CGPoint(x: p.x + dirSign(ant) * 6, y: p.y + size * 0.4))
+            spoon.line(to: CGPoint(x: c.x + stir, y: c.y + 10))
+            spoon.lineWidth = 1.5
+            spoon.stroke()
         case .read?:
             let book = CGPoint(x: p.x, y: p.y + size * 0.12)
             rect(book.x, book.y, 7, 4.5, NSColor(calibratedRed: 0.35, green: 0.3, blue: 0.62, alpha: 1))
@@ -1089,6 +1227,8 @@ final class AntView: NSView {
             drawMeat(food, at: p, w: w, h: h)
         case .loot:
             drawLoot(food, at: p)
+        case .stew:
+            drawStew(food, at: p)
         case .honey:
             // a main blob with a smaller drip beside it, so it looks gooey
             let drip = NSRect(x: p.x + w * 0.45, y: p.y - h * 0.95, width: w * 0.85, height: h * 0.75)
@@ -1142,6 +1282,29 @@ final class AntView: NSView {
         rim.stroke()
         NSColor(calibratedRed: 0.95, green: 0.6, blue: 0.5, alpha: 0.9).setFill()
         NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.6, y: p.y + h * 0.1, width: w * 0.6, height: h * 0.5)).fill()
+    }
+
+    /// A pot of stew set down for the goblins: a dark iron pot, the stew inside, and steam while it is hot.
+    private func drawStew(_ food: FoodSource, at p: CGPoint) {
+        let t = Date().timeIntervalSinceReferenceDate
+        NSColor(calibratedWhite: 0, alpha: 0.2).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - 9, y: p.y - 5, width: 18, height: 6)).fill()
+        NSColor(calibratedRed: 0.2, green: 0.18, blue: 0.2, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - 8, y: p.y - 4, width: 16, height: 10)).fill()
+        NSColor(calibratedRed: 0.86, green: 0.5, blue: 0.2, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - 6.5, y: p.y - 0.5, width: 13, height: 6)).fill()
+        NSColor(calibratedRed: 0.98, green: 0.74, blue: 0.4, alpha: 1).setFill()
+        NSRect(x: p.x - 3, y: p.y + 2, width: 2, height: 1.5).fill()
+        NSRect(x: p.x + 1.5, y: p.y + 3, width: 2, height: 1.5).fill()
+        NSColor(calibratedRed: 0.28, green: 0.25, blue: 0.28, alpha: 1).setFill()
+        NSRect(x: p.x - 9, y: p.y + 3, width: 2, height: 2).fill()
+        NSRect(x: p.x + 7, y: p.y + 3, width: 2, height: 2).fill()
+        for k in 0..<3 { // steam
+            let phase = (t * 0.6 + Double(k) * 0.33).truncatingRemainder(dividingBy: 1)
+            NSColor(calibratedWhite: 1, alpha: 0.4 * CGFloat(1 - phase)).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x - 4 + CGFloat(k) * 4 + CGFloat(sin(t * 2 + Double(k))) * 1.5, y: p.y + 6 + CGFloat(phase) * 14, width: 4, height: 3)).fill()
+        }
+        if food.amount > 1 { drawPill("×\(food.amount)", center: NSPoint(x: p.x, y: p.y + 24), fontSize: 8) }
     }
 
     /// A monster's leavings: a small gem in the colour of the material, with a sparkle that is brighter the rarer it is.

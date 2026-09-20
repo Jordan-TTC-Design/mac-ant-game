@@ -20,6 +20,14 @@ struct Ant {
         case stroll
         /// Waiting on a golden goblin, keeping `offset` away from it.
         case serve(boss: Int, offset: CGPoint)
+        /// Minding a young one (`child` is its id): standing by it, feeding it and patting it.
+        case mind(child: Int)
+        /// Working a plot: `action` 0 tilling, 1 sowing, 2 harvesting, 3 watering.
+        case farm(plot: Int, action: Int, spot: CGPoint, face: CGPoint)
+        /// Cooking at the fire ring: standing at `spot`, stirring the pot at `pot`.
+        case cook(spot: CGPoint, pot: CGPoint)
+        /// Felling a tree (0) or mining a rock (1) at `face`, standing at `spot`; `hitsLeft` more blows to go.
+        case gather(kind: Int, spot: CGPoint, face: CGPoint, id: Int, hitsLeft: Int)
 
         var label: String {
             switch self {
@@ -30,6 +38,10 @@ struct Ant {
             case .scuffle: return "打鬧"
             case .stroll: return "巡視（有人伺候）"
             case .serve: return "伺候金皮"
+            case .gather(let kind, _, _, _, _): return kind == 0 ? "砍樹" : "採石"
+            case .cook: return "煮飯"
+            case .mind: return "照顧小哥布林"
+            case .farm(_, let action, _, _): return "耕田：" + ["翻土", "播種", "收成", "澆水"][min(3, action)]
             }
         }
     }
@@ -76,6 +88,14 @@ struct Ant {
         case huntNewsDelivered(Int)
         case attack(Int)
         case caughtFish
+        /// Finished cooking at the pot at this point.
+        case cooked(pot: CGPoint)
+        /// Finished minding a young one.
+        case tended(child: Int)
+        /// Finished an action at a farm plot.
+        case farmed(plot: Int, action: Int)
+        /// Finished felling (kind 0) or mining (1) the thing at `foot`, after `hits` blows.
+        case gathered(kind: Int, id: Int, foot: CGPoint, hits: Int)
     }
 
     /// How fast the two carriers walk the princess in, in points per second.
@@ -105,6 +125,22 @@ struct Ant {
     private var restless = Double.random(in: 6...20)
     private var biteTimer = Double.random(in: 4...9)
     private var scuffleTimer = 0.5
+    private var gatherTimer = 0.8
+    private var cookLeft = 20.0
+    private var farmLeft = 12.0
+    private var farmTimer = 0.6
+    /// The blows struck at the current job (for its result and for the tool's animation).
+    private(set) var gatherHits = 0
+
+    /// A newborn is a small one for its first minutes: it plays near the nest, is minded by the grown ones, and takes no part in hunts or work.
+    /// `CAMP_CHILD_MINUTES` changes how long (20).
+    static var childSeconds: Double { (Double(ProcessInfo.processInfo.environment["CAMP_CHILD_MINUTES"] ?? "") ?? 20) * 60 / Settings.shared.pace }
+    var isChild: Bool { age < Ant.childSeconds }
+    /// `CAMP_CHILD_COLD_SCALE` makes the young catch colds more often (tests).
+    static let childCatchScale = Double(ProcessInfo.processInfo.environment["CAMP_CHILD_COLD_SCALE"] ?? "") ?? 1
+    /// Seconds it still has a cold (a young one may catch one; being minded usually cures it), and the same for how long it was last minded.
+    var sick = 0.0
+    private var mindTimer = 0.0
 
     /// Seconds left of the swing it makes when it hits something, and which way (the attack animation).
     static let swingTime = 0.32
@@ -180,7 +216,7 @@ struct Ant {
     var lifeFraction: Double { min(1, age / max(traits.lifespan, 1)) }
 
     /// Old ones walk slower.
-    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed }
+    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed * (isChild ? 0.85 : 1) * (sick > 0 ? 0.5 : 1) }
 
     var isCarryingPrincess: Bool {
         switch mode {
@@ -253,6 +289,7 @@ struct Ant {
         moving = false
         swing = max(0, swing - dt)
         catchShow = max(0, catchShow - dt)
+        sick = max(0, sick - dt)
         age += ageDt
         if age >= traits.lifespan, !isDying, !isCarryingPrincess {
             if isHidden { return .died } // it went quietly in the nest
@@ -397,6 +434,10 @@ struct Ant {
 
     /// Something to do with its spare time, now and then: mostly sleep at night, play or fish by day, and each breed has its likes.
     private mutating func pickActivity(dt: Double, world: AntWorld) -> Activity? {
+        if isChild { // the young ones do nothing but play and nap
+            guard world.activitiesOn, Double.random(in: 0..<1) < dt / 22 else { return nil }
+            return Double.random(in: 0..<1) < (world.night ? 0.8 : 0.3) ? .sleep : .play
+        }
         guard world.activitiesOn, Double.random(in: 0..<1) < dt / 55 else { return nil }
         let personality = traits.personality
         var options: [(kind: Activity, weight: Double)] = []
@@ -411,6 +452,61 @@ struct Ant {
             case .lively: options.append((.play, 4))
             case .plain: options.append((.play, 2))
             }
+            // work: felling trees and mining rocks (the strong ones most; the clever and the golden ones hardly at all)
+            // cooking, most at meal times, by whoever likes it: the clever, then the plain
+            // minding the young ones (most when one is ill)
+            if let child = world.unminded.randomElement(), personality != .boss, let info = world.children[child] {
+                let weight: Double
+                switch personality {
+                case .plain: weight = 1.5
+                case .calm: weight = 1.0
+                case .lively: weight = 0.8
+                default: weight = 0.3
+                }
+                options.append((.mind(child: child), weight * (info.sick ? 4 : 0.8) * Ant.mindScale))
+            }
+            // farming: whatever the plot needs (till it, sow it in the right seasons, water what grows, gather what is ripe)
+            if world.farmSlots > 0, personality != .boss, let plot = world.plots.randomElement() {
+                var action: Int?
+                switch plot.state {
+                case 0, 5: action = 0
+                case 1: action = world.canSow ? 1 : nil
+                case 3: action = Double.random(in: 0..<1) < 0.35 ? 3 : nil
+                case 4: action = 2
+                default: action = nil
+                }
+                if let action {
+                    var weight: Double
+                    switch personality {
+                    case .brute: weight = action == 0 ? 1.6 : 0.7
+                    case .lively: weight = 0.3
+                    case .calm: weight = 0.9
+                    default: weight = 1.0
+                    }
+                    if action == 2 { weight *= 2 } // what is ripe is picked soon
+                    options.append((.farm(plot: plot.index, action: action, spot: plot.standAt, face: plot.face), weight * Ant.farmScale))
+                }
+            }
+            if world.cookSlots > 0, personality != .boss, let pit = world.pit {
+                let hour = Calendar.current.component(.hour, from: Date())
+                let mealTime = (11...13).contains(hour) || (17...19).contains(hour)
+                let taste: Double = personality == .calm ? 2.2 : personality == .brute ? 0.8 : personality == .lively ? 0.5 : 1.5
+                options.append((.cook(spot: CGPoint(x: pit.x, y: pit.y - 17), pot: pit), taste * (mealTime ? 3 : 0.6) * Ant.cookScale))
+            }
+            if world.gatherSlots > 0, personality != .boss, let spot = world.resources.randomElement() {
+                let scale = Ant.gatherScale
+                let tree = spot.kind == .tree
+                let weight: Double
+                switch personality {
+                case .brute: weight = tree ? 2.4 : 3.0
+                case .lively: weight = tree ? 0.5 : 0.3
+                case .calm: weight = 0.3
+                default: weight = tree ? 1.2 : 1.0
+                }
+                let hits = max(3, Int(Double.random(in: 6...12) / traits.might))
+                let face = spot.foot
+                options.append((.gather(kind: tree ? 0 : 1, spot: spot.standAt, face: CGPoint(x: face.x, y: face.y + 6), id: spot.id, hitsLeft: hits), weight * scale))
+            }
             if personality != .boss, let spot = world.ponds.randomElement()?.fishingSpots.randomElement() {
                 options.append((.fish(spot: spot.spot, water: spot.water), personality == .calm ? 2 : personality == .lively ? 0.4 : 0.8))
             }
@@ -423,6 +519,18 @@ struct Ant {
         return nil
     }
 
+    /// `CAMP_MIND_SCALE` makes the grown ones mind the young more often (tests).
+    static let mindScale = Double(ProcessInfo.processInfo.environment["CAMP_MIND_SCALE"] ?? "") ?? 1
+
+    /// `CAMP_FARM_SCALE` makes goblins take up farming more often (tests).
+    static let farmScale = Double(ProcessInfo.processInfo.environment["CAMP_FARM_SCALE"] ?? "") ?? 1
+
+    /// `CAMP_COOK_SCALE` makes goblins take up cooking more often (tests).
+    static let cookScale = Double(ProcessInfo.processInfo.environment["CAMP_COOK_SCALE"] ?? "") ?? 1
+
+    /// `CAMP_GATHER_SCALE` makes goblins take up felling and mining more often (tests).
+    static let gatherScale = Double(ProcessInfo.processInfo.environment["CAMP_GATHER_SCALE"] ?? "") ?? 1
+
     /// How long each kind of activity lasts, in seconds.
     private static func duration(of kind: Activity, night: Bool) -> Double {
         switch kind {
@@ -431,11 +539,16 @@ struct Ant {
         case .play: return Double.random(in: 8...16)
         case .read: return Double.random(in: 20...40)
         case .scuffle, .stroll, .serve: return Double.random(in: 8...20)
+        case .gather: return 90 // (only a limit; it ends when the work is done)
+        case .cook: return 200 // (a limit; see the cooking time below)
+        case .farm: return 90
+        case .mind: return 60
         }
     }
 
     /// One step of an activity. Anything that matters (a monster near, getting hurt) ends it.
-    private mutating func updateActivity(_ kind: Activity, remaining: Double, dt: Double, world: AntWorld) -> Event? {
+    private mutating func updateActivity(_ activity: Activity, remaining: Double, dt: Double, world: AntWorld) -> Event? {
+        var kind = activity
         activityClock += dt
         if isWounded || world.creatures.contains(where: { $0.hostile && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < 150 }) { return giveUp() }
         var left = remaining - dt
@@ -482,6 +595,80 @@ struct Ant {
             let result = updateWandering(dt: dt * 0.55, world: world, calm: true)
             guard case .activity = mode else { return result } // it noticed something and went for it
             event = result
+        case .gather(let job, let spot, let face, let id, let hitsLeft):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * world.pace, dt: dt)
+                left = remaining // the time counts once it is at work
+                gatherHits = 0
+            } else {
+                turn(toward: atan2(face.y - pos.y, face.x - pos.x), rate: 5, dt: dt)
+                gatherTimer -= dt
+                if gatherTimer <= 0 { // a blow, and a short rest before the next
+                    gatherTimer = Double.random(in: 0.8...1.5)
+                    swing = Ant.swingTime
+                    swingHeading = atan2(face.y - pos.y, face.x - pos.x)
+                    gatherHits += 1
+                    if hitsLeft <= 1 {
+                        let hits = gatherHits
+                        mode = .wandering
+                        heading = Double.random(in: 0..<(2 * .pi))
+                        return .gathered(kind: job, id: id, foot: face, hits: hits)
+                    }
+                    kind = .gather(kind: job, spot: spot, face: face, id: id, hitsLeft: hitsLeft - 1)
+                }
+            }
+        case .mind(let child):
+            guard let target = world.children[child] else { return giveUp() }
+            let distance = hypot(target.pos.x - pos.x, target.pos.y - pos.y)
+            if distance > 16 {
+                walk(toward: target.pos, distance: distance, speed: effectiveSpeed * world.pace * 1.1, dt: dt)
+                left = remaining
+                mindTimer = Double.random(in: 10...18)
+            } else {
+                turn(toward: atan2(target.pos.y - pos.y, target.pos.x - pos.x), rate: 5, dt: dt)
+                mindTimer -= dt
+                if mindTimer <= 0 {
+                    mode = .wandering
+                    heading = Double.random(in: 0..<(2 * .pi))
+                    return .tended(child: child)
+                }
+            }
+        case .farm(let plot, let action, let spot, let face):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * world.pace, dt: dt)
+                left = remaining
+                farmLeft = [Double.random(in: 12...18), Double.random(in: 8...13), Double.random(in: 10...16), Double.random(in: 6...10)][min(3, action)]
+            } else {
+                turn(toward: atan2(face.y - pos.y, face.x - pos.x), rate: 5, dt: dt)
+                farmLeft -= dt
+                farmTimer -= dt
+                if farmTimer <= 0 { // a swing of the hoe, a throw of seed, a pull at a plant (watering just pours)
+                    farmTimer = action == 3 ? 5 : Double.random(in: 1.0...1.6)
+                    if action != 3 { swing = Ant.swingTime; swingHeading = atan2(face.y - pos.y, face.x - pos.x) }
+                }
+                if farmLeft <= 0 {
+                    mode = .wandering
+                    heading = Double.random(in: 0..<(2 * .pi))
+                    return .farmed(plot: plot, action: action)
+                }
+            }
+        case .cook(let spot, let pot):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * world.pace, dt: dt)
+                left = remaining
+                cookLeft = Double.random(in: 16...26)
+            } else {
+                turn(toward: atan2(pot.y - pos.y, pot.x - pos.x), rate: 5, dt: dt)
+                cookLeft -= dt
+                if cookLeft <= 0 {
+                    mode = .wandering
+                    heading = Double.random(in: 0..<(2 * .pi))
+                    return .cooked(pot: pot)
+                }
+            }
         case .serve(let boss, let offset):
             guard let leader = world.bosses[boss] else { return giveUp() }
             // keep its place beside the boss, but never outside the range (the boss may be at the edge)
@@ -512,6 +699,23 @@ struct Ant {
     }
 
     private mutating func updateWandering(dt: Double, world: AntWorld, calm: Bool = false) -> Event? {
+        if isChild {
+            // the young ones stay near the nest and run home from a monster; they neither forage nor hunt
+            if world.creatures.contains(where: { $0.hostile && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < 170 }) {
+                mode = .returningToNest
+                return nil
+            }
+            if hypot(pos.x - world.nest.x, pos.y - world.nest.y) > 150 { turn(toward: atan2(world.nest.y - pos.y, world.nest.x - pos.x), rate: 3, dt: dt) }
+            if let kind = pickActivity(dt: dt, world: world) {
+                begin(kind, world: world)
+                return nil
+            }
+            return wanderStep(dt: dt, world: world)
+        }
+        return wanderCore(dt: dt, world: world, calm: calm)
+    }
+
+    private mutating func wanderCore(dt: Double, world: AntWorld, calm: Bool) -> Event? {
         // Notice food only by walking into it.
         if let food = world.foods.first(where: { $0.amount > 0 && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.senseRadius(scale: world.foodScale) * traits.sense }) {
             if food.scouted || food.reported {
@@ -544,7 +748,11 @@ struct Ant {
                 return nil
             }
         }
+        return wanderStep(dt: dt, world: world)
+    }
 
+    /// One step of ordinary wandering: now and then a pause, a small random turn, and the walls and the pond to keep clear of.
+    private mutating func wanderStep(dt: Double, world: AntWorld) -> Event? {
         if pause > 0 {
             pause -= dt
             return nil

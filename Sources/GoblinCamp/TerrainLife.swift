@@ -51,6 +51,36 @@ struct Planting: Codable {
     var fell: Double?
 }
 
+/// Something the goblins took from the place: a tree they felled (a stump is left, and rots away after a few days) or a chunk of a rock (a
+/// rock shrinks with each one and is gone when it has none left). Found again by where it stood, as a fraction of the clearing.
+struct Cut: Codable {
+    var fx: Double
+    var fy: Double
+    /// 0 a tree, 1 a rock.
+    var kind: Int
+    var time: Double
+    /// Rocks: how many chunks have been taken.
+    var taken: Int
+    /// Trees: how long until the stump has rotted away, in seconds.
+    var rot: Double
+}
+
+/// One farm plot: fallow (0), tilled (1), sown (2), growing (3), ripe (4) or withered (5), and what is in it.
+struct PlotState: Codable {
+    var state = 0
+    /// 0 wheat, 1 pumpkin, 2 greens.
+    var crop = 0
+    /// How many plants (4 to 8): more if it was sown well.
+    var density = 6
+    var changed = 0.0
+    /// Seconds of good growing weather it has had, and how quickly this crop goes (0.8 to 1.3).
+    var progress = 0.0
+    var pace = 1.0
+
+    /// Hours of growing it needs before it is ripe.
+    var hoursNeeded: Double { [14, 22, 9][min(2, max(0, crop))] * pace }
+}
+
 struct TerrainLifeState: Codable {
     var seed: UInt64
     var epoch: Double
@@ -62,6 +92,34 @@ struct TerrainLifeState: Codable {
     /// How much the goblins have trodden each cell of the ground (by `cell(at:)`), in tenths of a second of company, thinned out as it goes.
     var heat: [Int: Int] = [:]
     var heatTime: Double = 0
+    /// What the goblins have felled and mined.
+    var cuts: [Cut] = []
+    /// The state of each farm plot (by its number in the scene).
+    var plots: [PlotState] = []
+
+    init(seed: UInt64, epoch: Double, seasonOffset: Double, lastRoll: Double) {
+        self.seed = seed
+        self.epoch = epoch
+        self.seasonOffset = seasonOffset
+        self.lastRoll = lastRoll
+    }
+
+    // (written by hand so that saves from before a field was added still load)
+    private enum Keys: String, CodingKey { case seed, epoch, seasonOffset, lastRoll, puddles, plantings, heat, heatTime, cuts, plots }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        seed = try c.decode(UInt64.self, forKey: .seed)
+        epoch = try c.decode(Double.self, forKey: .epoch)
+        seasonOffset = try c.decode(Double.self, forKey: .seasonOffset)
+        lastRoll = try c.decode(Double.self, forKey: .lastRoll)
+        puddles = try c.decodeIfPresent([Puddle].self, forKey: .puddles) ?? []
+        plantings = try c.decodeIfPresent([Planting].self, forKey: .plantings) ?? []
+        heat = try c.decodeIfPresent([Int: Int].self, forKey: .heat) ?? [:]
+        heatTime = try c.decodeIfPresent(Double.self, forKey: .heatTime) ?? 0
+        cuts = try c.decodeIfPresent([Cut].self, forKey: .cuts) ?? []
+        plots = try c.decodeIfPresent([PlotState].self, forKey: .plots) ?? []
+    }
 }
 
 /// How grown a planting is.
@@ -112,7 +170,7 @@ final class TerrainLife {
 
     func stage(of plant: Planting, at now: Double = TerrainClock.now) -> GrowthStage {
         if plant.fell != nil { return .fallen }
-        let age = (now - plant.planted) * plant.pace / 3600 // hours, at its own pace
+        let age = (now - plant.planted) * plant.pace * Settings.shared.pace / 3600 // hours, at its own pace (and the game's)
         return age < 3 ? .sprout : age < 14 ? .sapling : age < 36 ? .young : .tree
     }
 
@@ -130,7 +188,7 @@ final class TerrainLife {
             var rng = TerrainRandom(seed: state.seed &* 31 &+ UInt64(bitPattern: Int64(t / TerrainLife.step)))
             let (season, _) = self.season(at: t)
             // a sapling comes up (most in spring), fewer the more trees there already are
-            let rate: Double = [0.016, 0.011, 0.008, 0.002][season.rawValue]
+            let rate: Double = [0.016, 0.011, 0.008, 0.002][season.rawValue] * Settings.shared.pace
             let alive = state.plantings.filter { $0.fell == nil }.count
             if alive < TerrainLife.maxPlantings, rng.chance(rate * (1 - Double(alive) / Double(TerrainLife.maxPlantings + 2))) {
                 if let p = spot(&rng, 12) {
@@ -148,6 +206,32 @@ final class TerrainLife {
                     changed = true
                 }
             }
+            // the crops: seeds come up, plants grow in good weather (not in winter), pests and frost take some, and what is not picked rots
+            for i in state.plots.indices {
+                var plot = state.plots[i]
+                switch plot.state {
+                case 2 where t - plot.changed > 1.5 * 3600:
+                    plot.state = rng.chance(0.9) ? 3 : 5 // most seeds come up
+                    plot.changed = t
+                case 3:
+                    let factor: Double = [1.0, 1.2, 0.8, 0][season.rawValue]
+                    plot.progress += TerrainLife.step * factor * Settings.shared.pace
+                    if plot.progress >= plot.hoursNeeded * 3600 { plot.state = 4; plot.changed = t }
+                    else if rng.chance(season == .winter ? 0.012 : 0.0007) { plot.state = 5; plot.changed = t } // frost or pests
+                case 4 where t - plot.changed > 30 * 3600:
+                    plot.state = 5
+                    plot.changed = t
+                default: break
+                }
+                if plot.state != state.plots[i].state { changed = true }
+                state.plots[i] = plot
+            }
+            // a used-up rock: after a while a new stone works its way up out of the ground (frost and rain do that), so the iron never runs out for good
+            for i in state.cuts.indices.reversed() where state.cuts[i].kind == 1 && rng.chance(0.0006 * Settings.shared.pace) {
+                state.cuts[i].taken -= 1
+                if state.cuts[i].taken <= 0 { state.cuts.remove(at: i) }
+                changed = true
+            }
             // a wet night: a few puddles, if they have not dried by now
             if rng.chance(0.004) {
                 for _ in 0..<rng.int(1...3) {
@@ -164,6 +248,7 @@ final class TerrainLife {
         let before = state.plantings.count + state.puddles.count
         state.plantings.removeAll { ($0.fell.map { now - $0 > 2 * 86_400 }) ?? false }
         state.puddles.removeAll { $0.born + $0.life < now }
+        state.cuts.removeAll { $0.kind == 0 && now - $0.time > $0.rot / Settings.shared.pace }
         if state.plantings.count + state.puddles.count != before { changed = true }
         // the trodden ground slowly grows back
         if state.heatTime > 0, now - state.heatTime > 60 {
@@ -234,6 +319,47 @@ final class TerrainLife {
         h.combine(light.count / 4)
         h.combine(heavy.count / 4)
         return h.finalize()
+    }
+
+    // MARK: What the goblins take
+
+    /// A goblin felled a tree or took a piece of a rock at this spot (a fraction of the clearing). Returns the cut.
+    @discardableResult
+    func cut(kind: Int, at f: CGPoint, now: Double = TerrainClock.now) -> Cut {
+        if kind == 1, let i = state.cuts.firstIndex(where: { $0.kind == 1 && abs($0.fx - Double(f.x)) < 0.004 && abs($0.fy - Double(f.y)) < 0.004 }) {
+            state.cuts[i].taken += 1
+            version += 1
+            onChange?()
+            return state.cuts[i]
+        }
+        var rng = TerrainRandom(seed: UInt64(bitPattern: Int64(now * 100)) &+ state.seed)
+        let cut = Cut(fx: Double(f.x), fy: Double(f.y), kind: kind, time: now, taken: kind == 1 ? 1 : 0, rot: rng.range(1.5, 5) * 86_400)
+        state.cuts.append(cut)
+        version += 1
+        onChange?()
+        return cut
+    }
+
+    /// A planted tree that was felled falls like the ones that die: it lies there for a while and rots.
+    func fellPlanting(nearFraction f: CGPoint, now: Double = TerrainClock.now) {
+        guard let i = state.plantings.firstIndex(where: { $0.fell == nil && abs($0.fx - Double(f.x)) < 0.004 && abs($0.fy - Double(f.y)) < 0.004 }) else { return }
+        state.plantings[i].fell = now
+        version += 1
+        onChange?()
+    }
+
+    // MARK: The farm
+
+    /// Makes sure there is a state for each of `count` plots.
+    func ensurePlots(_ count: Int) {
+        while state.plots.count < count { state.plots.append(PlotState()) }
+    }
+
+    func setPlot(_ index: Int, _ change: (inout PlotState) -> Void) {
+        guard state.plots.indices.contains(index) else { return }
+        change(&state.plots[index])
+        version += 1
+        onChange?()
     }
 
     // MARK: Puddles

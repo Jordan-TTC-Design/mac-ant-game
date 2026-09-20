@@ -55,6 +55,14 @@ final class Settings {
         set { defaults.set(newValue, forKey: "spawnInterval") }
     }
 
+    /// How fast the game moves along, tied to how fast goblins are born: 1 at one goblin every three minutes, faster when they are born faster
+    /// (so the first monsters, the young growing up, the crops and the trees all keep pace with the size of the camp), and slower when slower.
+    /// Weather and the seasons do not follow it. Kept between a quarter and four times; `CAMP_PACE` fixes it (tests).
+    var pace: Double {
+        if let s = ProcessInfo.processInfo.environment["CAMP_PACE"], let v = Double(s), v > 0 { return v }
+        return min(4, max(0.25, 180 / max(1, spawnInterval)))
+    }
+
     /// The cap is remembered per character.
     private var maxAntsKey: String { "maxAnts.\(Characters.current.id)" }
 
