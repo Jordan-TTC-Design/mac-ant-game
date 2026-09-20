@@ -1,5 +1,26 @@
 import Foundation
 
+/// A piece of gear as saved: which, and how much wear it has left. Older saves wrote just the id.
+struct SavedGear: Codable {
+    var id: String
+    var left: Double?
+
+    private enum Keys: String, CodingKey { case id, left }
+
+    init(id: String, left: Double?) { self.id = id; self.left = left }
+
+    init(from decoder: Decoder) throws {
+        if let plain = try? decoder.singleValueContainer().decode(String.self) {
+            id = plain
+            left = nil
+        } else {
+            let c = try decoder.container(keyedBy: Keys.self)
+            id = try c.decode(String.self, forKey: .id)
+            left = try c.decodeIfPresent(Double.self, forKey: .left)
+        }
+    }
+}
+
 /// One saved individual: enough to bring the same goblin back (its traits come from breed + seed).
 struct SavedGoblin: Codable {
     var id: Int
@@ -8,6 +29,8 @@ struct SavedGoblin: Codable {
     var seed: UInt64
     /// Always stored, so a later change to the name generator never renames anyone. Older saves lack it: the name then comes from the seed.
     var name: String?
+    /// What it wears (slot → gear id).
+    var gear: [String: SavedGear]?
 }
 
 struct SavedState: Codable {
@@ -19,6 +42,13 @@ struct SavedState: Codable {
     var delivered: Int?
     var nextID: Int?
     var princessName: String?
+    /// What the goblins brought home from monsters (material id → count) and how many of each monster fell.
+    var materials: [String: Int]?
+    var kills: [String: Int]?
+    /// Gear back in the nest that nobody needed (gear id → count).
+    var armory: [String: Int]?
+    /// The same with wear (newer saves).
+    var armoryItems: [SavedGear]?
 }
 
 /// Colony progress in ~/Library/Application Support/GoblinCamp/state.json.

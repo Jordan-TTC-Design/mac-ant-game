@@ -502,6 +502,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 after(0.5) { log("after click: \(String(describing: self.colony.stage.current?.phase)), panel visible: \(self.clickPanel?.isVisible ?? false)") }
             }
         }
+        if let s = env["CAMP_TEST_WORKSHOP"] { // "path.png": give the camp some materials, open the workshop, make things, draw it, and draw the goblins wearing them
+            after(3) {
+                log("goblins wearing gear at the start: \(self.colony.ants.filter { !$0.gear.isEmpty }.count) of \(self.colony.ants.count), pieces \(self.colony.ants.reduce(0) { $0 + $1.gear.count })")
+                self.colony.debugAddMaterials(Dictionary(uniqueKeysWithValues: Materials.all.map { ($0.id, 30) }))
+                self.showWorkshop()
+                self.workshopWindow?.useLightAppearanceForTesting()
+                for gear in Gears.all {
+                    if case .made(_, let by) = self.colony.craft(gear) { log("craft \(gear.name) -> \(by)") } else { log("craft \(gear.name): not made") }
+                }
+                self.workshopWindow?.refresh()
+            }
+            after(5) {
+                guard let view = self.workshopWindow?.contentViewForTesting, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: s)) }
+                log("workshop drawn; materials left \(self.colony.materials)")
+                if let map = self.mapWindow?.view, let rep = map.bitmapImageRepForCachingDisplay(in: map.bounds) {
+                    map.cacheDisplay(in: map.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: s.replacingOccurrences(of: ".png", with: "-camp.png"))) }
+                }
+                NSApp.terminate(nil)
+            }
+        }
+        if let path = env["CAMP_TEST_GEARSHEET"] { // "path": draw goblins in rows (right, left, down, up), each with a weapon and a set of gear; "-swing.png" in mid-attack
+            after(14) {
+                guard let view = self.mapWindow?.view else { return }
+                let origin = CGPoint(x: 60, y: view.bounds.height - 90)
+                for (suffix, swing) in [("", nil), ("-swing", 0.5)] as [(String, Double?)] {
+                    self.colony.debugGearSheet(at: origin, swing: swing)
+                    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: suffix + ".png"))) }
+                }
+                log("gear sheet drawn")
+                NSApp.terminate(nil)
+            }
+        }
+        if env["CAMP_TEST_GEARLIFE"] != nil { // with a short CAMP_LIFESPAN: make gear, let goblins die of old age, and check no piece goes missing
+            var made = 0
+            after(6) {
+                self.colony.debugAddMaterials(Dictionary(uniqueKeysWithValues: Materials.all.map { ($0.id, 200) }))
+                for _ in 0..<3 { for gear in Gears.all { if case .made = self.colony.craft(gear) { made += 1 } } }
+                log("made \(made) pieces")
+            }
+            for k in 1...9 {
+                after(6 + Double(k) * 8) {
+                    let c = self.colony
+                    let worn = c.ants.reduce(0) { $0 + $1.gear.count }, stock = c.armory.count
+                    log("t+\(6 + k * 8)s goblins \(c.ants.count) (old-age deaths \(c.deaths - c.slain), slain \(c.slain)), pieces made \(c.made): worn \(worn) + in stock \(stock) + broken \(c.broken) = \(worn + stock + c.broken); monsters beaten \(c.kills.values.reduce(0, +)), stock \(c.armory.map { "\($0.gear?.name ?? $0.id) \(Int($0.fraction * 100))%" })")
+                }
+            }
+        }
+        if env["CAMP_TEST_PERF"] != nil { // how long drawing a frame of the camp window takes, with and without a goblin selected, and one roster refresh
+            after(30) {
+                guard let view = self.mapWindow?.view else { return }
+                self.colony.debugEquipEveryone()
+                func time(_ label: String) {
+                    let start = Date()
+                    for _ in 0..<20 {
+                        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                        view.cacheDisplay(in: view.bounds, to: rep)
+                    }
+                    log("\(label): \(Int(Date().timeIntervalSince(start) / 20 * 1000)) ms per frame, \(self.colony.ants.count) goblins")
+                }
+                self.colony.debugSelect(nil)
+                time("nobody selected")
+                self.colony.debugSelect(self.colony.ants.first { !$0.isHidden }?.id)
+                time("one selected")
+                self.roster.show()
+                after(1) {
+                    self.colony.debugSelect(self.colony.ants.first { !$0.isHidden }?.id)
+                    time("roster open, one selected")
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+        if env["CAMP_TEST_STUCK"] != nil { // find goblins that are out and about but have hardly moved in 15 s
+            var before: [Int: CGPoint] = [:]
+            func sample() { before = Dictionary(uniqueKeysWithValues: self.colony.ants.filter { !$0.isHidden }.map { ($0.id, $0.pos) }) }
+            for round in 1...4 {
+                after(Double(round) * 30) { sample() }
+                after(Double(round) * 30 + 15) {
+                    let c = self.colony
+                    let stuck = c.ants.filter { a in !a.isHidden && (before[a.id].map { hypot($0.x - a.pos.x, $0.y - a.pos.y) < 3 } ?? false) }
+                    let nest = c.nest ?? .zero
+                    log("stuck check \(round): \(stuck.count) of \(c.ants.filter { !$0.isHidden }.count) out and still; "
+                        + stuck.prefix(8).map { "\(String(describing: $0.mode).prefix(16)) d_nest=\(Int(hypot($0.pos.x - nest.x, $0.pos.y - nest.y))) at (\(Int($0.pos.x)),\(Int($0.pos.y))) hp\(String(format: "%.1f", $0.health))" }.joined(separator: " | "))
+                }
+            }
+        }
         if let s = env["CAMP_TEST_WILD"] { // "pig,300,80": an animal of that kind this far from the nest, plus a tree
             let parts = s.split(separator: ",")
             guard parts.count == 3, let kind = Animals.all.first(where: { $0.id == parts[0] }), let dx = Double(parts[1]), let dy = Double(parts[2]) else { return }
@@ -509,11 +599,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let nest = self.colony.nest else { return log("no nest") }
                 self.colony.spawnTree(at: CGPoint(x: nest.x - 120, y: nest.y - 60))
                 self.colony.debugSpawnCreature(kind: kind, at: CGPoint(x: nest.x + dx, y: nest.y + dy))
+                after(45) { log("warehouse:\n" + self.warehouseText()) }
                 for k in 1...60 {
                     after(Double(k) * 3) {
                         let c = self.colony
                         let modes = Dictionary(grouping: c.ants.map { String(describing: $0.mode).prefix(12) }, by: { $0 }).mapValues(\.count)
-                        log("t+\(k * 3)s animals \(c.creatures.map { "\($0.kind.id) hp\($0.hp)" }) foods \(c.foods.map { "\($0.kind.rawValue)x\($0.amount)" }) slain \(c.slain) goblins \(c.ants.count) \(modes)")
+                        log("t+\(k * 3)s princess \(c.queen?.stateName ?? "-") animals \(c.creatures.map { "\($0.kind.id) hp\(Int($0.hp))\($0.engaged > 0 ? " fighting" : "")\($0.attackClock != nil ? " attacking" : "")" }) foods \(c.foods.map { "\($0.kind.rawValue)x\($0.amount)" }) slain \(c.slain) wounded \(c.ants.filter(\.isWounded).count) goblins \(c.ants.count) mats \(c.materials.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }) kills \(c.kills) \(modes)")
                     }
                 }
             }
@@ -648,6 +739,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(choiceMenu(title: "自然事件（動物、果樹）",
                                 options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
                                 get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 }))
+        menu.addItem(choiceMenu(title: "魔獸來襲（史萊姆、巨鼠…）",
+                                options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
+                                get: { self.settings.monsters }, set: { self.settings.monsters = $0 }))
         capMenuItem = choiceMenu(title: "數量上限",
                                  options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
@@ -676,6 +770,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fullscreen.stateProvider = { self.settings.fullscreenFocus }
         menu.addItem(fullscreen)
         menu.addItem(launchAtLoginItem())
+        menu.addItem(ClosureMenuItem(title: "工坊（做武器與裝備）…") { [weak self] in self?.showWorkshop() })
+        menu.addItem(ClosureMenuItem(title: "倉庫與魔獸圖鑑…") { [weak self] in self?.showWarehouse() })
         menu.addItem(ClosureMenuItem(title: "每日統計…") { [weak self] in self?.showStats() })
         menu.addItem(.separator())
 
@@ -1723,6 +1819,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         item.stateProvider = { SMAppService.mainApp.status == .enabled }
         return item
+    }
+
+    /// What the goblins have brought home, sorted by monster: materials never found yet show as ？？？ with their rarity.
+    func warehouseText() -> String {
+        var lines: [String] = []
+        for kind in Animals.all where kind.hostile {
+            let beaten = colony.kills[kind.id, default: 0]
+            lines.append("【\(kind.name)】 Lv.\(kind.monster.level)　擊敗 \(beaten) 隻")
+            for drop in kind.monster.drops {
+                let have = colony.materials[drop.id, default: 0]
+                lines.append("　\(have > 0 ? drop.name : "？？？")　\(drop.rarity.label)　\(have > 0 ? "× \(have)" : "尚未取得")")
+            }
+            lines.append("")
+        }
+        return lines.isEmpty ? "還沒有魔獸資料。" : lines.joined(separator: "\n")
+    }
+
+    private var workshopWindow: WorkshopWindow?
+
+    private func showWorkshop() {
+        if workshopWindow == nil { workshopWindow = WorkshopWindow(colony: colony) }
+        workshopWindow?.present()
+    }
+
+    private func showWarehouse() {
+        let alert = NSAlert()
+        alert.messageText = "倉庫與魔獸圖鑑"
+        let total = colony.materials.values.reduce(0, +)
+        alert.informativeText = "哥布林從魔獸身上搬回來的素材（共 \(total) 件）。之後可以拿來做武器與裝備。\n\n" + warehouseText()
+        alert.addButton(withTitle: "好")
+        alert.window.level = Levels.panel
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func showStats() {

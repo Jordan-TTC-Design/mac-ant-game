@@ -65,6 +65,26 @@ final class Colony {
     /// Little sparks where something was just hit.
     private(set) var hits: [(pos: CGPoint, age: Double)] = []
     private var nextCreatureID = 1
+    /// What the goblins have brought home from slain monsters (material id → how many), and how many of each monster fell.
+    private(set) var materials: [String: Int] = [:]
+    private(set) var kills: [String: Int] = [:]
+    /// Which material a pile of loot on the ground is (by food id; kept until the last piece is home).
+    private var lootMaterial: [Int: String] = [:]
+    /// Little "+2 黏液" labels that rise from where something was delivered or dropped.
+    struct Floater { var text: String; var rarity: Rarity; var pos: CGPoint; var age = 0.0 }
+    private(set) var floaters: [Floater] = []
+    /// At most a few labels at a time, so a crowd of deliveries or deaths never fills the camp with text.
+    private func addFloater(_ text: String, _ rarity: Rarity, at pos: CGPoint) {
+        guard floaters.count < 3 else { return }
+        floaters.append(Floater(text: text, rarity: rarity, pos: pos))
+    }
+    /// Green pluses around the princess while she heals the wounded (their ages).
+    private(set) var healPulses: [Double] = []
+    private var healTimer = 0.0
+    /// Gear that came back (its wearer died, or something better replaced it) and nobody needs yet: gear id → how many.
+    private(set) var armory: [GearItem] = []
+    private var monsterTimer = -1.0
+    private var raidTimer = 0.0
     private var animalTimer: Double = -1
     private var treeTimer: Double = -1
     /// Which of the princess's outfits she wears now. `CAMP_OUTFIT` picks the first one (for testing).
@@ -292,6 +312,13 @@ final class Colony {
                 }
             }
         case .delivered(let id, let pieces):
+            if let material = lootMaterial[id] {
+                materials[material, default: 0] += pieces
+                addFloater("+\(pieces) \(Materials.info(material)?.name ?? material)", Materials.info(material)?.rarity ?? .common, at: nest ?? .zero)
+                if !foods.contains(where: { $0.id == id }) { lootMaterial[id] = nil }
+                onAntsChanged?()
+                return
+            }
             foodDelivered += pieces
             // every successful trip can bring one or two more helpers
             if Double.random(in: 0..<1) < 0.5 { recruit(for: id, count: Int.random(in: 1...2)) }
@@ -383,10 +410,23 @@ final class Colony {
         for i in hits.indices { hits[i].age += dt }
         hits.removeAll { $0.age > 0.35 }
 
-        // animals
-        for i in creatures.indices.reversed() where creatures[i].update(dt: dt, walkable: walkable) {
-            creatures.remove(at: i) // walked off the screen
+        // animals and monsters (monsters go after the goblins that are out walking, or the nest)
+        var raid: RaidInfo?
+        if let nest, creatures.contains(where: { $0.kind.hostile }) {
+            raid = RaidInfo(nest: nest, prey: ants.filter { !$0.isHidden && !$0.isDying && !$0.isWounded }.map(\.pos))
         }
+        for i in creatures.indices.reversed() {
+            if creatures[i].update(dt: dt, walkable: walkable, raid: raid) {
+                creatures.remove(at: i) // walked off the screen
+            } else if creatures[i].takeStrike() {
+                strike(by: i)
+            }
+        }
+        updateMonsters(dt: dt)
+        for i in floaters.indices { floaters[i].age += dt }
+        floaters.removeAll { $0.age > 2.2 }
+        for i in healPulses.indices { healPulses[i] += dt }
+        healPulses.removeAll { $0 > 1.2 }
         // trees grow fruit
         for i in foods.indices where foods[i].isTree && foods[i].amount < foods[i].capacity {
             foods[i].regrow -= dt * Colony.wildScale
@@ -437,6 +477,76 @@ final class Colony {
         if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: a \(kind.id) walks in from \(start)") }
         creatures.append(Creature(id: nextCreatureID, kind: kind, start: start, enter: target, stay: Double.random(in: 120...240)))
         nextCreatureID += 1
+    }
+
+    // MARK: Monsters
+
+    /// Seconds between raids for each level of the "monsters" setting (0 = none), and how many may be about at once.
+    private static let monsterEvery: [Double] = [0, 900, 480, 240]
+    private static let maxMonsters = [0, 2, 3, 5]
+
+    /// A monster is about (the princess ducks into her hole, the goblins turn out).
+    var monsterNear: Bool { creatures.contains { $0.kind.hostile } }
+
+    /// A monster is close enough to the princess to frighten her.
+    private var princessInDanger: Bool {
+        guard let queen else { return false }
+        return creatures.contains { $0.kind.hostile && hypot($0.pos.x - queen.pos.x, $0.pos.y - queen.pos.y) < 190 }
+    }
+
+    /// Raids: monsters turn up now and then (only while the camp is on the screen, so nothing happens unseen), and the goblins are
+    /// called out when one gets close to the camp.
+    private func updateMonsters(dt: Double) {
+        let level = settings.monsters
+        guard level > 0, !campHidden, ants.count >= 8, queen?.isCarried == false else { return }
+        monsterTimer -= dt * Colony.wildScale
+        if monsterTimer < 0 {
+            if monsterTimer < -1_000_000 || creatures.filter({ $0.kind.hostile }).count < Colony.maxMonsters[level] { spawnMonsters() }
+            monsterTimer = Colony.monsterEvery[level] * Double.random(in: 0.6...1.4)
+        }
+        // call the goblins out (again now and then, since the first ones may be hurt)
+        raidTimer -= dt
+        guard raidTimer <= 0, let nest else { return }
+        raidTimer = 4
+        for i in creatures.indices where creatures[i].kind.hostile {
+            let d = hypot(creatures[i].pos.x - nest.x, creatures[i].pos.y - nest.y)
+            guard d < 330 else { continue }
+            creatures[i].scouted = true
+            creatures[i].reported = true
+            recruitHunters(for: creatures[i].id, count: 7)
+        }
+    }
+
+    /// A monster (or a pack of them) walks in from a screen edge, heading for the camp.
+    func spawnMonsters(of kind: AnimalKind? = nil) {
+        guard nest != nil, let kind = kind ?? Animals.pick(monsters: true) else { return }
+        let count = Int.random(in: kind.monster.pack)
+        let before = creatures.count
+        for _ in 0..<count { spawnAnimal(of: kind) }
+        for i in before..<creatures.count { // a pack arrives spread out a little
+            creatures[i].pos.x += CGFloat.random(in: -22...22)
+            creatures[i].pos.y += CGFloat.random(in: -22...22)
+            creatures[i].stay = Double.random(in: 200...320)
+        }
+    }
+
+    /// A monster hits the nearest goblin in reach.
+    private func strike(by index: Int) {
+        let monster = creatures[index]
+        let reach = monster.kind.radius * monster.scale + 14
+        var best: (index: Int, distance: Double)?
+        for (i, ant) in ants.enumerated() where !ant.isHidden && !ant.isDying && !ant.isWounded {
+            let d = Double(hypot(ant.pos.x - monster.pos.x, ant.pos.y - monster.pos.y))
+            if d < reach, d < (best?.distance ?? .infinity) { best = (i, d) }
+        }
+        guard let best, Double.random(in: 0..<1) < 0.55 else { return } // it often misses
+        if Double.random(in: 0..<1) < ants[best.index].blockChance { // a shield turned it aside
+            hits.append((pos: ants[best.index].pos, age: 0))
+            wearOnHit(of: best.index, blocked: true)
+            return
+        }
+        for _ in 0..<max(1, Int(monster.kind.monster.damage.rounded())) { hurt(ant: best.index) }
+        wearOnHit(of: best.index, blocked: false)
     }
 
     func spawnTree(at point: CGPoint? = nil) {
@@ -496,11 +606,18 @@ final class Colony {
     /// A goblin hits an animal. A fighting one hits back now and then; a timid one runs.
     private func attack(creature id: Int, by index: Int) {
         guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
-        creatures[ci].hp -= ants[index].traits.might
+        creatures[ci].hp -= ants[index].might
+        wear(.weapon, of: index, by: 1)
+        ants[index].swing = Ant.swingTime
+        ants[index].swingHeading = atan2(creatures[ci].pos.y - ants[index].pos.y, creatures[ci].pos.x - ants[index].pos.x)
+        ants[index].heading = ants[index].swingHeading
         creatures[ci].hurt = 0.35
+        if creatures[ci].kind.hostile { creatures[ci].engaged = 4 }
         hits.append((pos: creatures[ci].pos, age: 0))
         if creatures[ci].hp <= 0 {
             kill(creatureAt: ci)
+        } else if creatures[ci].kind.hostile {
+            // monsters hit back on their own (see `strike`)
         } else if creatures[ci].kind.aggressive {
             if Double.random(in: 0..<1) < 0.4 { hurt(ant: index) }
         } else {
@@ -524,6 +641,10 @@ final class Colony {
     /// The animal is down: it leaves a pile of meat, and the hunters start carrying it home.
     private func kill(creatureAt index: Int) {
         let animal = creatures.remove(at: index)
+        if animal.kind.hostile {
+            killMonster(animal)
+            return
+        }
         var meat = FoodSource(id: nextFoodID, kind: .meat, pos: animal.pos, amount: animal.kind.meat)
         meat.origin = .meat
         meat.capacityOverride = animal.kind.meat
@@ -541,7 +662,198 @@ final class Colony {
         }
     }
 
+    /// A monster is down: it may split, it leaves materials (each with its own chance), and the hunters carry them home.
+    private func killMonster(_ monster: Creature) {
+        kills[monster.kind.id, default: 0] += 1
+        if monster.generation == 0, monster.kind.monster.splits > 0 { // a slime breaks into smaller ones
+            for k in 0..<monster.kind.monster.splits {
+                var small = Creature(id: nextCreatureID, kind: monster.kind, start: monster.pos, enter: monster.pos, stay: 240)
+                nextCreatureID += 1
+                small.state = .wandering
+                small.generation = 1
+                small.scale = 0.65
+                small.hp = max(1, monster.kind.hp * 0.4)
+                small.heading = Double(k) * .pi + Double.random(in: -0.6...0.6)
+                small.scouted = true
+                small.reported = true
+                creatures.append(small)
+            }
+        }
+        let luck = monster.generation == 0 ? 1.0 : 0.5 // the small ones are worth less
+        var first: Int?
+        for (n, drop) in Materials.roll(monster.kind.monster.drops + Materials.scraps, luck: luck).enumerated() {
+            let angle = Double(n) * 1.7 + Double.random(in: 0..<1), spread = 9 + Double(n) * 3
+            var pile = FoodSource(id: nextFoodID, kind: .loot, pos: CGPoint(x: monster.pos.x + cos(angle) * spread, y: monster.pos.y + sin(angle) * spread), amount: drop.count)
+            pile.origin = .loot
+            pile.capacityOverride = drop.count
+            pile.material = drop.id
+            pile.scouted = true
+            pile.reported = true
+            pile.pos = nearestWalkable(to: pile.pos)
+            lootMaterial[nextFoodID] = drop.id
+            foods.append(pile)
+            if first == nil { first = nextFoodID }
+            nextFoodID += 1
+        }
+        for i in ants.indices {
+            switch ants[i].mode {
+            case .hunting(let target, _), .inNestForHunt(_, let target), .huntNews(let target):
+                if target == monster.id, let first { ants[i].mode = .foraging(food: first, slot: Double.random(in: 0..<(2 * .pi))) }
+                else if target == monster.id { ants[i].mode = .wandering }
+            default: break
+            }
+        }
+        onAntsChanged?()
+    }
+
+    // MARK: Workshop
+
+    enum CraftResult {
+        case made(gear: Gear, by: String)
+        /// Not enough of these materials.
+        case missing
+        /// Everybody already wears something at least as good for that slot.
+        case nobodyNeeds
+    }
+
+    func canAfford(_ gear: Gear) -> Bool { gear.cost.allSatisfy { materials[$0.0, default: 0] >= $0.1 } }
+
+    /// How many goblins wear this piece now.
+    func wearers(of gear: Gear) -> Int { ants.filter { $0.gear[gear.slot.rawValue] == gear.id }.count }
+
+    /// Makes a piece of gear from the stored materials and gives it to the goblin who gains most from it (see `neediest`).
+    func craft(_ gear: Gear) -> CraftResult {
+        guard canAfford(gear) else { return .missing }
+        let item = GearItem(gear)
+        guard let pick = neediest(for: item) else { return .nobodyNeeds }
+        for (id, count) in gear.cost {
+            materials[id, default: 0] -= count
+            if materials[id] == 0 { materials[id] = nil }
+        }
+        made += 1
+        give(item, to: pick)
+        if let nest { addFloater("製作 \(gear.name) → \(ants[pick].name)", .uncommon, at: nest) }
+        selectedAntID = ants[pick].id // ring the new owner so you can see who got it
+        if !armory.isEmpty { redistributeArmory() } // what it replaced goes to the next one who needs it
+        onAntsChanged?()
+        return .made(gear: gear, by: ants[pick].name)
+    }
+
+    /// Who gains most from this piece: the goblin whose gear in that slot is worst (none at all first, a worn-out piece counts half);
+    /// among equals the strong ones get weapons, the sturdy ones shields, the rest the average of both. Nobody who already has
+    /// something at least as good.
+    private func neediest(for item: GearItem) -> Int? {
+        guard let gear = item.gear else { return nil }
+        func currentPower(_ ant: Ant) -> Double { ant.item(in: gear.slot)?.power ?? 0 }
+        func twoHanded(_ ant: Ant) -> Bool { ant.item(in: .weapon)?.gear?.grip == .two }
+        let candidates = ants.indices.filter { !ants[$0].isDying && currentPower(ants[$0]) < item.power && !(gear.slot == .shield && twoHanded(ants[$0])) }
+        return candidates.min(by: { a, b in
+            let pa = currentPower(ants[a]), pb = currentPower(ants[b])
+            if pa != pb { return pa < pb }
+            func fit(_ ant: Ant) -> Double { gear.slot == .weapon ? ant.traits.might : gear.slot == .shield ? ant.traits.maxHealth : ant.traits.maxHealth * 0.5 + ant.traits.might * 0.5 }
+            return fit(ants[a]) > fit(ants[b])
+        })
+    }
+
+    /// Puts a piece on a goblin. What it wore in that slot goes back to the camp's stock (with the wear it has).
+    private func give(_ item: GearItem, to index: Int) {
+        let before = ants[index].maxHealth
+        if let old = ants[index].equip(item) { armory.append(old) }
+        ants[index].health = min(ants[index].maxHealth, ants[index].health + max(0, ants[index].maxHealth - before))
+    }
+
+    /// A goblin is gone (old age, or killed in a fight): everything it wore comes back to the nest.
+    private func returnGear(of index: Int) {
+        let pieces = GearSlot.allCases.compactMap { ants[index].takeOff($0) }
+        guard !pieces.isEmpty else { return }
+        armory.append(contentsOf: pieces)
+        if let nest { addFloater("歸還 " + pieces.compactMap { $0.gear?.name }.joined(separator: "、"), .common, at: nest) }
+    }
+
+    /// Hands the stock on: each piece to the goblin who needs it most (a newborn with nothing, a goblin with something worse), best pieces first.
+    /// Pieces nobody needs stay in the stock.
+    func redistributeArmory() {
+        var changed = true, rounds = 0
+        while changed, rounds < 200 {
+            changed = false
+            rounds += 1
+            for index in armory.indices.sorted(by: { armory[$0].power > armory[$1].power }) {
+                guard let pick = neediest(for: armory[index]) else { continue }
+                give(armory.remove(at: index), to: pick)
+                changed = true
+                break // the stock changed: start over from the best piece
+            }
+        }
+        onAntsChanged?()
+    }
+
+    // MARK: Wear
+
+    /// Gear that wore out and broke, and pieces made (for tests).
+    private(set) var broken = 0
+    private(set) var made = 0
+
+    /// Wears a worn piece down; at 0 it breaks: it is gone, and a third of what it was made from can be picked out of the wreck.
+    private static let wearScale = Double(ProcessInfo.processInfo.environment["CAMP_WEAR_SCALE"] ?? "") ?? 1 // faster wear for tests
+
+    private func wear(_ slot: GearSlot, of index: Int, by rawAmount: Double) {
+        let amount = rawAmount * Colony.wearScale
+        guard let left = ants[index].gearLeft[slot.rawValue], let gear = ants[index].item(in: slot)?.gear else { return }
+        if left - amount > 0 {
+            ants[index].gearLeft[slot.rawValue] = left - amount
+            return
+        }
+        _ = ants[index].takeOff(slot)
+        broken += 1
+        for (id, count) in gear.cost { for _ in 0..<count where Double.random(in: 0..<1) < 0.3 { materials[id, default: 0] += 1 } }
+        addFloater("\(gear.name) 壞了", .common, at: ants[index].pos)
+        ants[index].health = min(ants[index].health, ants[index].maxHealth)
+        if !armory.isEmpty { redistributeArmory() } // there may be a spare for it
+        onAntsChanged?()
+    }
+
+    /// A goblin takes a hit: its shield (if it holds one) and one piece of what it wears take the wear.
+    private func wearOnHit(of index: Int, blocked: Bool) {
+        let ant = ants[index]
+        if ant.wornGear.contains(where: { $0.slot == .shield }) { wear(.shield, of: index, by: blocked ? 2 : 1) }
+        guard !blocked else { return }
+        var pool: [GearSlot] = []
+        for slot in [GearSlot.head, .chest, .chest, .legs, .feet, .hands] where ant.gear[slot.rawValue] != nil { pool.append(slot) }
+        if let slot = pool.randomElement() { wear(slot, of: index, by: 1) }
+    }
+
+    /// Test aid: everybody gets a full set of gear.
+    func debugEquipEveryone() {
+        let ids = ["long_sword", "wood_shield", "iron_helm", "leather_armor", "leather_pants", "leather_boots", "iron_gauntlets"]
+        for i in ants.indices { for id in ids { if let g = Gears.by(id: id) { _ = ants[i].equip(GearItem(g)) } } }
+    }
+
+    func debugSelect(_ id: Int?) { selectedAntID = id }
+
+    /// Test aid: lines the goblins up in rows (one row per facing), each in a different set of gear, to look at the drawings.
+    func debugGearSheet(at origin: CGPoint, swing: Double?) {
+        let weapons = Gears.all.filter { $0.slot == .weapon }
+        let sets: [[String]] = [["cloth_cap", "cloth_armor", "cloth_pants", "cloth_shoes", "pelt_wraps"], ["leather_cap", "leather_armor", "leather_pants", "leather_boots", "pelt_wraps"],
+                                ["iron_helm", "iron_plate", "leather_pants", "leather_boots", "iron_gauntlets"], ["cloth_cap", "gold_cloak", "cloth_pants", "cloth_shoes", "iron_gauntlets"]]
+        let facings: [SpriteDirection] = [.right, .left, .down, .up]
+        let candidates = ants.indices.filter { !ants[$0].isCarryingPrincess }
+        for (n, i) in candidates.prefix(weapons.count * facings.count).enumerated() {
+            let col = n % weapons.count, row = n / weapons.count
+            for slot in GearSlot.allCases { _ = ants[i].takeOff(slot) }
+            _ = ants[i].equip(GearItem(weapons[col]))
+            if col % 3 != 2, let shield = Gears.by(id: col % 2 == 0 ? "wood_shield" : "goo_shield") { _ = ants[i].equip(GearItem(shield)) }
+            for id in sets[(col + row) % sets.count] { if let g = Gears.by(id: id) { _ = ants[i].equip(GearItem(g)) } }
+            ants[i].pos = CGPoint(x: origin.x + Double(col) * 46, y: origin.y - Double(row) * 52)
+            ants[i].mode = .wandering
+            ants[i].debugPose(facing: facings[row], swing: swing)
+        }
+    }
+
     /// Test aids.
+    func debugAddMaterials(_ amounts: [String: Int]) {
+        for (id, n) in amounts { materials[id, default: 0] += n }
+    }
+
     func debugSpawnCreature(kind: AnimalKind, at point: CGPoint) {
         var c = Creature(id: nextCreatureID, kind: kind, start: point, enter: point, stay: 600)
         c.state = .wandering
@@ -551,7 +863,15 @@ final class Colony {
 
     /// Keeps the princess between her carriers, and sets her down once both have arrived.
     private func moveCarriedPrincess() {
-        guard queen?.isCarried == true else { return }
+        guard queen?.isCarried == true else {
+            // the princess was put down some other way (the camp was moved or the window resized while she was being carried in):
+            // the carriers must not stand there for ever
+            if !carrierIDs.isEmpty {
+                for i in ants.indices where carrierIDs.contains(ants[i].id) && ants[i].isCarryingPrincess { ants[i].mode = .wandering }
+                carrierIDs = []
+            }
+            return
+        }
         let carriers = ants.filter { carrierIDs.contains($0.id) }
         if carriers.count < 2 || carriersArrived >= 2 {
             queen?.setDown()
@@ -570,6 +890,10 @@ final class Colony {
         queen = Queen.settled(nest: nest, walkable: walkable)
         foodDelivered = saved.delivered ?? 0
         princessName = saved.princessName ?? ""
+        materials = saved.materials ?? [:]
+        kills = saved.kills ?? [:]
+        armory = (saved.armoryItems ?? []).map { GearItem(id: $0.id, left: $0.left) }.filter { $0.gear != nil }
+        for (id, count) in saved.armory ?? [:] where Gears.by(id: id) != nil { armory.append(contentsOf: Array(repeating: GearItem(id: id, left: nil), count: count)) }
 
         func scattered() -> CGPoint {
             let angle = Double.random(in: 0..<(2 * .pi))
@@ -579,7 +903,12 @@ final class Colony {
         }
         if let goblins = saved.goblins {
             ants = goblins.prefix(settings.maxAnts).map { g in
-                makeAnt(at: scattered(), breedIndex: breeds.firstIndex { $0.id == g.breed } ?? 0, age: g.age, seed: g.seed, id: g.id, name: g.name)
+                var ant = makeAnt(at: scattered(), breedIndex: breeds.firstIndex { $0.id == g.breed } ?? 0, age: g.age, seed: g.seed, id: g.id, name: g.name)
+                for (slot, saved) in g.gear ?? [:] where GearSlot(rawValue: slot) != nil && Gears.by(id: saved.id) != nil {
+                    _ = ant.equip(GearItem(id: saved.id, left: saved.left))
+                }
+                ant.health = ant.maxHealth
+                return ant
             }
             nextAntID = max(saved.nextID ?? 1, (goblins.map(\.id).max() ?? 0) + 1)
         } else {
@@ -597,8 +926,16 @@ final class Colony {
         guard let nest else { return nil }
         let breeds = self.breeds
         return SavedState(nestX: nest.x, nestY: nest.y, antCount: ants.count,
-                          goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name) },
-                          delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName)
+                          goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name,
+                                                    gear: savedGear(of: $0)) },
+                          delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
+                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) })
+    }
+
+    private func savedGear(of ant: Ant) -> [String: SavedGear]? {
+        var result: [String: SavedGear] = [:]
+        for slot in GearSlot.allCases { if let item = ant.item(in: slot) { result[slot.rawValue] = SavedGear(id: item.id, left: item.left) } }
+        return result.isEmpty ? nil : result
     }
 
     /// Births and restores both go through here so every individual gets its traits the same way.
@@ -730,7 +1067,7 @@ final class Colony {
         guard isSimulating, !isPaused, let nest else { return }
         let outfits = Characters.current.outfits
         let around = Surroundings(cursor: cursor, cursorSpeed: cursorSpeed, newestAnt: ants.last?.pos,
-                                  outfit: outfits.isEmpty ? "" : outfits[min(outfitIndex, outfits.count - 1)].id)
+                                  outfit: outfits.isEmpty ? "" : outfits[min(outfitIndex, outfits.count - 1)].id, danger: princessInDanger)
         if let event = queen?.update(dt: dt, walkable: walkable, around: around) {
             switch event {
             case .outfitChange(let wanted):
@@ -757,6 +1094,7 @@ final class Colony {
                 var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()))
                 if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) } // no room outside yet
                 ants.append(born)
+                if !armory.isEmpty { redistributeArmory() } // a newcomer with nothing gets a hand-me-down
                 if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: ants=\(ants.count)") }
                 queen?.greet(toward: nest)
                 if Colony.milestones.contains(ants.count) { queen?.celebrate() }
@@ -771,6 +1109,14 @@ final class Colony {
         world.fire = fire
         world.obstacles = obstacles
         world.crowd = Double(visibleCount) / Double(visibleCap)
+        // while the princess is out and about she tends the wounded resting in the nest
+        let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
+        world.healRate = tending ? 0.4 : 0.05
+        healTimer -= dt
+        if healTimer <= 0 {
+            healTimer = 1.1
+            if tending, ants.contains(where: { $0.isHidden && $0.health < $0.maxHealth }) { healPulses.append(0) }
+        }
         let ageDt = dt * Colony.timeScale
         var events: [(index: Int, event: Ant.Event)] = []
         for i in ants.indices {
@@ -783,8 +1129,10 @@ final class Colony {
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)
         for index in gone.sorted(by: >) {
             if ants[index].id == selectedAntID { selectedAntID = nil }
+            returnGear(of: index) // old age or killed in a fight: what it wore comes back to the nest
             ants.remove(at: index)
         }
+        if !gone.isEmpty, !armory.isEmpty { redistributeArmory() }
         deaths += gone.count
         if !gone.isEmpty { onAntsChanged?() }
     }

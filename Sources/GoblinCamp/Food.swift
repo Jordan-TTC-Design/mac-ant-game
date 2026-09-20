@@ -1,7 +1,7 @@
 import AppKit
 
 enum FoodKind: String, CaseIterable {
-    case water, honey, fruit, meat
+    case water, honey, fruit, meat, loot
 
     /// What the player can put down from the menu (fruit and meat turn up by themselves).
     static let placeable: [FoodKind] = [.water, .honey]
@@ -12,6 +12,7 @@ enum FoodKind: String, CaseIterable {
         case .honey: return "蜂蜜"
         case .fruit: return "果實"
         case .meat: return "肉"
+        case .loot: return "素材"
         }
     }
 
@@ -21,6 +22,7 @@ enum FoodKind: String, CaseIterable {
         case .honey: return "🍯"
         case .fruit: return "🍎"
         case .meat: return "🍖"
+        case .loot: return "💎"
         }
     }
 
@@ -31,6 +33,7 @@ enum FoodKind: String, CaseIterable {
         case .honey: return 24
         case .fruit: return 6
         case .meat: return 12
+        case .loot: return 1
         }
     }
 
@@ -41,6 +44,7 @@ enum FoodKind: String, CaseIterable {
         case .honey: return 8
         case .fruit: return 10 // the foot of the tree
         case .meat: return 7
+        case .loot: return 5
         }
     }
 
@@ -51,6 +55,7 @@ enum FoodKind: String, CaseIterable {
         case .honey: return NSColor(calibratedRed: 0.96, green: 0.68, blue: 0.12, alpha: 1)
         case .fruit: return NSColor(calibratedRed: 0.88, green: 0.2, blue: 0.2, alpha: 1)
         case .meat: return NSColor(calibratedRed: 0.72, green: 0.3, blue: 0.24, alpha: 1)
+        case .loot: return NSColor(calibratedRed: 0.95, green: 0.82, blue: 0.3, alpha: 1)
         }
     }
 }
@@ -70,6 +75,8 @@ struct FoodSource {
     var scouted = false
     /// The news reached the nest, so nestmates are on the way (and other finders simply join in).
     var reported = false
+    /// What a `.loot` pile is (a material id from a monster's drops).
+    var material: String?
 
     enum Origin {
         /// Put down by the player.
@@ -78,6 +85,8 @@ struct FoodSource {
         case tree
         /// What a hunted animal leaves behind.
         case meat
+        /// What a slain monster leaves behind: one pile per material.
+        case loot
     }
 
     var isTree: Bool { origin == .tree }
@@ -112,6 +121,8 @@ struct AntWorld {
     var obstacles: [Pond] = []
     /// How full the range is: goblins out walking divided by how many fit. Over 1, goblins rest in the nest longer and go back sooner.
     var crowd = 0.0
+    /// Health regained per second inside the nest (faster while the princess is looking after them).
+    var healRate = 0.05
     var crowded: Bool { crowd >= 1 }
 
     enum Axis { case horizontal, vertical }

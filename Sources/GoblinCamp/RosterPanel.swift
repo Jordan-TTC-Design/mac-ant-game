@@ -179,6 +179,8 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
             + "年齡 \(IntervalFormat.text(ant.age.rounded()))，還剩約 \(IntervalFormat.text(left.rounded()))\n"
             + String(format: "速度 ×%.2f　感知 ×%.2f　休息 ×%.2f\n", t.speed, t.sense, t.rest)
             + "一次搬 \(t.carry) 份　叫同伴 +\(t.recruit)" + (ant.lifeFraction > Ant.elderStart ? "　（年老，走得慢）" : "")
+            + "\n" + (ant.gear.isEmpty ? "裝備：（沒有）" : "裝備：" + GearSlot.allCases.compactMap { slot in ant.item(in: slot).flatMap { item in item.gear.map { "\(slot.label) \($0.name) \(Int(item.fraction * 100))%" } } }.joined(separator: "　"))
+            + String(format: "\n出手 %.1f　血量 %.0f", ant.might, ant.maxHealth)
     }
 
     // MARK: Table

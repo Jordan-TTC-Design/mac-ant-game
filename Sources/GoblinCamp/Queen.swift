@@ -10,6 +10,8 @@ struct Surroundings {
     var newestAnt: CGPoint?
     /// The id of the outfit she is wearing, so she can change into one that suits what she is about to do.
     var outfit: String = ""
+    /// A monster is close: she goes into the hole and stays there until it is gone.
+    var danger = false
 }
 
 /// Things the princess does that come with a pose of their own (and sometimes a prop and an outfit that suits it).
@@ -290,6 +292,19 @@ struct Queen {
         reactCooldown = max(0, reactCooldown - dt)
         var event: Event?
 
+        if around.danger {
+            switch state {
+            case .carried, .enteringHole: break
+            case .inHole: timer = max(timer, 2)
+            case .leavingHole, .peeking:
+                pos = nest
+                state = .inHole
+                duration = 0
+                timer = 3
+            default: takeCover()
+            }
+        }
+
         switch state {
         case .carried:
             break // her position comes from the carriers (see `carry`)
@@ -432,6 +447,14 @@ struct Queen {
     mutating func celebrate() {
         guard canBeInterrupted else { return }
         begin(.dancing, duration: 2.5)
+    }
+
+    /// A monster is near: bolt into the hole.
+    mutating func takeCover() {
+        startledHide = true
+        hideSpeed = 70
+        peekPending = false
+        state = .enteringHole
     }
 
     /// Somebody clicked on the nest: duck into the hole and peek out.

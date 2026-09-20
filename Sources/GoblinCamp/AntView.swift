@@ -421,11 +421,15 @@ final class AntView: NSView {
             }
         }
 
+        drawHealPulses()
+        drawFloaters()
+
         if let id = colony.selectedAntID, let ant = colony.ants.first(where: { $0.id == id }) {
             let p = local(ant.pos)
             if onScreen.contains(p) {
                 drawSelectionRing(at: p)
-                drawPill(ant.name, center: NSPoint(x: p.x, y: p.y + 34), fontSize: 11)
+                let gearText = ant.wornGear.map(\.name).joined(separator: "、")
+                drawPill(gearText.isEmpty ? ant.name : "\(ant.name)　\(gearText)", center: NSPoint(x: p.x, y: p.y + 34), fontSize: 11)
             }
         }
 
@@ -459,7 +463,8 @@ final class AntView: NSView {
         NSColor.black.withAlphaComponent(0.4).setStroke()
         ring.stroke()
         ring.lineWidth = 1.5
-        ring.setLineDash([4, 3], count: 2, phase: CGFloat(Date().timeIntervalSinceReferenceDate * 12))
+        // the phase must stay small: CoreGraphics walks the dash pattern from the start, so a phase of billions (seconds since 2001 times 12) takes seconds per frame
+        ring.setLineDash([4, 3], count: 2, phase: CGFloat((Date().timeIntervalSinceReferenceDate * 12).truncatingRemainder(dividingBy: 7)))
         NSColor(calibratedRed: 1, green: 0.9, blue: 0.3, alpha: 1).setStroke()
         ring.stroke()
     }
@@ -470,8 +475,15 @@ final class AntView: NSView {
         ctx.saveGState()
         ctx.interpolationQuality = .none // keep the pixels sharp
         for ant in colony.ants where !ant.isHidden {
-            let p = local(ant.pos)
+            var p = local(ant.pos)
             guard onScreen.contains(p), let role = character.breeds[min(ant.breedIndex, lastBreed)].sprites else { continue }
+            // an attack: it lunges toward what it hits, and a slash flashes there
+            let swingProgress = ant.swing > 0 ? CGFloat(1 - ant.swing / Ant.swingTime) : 0
+            if ant.swing > 0 {
+                let lunge = 4.5 * sin(swingProgress * .pi)
+                p.x += CGFloat(cos(ant.swingHeading)) * lunge
+                p.y += CGFloat(sin(ant.swingHeading)) * lunge
+            }
             let pixel = role.pixelSize(scale: Double(scale))
             let size = CGFloat(role.frameSize) * pixel
             // the walk cycle advances with distance walked; standing still shows the first frame
@@ -480,6 +492,8 @@ final class AntView: NSView {
             ctx.setAlpha(CGFloat(ant.fadeAlpha)) // the dying fade out
             ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size))
             ctx.setAlpha(1)
+            if !ant.gear.isEmpty || ant.swing > 0 { drawGear(ant, at: p, size: size, pixel: pixel) }
+            if ant.swing > 0 { drawSlash(ant, at: p, size: size, progress: swingProgress) }
             if let kind = ant.carrying { // held up over the head, side by side if it carries more than one
                 let pieces = max(1, ant.carriedPieces)
                 for k in 0..<pieces {
@@ -489,6 +503,205 @@ final class AntView: NSView {
             }
         }
         ctx.restoreGState()
+    }
+
+    /// The flash of a hit, by weapon: a curved slash (claws and blades), an arrow (bow) or a bolt of light (staff) flying to the target.
+    private func drawSlash(_ ant: Ant, at p: CGPoint, size: CGFloat, progress: CGFloat) {
+        let weapon = ant.wornGear.first { $0.slot == .weapon }
+        let color = weapon?.color ?? .white
+        let h = CGFloat(ant.swingHeading)
+        let from = CGPoint(x: p.x, y: p.y + size * 0.3)
+        switch weapon?.look {
+        case .bow?:
+            guard progress > 0.3 else { return } // drawing the string first
+            let t = (progress - 0.3) / 0.7, d = max(20, CGFloat(ant.gearReach) + 30) * t
+            NSColor(calibratedRed: 0.55, green: 0.38, blue: 0.2, alpha: 1).setFill()
+            for k in 0..<4 { NSRect(x: from.x + cos(h) * (d - CGFloat(k) * 2.2) - 0.9, y: from.y + sin(h) * (d - CGFloat(k) * 2.2) - 0.9, width: 1.8, height: 1.8).fill() }
+            NSColor.white.setFill()
+            NSRect(x: from.x + cos(h) * (d + 2) - 1.2, y: from.y + sin(h) * (d + 2) - 1.2, width: 2.4, height: 2.4).fill()
+        case .staff?:
+            guard progress > 0.35 else { return }
+            let t = (progress - 0.35) / 0.65, d = max(16, CGFloat(ant.gearReach) + 8) * t
+            for (r, alpha) in [(4.0, 0.35), (2.6, 0.8)] as [(CGFloat, CGFloat)] {
+                color.withAlphaComponent(alpha * (1 - t * 0.5)).setFill()
+                NSBezierPath(ovalIn: NSRect(x: from.x + cos(h) * d - r, y: from.y + sin(h) * d - r, width: r * 2, height: r * 2)).fill()
+            }
+        default:
+            let reach = size * 0.62 + CGFloat(ant.gearReach) * 0.5
+            let centre = CGPoint(x: p.x + cos(h) * reach, y: p.y + size * 0.3 + sin(h) * reach)
+            let sweep = -0.9 + 1.8 * progress // the arc turns as it goes
+            for k in 0..<5 {
+                let a = h + sweep + (CGFloat(k) - 2) * 0.28
+                let r = size * 0.28
+                color.withAlphaComponent(0.85 * (1 - progress)).setFill()
+                NSRect(x: centre.x + cos(a) * r - 1.2, y: centre.y + sin(a) * r - 1.2, width: 2.4, height: 2.4).fill()
+            }
+        }
+    }
+
+    /// What a goblin wears, drawn over its sprite: a few pixels each. The weapon is in the front hand, the shield on the other side;
+    /// the hat, armour, trousers, shoes and gloves sit where they belong on the body. While it fights, the weapon swings (or thrusts).
+    private func drawGear(_ ant: Ant, at p: CGPoint, size: CGFloat, pixel u: CGFloat) {
+        let worn = ant.wornGear
+        guard !worn.isEmpty else { return }
+        let dir = ant.facing
+        let sideView = dir == .left || dir == .right
+        // +1 = the way the front hand is; sideways the weapon is always the front hand
+        let hand: CGFloat = dir == .left ? -1 : dir == .up ? -1 : 1
+        let back: CGFloat = -hand
+        let base = p.y - size * 0.2 // the feet
+        let y0 = p.y + size * 0.16
+        let facingX: CGFloat = dir == .left ? -1 : dir == .right ? 1 : 0
+        let swingProgress = ant.swing > 0 ? CGFloat(1 - ant.swing / Ant.swingTime) : nil
+        let t = Date().timeIntervalSinceReferenceDate
+        let ctx = NSGraphicsContext.current?.cgContext
+        func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: NSColor) {
+            color.setFill()
+            NSRect(x: x - w * u / 2, y: y, width: w * u, height: h * u).fill()
+        }
+        let wood = NSColor(calibratedRed: 0.45, green: 0.3, blue: 0.16, alpha: 1)
+        // While it swings, a blade turns about its hand (raised, then chopped down); a spear thrusts along the way it points.
+        func beginWeapon(_ x: CGFloat, thrust: Bool = false) -> (x: CGFloat, y: CGFloat) {
+            guard let swingProgress, let ctx else { return (x, y0) }
+            ctx.saveGState()
+            if thrust {
+                let out = 9 * sin(swingProgress * .pi)
+                ctx.translateBy(x: x + cos(ant.swingHeading) * out, y: y0 + sin(ant.swingHeading) * out)
+                ctx.rotate(by: ant.swingHeading - .pi / 2)
+            } else {
+                ctx.translateBy(x: x, y: y0)
+                ctx.rotate(by: -hand * (0.9 - 2.3 * swingProgress))
+            }
+            return (0, 0)
+        }
+        func endWeapon() { if swingProgress != nil { ctx?.restoreGState() } }
+        func blade(_ x: CGFloat, _ y: CGFloat, width: CGFloat, length: CGFloat, guardWidth: CGFloat, _ gear: Gear) {
+            let dark = gear.color.blended(withFraction: 0.45, of: .black) ?? gear.color
+            let light = gear.color.blended(withFraction: 0.55, of: .white) ?? gear.color
+            rect(x, y - u, 1.4, 2, wood)
+            rect(x, y + u, guardWidth, 1, dark)
+            rect(x, y + 2 * u, width, length, gear.color)
+            rect(x - width * u * 0.2, y + 2 * u, width * 0.35, length, light)
+            rect(x, y + (2 + length) * u, max(0.8, width * 0.5), 1, light)
+        }
+
+        // the clothes first (they are under the weapon), then what is held
+        for gear in worn where gear.slot != .weapon && gear.slot != .shield {
+            let dark = gear.color.blended(withFraction: 0.45, of: .black) ?? gear.color
+            let light = gear.color.blended(withFraction: 0.5, of: .white) ?? gear.color
+            let bodyW: CGFloat = sideView ? 0.34 : 0.5
+            switch gear.look {
+            case .cap:
+                rect(p.x + facingX * size * 0.03, base + size * 0.86, sideView ? 7 : 8, 2.6, gear.color)
+                rect(p.x + facingX * size * 0.03, base + size * 0.86, sideView ? 7 : 8, 0.8, dark)
+                if gear.id == "leather_cap" { rect(p.x - back * size * 0.28, base + size * 0.68, 1.6, 3, gear.color) } // ear flap
+            case .helm:
+                rect(p.x + facingX * size * 0.03, base + size * 0.84, sideView ? 7.6 : 8.6, 3.4, gear.color)
+                rect(p.x + facingX * size * 0.03, base + size * 0.84, sideView ? 7.6 : 8.6, 0.9, dark)
+                rect(p.x + facingX * size * 0.03, base + size * 0.98, 1, 1.4, light) // a small crest
+            case .tunic, .plate:
+                let y = base + size * 0.3
+                rect(p.x, y, bodyW * 16, 3.2, gear.color)
+                rect(p.x, y, bodyW * 16, 0.9, dark)
+                rect(p.x, y + 2.6 * u, bodyW * 16 * 0.7, 0.7, light)
+                if gear.look == .plate { rect(p.x, y + 1.2 * u, 1, 1, light) }
+            case .cloak:
+                for s in sideView ? [back] : [-1, 1] as [CGFloat] {
+                    let x = p.x + s * size * (sideView ? 0.24 : 0.3)
+                    rect(x, y0 - 0.5 * u, 2, 6, dark)
+                    rect(x, y0 - 0.5 * u, 1.2, 6, gear.color)
+                }
+            case .pants:
+                for s in sideView ? [0] as [CGFloat] : [-1, 1] as [CGFloat] {
+                    rect(p.x + s * size * 0.1, base + size * 0.1, sideView ? 3.4 : 2.8, 3, gear.color)
+                }
+            case .boots:
+                for s in sideView ? [0] as [CGFloat] : [-1, 1] as [CGFloat] {
+                    rect(p.x + s * size * 0.11 + facingX * size * 0.03, base - 0.3 * u, sideView ? 4 : 3, 2.2, gear.color)
+                    rect(p.x + s * size * 0.11 + facingX * size * 0.03, base - 0.3 * u, sideView ? 4 : 3, 0.7, dark)
+                }
+            case .gloves, .gauntlet:
+                for s in sideView ? [hand] : [-1, 1] as [CGFloat] {
+                    let x = p.x + s * size * (sideView ? 0.3 : 0.34)
+                    rect(x, base + size * 0.36, 2.6, 1.8, gear.color)
+                    rect(x, base + size * 0.36, 2.6, 0.7, gear.look == .gauntlet ? light : dark)
+                }
+            default: break
+            }
+        }
+
+        // the shield on the far side
+        if let shield = worn.first(where: { $0.slot == .shield }) {
+            let dark = shield.color.blended(withFraction: 0.45, of: .black) ?? shield.color
+            let light = shield.color.blended(withFraction: 0.5, of: .white) ?? shield.color
+            let x = p.x + back * size * (sideView ? 0.3 : 0.42)
+            rect(x, y0 - u, 5, 5, dark)
+            rect(x, y0 - 0.5 * u, 4, 4, shield.color)
+            if shield.look == .woodShield {
+                rect(x, y0 + 0.5 * u, 4, 0.6, dark) // planks
+                rect(x, y0 - 0.5 * u, 0.6, 4, dark)
+            } else {
+                rect(x, y0 + 0.5 * u, 1.6, 1.6, light)
+            }
+        }
+
+        // the weapon
+        if let weapon = worn.first(where: { $0.slot == .weapon }) {
+            let dark = weapon.color.blended(withFraction: 0.45, of: .black) ?? weapon.color
+            let light = weapon.color.blended(withFraction: 0.5, of: .white) ?? weapon.color
+            let x = p.x + hand * size * 0.44
+            switch weapon.look {
+            case .knife:
+                let (x, y) = beginWeapon(x)
+                blade(x, y, width: 1.6, length: 4, guardWidth: 3, weapon)
+                endWeapon()
+            case .dagger:
+                let (x, y) = beginWeapon(x)
+                blade(x, y, width: 1.8, length: 4, guardWidth: 4, weapon)
+                endWeapon()
+            case .shortSword:
+                let (x, y) = beginWeapon(x)
+                blade(x, y, width: 1.8, length: 5.5, guardWidth: 4, weapon)
+                endWeapon()
+            case .longSword:
+                let (x, y) = beginWeapon(x)
+                blade(x, y, width: 1.8, length: 8, guardWidth: 4.5, weapon)
+                endWeapon()
+            case .greatSword:
+                let (x, y) = beginWeapon(p.x + hand * size * 0.46)
+                blade(x, y, width: 2.8, length: 10, guardWidth: 6, weapon)
+                endWeapon()
+            case .twinBlades:
+                for s in [hand, back] {
+                    let (x, y) = beginWeapon(p.x + s * size * 0.44)
+                    blade(x, y, width: 1.6, length: 5, guardWidth: 3.6, weapon)
+                    endWeapon()
+                }
+            case .spear:
+                let (x, y) = beginWeapon(p.x + hand * size * 0.46, thrust: true)
+                rect(x, y - 3 * u, 1.2, 14, wood)
+                rect(x, y + 10 * u, 3, 1.4, dark)
+                rect(x, y + 11 * u, 2, 2.4, weapon.color)
+                rect(x, y + 13 * u, 1, 1.4, light)
+                endWeapon()
+            case .bow:
+                let x = p.x + hand * size * 0.46
+                let pull: CGFloat = swingProgress.map { $0 < 0.3 ? $0 / 0.3 : 0 } ?? 0 // the string is drawn back before the shot
+                for (dy, dx) in [(0.0, 1.4), (2.0, 0.6), (4.0, 0), (6.0, 0.6), (8.0, 1.4)] as [(CGFloat, CGFloat)] {
+                    rect(x + hand * dx * u, y0 + (dy - 1) * u, 1.2, 2, weapon.color)
+                }
+                rect(x - hand * (0.2 + pull * 1.6) * u, y0 - 0.2 * u, 0.5, 8.6, NSColor(calibratedWhite: 0.92, alpha: 0.9)) // string
+            case .staff:
+                let (x, y) = beginWeapon(p.x + hand * size * 0.46)
+                rect(x, y - 2 * u, 1.2, 9, wood)
+                rect(x, y + 6 * u, 3.4, 3.4, dark)
+                rect(x, y + 6.5 * u, 2.4, 2.4, weapon.color)
+                rect(x - 0.4 * u, y + 7.4 * u, 0.9, 0.9, light)
+                if Int(t * 3 + Double(ant.id)) % 4 == 0 || swingProgress != nil { rect(x + 2 * u, y + 9 * u, 0.9, 0.9, .white) } // a twinkle
+                endWeapon()
+            default: break
+            }
+        }
     }
 
     private func drawSpriteQueen(_ q: Queen, role: SpriteRole, scale: CGFloat, onScreen: CGRect) {
@@ -628,17 +841,17 @@ final class AntView: NSView {
     }
 
     /// Dark rounded label with white text, centred on `center`.
-    private func drawPill(_ string: String, center: NSPoint, fontSize: CGFloat) {
+    private func drawPill(_ string: String, center: NSPoint, fontSize: CGFloat, tint: NSColor? = nil, alpha: CGFloat = 1) {
         let text = string as NSString
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
-            .foregroundColor: NSColor.white,
+            .foregroundColor: NSColor.white.withAlphaComponent(alpha),
         ]
         let size = text.size(withAttributes: attrs)
         let padX = fontSize * 0.9, padY = fontSize * 0.45
         let pill = NSRect(x: center.x - size.width / 2 - padX, y: center.y - size.height / 2 - padY,
                           width: size.width + padX * 2, height: size.height + padY * 2)
-        NSColor.black.withAlphaComponent(0.6).setFill()
+        (tint?.blended(withFraction: 0.55, of: .black) ?? NSColor.black).withAlphaComponent(0.6 * alpha).setFill()
         NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
         text.draw(at: NSPoint(x: pill.minX + padX, y: pill.minY + padY), withAttributes: attrs)
     }
@@ -681,6 +894,8 @@ final class AntView: NSView {
             drawTree(food, at: p)
         case .meat:
             drawMeat(food, at: p, w: w, h: h)
+        case .loot:
+            drawLoot(food, at: p)
         case .honey:
             // a main blob with a smaller drip beside it, so it looks gooey
             let drip = NSRect(x: p.x + w * 0.45, y: p.y - h * 0.95, width: w * 0.85, height: h * 0.75)
@@ -736,17 +951,87 @@ final class AntView: NSView {
         NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.6, y: p.y + h * 0.1, width: w * 0.6, height: h * 0.5)).fill()
     }
 
+    /// A monster's leavings: a small gem in the colour of the material, with a sparkle that is brighter the rarer it is.
+    private func drawLoot(_ food: FoodSource, at p: CGPoint) {
+        let info = food.material.flatMap(Materials.info)
+        let color = info?.color ?? NSColor.systemYellow
+        let rarity = info?.rarity ?? .common
+        let t = Date().timeIntervalSinceReferenceDate
+        let bob = CGFloat(sin(t * 3 + Double(food.id))) * 0.8
+        NSColor(calibratedWhite: 0, alpha: 0.18).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - 5, y: p.y - 5, width: 10, height: 4)).fill()
+        let dark = color.blended(withFraction: 0.4, of: .black) ?? color, light = color.blended(withFraction: 0.55, of: .white) ?? color
+        let y = p.y - 1 + bob
+        dark.setFill()
+        NSRect(x: p.x - 4, y: y, width: 8, height: 6).fill()
+        NSRect(x: p.x - 2, y: y - 2, width: 4, height: 2).fill()
+        NSRect(x: p.x - 2, y: y + 6, width: 4, height: 2).fill()
+        color.setFill()
+        NSRect(x: p.x - 3, y: y + 1, width: 6, height: 5).fill()
+        NSRect(x: p.x - 1, y: y - 1, width: 2, height: 1).fill()
+        light.setFill()
+        NSRect(x: p.x - 2, y: y + 4, width: 2, height: 2).fill()
+        if rarity != .common, Int(t * 2 + Double(food.id)) % 3 == 0 { // twinkle
+            NSColor.white.setFill()
+            NSRect(x: p.x + 4, y: y + 6, width: 2, height: 2).fill()
+            if rarity == .rare { NSRect(x: p.x - 6, y: y + 2, width: 2, height: 2).fill() }
+        }
+        if food.amount > 1 { drawPill("×\(food.amount)", center: NSPoint(x: p.x, y: p.y + 14), fontSize: 8) }
+    }
+
+    /// "+2 黏液" labels rising from where things were delivered.
+    private func drawFloaters() {
+        for (n, f) in colony.floaters.enumerated() {
+            let p = local(f.pos)
+            guard bounds.insetBy(dx: -60, dy: -60).contains(p) else { continue }
+            drawPill(f.text, center: NSPoint(x: p.x, y: p.y + 24 + CGFloat(n) * 20 + CGFloat(f.age) * 14), fontSize: 11, tint: f.rarity.color, alpha: CGFloat(max(0, min(1, 2.2 - f.age))))
+        }
+    }
+
+    /// Green pluses drifting up around the princess while she tends the wounded.
+    private func drawHealPulses() {
+        guard let queen = colony.queen, !colony.healPulses.isEmpty else { return }
+        let base = local(queen.pos)
+        guard bounds.insetBy(dx: -60, dy: -60).contains(base) else { return }
+        for (n, age) in colony.healPulses.enumerated() {
+            let fade = CGFloat(max(0, 1 - age / 1.2))
+            for k in 0..<3 {
+                let x = base.x + CGFloat(k - 1) * 11 + CGFloat(n % 2) * 4, y = base.y + 26 + CGFloat(age) * 18 + CGFloat(k % 2) * 5
+                NSColor(calibratedRed: 0.35, green: 0.85, blue: 0.45, alpha: fade).setFill()
+                NSRect(x: x - 0.75, y: y - 3, width: 1.5, height: 6).fill()
+                NSRect(x: x - 3, y: y - 0.75, width: 6, height: 1.5).fill()
+            }
+        }
+    }
+
     /// A wandering animal: its walk frame, a shadow, and a red flash when it has just been hit.
     private func drawCreature(_ c: Creature, at p: CGPoint) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let kind = c.kind
         let facingRight = cos(c.heading) >= 0
-        guard let image = kind.image(facingRight: facingRight, phase: c.legPhase) else { return }
-        let w = CGFloat(image.width) * CGFloat(kind.pixelScale), h = CGFloat(image.height) * CGFloat(kind.pixelScale)
+        // an attack has its own poses and its own motion (a slime jumps and slams down, a rat crouches and springs)
+        var attackLift: CGFloat = 0, attackForward: CGFloat = 0, squashX: CGFloat = 1, squashY: CGFloat = 1
+        var pose = kind.image(facingRight: facingRight, phase: c.legPhase)
+        if let attack = c.attackPose, let image = kind.attackImage(facingRight: facingRight, stage: attack.stage) {
+            pose = image
+            let p = CGFloat(attack.progress)
+            switch (kind.monster.attackStyle, attack.stage) {
+            case (.slam, 0): attackLift = 9 * sin(p * .pi / 2)
+            case (.slam, _): attackLift = 9 * (1 - p) * (1 - p); squashX = 1 + 0.18 * p; squashY = 1 - 0.14 * p
+            case (.bite, 0): attackForward = -3 * p
+            case (.bite, _): attackForward = -3 + 10 * sin(p * .pi)
+            default: break
+            }
+        }
+        guard let image = pose else { return }
+        let s = CGFloat(c.scale)
+        let w = CGFloat(image.width) * CGFloat(kind.pixelScale) * s * squashX, h = CGFloat(image.height) * CGFloat(kind.pixelScale) * s * squashY
         NSColor(calibratedWhite: 0, alpha: 0.16).setFill()
-        NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.4, y: p.y - 3, width: w * 0.8, height: 6)).fill()
+        let shadow = w * 0.8 * (1 - (CGFloat(c.lift) + attackLift) * 0.04)
+        NSBezierPath(ovalIn: NSRect(x: p.x - shadow / 2, y: p.y - 3, width: shadow, height: 6)).fill()
         ctx.interpolationQuality = .none
-        let rect = CGRect(x: p.x - w / 2, y: p.y - h * 0.12, width: w, height: h)
+        let forward = CGFloat(facingRight ? 1 : -1) * attackForward
+        let rect = CGRect(x: p.x - w / 2 + forward, y: p.y - h * 0.12 + CGFloat(c.lift) + attackLift, width: w, height: h)
         ctx.draw(image, in: rect)
         if c.hurt > 0 {
             ctx.saveGState()
@@ -754,6 +1039,13 @@ final class AntView: NSView {
             ctx.setFillColor(NSColor(calibratedRed: 1, green: 0.15, blue: 0.1, alpha: 0.55).cgColor)
             ctx.fill(rect)
             ctx.restoreGState()
+        }
+        if kind.hostile, c.hp < kind.hp * (c.generation == 0 ? 1 : 0.4) { // a little health bar once it has been hurt
+            let full = kind.hp * (c.generation == 0 ? 1 : 0.4), bar = w * 0.8
+            NSColor(calibratedWhite: 0, alpha: 0.55).setFill()
+            NSRect(x: p.x - bar / 2 - 0.5, y: rect.maxY + 2.5, width: bar + 1, height: 3).fill()
+            NSColor(calibratedRed: 0.85, green: 0.2, blue: 0.2, alpha: 1).setFill()
+            NSRect(x: p.x - bar / 2, y: rect.maxY + 3, width: bar * CGFloat(max(0, c.hp / full)), height: 2).fill()
         }
     }
 

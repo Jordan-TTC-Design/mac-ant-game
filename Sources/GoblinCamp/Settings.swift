@@ -228,6 +228,11 @@ final class Settings {
     }
 
     /// How often animals turn up and trees grow by themselves: 0 off, 1 rarely, 2 normal, 3 often.
+    /// How often monsters raid the camp: 0 never, 1 now and then, 2 (default) sometimes, 3 often.
+    var monsters: Int {
+        get { number("monsters", argument: "monsters").map { min(3, max(0, Int($0))) } ?? 2 }
+        set { defaults.set(newValue, forKey: "monsters") }
+    }
     var wildlife: Int {
         get { number("wildlife", argument: "wildlife").map { min(3, max(0, Int($0))) } ?? 2 }
         set { defaults.set(newValue, forKey: "wildlife") }

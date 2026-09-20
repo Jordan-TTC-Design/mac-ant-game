@@ -63,6 +63,48 @@ struct Ant {
     let traits: Traits
     /// Seconds lived.
     var age: Double
+    /// Seconds left of the swing it makes when it hits something, and which way (the attack animation).
+    static let swingTime = 0.32
+    var swing = 0.0
+    var swingHeading = 0.0
+    /// What it wears, by slot (`GearSlot.rawValue` → `Gear.id`); made in the workshop.
+    var gear: [String: String] = [:]
+    /// How much wear each of those pieces has left (slot → `GearItem.left`).
+    var gearLeft: [String: Double] = [:]
+    /// Damage per hit, hits it can take and the chance to shrug off a monster's hit: the breed's numbers plus what it wears (a worn-out piece counts half).
+    var might: Double { traits.might + wornGear.reduce(0) { $0 + $1.might * condition($1) } }
+    var maxHealth: Double { traits.maxHealth + wornGear.reduce(0) { $0 + $1.health * condition($1) } }
+    var blockChance: Double { min(0.6, wornGear.reduce(0) { $0 + $1.block * condition($1) }) }
+    /// Walking speed bonus and hitting reach from what it wears.
+    var gearSpeed: Double { max(0.7, 1 + wornGear.reduce(0) { $0 + $1.speed * condition($1) }) }
+    var gearReach: Double { wornGear.reduce(0) { $0 + $1.reach } }
+
+    func item(in slot: GearSlot) -> GearItem? {
+        gear[slot.rawValue].map { GearItem(id: $0, left: gearLeft[slot.rawValue]) }
+    }
+    private func condition(_ gear: Gear) -> Double { item(in: gear.slot)?.isWorn == true ? 0.5 : 1 }
+
+    /// Puts a piece on; what it wore in that slot is handed back.
+    mutating func equip(_ item: GearItem) -> GearItem? {
+        guard let slot = item.gear?.slot else { return nil }
+        let old = self.item(in: slot)
+        gear[slot.rawValue] = item.id
+        gearLeft[slot.rawValue] = item.left
+        return old
+    }
+
+    mutating func takeOff(_ slot: GearSlot) -> GearItem? {
+        let old = item(in: slot)
+        gear[slot.rawValue] = nil
+        gearLeft[slot.rawValue] = nil
+        return old
+    }
+    /// What it wears that counts: a shield is no use with a two-handed weapon in the hands.
+    var wornGear: [Gear] {
+        let all = gear.values.compactMap(Gears.by(id:))
+        let twoHanded = all.contains { $0.slot == .weapon && $0.grip == .two }
+        return twoHanded ? all.filter { $0.slot != .shield } : all
+    }
     /// Hits it can still take; hunting animals that fight back wear it down. It heals slowly inside the nest.
     var health: Double
     var pos: CGPoint
@@ -95,7 +137,7 @@ struct Ant {
     var lifeFraction: Double { min(1, age / max(traits.lifespan, 1)) }
 
     /// Old ones walk slower.
-    private var effectiveSpeed: Double { lifeFraction > Ant.elderStart ? speed * 0.6 : speed }
+    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed }
 
     var isCarryingPrincess: Bool {
         switch mode {
@@ -123,7 +165,7 @@ struct Ant {
     }
 
     /// Badly hurt: it stays out of fights and limps home.
-    var isWounded: Bool { health <= 1 && health < traits.maxHealth }
+    var isWounded: Bool { health <= 1 && health < maxHealth }
 
     var isHunting: Bool {
         switch mode {
@@ -155,10 +197,18 @@ struct Ant {
     /// `ageDt` is real elapsed time (a life is counted in real time, whatever the speed setting).
     /// Which way it faces, with a little stickiness (see `SpriteDirection.init(heading:previous:)`).
     private(set) var facing = SpriteDirection.down
+    /// Test aid: stand still facing a given way.
+    mutating func debugPose(facing direction: SpriteDirection, swing progress: Double?) {
+        facing = direction
+        moving = false
+        swing = progress.map { (1 - $0) * Ant.swingTime } ?? 0
+        swingHeading = direction == .left ? .pi : direction == .up ? .pi / 2 : direction == .down ? -.pi / 2 : 0
+    }
 
     mutating func update(dt: Double, ageDt: Double, world: AntWorld) -> Event? {
         facing = SpriteDirection(heading: heading, previous: facing)
         moving = false
+        swing = max(0, swing - dt)
         age += ageDt
         if age >= traits.lifespan, !isDying, !isCarryingPrincess {
             if isHidden { return .died } // it went quietly in the nest
@@ -218,7 +268,7 @@ struct Ant {
             }
 
         case .inNestForHunt(let remaining, let id):
-            health = min(traits.maxHealth, health + dt * 0.05)
+            health = min(maxHealth, health + dt * world.healRate)
             let left = remaining - dt
             if left > 0 {
                 mode = .inNestForHunt(remaining: left, creature: id)
@@ -231,7 +281,7 @@ struct Ant {
             guard let target = world.creature(id) else { return giveUp() }
             let dx = target.pos.x - pos.x, dy = target.pos.y - pos.y, distance = hypot(dx, dy)
             heading = atan2(dy, dx)
-            let reach = target.radius + 6
+            let reach = target.radius + 6 + gearReach
             if distance > reach { // run it down
                 let step = min(effectiveSpeed * 1.3 * dt, distance - reach * 0.5)
                 pos.x += cos(heading) * step
@@ -247,7 +297,7 @@ struct Ant {
             }
 
         case .inNest(let remaining, let thenForage):
-            health = min(traits.maxHealth, health + dt * 0.05)
+            health = min(maxHealth, health + dt * world.healRate)
             let left = remaining - dt
             if left > 0 {
                 mode = .inNest(remaining: left, thenForage: thenForage)
