@@ -55,6 +55,8 @@ struct SavedState: Codable {
     var larder: [String: Int]?
     /// What has happened to the camp window's place over the days (see `TerrainLife`).
     var terrain: TerrainLifeState?
+    /// The same for every place (window, bottom, right, left), by name. `terrain` is the window's, kept for older versions.
+    var terrains: [String: TerrainLifeState]?
     /// Gear back in the nest that nobody needed (gear id → count).
     var armory: [String: Int]?
     /// The same with wear (newer saves).

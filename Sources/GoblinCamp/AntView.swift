@@ -345,6 +345,39 @@ final class AntView: NSView {
         let local = CGRect(x: rect.minX - origin.x, y: rect.minY - origin.y, width: rect.width, height: rect.height)
         guard bounds.intersects(local) else { return }
         Scenery.drawStrip(tile, in: local, side: rangeSide, into: ctx)
+        if let scene = colony.scene, scene.isStrip { drawStripScene(scene, ctx: ctx) }
+    }
+
+    private var stripCache: (key: String, image: CGImage)?
+
+    /// What stands on the strip: ponds, a stream and bridge, rocks, trees, the camp, drawn once into a picture over the strip's forest.
+    private func drawStripScene(_ scene: TerrainScene, ctx: CGContext) {
+        let paint = scene.paintRect
+        let local = CGRect(x: paint.minX - origin.x, y: paint.minY - origin.y, width: paint.width, height: paint.height)
+        guard bounds.intersects(local) else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        let hour = Scenery.currentHour
+        let key = "\(ObjectIdentifier(scene).hashValue)-\(Int(paint.width))x\(Int(paint.height))-\(scale)-\(hour)-\(scene.stage)"
+        if stripCache?.key != key { stripCache = scene.render(size: paint.size, origin: paint.origin, scale: scale, hour: hour).map { (key, $0) } }
+        if let image = stripCache?.image {
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.draw(image, in: local)
+            ctx.restoreGState()
+        }
+        for pond in scene.ponds { drawPond(pond) }
+        // the seasons over the strip's forest: snow in winter, orange leaves in autumn, a little frost in early spring
+        if scene.life != nil, let strip = rangeRect {
+            let x = scene.seasonPosition
+            // (stronger than in the camp window: here the whole strip is forest, and it has to read as winter or autumn at a glance)
+            let tint: (NSColor, CGFloat)? = x >= 3.0 ? (NSColor(calibratedRed: 0.96, green: 0.98, blue: 1, alpha: 1), 0.42)
+                : x >= 2.1 ? (NSColor(calibratedRed: 0.92, green: 0.5, blue: 0.1, alpha: 1), CGFloat(min(0.34, (x - 2.1) * 0.7)))
+                : x < 0.4 ? (NSColor(calibratedRed: 0.95, green: 0.98, blue: 1, alpha: 1), CGFloat((0.4 - x) * 0.8)) : nil
+            if let (color, alpha) = tint, alpha > 0.01 {
+                color.withAlphaComponent(alpha).setFill() // (only over what is there, not the empty screen: `.sourceAtop`)
+                NSRect(x: strip.minX - origin.x, y: strip.minY - origin.y, width: strip.width, height: strip.height).fill(using: .sourceAtop)
+            }
+        }
     }
 
     /// Seven-segment digit layouts: top, top-left, top-right, middle, bottom-left, bottom-right, bottom.
@@ -555,6 +588,7 @@ final class AntView: NSView {
         }
         if let q = colony.queen, q.alpha > 0, let role = character.queenRole(outfit: colony.outfitIndex) {
             drawSpriteQueen(q, role: role, scale: scale, onScreen: onScreen)
+            drawPartnerInBed(character, scale: scale, onScreen: onScreen)
         }
 }
 
@@ -598,14 +632,14 @@ final class AntView: NSView {
             let size = CGFloat(role.frameSize) * pixel
             let activity = ant.activity
             if case .play? = activity { p.y += CGFloat(abs(sin(ant.activityClock * 7))) * 4 } // hops about
-            if activity == .sleep || ant.lying { // lying on its side, and turning over now and then; nothing else to draw
+            if ant.lying { continue } // (in bed beside the princess: drawn with the bed, over it)
+            if activity == .sleep { // lying on its side, and turning over now and then; nothing else to draw
                 guard let lying = role.image(direction: .down, phase: 0) else { continue }
                 ctx.saveGState()
                 ctx.translateBy(x: p.x, y: p.y + size * 0.05)
-                ctx.rotate(by: ant.lying ? -.pi / 2 : (ant.sleepFlip ? -.pi / 2 : .pi / 2)) // (in the bed beside her: head to the far pillow)
+                ctx.rotate(by: ant.sleepFlip ? -.pi / 2 : .pi / 2)
                 ctx.draw(lying, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
                 ctx.restoreGState()
-                if ant.lying { drawBlanket(at: CGPoint(x: p.x, y: p.y - size * 0.05), size: size * 1.05, mirrored: true) }
                 continue
             }
             // the walk cycle advances with distance walked; standing still shows the first frame
@@ -1101,6 +1135,22 @@ final class AntView: NSView {
         } else if colony.romanceRuntime.sulk > 0 {
             drawDecoration(.anger(clock: Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000)), at: p, scale: size / 16)
         }
+    }
+
+    /// The one who shares her bed, lying with his head on the far pillow, over the mattress (so it is drawn after the princess and her bed).
+    private func drawPartnerInBed(_ character: Character, scale: CGFloat, onScreen: CGRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext, let ant = colony.ants.first(where: { $0.lying && !$0.isHidden }) else { return }
+        let p = local(ant.pos)
+        guard onScreen.contains(p), let role = character.breeds[min(ant.breedIndex, character.breeds.count - 1)].sprites,
+              let lying = role.image(direction: .down, phase: 0) else { return }
+        let size = CGFloat(role.frameSize) * role.pixelSize(scale: Double(scale)) * (ant.isChild ? 0.62 : 1)
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        ctx.translateBy(x: p.x, y: p.y + size * 0.05)
+        ctx.rotate(by: -.pi / 2)
+        ctx.draw(lying, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
+        ctx.restoreGState()
+        drawBlanket(at: CGPoint(x: p.x, y: p.y - size * 0.05), size: size * 1.05, mirrored: true)
     }
 
     // MARK: Props

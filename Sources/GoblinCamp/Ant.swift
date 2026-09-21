@@ -220,6 +220,19 @@ struct Ant {
     /// Its name: made from its seed, or what the player called it.
     var name: String
 
+    /// The place its current job is at (a fishing spot, a tree, the cooking fire, a field), if it has one: a job somewhere that is no longer
+    /// in the walking range (the range or the camp was changed) has to be dropped.
+    var activitySpot: CGPoint? {
+        guard case .activity(let kind, _) = mode else { return nil }
+        switch kind {
+        case .fish(let spot, _): return spot
+        case .gather(_, let spot, _, _, _): return spot
+        case .cook(let spot, _): return spot
+        case .farm(_, _, let spot, _): return spot
+        default: return nil
+        }
+    }
+
     /// Lying in the bed beside the princess (drawn lying down; the colony sets it).
     var lying = false
     /// Who its parents were, for the young ones born to the princess ("" for the rest).
@@ -386,7 +399,7 @@ struct Ant {
                 mode = .inNestForHunt(remaining: left, creature: id)
                 return nil
             }
-            pos = CGPoint(x: world.nest.x + CGFloat.random(in: -3...3), y: world.nest.y + CGFloat.random(in: -3...3))
+            pos = world.emergePoint(toward: world.creature(id)?.pos)
             if world.creature(id) != nil { mode = .hunting(creature: id, cooldown: 0) } else { return giveUp() }
 
         case .hunting(let id, let cooldown):
@@ -419,8 +432,8 @@ struct Ant {
                 mode = .inNest(remaining: Double.random(in: 4...9), thenForage: nil)
                 return nil
             }
-            // step out of the hole
-            pos = CGPoint(x: world.nest.x + CGFloat.random(in: -3...3), y: world.nest.y + CGFloat.random(in: -3...3))
+            // step out of the hole (or a tent: they are all joined underground), the way out nearest to the food if it is going for one
+            pos = world.emergePoint(toward: thenForage.flatMap { world.food($0)?.pos })
             if let id = thenForage, let food = world.food(id) {
                 mode = .foraging(food: id, slot: Double.random(in: 0..<(2 * .pi)))
                 heading = atan2(food.pos.y - pos.y, food.pos.x - pos.x)
@@ -884,9 +897,10 @@ struct Ant {
 
     /// Walks toward the nest with a gentle sway, so a line of ants looks like a trail. True on arrival.
     private mutating func walkHome(dt: Double, world: AntWorld, speedFactor: Double) -> Bool {
-        let distance = hypot(world.nest.x - pos.x, world.nest.y - pos.y)
+        let entrance = world.nearestEntrance(to: pos)
+        let distance = hypot(entrance.x - pos.x, entrance.y - pos.y)
         if distance < 3 { return true }
-        walk(toward: world.nest, distance: distance, speed: effectiveSpeed * speedFactor, dt: dt)
+        walk(toward: entrance, distance: distance, speed: effectiveSpeed * speedFactor, dt: dt)
         return false
     }
 

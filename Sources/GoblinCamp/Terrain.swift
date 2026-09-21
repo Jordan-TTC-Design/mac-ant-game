@@ -95,6 +95,11 @@ struct TerrainItem {
     var unlock = 0
 }
 
+/// Which strip of the screen a strip-shaped place lies along.
+enum StripEdge: String {
+    case bottom, right, left
+}
+
 /// A place in the camp window: the biome and everything on it, made from a seed. The place is a fixed, large canvas centred on the nest,
 /// and the camp window only shows part of it: making the window bigger or smaller reveals or hides things but never changes them (so a
 /// felled tree stays felled). The same seed and nest always give the same place. `render` bakes the still parts into one picture.
@@ -103,9 +108,19 @@ final class TerrainScene {
     let seed: UInt64
     /// The part goblins may walk in (the camp window), which changes as the window is resized.
     var world: CGRect
-    /// The whole place: a fixed size round the nest.
+    /// The whole place: a fixed size round `nest`.
     let canvas: CGRect
+    /// The point the place was made round and is measured from (where the camp was when the place was first made). It never changes, so
+    /// the land stays exactly as it is even when the camp is moved.
     let nest: CGPoint
+    /// Where the camp really is now (the same as `nest` until the player moves it).
+    private(set) var campNest: CGPoint
+    /// Set when the place is a strip along the screen edge (`world` is then the band goblins walk in): the strip's land is made for its
+    /// shape, long and thin, and drawn over the forest or meadow of the strip.
+    let stripEdge: StripEdge?
+    var isStrip: Bool { stripEdge != nil }
+    /// What a strip's picture covers: the band and the room behind it for trees and tents (the camp window's is the whole canvas).
+    private(set) var paintRect: CGRect
     /// About how many camp windows' worth of ground the canvas is, to scale how many things there are on it.
     private var areaFactor: Double { Double(canvas.width * canvas.height) / 900_000 }
     /// What is drawn now (set by `render`), so blobs that are off the screen are skipped.
@@ -163,6 +178,8 @@ final class TerrainScene {
         h.combine(lying.filter { $0.unlock <= growth }.count)
         h.combine(min(growth, 110) / 6)
         h.combine(life?.version ?? 0)
+        h.combine(Int(campNest.x)) // (the picture is made again when the camp is moved)
+        h.combine(Int(campNest.y))
         return h.finalize()
     }
 
@@ -172,6 +189,22 @@ final class TerrainScene {
         return ponds.filter { world.insetBy(dx: -80, dy: -80).intersects($0.picture) } as [Obstacle]
             + solids.filter { $0.unlock <= growth && near.contains($0.center) && !isCut($0) } as [Obstacle]
             + plantedSolids.filter { near.contains($0.center) } as [Obstacle]
+    }
+
+    // MARK: The tents
+
+    /// Where a goblin steps into each tent that is up: just in front of it (outside the tent's own bulk, so it can be reached).
+    func tentEntrances() -> [CGPoint] {
+        let across = stripEdge == .bottom ? world.height : world.width
+        let radius = min(15, max(4, across * 0.24)) + 3
+        return standing.filter { $0.sprite.hasPrefix("tent-") && $0.unlock <= growth }.map { tent in
+            switch stripEdge {
+            case .bottom?: return CGPoint(x: tent.foot.x, y: tent.foot.y - radius)
+            case .right?: return CGPoint(x: tent.foot.x + radius, y: tent.foot.y)
+            case .left?: return CGPoint(x: tent.foot.x - radius, y: tent.foot.y)
+            case nil: return CGPoint(x: tent.foot.x, y: tent.foot.y - 12)
+            }
+        }
     }
 
     // MARK: What the goblins take
@@ -203,7 +236,10 @@ final class TerrainScene {
         func id(_ p: CGPoint) -> Int { let f = fraction(p); return (Int(f.x) + 5_000) * 10_000 + Int(f.y) + 5_000 }
         func stand(_ p: CGPoint, _ radius: CGFloat) -> CGPoint {
             let side: CGFloat = TerrainScene.hash(p) % 2 == 0 ? 1 : -1
-            return CGPoint(x: p.x + side * (radius + 9), y: p.y - 3)
+            let spot = CGPoint(x: p.x + side * (radius + 9), y: p.y - 3)
+            guard isStrip else { return spot }
+            // (in a strip the goblin stands on the path: pulled in to it from the back)
+            return CGPoint(x: min(max(spot.x, world.minX + 5), world.maxX - 5), y: min(max(spot.y, world.minY + 5), world.maxY - 5))
         }
         var spots: [ResourceSpot] = []
         for solid in solids where solid.resource != 0 && solid.unlock <= growth && !isCut(solid) {
@@ -234,7 +270,7 @@ final class TerrainScene {
 
     /// A point (in the clearing) that is free for something `radius` wide, or nil. Used to plant saplings and to leave puddles.
     func freeSpot(_ rng: inout TerrainRandom, _ radius: CGFloat) -> CGPoint? {
-        let area = canvas.insetBy(dx: 44, dy: 56)
+        let area = isStrip ? world.insetBy(dx: 6, dy: 5) : canvas.insetBy(dx: 44, dy: 56) // (a strip's puddles lie on its path)
         for _ in 0..<30 {
             let p = CGPoint(x: area.minX + CGFloat(rng.next()) * area.width, y: area.minY + CGFloat(rng.next()) * area.height)
             if let clearing, hypot(p.x - clearing.center.x, p.y - clearing.center.y) < clearing.radius + radius + 12 { continue }
@@ -250,7 +286,7 @@ final class TerrainScene {
     private func point(_ fx: Double, _ fy: Double) -> CGPoint { CGPoint(x: nest.x + CGFloat(fx), y: nest.y + CGFloat(fy)) }
 
     /// Whether something at `p` is inside the camp window (a little way in).
-    private func visible(_ p: CGPoint, margin: CGFloat = 16) -> Bool { world.insetBy(dx: margin, dy: margin).contains(p) }
+    private func visible(_ p: CGPoint, margin: CGFloat = 16) -> Bool { (isStrip ? paintRect : world).insetBy(dx: margin, dy: margin).contains(p) }
 
     /// The ponds in the camp window.
     var visiblePonds: [Pond] { ponds.filter { world.intersects($0.picture) } }
@@ -278,13 +314,258 @@ final class TerrainScene {
     }
 
     /// `world` is the clearing (where goblins may walk); `nest` is kept clear.
-    init(seed: UInt64, biome: Biome, world: CGRect, nest: CGPoint) {
+    init(seed: UInt64, biome: Biome, world: CGRect, nest: CGPoint, campNest: CGPoint? = nil) {
         self.seed = seed
         self.biome = biome
         self.world = world
         self.nest = nest
+        self.campNest = nest
+        stripEdge = nil
         canvas = CGRect(x: nest.x - 1100, y: nest.y - 750, width: 2200, height: 1500)
+        paintRect = canvas
         generate(nest: nest)
+        if let campNest { moveCamp(to: campNest) }
+    }
+
+    /// A place along a strip of the screen. `band` is where the goblins walk; `nest` is where the place is measured from (see `campNest`).
+    init(seed: UInt64, biome: Biome, band: CGRect, edge: StripEdge, nest: CGPoint, campNest: CGPoint? = nil) {
+        self.seed = seed
+        self.biome = biome
+        world = band
+        self.nest = nest
+        self.campNest = nest
+        stripEdge = edge
+        let room: CGFloat = 58 // for trees and tents that stand behind the path
+        switch edge {
+        case .bottom: paintRect = CGRect(x: band.minX, y: band.minY, width: band.width, height: band.height + room)
+        case .right: paintRect = CGRect(x: band.minX - room, y: band.minY, width: band.width + room, height: band.height)
+        case .left: paintRect = CGRect(x: band.minX, y: band.minY, width: band.width + room, height: band.height)
+        }
+        canvas = paintRect
+        generateStrip(band: band, edge: edge, nest: nest)
+        if let campNest { moveCamp(to: campNest) }
+    }
+
+    /// The camp is somewhere else now: its tents, fire ring, trampled earth and farm plots move with it and the land stays as it was, except
+    /// that the trees, rocks and bushes where it now stands are cleared away (always the same ones for the same place). Camp things are
+    /// the ones that turn up with the camp's size (`unlock` above zero).
+    func moveCamp(to point: CGPoint) {
+        guard hypot(point.x - campNest.x, point.y - campNest.y) > 0.5 else { return }
+        let dx = point.x - campNest.x, dy = point.y - campNest.y
+        func shifted(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dy) }
+        standing = standing.map { $0.unlock > 0 ? TerrainItem(sprite: $0.sprite, foot: shifted($0.foot), unlock: $0.unlock) : $0 }
+        lying = lying.map { $0.unlock > 0 ? TerrainItem(sprite: $0.sprite, foot: shifted($0.foot), unlock: $0.unlock) : $0 }
+        solids = solids.map { $0.unlock > 0 ? Solid(center: shifted($0.center), radius: $0.radius, unlock: $0.unlock) : $0 }
+        if let c = clearing { clearing = (shifted(c.center), c.radius) }
+        if let pit = firePit { firePit = shifted(pit) }
+        // the worn paths start at the camp: the camp end follows it and the far end stays where it was, so they still lead to the camp
+        paths = paths.map { path in
+            path.enumerated().map { i, p in
+                let along = CGFloat(i) / CGFloat(max(1, path.count - 1)), pull = 1 - along
+                return CGPoint(x: p.x + dx * pull, y: p.y + dy * pull)
+            }
+        }
+        campNest = point
+        // clear the ground where the camp stands now
+        let bare: CGFloat = 112
+        func away(_ p: CGPoint) -> Bool { hypot(p.x - point.x, p.y - point.y) < bare }
+        let felled = standing.filter { $0.unlock == 0 && away($0.foot) }.map(\.foot) // trees, rocks and standing stones there
+        standing.removeAll { $0.unlock == 0 && away($0.foot) }
+        solids.removeAll { solid in solid.unlock == 0 && felled.contains { hypot($0.x - solid.center.x, $0.y - solid.center.y) < 14 } }
+        mushrooms.removeAll { away($0.pos) }
+        standing.sort { $0.foot.y > $1.foot.y }
+        // the farm plots move too, to spots round the new camp that are not in a pond or among trees
+        var rng = TerrainRandom(seed: seed &+ 4242)
+        var placed: [CGPoint] = []
+        var next: [(center: CGPoint, unlock: Int)] = []
+        let inner = canvas.insetBy(dx: 36, dy: 36)
+        for plot in plotSpots {
+            var spot = shifted(plot.center)
+            for _ in 0..<40 {
+                let a = rng.range(0, 2 * .pi), r = rng.range(135, 230)
+                let p = CGPoint(x: point.x + CGFloat(cos(a) * r), y: point.y + CGFloat(sin(a) * r) * 0.8)
+                guard inner.contains(p), !ponds.contains(where: { $0.blocks(p, margin: 52) }), !solids.contains(where: { $0.unlock == 0 && $0.blocks(p, margin: 46) }),
+                      placed.allSatisfy({ hypot($0.x - p.x, $0.y - p.y) > 100 }) else { continue }
+                spot = p
+                break
+            }
+            placed.append(spot)
+            next.append((spot, plot.unlock))
+        }
+        plotSpots = next
+    }
+
+    // MARK: Making a strip
+
+    /// The land of a strip: made for a long thin band. Everything is placed by its distance along the strip (`u`) and how far back from
+    /// the screen edge it stands (`v`, 0 = the front of the path, `across` = the back, where the forest is), so the same recipe works
+    /// along the bottom and down either side. The path in front stays clear: only small things stand on it, ponds and stream banks are
+    /// at the back, and a stream always has a bridge.
+    /// The bottom is a riverside meadow (more water, fewer trees); the sides are the edge of the forest (trees, rocks, mushrooms, dry leaves).
+    private func generateStrip(band: CGRect, edge: StripEdge, nest: CGPoint) {
+        var rng = TerrainRandom(seed: seed)
+        let horizontal = edge == .bottom
+        let length = horizontal ? band.width : band.height
+        let across = horizontal ? band.height : band.width
+        func at(_ u: CGFloat, _ v: CGFloat) -> CGPoint {
+            switch edge {
+            case .bottom: return CGPoint(x: band.minX + u, y: band.minY + v)
+            case .right: return CGPoint(x: band.maxX - v, y: band.minY + u)
+            case .left: return CGPoint(x: band.minX + v, y: band.minY + u)
+            }
+        }
+        let u0 = horizontal ? nest.x - band.minX : nest.y - band.minY
+        let back = across
+        var taken: [(u: CGFloat, half: CGFloat)] = [(u0, 130)]
+        func free(_ u: CGFloat, _ half: CGFloat) -> Bool {
+            u > half + 12 && u < length - half - 12 && taken.allSatisfy { abs($0.u - u) > $0.half + half }
+        }
+        func place(_ half: CGFloat) -> CGFloat? {
+            guard length > 2 * half + 30 else { return nil }
+            for _ in 0..<60 {
+                let u = CGFloat(rng.range(Double(half + 14), Double(length - half - 14)))
+                if free(u, half) { return u }
+            }
+            return nil
+        }
+        let riverside = edge == .bottom
+
+        // the camp: trampled earth round the nest, the fire ring beside it, and its belongings in a row along the back of the path
+        clearing = (nest, min(across * 0.62, 40) + CGFloat(rng.range(0, 6)))
+        let pitU = u0 + 74 < length - 24 ? u0 + 74 : u0 - 74
+        let pit = at(pitU, max(across * 0.55, 19)) // (cooks stand 17 in front of it, and still on the path)
+        firePit = pit
+        lying.append(TerrainItem(sprite: "firepit-\(biome.rawValue)", foot: CGPoint(x: pit.x, y: pit.y - 4), unlock: 5))
+        var plan: [(kind: String, unlock: Int)] = [("bones-0", 8), ("stump", 12), ("firewood", 16), ("tent", 22), ("skull", 30), ("spears", 38),
+                                                   ("rack", 48), ("tent", 60), ("bones-1", 68), ("totem", 85)]
+        if rng.chance(0.5) { plan.append(("tent", 105)) }
+        // on both sides of the nest, going outward, but not on top of the fire ring
+        var offsets: [CGFloat] = [-64, 132, -118, 178, -172, 226, -226, 274, -280, 322, -334]
+        offsets = offsets.map { abs($0 - (pitU - u0)) < 30 ? $0 + ($0 < 0 ? -34 : 34) : $0 }
+        for (entry, du) in zip(plan, offsets) {
+            let u = u0 + du + CGFloat(rng.range(-8, 8))
+            guard u > 20, u < length - 20 else { continue }
+            let kind = entry.kind, unlock = entry.unlock
+            let p = at(u, back - CGFloat(rng.range(3, 9)))
+            let name = kind.contains("-") ? "\(kind.split(separator: "-")[0])-\(biome.rawValue)-\(kind.split(separator: "-")[1])" : "\(kind)-\(biome.rawValue)"
+            let item = TerrainItem(sprite: name, foot: p, unlock: unlock)
+            // (it stands at the back of the path and only its own foot blocks: the front stays clear)
+            func block(_ radius: CGFloat) { solids.append(Solid(center: p, radius: min(radius, max(4, across * 0.24)), unlock: unlock)) }
+            switch kind {
+            case "tent": standing.append(item); block(15)
+            case "rack": standing.append(item); block(14)
+            case "totem": standing.append(item); block(5)
+            case "firewood": standing.append(item); block(8)
+            case "skull": standing.append(item); block(3)
+            case "spears": standing.append(item)
+            case "stump": lying.append(item); block(6)
+            default: lying.append(item)
+            }
+        }
+
+        // farm plots along the back of the path, a little way from the camp, dug as it grows (one, two or three)
+        for k in 0..<rng.int(1...3) {
+            guard let u = place(32) else { continue }
+            plotSpots.append((at(u, across * 0.55), [26, 52, 88][k]))
+            taken.append((u, 34))
+        }
+
+        // water: ponds against the back of the path (with a bank all round), more on the bottom
+        let pondCount = riverside ? Int(length / 640) + (rng.chance(0.6) ? 1 : 0) : (rng.chance(0.3) ? 1 : 0) + Int(length / 1500)
+        for i in 0..<pondCount {
+            let along = CGFloat(rng.range(riverside ? 72 : 56, riverside ? 132 : 96))
+            let depth = min(across * 0.5, CGFloat(rng.range(16, 26)))
+            guard depth >= 12, let u = place(along / 2 + 22) else { continue }
+            let a = at(u - along / 2, back - depth), b = at(u + along / 2, back)
+            let box = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+            ponds.append(Pond(seed: seed &* 31 &+ UInt64(i) &+ 5, rect: box, style: biome.waterStyle))
+            taken.append((u, along / 2 + 22))
+        }
+
+        // a stream across the path, with a plank bridge: the goblins cross only at the bridge (ice can be walked on)
+        if across >= 34 {
+            for _ in 0..<(Int(length / (riverside ? 800 : 1300)) + (rng.chance(0.4) ? 1 : 0)) {
+                guard let u = place(38) else { continue }
+                var points: [CGPoint] = []
+                let phase = rng.range(0, 6.28)
+                let steps = Int((across + 24) / 4)
+                for k in 0...steps {
+                    let v = -8 + CGFloat(k) / CGFloat(steps) * (across + 24)
+                    points.append(at(u + sin(v / 9 + CGFloat(phase)) * 3, v))
+                }
+                streams.append((points, 11))
+                let bridgeV = across * 0.42
+                bridges.append((at(u, bridgeV), horizontal ? 0 : .pi / 2, 25))
+                if biome != .snow {
+                    for (k, p) in points.enumerated() {
+                        let v = -8 + CGFloat(k) / CGFloat(steps) * (across + 24)
+                        if abs(v - bridgeV) > 13 { solids.append(Solid(center: p, radius: 4.5)) }
+                    }
+                }
+                taken.append((u, 38))
+            }
+        }
+
+        // rocks at the back of the path (small ones only where it is narrow)
+        for _ in 0..<(Int(length / (riverside ? 420 : 230)) + (rng.chance(0.5) ? 1 : 0)) {
+            guard let u = place(22) else { continue }
+            let size = across >= 40 ? rng.int(0...1) : 0
+            let foot = at(u, back - 5 - CGFloat(size) * 2)
+            standing.append(TerrainItem(sprite: "rock-\(biome.rawValue)-\(size)", foot: foot))
+            solids.append(Solid(center: foot, radius: CGFloat([8, 12][size]), resource: 2, foot: foot, size: size))
+            taken.append((u, 24))
+        }
+
+        // (no big trees of its own: the forest behind the path is the strip's trees, and the sprites here are drawn at the camp window's scale)
+
+        // fallen logs at the back of the path: what the goblins chop (the strip's trees are only scenery)
+        for _ in 0..<(Int(length / 190) + 1) {
+            guard let u = place(14) else { continue }
+            let p = at(u, CGFloat(rng.range(Double(across * 0.6), Double(back - 3))))
+            if ponds.contains(where: { $0.picture.insetBy(dx: -6, dy: -6).contains(p) }) { continue }
+            lying.append(TerrainItem(sprite: "log-\(biome.rawValue)", foot: p))
+            solids.append(Solid(center: p, radius: 6, resource: 1, foot: p))
+            taken.append((u, 16))
+        }
+
+        // bushes, ferns and tufts in the back half of the path
+        for _ in 0..<Int(length / 90) {
+            let u = CGFloat(rng.range(16, Double(max(20, length - 16))))
+            if abs(u - u0) < 120 { continue } // (the camp's own things stand there)
+            let p = at(u, CGFloat(rng.range(Double(across * 0.6), Double(back - 2))))
+            if ponds.contains(where: { $0.picture.insetBy(dx: -6, dy: -6).contains(p) }) { continue } // (not in the water)
+            let roll = rng.int(0...9)
+            if roll < 4 { lying.append(TerrainItem(sprite: "bush-\(biome.rawValue)-\(rng.int(0...1))", foot: p)) }
+            else if roll < 7 { lying.append(TerrainItem(sprite: "fern-\(biome.rawValue)-\(rng.int(0...1))", foot: p)) }
+            else { lying.append(TerrainItem(sprite: "tuft-\(biome.rawValue)", foot: p)) }
+        }
+
+        // mushrooms, one clump or two at the foot of a tree, a log or a rock, and the rest in the open
+        let hosts = (standing + lying).filter { item in ["tree-", "stump-", "log-", "rock-"].contains { item.sprite.hasPrefix($0) } }
+        for _ in 0..<Int(length / (riverside ? 260 : 130)) {
+            var anchor = at(CGFloat(rng.range(20, Double(max(24, length - 20)))), CGFloat(rng.range(Double(across * 0.5), Double(back - 2))))
+            if !hosts.isEmpty, rng.chance(0.65) {
+                let host = hosts[rng.int(0...(hosts.count - 1))]
+                anchor = CGPoint(x: host.foot.x + CGFloat(rng.range(-18, 18)), y: host.foot.y + CGFloat(rng.range(-6, 4)))
+            }
+            let kind = rng.int(0...3)
+            for _ in 0..<rng.int(1...5) {
+                mushrooms.append((CGPoint(x: anchor.x + CGFloat(rng.range(-9, 9)), y: anchor.y + CGFloat(rng.range(-5, 5))), rng.int(0...2), rng.chance(0.75) ? kind : rng.int(0...3)))
+            }
+        }
+
+        // little flowers over the meadow, dry leaves under the forest
+        let flowerColors: [NSColor] = [NSColor(calibratedRed: 0.95, green: 0.55, blue: 0.7, alpha: 1), NSColor(calibratedWhite: 0.96, alpha: 1),
+                                       NSColor(calibratedRed: 0.98, green: 0.85, blue: 0.3, alpha: 1), NSColor(calibratedRed: 0.72, green: 0.6, blue: 0.95, alpha: 1)]
+        let leafColors: [NSColor] = [NSColor(calibratedRed: 0.72, green: 0.5, blue: 0.2, alpha: 1), NSColor(calibratedRed: 0.56, green: 0.4, blue: 0.16, alpha: 1)]
+        let dotColors = biome == .meadow ? flowerColors : biome == .snow ? [] : leafColors
+        if !dotColors.isEmpty {
+            for _ in 0..<Int(length / (biome == .meadow ? 6 : 10)) {
+                let p = at(CGFloat(rng.range(8, Double(max(12, length - 8)))), CGFloat(rng.range(2, Double(back))))
+                dots.append((p, dotColors[rng.int(0...(dotColors.count - 1))]))
+            }
+        }
+        standing.sort { $0.foot.y > $1.foot.y }
     }
 
     // MARK: Making a place
@@ -634,14 +915,18 @@ final class TerrainScene {
         let x = seasonPosition
         let now = clock ?? TerrainClock.now
 
-        if let tile = TerrainArt.image("ground-\(biome.rawValue)") { Scenery.fillGround(tile, in: bounds, scale: 2, into: ctx) } else {
+        if isStrip {
+            // (a strip is drawn over its own forest or meadow: only what stands on it, and the light of the hour over just that)
+        } else if let tile = TerrainArt.image("ground-\(biome.rawValue)") { Scenery.fillGround(tile, in: bounds, scale: 2, into: ctx) } else {
             ctx.setFillColor(NSColor(calibratedRed: 0.23, green: 0.45, blue: 0.24, alpha: 1).cgColor)
             ctx.fill(bounds)
         }
         // the colour of the season over the ground: spring green, summer gold, autumn orange, winter white (blended between them)
-        let (seasonColor, seasonAlpha) = seasonTint(at: x)
-        ctx.setFillColor(seasonColor.withAlphaComponent(seasonAlpha).cgColor)
-        ctx.fill(bounds)
+        if !isStrip {
+            let (seasonColor, seasonAlpha) = seasonTint(at: x)
+            ctx.setFillColor(seasonColor.withAlphaComponent(seasonAlpha).cgColor)
+            ctx.fill(bounds)
+        }
 
         let nsctx = NSGraphicsContext(cgContext: ctx, flipped: false)
         NSGraphicsContext.saveGraphicsState()
@@ -649,7 +934,7 @@ final class TerrainScene {
 
         // flat things first: the soft patches, the trampled earth round the camp
         for patch in patches { paintBlob(patch.center, patch.rx, patch.ry, patch.color, shadow: patch.color, feather: true) }
-        paintSnow(amount: snowAmount(at: x))
+        if !isStrip { paintSnow(amount: snowAmount(at: x)) }
         if var clearing {
             clearing.radius *= CGFloat(min(1, 0.3 + Double(growth) / 110)) // the trampled earth spreads as the camp grows
             let earth = [NSColor(calibratedRed: 0.5, green: 0.38, blue: 0.24, alpha: 1), NSColor(calibratedRed: 0.45, green: 0.34, blue: 0.21, alpha: 1), NSColor(calibratedRed: 0.55, green: 0.43, blue: 0.28, alpha: 1)]
@@ -712,12 +997,13 @@ final class TerrainScene {
         let frozen = x >= 3.05 && biome != .snow
         for pond in ponds { if let image = pond.image(frozen: frozen) { ctx.draw(image, in: pond.picture) } }
         drawFarm(in: ctx)
-        for item in lying where item.unlock <= growth { draw(item, in: ctx, season: x) }
+        for item in lying where item.unlock <= growth && !(isStrip && item.sprite.hasPrefix("log-") && cut(at: item.foot) != nil) { draw(item, in: ctx, season: x) }
         for item in plantedItems.lying + stumps + seasonalCampItems(at: x) { draw(item, in: ctx, season: x) }
         for item in (trees).sorted(by: { $0.foot.y > $1.foot.y }) { draw(item, in: ctx, season: x) }
 
         // the light of the hour over all of it
         if let tint = Scenery.tint(hour: hour) {
+            if isStrip { ctx.setBlendMode(.sourceAtop) } // only over what was drawn, not the empty parts
             ctx.setFillColor(tint.color.withAlphaComponent(tint.alpha).cgColor)
             ctx.fill(bounds)
         }
@@ -733,7 +1019,7 @@ final class TerrainScene {
         var rng = TerrainRandom(seed: seed &+ 2024)
         func spot(_ radius: Double) -> CGPoint {
             let a = rng.range(2.2, 4.2) // the left and back of the camp
-            return CGPoint(x: nest.x + CGFloat(cos(a) * radius), y: nest.y + CGFloat(sin(a) * radius * 0.8))
+            return CGPoint(x: campNest.x + CGFloat(cos(a) * radius), y: campNest.y + CGFloat(sin(a) * radius * 0.8))
         }
         let snowman = spot(rng.range(105, 135)), wood = spot(rng.range(90, 115)), hay = spot(rng.range(100, 130)), pumpkins = spot(rng.range(100, 130))
         var items: [TerrainItem] = []

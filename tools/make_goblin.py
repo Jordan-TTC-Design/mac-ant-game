@@ -740,8 +740,10 @@ def pose_hug(f, o):
         arm(c, o, [(4, 10), (4, 11), (4, 12)])
         if f in (0, 1):
             arm(c, o, [(11, 10), (12, 10), (13, 9)])            # reaching out
+            c.cells([(12, 11)], _sleeve_key(o))
         else:
             arm(c, o, [(11, 10), (12, 10), (13, 10), (14, 10)])   # holding on
+        c.cells([(12, 11), (13, 11)], _sleeve_key(o))              # a thicker arm, so it does not read as a bar
     return girl_front(0, o, arms=False, mouth="smile" if f < 2 else "hidden", eyes="open" if f < 2 else "down", extra=extra)
 
 

@@ -90,3 +90,7 @@
 | `CAMP_TEST_ACTSHOT=路徑.png` | 等到有人在釣魚、看書、睡覺、巡視時，把營地畫成 PNG，並印出那四隻的位置 |
 | `CAMP_PERF_BUDGET=毫秒` `CAMP_TEST_PERFGUARD=1` | 把預算設得很小，看效能保護把同時出現的數量降下來（每 6 秒印一次） |
 | `CAMP_TEST_STUCK=1` | 找「在外面卻十幾秒沒動」的哥布林（做活動的不算） |
+
+
+## 帳篷是入口（哥布林進進出出）
+營地長出的帳篷（見 TERRAIN.md）和巢穴的地洞在地下相通：回去休息、送食物、報信時走**最近**的入口進去，出來時任何一個入口都可能（去找食物或去打獵時，走離目標最近的那個，其他情況巢穴地洞稍微多一點）。營地大了、帳篷多了，牠們就分散地進出。程式：`AntWorld.tents`、`nearestEntrance`、`emergePoint`；入口位置由 `TerrainScene.tentEntrances()` 算（帳篷前面一點，走得到）。

@@ -265,6 +265,31 @@ final class Settings {
         get { UInt64(defaults.string(forKey: "terrainSeed") ?? "") ?? 0 }
         set { defaults.set(String(newValue), forKey: "terrainSeed") }
     }
+    /// Where in the camp window the place was made round (the camp's spot when it was first made). The land stays put when the camp is moved.
+    var terrainAnchor: CGPoint? {
+        get {
+            let parts = (defaults.string(forKey: "terrainAnchor") ?? "").split(separator: ",").compactMap { Double($0) }
+            return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+        }
+        set { defaults.set(newValue.map { "\($0.x),\($0.y)" }, forKey: "terrainAnchor") }
+    }
+    /// Where the camp stood in each walking range ("screen", "bottom", "right", "left", "window"), so switching between them and back puts it
+    /// back where it was instead of starting over.
+    func modeNest(_ mode: String) -> CGPoint? {
+        let parts = (defaults.string(forKey: "modeNest.\(mode)") ?? "").split(separator: ",").compactMap { Double($0) }
+        return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+    }
+    func setModeNest(_ point: CGPoint, mode: String) {
+        defaults.set("\(point.x),\(point.y)", forKey: "modeNest.\(mode)")
+    }
+    /// The same for the strips along the screen edges: where in the strip (screen coordinates) the land was made round, per edge.
+    func stripAnchor(_ edge: String) -> CGPoint? {
+        let parts = (defaults.string(forKey: "stripAnchor.\(edge)") ?? "").split(separator: ",").compactMap { Double($0) }
+        return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+    }
+    func setStripAnchor(_ point: CGPoint?, edge: String) {
+        defaults.set(point.map { "\($0.x),\($0.y)" }, forKey: "stripAnchor.\(edge)")
+    }
     /// The place keeps changing over the days (seasons, puddles, growing trees, worn ground).
     var terrainAlive: Bool {
         get { defaults.object(forKey: "terrainAlive") as? Bool ?? true }

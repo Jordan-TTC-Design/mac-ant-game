@@ -386,6 +386,8 @@ extension Colony {
         for (kind, weight) in options { roll -= weight; if roll < 0 { choice = kind; break } }
         if let forced = Romance.force { choice = forced }
         switch choice {
+        case "wedding": startScene(.wedding, seconds: 20) // (tests)
+        case "quarrel": startScene(.quarrel, seconds: 12) // (tests)
         case "hug":
             say(["\(name) 抱了抱\(princess)", "\(princess)靠在 \(name) 肩上"].randomElement()!, rarity: .common)
             startScene(.hug, seconds: Romance.random(6...9))

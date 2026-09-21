@@ -112,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
+        if colony.nest != nil { applyWalkable() } // (the land is made round where the camp really is)
         colony.onChange = { [weak self] in
             self?.syncWindows()
             self?.persist()
@@ -818,6 +819,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     log("placing again: phase \(self.colony.phase), pending \(String(describing: self.colony.pendingFood))")
                     after(2.5) { pressKey(53, "\u{1b}") } // leave the hint on screen long enough to be captured
                     after(3.0) { log("after Esc while placing: phase \(self.colony.phase), pending \(String(describing: self.colony.pendingFood))") }
+                }
+            }
+        }
+        if env["CAMP_TEST_TENTS"] != nil { // where the goblins that are inside are (which door they went in at), and which doors there are
+            for k in 1...10 {
+                after(Double(k) * 10) {
+                    let c = self.colony
+                    guard let nest = c.nest else { return }
+                    let doors = (c.scene?.tentEntrances() ?? [])
+                    let hidden = c.ants.filter(\.isHidden)
+                    let atNest = hidden.filter { hypot($0.pos.x - nest.x, $0.pos.y - nest.y) < 7 }.count
+                    let atTents = doors.map { d in hidden.filter { hypot($0.pos.x - d.x, $0.pos.y - d.y) < 7 }.count }
+                    log("doors: nest + \(doors.count) tents | inside \(hidden.count): at the nest \(atNest), at the tents \(atTents) | growth \(c.scene?.growth ?? 0)")
+                }
+            }
+        }
+        if let s = env["CAMP_TEST_RANGES"] { // switch the walking range every 8 s ("window,right,window,bottom"), like the menu, and report each time
+            let modes = s.split(separator: ",").map(String.init)
+            let start = Double(env["CAMP_TEST_RANGES_AT"] ?? "") ?? 6, step = Double(env["CAMP_TEST_RANGES_STEP"] ?? "") ?? 8
+            for (k, mode) in modes.enumerated() {
+                after(start + Double(k) * step) {
+                    let entering = mode == "window" && self.settings.rangeMode != "window"
+                    self.settings.rangeMode = mode
+                    if entering { self.settings.mapCollapsed = false }
+                    self.applyWalkable(); self.checkFullscreenAndDesktops(immediate: true); self.redrawAll()
+                }
+                after(start + 5 + Double(k) * step) {
+                    let c = self.colony
+                    log("  memory: \(c.lifeReport)")
+                    let outside = c.ants.filter { a in !a.isHidden && !c.walkable.contains { $0.insetBy(dx: -8, dy: -8).contains(a.pos) } }.count
+                    let far = c.ants.filter { a in !a.isHidden }.map { a in c.walkable.map { r in hypot(max(r.minX - a.pos.x, 0, a.pos.x - r.maxX), max(r.minY - a.pos.y, 0, a.pos.y - r.maxY)) }.min() ?? 0 }.max() ?? 0
+                    log("mode \(mode): walkable \(c.walkable.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" }), nest \(String(describing: c.nest)), goblins \(c.ants.count) out \(c.ants.filter { !$0.isHidden }.count), outside the range \(outside) (furthest \(Int(far)) away), scene \(c.scene == nil ? "none" : "yes, camp at \(c.scene!.campNest)")")
+                }
+            }
+        }
+        if let s = env["CAMP_TEST_MOVE"] { // move the camp by (dx, dy) the way a drag does (edit, move, done), then report
+            let d = s.split(separator: ",").compactMap { Double($0) }
+            if d.count == 2 {
+                after(5) {
+                    guard let nest = self.colony.nest else { return }
+                    self.colony.beginEditing()
+                    self.colony.moveNest(to: CGPoint(x: nest.x + d[0], y: nest.y + d[1]))
+                    self.colony.nestDragEnded()
+                    self.colony.endEditing()
+                    log("moved the camp from \(nest) to \(String(describing: self.colony.nest)); scene camp at \(String(describing: self.colony.scene?.campNest)), land anchored at \(String(describing: self.colony.scene?.nest))")
                 }
             }
         }
@@ -1778,34 +1824,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let seed = UInt64(env["CAMP_TERRAIN_SEED"] ?? "") ?? settings.terrainSeed
         let biome = Biome(rawValue: env["CAMP_TERRAIN"] ?? settings.terrainBiome) ?? Biome.pick(seed: seed)
         let nest = colony.nest ?? CGPoint(x: world.midX, y: world.midY)
-        let key = "\(seed)-\(biome.rawValue)-\(Int(nest.x / 20))-\(Int(nest.y / 20))"
+        // The land is made round one fixed spot (where the camp first was) so it never changes when the camp is moved or the mode is switched.
+        if settings.terrainAnchor == nil, colony.nest != nil { settings.terrainAnchor = nest } // (not while the camp's spot is still unknown)
+        let anchor = settings.terrainAnchor ?? nest
+        let key = "\(seed)-\(biome.rawValue)-\(Int(anchor.x))-\(Int(anchor.y))"
         guard key != sceneKey else {
-            // only the window changed: the place stays as it is, and the window shows more or less of it
-            if let scene = colony.scene, scene.world != world {
-                scene.world = world
+            // only the window or the camp's spot changed: the land stays as it is, and the window shows more or less of it
+            if let scene = colony.scene {
+                let moved = hypot(scene.campNest.x - nest.x, scene.campNest.y - nest.y) > 0.5
+                if moved { scene.moveCamp(to: nest) }
+                if moved || scene.world != world {
+                    scene.world = world
+                    colony.refreshObstacles()
+                }
+            }
+            return
+        }
+        sceneKey = key
+        let scene = TerrainScene(seed: seed, biome: biome, world: world, nest: anchor, campNest: nest)
+        scene.life = settings.terrainAlive ? colony.terrainLife(place: "window", seed: seed) : nil
+        colony.scene = scene
+    }
+
+    /// Along the bottom or a side of the screen the goblins get a place made for that strip (a riverside meadow along the bottom, the
+    /// edge of the forest down a side): ponds, a stream with a bridge, rocks, trees, the camp in a row. Kept like the camp window's: made
+    /// once from a seed round a fixed spot, so moving the camp along the strip never changes the land.
+    private func updateStripScene(bands: [CGRect]) {
+        guard let edge = StripEdge(rawValue: settings.rangeMode), settings.scenery != "none", let nest = colony.nest,
+              let band = bands.first(where: { $0.insetBy(dx: -2, dy: -2).contains(nest) }) else {
+            if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: no strip scene (mode \(settings.rangeMode), scenery \(settings.scenery), nest \(String(describing: colony.nest)), bands \(bands))") }
+            if colony.scene != nil { colony.scene = nil }
+            sceneKey = ""
+            return
+        }
+        if settings.terrainSeed == 0 { settings.terrainSeed = UInt64.random(in: 1...UInt64.max) }
+        let seed = settings.terrainSeed &+ (edge == .bottom ? 1001 : edge == .right ? 2002 : 3003)
+        let biome: Biome = settings.scenery == "meadow" ? .meadow : .forest
+        let stored = settings.stripAnchor(edge.rawValue)
+        // (an old anchor from another screen size or strip is no use: it has to be inside the strip)
+        let anchor = stored.flatMap { band.insetBy(dx: -2, dy: -2).contains($0) ? $0 : nil } ?? nest
+        if stored != anchor { settings.setStripAnchor(anchor, edge: edge.rawValue) }
+        let key = "strip-\(edge.rawValue)-\(seed)-\(biome.rawValue)-\(Int(band.minX)),\(Int(band.minY)),\(Int(band.width))x\(Int(band.height))-\(Int(anchor.x)),\(Int(anchor.y))"
+        if key == sceneKey {
+            if let scene = colony.scene, hypot(scene.campNest.x - nest.x, scene.campNest.y - nest.y) > 0.5 {
+                scene.moveCamp(to: nest)
                 colony.refreshObstacles()
             }
             return
         }
         sceneKey = key
-        let scene = TerrainScene(seed: seed, biome: biome, world: world, nest: nest)
-        scene.life = settings.terrainAlive ? colony.terrainLife(seed: seed) : nil
+        let scene = TerrainScene(seed: seed, biome: biome, band: band, edge: edge, nest: anchor, campNest: nest)
+        scene.life = settings.terrainAlive ? colony.terrainLife(place: edge.rawValue, seed: seed) : nil
         colony.scene = scene
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil {
+            NSLog("GoblinCamp: strip scene \(edge.rawValue) band \(band) nest \(nest): \(scene.summary), \(scene.ponds.count) ponds, \(scene.standing.count) standing, \(scene.lying.count) lying, \(scene.solids.count) solids")
+        }
     }
+
+    /// The range the goblins were in the last time this ran (to notice a switch).
+    private var lastRangeMode: String?
 
     private func applyWalkable() {
         colony.centreWhenOutside = isWindowMode
+        let mode = settings.rangeMode
+        // switching to another range: the camp's spot in the range being left is remembered, and the one it had in this range is restored
+        let switched = lastRangeMode != nil && lastRangeMode != mode
+        if switched, let nest = colony.nest, let old = lastRangeMode { settings.setModeNest(nest, mode: old) }
         if isWindowMode {
             let world = ensureMapWindow().walkArea
-            updateScene(world: world)
-            if let nest = colony.nest, !world.contains(nest) { colony.relocate(into: world) } else { colony.updateWalkable([world]) }
+            if switched, colony.nest != nil, let saved = settings.modeNest(mode), world.insetBy(dx: 30, dy: 30).contains(saved) {
+                colony.relocate(into: world, at: saved)
+            } else if let nest = colony.nest, !world.contains(nest) {
+                colony.relocate(into: world)
+            } else { colony.updateWalkable([world]) }
+            updateScene(world: world) // (after the camp is in place, so the land is made round where it really is)
         } else {
-            colony.scene = nil
-            sceneKey = ""
-            colony.updateWalkable(allowedScreens().map {
+            let bands = allowedScreens().map {
                 ScreenChoice.walkBand(of: ScreenChoice.range(for: $0, mode: settings.rangeMode, size: settings.rangeSize), mode: settings.rangeMode)
-            })
+            }
+            colony.updateWalkable(bands)
+            if switched, let saved = settings.modeNest(mode) { colony.setNest(saved) }
+            updateStripScene(bands: bands)
         }
+        if let nest = colony.nest { settings.setModeNest(nest, mode: mode) }
+        lastRangeMode = mode
     }
 
     // MARK: Range and the camp window
@@ -1900,6 +2002,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         terrainMenu.addItem(.separator())
         terrainMenu.addItem(ClosureMenuItem(title: "重新生成地貌") { [weak self] in
             self?.settings.terrainSeed = UInt64.random(in: 1...UInt64.max)
+            self?.settings.terrainAnchor = nil // (a new place is made round wherever the camp is now)
+            for edge in ["bottom", "right", "left"] { self?.settings.setStripAnchor(nil, edge: edge) }
             self?.applyWalkable()
             self?.redrawAll()
         })

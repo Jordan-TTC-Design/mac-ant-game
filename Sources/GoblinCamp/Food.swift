@@ -111,6 +111,9 @@ struct FoodSource {
 /// What an ant can see of the world on each update.
 struct AntWorld {
     let nest: CGPoint
+    /// The tents of the camp that are up (where a goblin can step in): tunnels join them to the nest, so a goblin can go in at any of them
+    /// and come out at any other. The nest is the first way in; these are the others.
+    var tents: [CGPoint] = []
     let walkable: [CGRect]
     let foods: [FoodSource]
     let creatures: [CreatureInfo]
@@ -153,6 +156,23 @@ struct AntWorld {
     var attendTargets: [Int: CGPoint] = [:]
     var attendFace: CGPoint?
     var crowded: Bool { crowd >= 1 }
+
+    /// The way in nearest to `p`: the nest hole or a tent.
+    func nearestEntrance(to p: CGPoint) -> CGPoint {
+        var best = nest, bestDistance = hypot(nest.x - p.x, nest.y - p.y)
+        for tent in tents {
+            let d = hypot(tent.x - p.x, tent.y - p.y)
+            if d < bestDistance { best = tent; bestDistance = d }
+        }
+        return best
+    }
+
+    /// Where a goblin comes out: the way out nearest to where it is going (its food, its prey), or any of them, the nest hole a little more often.
+    func emergePoint(toward goal: CGPoint? = nil) -> CGPoint {
+        var spot = nest
+        if let goal { spot = nearestEntrance(to: goal) } else if !tents.isEmpty, Double.random(in: 0..<1) < Double(tents.count) / Double(tents.count + 2) { spot = tents.randomElement() ?? nest }
+        return CGPoint(x: spot.x + CGFloat.random(in: -3...3), y: spot.y + CGFloat.random(in: -3...3))
+    }
 
     enum Axis { case horizontal, vertical }
 

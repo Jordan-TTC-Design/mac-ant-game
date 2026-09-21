@@ -148,17 +148,34 @@ final class Colony {
         }
     }
     /// What changes in the camp window over the days (seasons, puddles, saplings, worn ground); made with the scene, kept in the save.
+    /// The life of the place the goblins are in now. Each place (the camp window, the strip along the bottom, the right, the left) keeps its
+    /// own, so switching between them and back never loses what was felled, dug or sown, or the paths worn into the ground.
     private(set) var life: TerrainLife?
-    private var savedLife: TerrainLifeState?
+    private var lives: [String: TerrainLife] = [:]
+    private var savedLives: [String: TerrainLifeState] = [:]
     private var lifeTimer = 0.0, heatTimer = 0.0, rainTimer = 0.0
 
-    func terrainLife(seed: UInt64) -> TerrainLife {
-        if let life, life.state.seed == seed { return life }
-        let fresh = TerrainLife(seed: seed, state: savedLife)
-        savedLife = nil
+    /// The life of `place` ("window", "bottom", "right", "left") made from `seed`: the one already running, or the one from the save, or a new one.
+    func terrainLife(place: String, seed: UInt64) -> TerrainLife {
+        if let existing = lives[place], existing.state.seed == seed { life = existing; return existing }
+        let fresh = TerrainLife(seed: seed, state: savedLives[place])
+        savedLives[place] = nil
         fresh.onChange = { [weak self] in self?.lifeChanged() }
+        lives[place] = fresh
         life = fresh
         return fresh
+    }
+
+    /// A line for the tests: what each place remembers.
+    var lifeReport: String {
+        allLives.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.cuts.count) cuts, \($0.value.plots.filter { $0.state > 0 }.count) plots worked, \($0.value.puddles.count) puddles, \($0.value.heat.count) trodden cells" }.joined(separator: " | ")
+    }
+
+    /// Every place's life as it is now, for the save.
+    private var allLives: [String: TerrainLifeState] {
+        var all = savedLives
+        for (place, life) in lives { all[place] = life.state }
+        return all
     }
 
     /// The camp window was resized: which trees, rocks and ponds are in it changed.
@@ -193,7 +210,8 @@ final class Colony {
         lifeTimer -= dt
         if lifeTimer <= 0 {
             lifeTimer = 30
-            life.advance(spot: { scene.freeSpot(&$0, $1) }, fraction: { scene.fraction($0) })
+            let strip = scene.isStrip // (a strip grows no saplings of its own: they would be drawn at the camp window's size)
+            life.advance(spot: { strip ? nil : scene.freeSpot(&$0, $1) }, fraction: { scene.fraction($0) })
         }
     }
 
@@ -283,6 +301,16 @@ final class Colony {
         let spot = isWalkable(point) ? point : nearestWalkable(to: point)
         nest = spot
         queen = Queen.settled(nest: spot, walkable: walkable)
+    }
+
+    /// Puts the camp back at a spot it had (another walking range was left and this one is back): only if that spot can be walked on now.
+    @discardableResult
+    func setNest(_ point: CGPoint) -> Bool {
+        guard nest != nil, isWalkable(point) else { return false }
+        nest = point
+        queen = Queen.settled(nest: point, walkable: walkable)
+        onAntsChanged?()
+        return true
     }
 
     /// The drag finished: let the app save the new spot.
@@ -888,6 +916,8 @@ final class Colony {
     // MARK: The farm
 
     private var plotCache: [TerrainScene.PlotInfo] = []
+    /// The tents a goblin can step into now (refreshed every couple of seconds).
+    private var entranceCache: [CGPoint] = []
 
     /// A goblin has done a job at a plot. Tilling turns fallow or withered ground into a bed; sowing puts in a crop that suits the season (a
     /// poor sowing comes up thin); watering helps what grows along (usually); harvesting fills the larder (now and then a giant pumpkin).
@@ -1300,7 +1330,8 @@ final class Colony {
         playSeconds = saved.playSeconds ?? 0
         romance = saved.romance ?? RomanceState()
         larder = saved.larder ?? [:]
-        savedLife = saved.terrain
+        savedLives = saved.terrains ?? [:]
+        if savedLives["window"] == nil, let older = saved.terrain { savedLives["window"] = older } // (saves from before there were strips)
         scene?.growth = peakAnts
         armory = (saved.armoryItems ?? []).map { GearItem(id: $0.id, left: $0.left) }.filter { $0.gear != nil }
         for (id, count) in saved.armory ?? [:] where Gears.by(id: id) != nil { armory.append(contentsOf: Array(repeating: GearItem(id: id, left: nil), count: count)) }
@@ -1340,7 +1371,7 @@ final class Colony {
                           goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name,
                                                     gear: savedGear(of: $0), parents: $0.parents.isEmpty ? nil : $0.parents) },
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
-                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: life?.state ?? savedLife, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) },
+                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: allLives["window"], terrains: allLives.isEmpty ? nil : allLives, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) },
                           romance: romance)
     }
 
@@ -1385,10 +1416,10 @@ final class Colony {
     }
 
     /// The camp window (a small fixed-size world of its own): put the nest in the middle and everyone around it.
-    func relocate(into rect: CGRect) {
+    func relocate(into rect: CGRect, at spot: CGPoint? = nil) {
         walkable = [rect]
         guard let old = nest else { return }
-        let centre = CGPoint(x: rect.midX, y: rect.midY)
+        let centre = spot ?? CGPoint(x: rect.midX, y: rect.midY)
         let dx = centre.x - old.x, dy = centre.y - old.y
         nest = centre
         queen = Queen.settled(nest: centre, walkable: walkable)
@@ -1399,6 +1430,11 @@ final class Colony {
         }
         for i in foods.indices { foods[i].pos = nearestWalkable(to: CGPoint(x: foods[i].pos.x + dx, y: foods[i].pos.y + dy)) }
         creatures.removeAll()
+        for i in ants.indices {
+            if ants[i].activitySpot != nil { ants[i].mode = .wandering }
+            if case .huntNews = ants[i].mode { ants[i].mode = .wandering }
+            if case .hunting = ants[i].mode { ants[i].mode = .wandering }
+        }
         onAntsChanged?()
     }
 
@@ -1416,7 +1452,19 @@ final class Colony {
         for i in foods.indices where !isWalkable(foods[i].pos) {
             foods[i].pos = nearestWalkable(to: foods[i].pos)
         }
+        dropStrandedWork()
         onAntsChanged?() // saves the (possibly moved) nest
+    }
+
+    /// After the range changed: goblins working somewhere that is outside it (a pond, a tree, the fire, a field of the camp window) go back to
+    /// wandering instead of walking off across the screen to it, and animals left outside are gone.
+    private func dropStrandedWork() {
+        for i in ants.indices {
+            if let spot = ants[i].activitySpot, !isWalkable(spot) { ants[i].mode = .wandering }
+            if case .huntNews = ants[i].mode { ants[i].mode = .wandering }
+            if case .hunting = ants[i].mode { ants[i].mode = .wandering }
+        }
+        creatures.removeAll { !isWalkable($0.pos) }
     }
 
     /// The nearest place inside the walkable areas; in a strip the camp sits in the middle of it, not on its edge.
@@ -1539,12 +1587,14 @@ final class Colony {
         world.crowd = Double(visibleCount) / Double(visibleCap)
         world.night = Colony.isNight
         world.pit = peakAnts >= 5 && fire == nil ? scene?.firePit : nil
+        world.tents = entranceCache
         let cooking = ants.contains { if case .activity(.cook, _) = $0.mode { return true } else { return false } }
         world.cookSlots = larderTotal >= 2 && !cooking ? 1 : 0
         resourceTimer -= dt
         if resourceTimer <= 0 {
             resourceTimer = 2
             resourceCache = scene?.resourceSpots() ?? []
+            entranceCache = (scene?.tentEntrances() ?? []).filter { p in walkable.contains { $0.contains(p) } }
             plotCache = scene?.plotInfos() ?? []
         }
         var minded = Set<Int>()
