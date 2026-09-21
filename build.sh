@@ -1,7 +1,8 @@
 #!/bin/bash
 # Build GoblinCamp.app (no Xcode project needed): SwiftPM release build + hand-assembled bundle.
-#   ./build.sh            quick build for this Mac
-#   ./build.sh --release  universal build (Apple Silicon + Intel) and dist/GoblinCamp-<version>.zip to hand to others
+#   ./build.sh                    quick build for this Mac
+#   ./build.sh --release          universal build (Apple Silicon + Intel), dist/GoblinCamp-<version>.zip and dist/version.json
+#   ./build.sh --release "說明"    same, with the release notes the in-app updater shows
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -40,4 +41,29 @@ if [ "${1:-}" = "--release" ]; then
     rm -f "$ZIP"
     ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ZIP"   # ditto keeps the app's permissions and signature intact (plain zip can break them)
     echo "Ready to share: $PWD/$ZIP ($(du -h "$ZIP" | cut -f1))"
+
+    # The feed the in-app updater reads: a plain file uploaded next to the zip, so there is no server to run.
+    REPO="Jordan-TTC-Design/mac-ant-game"
+    TAG="v$VERSION"
+    NOTES="${2:-$(git log -1 --pretty=%s 2>/dev/null || echo "")}"
+    SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
+    MIN="$(/usr/libexec/PlistBuddy -c 'Print LSMinimumSystemVersion' Resources/Info.plist)"
+    VERSION="$VERSION" URL="https://github.com/$REPO/releases/download/$TAG/GoblinCamp-$VERSION.zip" \
+        NOTES="$NOTES" SHA="$SHA" MIN="$MIN" /usr/bin/python3 -c '
+import json, os
+keys = ["version", "url", "notes", "sha256", "minimumSystemVersion"]
+env = ["VERSION", "URL", "NOTES", "SHA", "MIN"]
+print(json.dumps(dict(zip(keys, (os.environ[e] for e in env))), ensure_ascii=False, indent=2))
+' > dist/version.json
+    echo "Wrote $PWD/dist/version.json (sha256 ${SHA:0:12}...)"
+    echo
+    echo "Publish it so everyone's app finds it:"
+    if command -v gh >/dev/null 2>&1; then
+        echo "  gh release create $TAG \"$ZIP\" dist/version.json --title \"$TAG\" --notes \"$NOTES\""
+    else
+        echo "  1. git tag $TAG && git push origin $TAG"
+        echo "  2. open https://github.com/$REPO/releases/new?tag=$TAG"
+        echo "  3. attach BOTH $ZIP and dist/version.json, then publish"
+        echo "  (or install the GitHub CLI once: brew install gh)"
+    fi
 fi

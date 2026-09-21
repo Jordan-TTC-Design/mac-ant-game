@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return panel
     }()
     private var capMenuItem: NSMenuItem!
+    private var updateItem: ClosureMenuItem!
     private let countItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var pauseItem: ClosureMenuItem!
 
@@ -134,6 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scheduleSnapshot()
         // Ages change all the time, so save now and then even when nothing else happens.
         Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.persist() }
+        Updater.shared.onChange = { [weak self] in self?.refreshUpdateItem() }
+        Updater.shared.start()
         scheduleUITests()
 
         // Esc cancels nest picking; Esc or Return finishes editing. (A local monitor: no permission needed.)
@@ -272,13 +275,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 after(3) { log("after the timer: windows visible = \(self.windows.contains { $0.isVisible }), hidden flag = \(self.isHiddenByUser)") }
             }
         }
+        if let s = env["CAMP_TEST_UPDATE"] { // download and install whatever CAMP_UPDATE_FEED offers, no alerts (point it at a copy!)
+            after(Double(s) ?? 2) {
+                log("update: current \(Updater.shared.current), feed \(UpdateFeed.url?.absoluteString ?? "none")")
+                Updater.shared.check(manual: false, thenInstall: true)
+            }
+        }
         if env["CAMP_TEST_MENU"] != nil { // print the menu the way it would look when opened
             after(2) {
                 guard let menu = self.statusItem.menu else { return }
                 self.menuNeedsUpdate(menu)
                 func dump(_ menu: NSMenu, _ depth: Int) {
                     for item in menu.items where !item.isSeparatorItem {
-                        log("menu: \(String(repeating: "  ", count: depth))\(item.title)\(item.isEnabled ? "" : "  (disabled)")")
+                        log("menu: \(String(repeating: "  ", count: depth))\(item.title)\(item.isEnabled ? "" : "  (disabled)")\(item.isHidden ? "  (hidden)" : "")")
                         if let sub = item.submenu { dump(sub, depth + 1) }
                     }
                 }
@@ -978,6 +987,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.applyHotkeys()
         }
         hotkeys.stateProvider = { self.settings.hotkeysEnabled }
+        let autoUpdate = ClosureMenuItem(title: "自動檢查更新") { [weak self] in
+            self?.settings.updateCheckEnabled.toggle()
+        }
+        autoUpdate.stateProvider = { self.settings.updateCheckEnabled }
+        autoUpdate.toolTip = "每天看一次有沒有新版本，有的話問你要不要更新"
         let save = ClosureMenuItem(title: "儲存進度") { [weak self] in
             guard let self else { return }
             self.settings.saveProgress.toggle()
@@ -995,10 +1009,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .separator(),
             launchAtLoginItem(),
             save,
+            autoUpdate,
         ]))
         menu.addItem(.separator())
 
         menu.addItem(ClosureMenuItem(title: "說明手冊…") { [weak self] in self?.showManual() })
+        updateItem = ClosureMenuItem(title: "檢查更新…") { [weak self] in self?.updateMenuClicked() }
+        updateItem.isHidden = UpdateFeed.disabled
+        menu.addItem(updateItem)
         let diagnostics = ClosureMenuItem(title: "複製診斷資訊") { [weak self] in
             guard let self else { return }
             let extra = ["terrain: \(self.colony.scene.map { "\($0.summary), seed \($0.seed)" } ?? "none")",
@@ -1460,9 +1478,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"
     }
 
+    // MARK: Updating
+
+    /// The menu item both reports what the updater is doing and is the way to start it.
+    private func updateMenuClicked() {
+        let updater = Updater.shared
+        switch updater.state {
+        case .downloading, .installing, .checking:
+            break // already busy; the title says so
+        default:
+            if let release = updater.pending { updater.offer(release, manual: true) } else { updater.check(manual: true) }
+        }
+    }
+
+    private func refreshUpdateItem() {
+        guard let updateItem else { return }
+        switch Updater.shared.state {
+        case .checking:
+            updateItem.title = "檢查更新中…"
+            updateItem.isEnabled = false
+        case .downloading(let fraction):
+            updateItem.title = "下載新版本… \(Int(fraction * 100))%"
+            updateItem.isEnabled = false
+        case .installing:
+            updateItem.title = "安裝中…"
+            updateItem.isEnabled = false
+        case .available(let version):
+            updateItem.title = "有新版本 \(version)，點此更新"
+            updateItem.isEnabled = true
+        default:
+            updateItem.title = "檢查更新…"
+            updateItem.isEnabled = true
+        }
+    }
+
     private func showAbout() {
         NSApp.activate(ignoringOtherApps: true)
-        let credits = NSMutableAttributedString(string: "住在 Mac 選單列的點陣風哥布林桌面小遊戲，也是會跳出來提醒你的番茄鐘與 Claude 通知小工具。\n\n資料存放在 ~/Library/Application Support/GoblinCamp。\n沒有連上網路，也不會傳送任何資料。",
+        let credits = NSMutableAttributedString(string: "住在 Mac 選單列的點陣風哥布林桌面小遊戲，也是會跳出來提醒你的番茄鐘與 Claude 通知小工具。\n\n資料存放在 ~/Library/Application Support/GoblinCamp。\n除了檢查有沒有新版本以外不連網路，也不會傳送任何資料。",
                                                  attributes: [.font: NSFont.systemFont(ofSize: 11)])
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "哥布林營地", .applicationVersion: versionText, .version: "", .credits: credits])
     }
@@ -2298,6 +2350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if missedNotifications > 0 { status.append("錯過 \(missedNotifications) 則通知") }
         quietStatusItem.isHidden = status.isEmpty
         quietStatusItem.title = status.joined(separator: "　·　")
+        refreshUpdateItem()
         rebuildAlertScreenMenu()
         rebuildDesktopMenu()
         rebuildScreenMenu()

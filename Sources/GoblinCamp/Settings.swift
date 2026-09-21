@@ -175,6 +175,22 @@ final class Settings {
         set { defaults.set(newValue, forKey: "hotkeysEnabled") }
     }
 
+    /// Look for a new version now and then (the only thing the app uses the network for).
+    var updateCheckEnabled: Bool {
+        get { defaults.object(forKey: "updateCheckEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "updateCheckEnabled") }
+    }
+    /// When the last look happened, so a restart does not mean another check.
+    var lastUpdateCheck: Double {
+        get { defaults.double(forKey: "lastUpdateCheck") }
+        set { defaults.set(newValue, forKey: "lastUpdateCheck") }
+    }
+    /// A version the player said no to; it is not offered again by itself.
+    var skippedUpdateVersion: String? {
+        get { defaults.string(forKey: "skippedUpdateVersion") }
+        set { defaults.set(newValue, forKey: "skippedUpdateVersion") }
+    }
+
     /// Popups can be answered right there (allow/deny, or a typed reply that goes back to Claude Code).
     var askEnabled: Bool {
         get { defaults.object(forKey: "askEnabled") as? Bool ?? true }

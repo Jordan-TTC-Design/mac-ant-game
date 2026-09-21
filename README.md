@@ -78,10 +78,28 @@ open GoblinCamp.app
 
 ### 更新版本
 
-1. 改 `Resources/Info.plist` 的 `CFBundleShortVersionString`（版本）與 `CFBundleVersion`，重新 `./build.sh --release`，把新的 zip 給對方。
-2. 對方先從選單「結束哥布林營地」，再用新的 `GoblinCamp.app` **取代**舊的（同一個位置），重新打開。
-3. **紀錄不會消失**：營地、每一隻哥布林、統計與選單設定都存在 App **外面**（見下方「資料存放位置」），換 App 不會動到它們。Claude Code 的連接也不用重做，前提是新的 App 放在同一個位置（放到別處就再按一次「連接」）。
-4. 每次建置的簽章都不同，所以更新後系統可能會再擋一次，照上面的步驟放行即可。
+App 會自己更新，不用再傳 zip 給每個人。
+
+發布新版（你這邊）：
+
+```bash
+# 1. 改 Resources/Info.plist 的 CFBundleShortVersionString 與 CFBundleVersion
+./build.sh --release "這次改了什麼"   # 產生 dist/GoblinCamp-<版本>.zip 與 dist/version.json
+# 2. 依照指令最後印出的步驟，把「兩個檔案」一起放到 GitHub Releases
+```
+
+`version.json` 是更新用的清單（版本號、下載網址、SHA-256、最低系統版本），必須和 zip 一起上傳到**同一個 release**。App 讀的是 `releases/latest/download/version.json`，GitHub 會自動指向最新的 release，所以網址永遠不用改。
+
+**zip 不要 commit 進 git**（`dist/` 已經在 `.gitignore`）。Releases 的附件跟 commit 歷史是分開的，不會把 repo 撐大。
+
+對方那邊：App 每天看一次有沒有新版，有的話跳出來問，按「更新」就會自己下載、替換、重開。也可以從選單「檢查更新…」手動按。下載的檔案會比對 `version.json` 裡的 SHA-256，對不起來就不安裝。
+
+手動更新（自動更新失敗，或 App 放在沒有寫入權限的地方）：先從選單「結束哥布林營地」，再用新的 `GoblinCamp.app` **取代**舊的（同一個位置），重新打開。
+
+無論自動或手動：
+
+1. **紀錄不會消失**：營地、每一隻哥布林、統計與選單設定都存在 App **外面**（見下方「資料存放位置」），換 App 不會動到它們。Claude Code 的連接也不用重做，前提是新的 App 放在同一個位置（放到別處就再按一次「連接」）。
+2. **自動更新不會再被系統擋**：App 自己換上去的版本不帶隔離標記。但如果是手動換 App，每次建置的簽章都不同，系統可能會再擋一次，照上面的步驟放行即可。
 
 之後的版本會維持這些讓舊紀錄能繼續用的約定：套件識別碼（`dev.goblincamp.game`）不變、資料夾名稱（`Application Support/GoblinCamp`）不變、存檔只新增欄位（舊存檔讀得進新版）。
 
@@ -255,7 +273,8 @@ Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 顯示 ▸          走動範圍與地圖（▸ 營地視窗：收起／永遠在最上面／回到右下角／地貌／場地隨時間變化／天氣）
                 哥布林出現在哪個螢幕 · 哪個桌面 · 全螢幕時自動專注 · 效能保護
 偏好設定 ▸      角色 · 啟動時的模式 · 切換模式後持續 · 全域快捷鍵 · 開機時自動啟動 · 儲存進度
-說明手冊… · 複製診斷資訊 · 關於哥布林營地 · 結束
+                自動檢查更新
+說明手冊… · 檢查更新… · 複製診斷資訊 · 關於哥布林營地 · 結束
 ```
 
 ## 功能與設定說明
@@ -281,6 +300,7 @@ Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 | 魔獸來襲 | 全開模式下，營地偶爾會有魔獸從螢幕邊走進來（第一版：**史萊姆**、**巨鼠**）。它們會追打在外面的哥布林、被打時會停下來反擊，攻擊有蓄力與出擊的動作（史萊姆跳起壓下、巨鼠撲咬）；哥布林會出來圍打、受傷的走回營地休息，**公主會躲進洞裡**，之後出來**治療**傷兵（頭上冒綠色十字）。魔獸倒下會掉素材（每種至少三樣、各有機率，稀有的會閃爍），哥布林搬回營地放進倉庫。「營地 → 魔獸來襲頻率」調頻率或關閉，「名冊與圖鑑 → 魔獸與素材圖鑑」看素材。除了史萊姆與巨鼠，還有**沼澤青蛙**（有水的地方，舌頭伸得很長）與**蝙蝠**（只在夜晚成群飛來），各有自己的素材與地貌限制。詳見 [MONSTERS.md](MONSTERS.md) |
 | 砍樹與採石 | 白天閒著的哥布林會去砍樹（拿木片）、採石頭（拿廢鐵，偶爾有碎晶、蜂巢）；倒下的樹留下樹樁、石頭一塊塊縮小；全部是機率，而且不會砍光（樹只剩 6 棵就只砍樹枝，被挖光的石頭過幾天會有新的浮出來）。詳見 [TERRAIN.md](TERRAIN.md) |
 | 煮飯、耕田、照顧小哥布林 | 營地長大後，哥布林會在**石頭火坑煮燉菜**（用釣到的魚與種出來的菜，用餐時間最常煮，有時香噴噴、有時燒焦、偶爾打翻鍋子）、照顧**田地**（翻土、播種、澆水、收成，看季節與天氣，偶爾長出超大南瓜）；**新生的哥布林是小的**，先在巢穴附近玩，長大的會照顧牠、牠偶爾感冒。**遊戲的進度（魔獸何時出現、小孩長大、作物生長）跟著「生成速度」走**，季節與天氣不跟著走。魔獸也是要遊戲進行一段時間、營地有一定規模才會來。詳見 [LIFE.md](LIFE.md) |
+| 公主的感情線 | 遊戲進行一天以後，隨機的某個時候金皮哥布林會開始追求公主（可能失敗、可能好幾天都沒有）。成功會**牽手散步、擁抱、有護衛跟著的遠行約會、晚上同床聊天**，也會**吵架、冷戰、分手**；有機會**結婚**、**懷孕**（孕婦裝，肚子慢慢變大），生下**混血寶寶**（偏哥布林／各半／偏人三種新品種，男女各半）。所有哥布林有公母，母的有粉紅蝴蝶結。詳見 [ROMANCE.md](ROMANCE.md) |
 | 日常活動 | 哥布林閒著會**睡覺**（側躺、偶爾翻身，沒有 zzz）、**釣魚**（池塘邊，釣到魚算食物）、**玩耍**、**看書**、**打鬧**（不受傷）；**聰明的不打鬧**、愛看書釣魚，**金皮**戴小金冠巡視、有普通哥布林在旁伺候。太卡時**效能保護**自動減少同時出現的哥布林。詳見 [LIFE.md](LIFE.md) |
 | 工坊與裝備 | 「營地 → 工坊」：用素材做**武器**（骨刀、短劍、長劍、雙刀、雙手劍、長槍、弓箭、法杖…）、**盾牌**、**帽子、胸甲、褲子、鞋子、手甲**（布、皮、鐵）。做好的會自動交給最需要的哥布林，畫在牠身上，讓牠出手更重、更耐打、更會擋、走更快；哥布林出手時有攻擊動作（揮砍、刺、射箭、光球）。所有魔獸都可能掉碎布、木片、廢鐵。詳見 [EQUIPMENT.md](EQUIPMENT.md) |
 | 走動範圍與地圖 | **整個螢幕**（預設）、**底部一條**（貼著 Dock 上緣）、**右邊一條**、**左邊一條**，或**獨立的營地視窗**。一條有多厚可選（薄、中〔預設，約 42 點高〕、厚、很厚），背景可選森林、草地或沒有；底部一條是橫向的樹林，左右兩邊的一條是直立的（樹一棵一棵往上疊，草地靠螢幕邊）；營地視窗有自己的草地，四周一圈森林，視窗拉多大都有，可以拖、縮放、縮到 Dock 或按關閉鈕收起來（不會自己彈回來）、回到右下角、設成永遠在最上面。背景會跟著電腦的時間變色：傍晚偏橘、夜晚偏藍 |
@@ -300,7 +320,6 @@ Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 
 食物**不會存檔**：重開 App 後畫面上的食物就沒了（營地與數量會還原）。
 
-| 公主的感情線 | 遊戲進行一天以後，隨機的某個時候金皮哥布林會開始追求公主（可能失敗、可能好幾天都沒有）。成功會**牽手散步、擁抱、有護衛跟著的遠行約會、晚上同床聊天**，也會**吵架、冷戰、分手**；有機會**結婚**、**懷孕**（孕婦裝，肚子慢慢變大），生下**混血寶寶**（偏哥布林／各半／偏人三種新品種，男女各半）。所有哥布林有公母，母的有粉紅蝴蝶結。詳見 [ROMANCE.md](ROMANCE.md) |
 自己的營地圖片建議用透明背景的 PNG；一般 JPG 會帶著方形底色。
 
 ## 資料存放位置
@@ -434,6 +453,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_WILD_SCALE=倍數` | 讓自然事件與魔獸來得更頻繁（測試） |
 | `CAMP_TEST_WORKSHOP=路徑.png` `CAMP_TEST_GEARSHEET=路徑.png` | 工坊與裝備的測試（見 [EQUIPMENT.md](EQUIPMENT.md)） |
 | `CAMP_PACE` `CAMP_COOK_SCALE` `CAMP_FARM_SCALE` `CAMP_MIND_SCALE` `CAMP_CHILD_MINUTES` `CAMP_TEST_WATCH` `CAMP_TEST_LARDER` | 遊戲節奏、煮飯、種田、照顧小孩的測試（見 [LIFE.md](LIFE.md)） |
+| `CAMP_ROMANCE` `CAMP_ROMANCE_STAGE` `CAMP_ROMANCE_SCALE` `CAMP_ROMANCE_CHEM` `CAMP_ROMANCE_FORCE` | 公主感情線的測試（見 [ROMANCE.md](ROMANCE.md)） |
 | `CAMP_BREEDS` `CAMP_TEST_LIFE` `CAMP_TEST_ACTSHOT` `CAMP_PERF_BUDGET` `CAMP_TEST_PERFGUARD` | 日常活動與效能保護的測試（見 [LIFE.md](LIFE.md)） |
 | `CAMP_TEST_STUCK` | 每 30 秒檢查一次有沒有在外面卻十幾秒都沒動的哥布林，印出模式與位置 |
 | `CAMP_TERRAIN=草地／森林空地…的英文名` `CAMP_TERRAIN_SEED=數字` | 固定營地視窗的主題（`meadow`、`forest`、`snow`、`swamp`）與種子（測試） |
@@ -445,6 +465,9 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_HOUR=0..23` | 假裝現在幾點（測試背景的日夜變色） |
 | `CAMP_TEST_SPIN` | 20 秒內記錄每隻哥布林朝向變了幾次（旋轉、閃爍會讓數字變大），並印出範圍、公主、人數、動物的報告 |
 | `CAMP_TEST_QUEEN` | 每 4 秒印出公主在哪、在做什麼 |
+| `CAMP_UPDATE_FEED=網址` | 把「檢查更新」指到別的 `version.json`（可以用 `file://` 指到本機檔案）測試 |
+| `CAMP_NO_UPDATE` | 完全關掉更新（開發中的 build 不會把自己換掉），選單也不顯示「檢查更新」 |
+| `CAMP_TEST_UPDATE=秒` | 該時間點直接檢查並安裝，不跳任何對話框。**只能對複製出來的 App 用**，它真的會覆蓋掉那個 `.app` |
 | `CAMP_TEST_MAPRESIZE` | 把營地視窗縮小再放大，印出同時出來走動的哥布林數量的變化 |
 | `CAMP_TEST_MAPMIN` | 8 秒時把營地視窗縮到 Dock，確認它不會自己彈回來 |
 | `CAMP_TEST_MAPSHOT=路徑` | 25 秒時把營地視窗畫成 PNG（搭配 `-rangeMode window`） |
@@ -453,7 +476,6 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_TEST_NAMES=set／show` | 測試名字：`set` 在 20 秒時改名並存檔，`show` 印出載入的名字 |
 | `CAMP_TEST_MANUAL=路徑` | 打開說明手冊並把它畫成 PNG |
 | `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
-| `CAMP_ROMANCE` `CAMP_ROMANCE_STAGE` `CAMP_ROMANCE_SCALE` `CAMP_ROMANCE_CHEM` `CAMP_ROMANCE_FORCE` | 公主感情線的測試（見 [ROMANCE.md](ROMANCE.md)） |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
 | `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |
 | `CAMP_TEST_WILD=種類,dx,dy` | 在營地旁 (dx, dy) 放一隻動物（`chicken`／`sheep`／`pig`）與一棵果樹，並每 3 秒印一次狀態 |
