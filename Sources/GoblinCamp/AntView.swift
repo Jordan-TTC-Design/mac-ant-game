@@ -598,13 +598,14 @@ final class AntView: NSView {
             let size = CGFloat(role.frameSize) * pixel
             let activity = ant.activity
             if case .play? = activity { p.y += CGFloat(abs(sin(ant.activityClock * 7))) * 4 } // hops about
-            if case .sleep? = activity { // lying on its side, and turning over now and then; nothing else to draw
+            if activity == .sleep || ant.lying { // lying on its side, and turning over now and then; nothing else to draw
                 guard let lying = role.image(direction: .down, phase: 0) else { continue }
                 ctx.saveGState()
                 ctx.translateBy(x: p.x, y: p.y + size * 0.05)
-                ctx.rotate(by: ant.sleepFlip ? -.pi / 2 : .pi / 2)
+                ctx.rotate(by: ant.lying ? -.pi / 2 : (ant.sleepFlip ? -.pi / 2 : .pi / 2)) // (in the bed beside her: head to the far pillow)
                 ctx.draw(lying, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
                 ctx.restoreGState()
+                if ant.lying { drawBlanket(at: CGPoint(x: p.x, y: p.y - size * 0.05), size: size * 1.05, mirrored: true) }
                 continue
             }
             // the walk cycle advances with distance walked; standing still shows the first frame
@@ -613,6 +614,14 @@ final class AntView: NSView {
             ctx.setAlpha(CGFloat(ant.fadeAlpha)) // the dying fade out
             ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size))
             ctx.setAlpha(1)
+            if ant.female, ant.fadeAlpha > 0.5 { // a little pink bow at the top of the head
+                let bx = p.x + size * 0.14, by = p.y + size * (ant.isChild ? 0.62 : 0.66)
+                NSColor(calibratedRed: 0.96, green: 0.45, blue: 0.62, alpha: 1).setFill()
+                NSRect(x: bx - pixel * 1.6, y: by, width: pixel * 1.4, height: pixel * 1.4).fill()
+                NSRect(x: bx + pixel * 0.2, y: by, width: pixel * 1.4, height: pixel * 1.4).fill()
+                NSColor(calibratedRed: 0.99, green: 0.8, blue: 0.86, alpha: 1).setFill()
+                NSRect(x: bx - pixel * 0.2, y: by + pixel * 0.1, width: pixel * 0.9, height: pixel * 1.1).fill()
+            }
             if ant.isChild {
                 if ant.sick > 0 { // a cold: a green tinge, a drip at the nose and now and then a sneeze
                     NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.4, alpha: 0.25).setFill()
@@ -1085,7 +1094,13 @@ final class AntView: NSView {
         ctx.draw(image, in: rect)
         ctx.restoreGState()
 
-        if let decoration = q.decoration { drawDecoration(decoration, at: p, scale: size / 16) }
+        if let decoration = q.decoration {
+            drawDecoration(decoration, at: p, scale: size / 16)
+        } else if colony.romanceRuntime.glow > 0 {
+            drawDecoration(.hearts(clock: Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000)), at: p, scale: size / 16)
+        } else if colony.romanceRuntime.sulk > 0 {
+            drawDecoration(.anger(clock: Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000)), at: p, scale: size / 16)
+        }
     }
 
     // MARK: Props
@@ -1131,32 +1146,60 @@ final class AntView: NSView {
                 NSBezierPath(ovalIn: NSRect(x: x + pixel * 0.5, y: ground + pixel * 5, width: pixel * 2.8, height: pixel * 2.8)).fill()
             }
         case .bed:
-            // a mattress and a pillow, the pillow under her head on the left
-            let outline = NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 1)
-            let mattress = NSRect(x: p.x - size * 0.72, y: p.y + size * 0.05, width: size * 1.44, height: size * 0.62)
-            outline.setFill()
-            NSBezierPath(roundedRect: mattress.insetBy(dx: -pixel * 0.6, dy: -pixel * 0.6), xRadius: pixel * 2, yRadius: pixel * 2).fill()
-            NSColor(calibratedRed: 0.82, green: 0.87, blue: 0.95, alpha: 1).setFill()
-            NSBezierPath(roundedRect: mattress, xRadius: pixel * 1.5, yRadius: pixel * 1.5).fill()
-            outline.setFill()
-            NSBezierPath(roundedRect: NSRect(x: p.x - size * 0.7, y: p.y + size * 0.16, width: size * 0.42, height: size * 0.42).insetBy(dx: -pixel * 0.5, dy: -pixel * 0.5),
-                         xRadius: pixel * 1.5, yRadius: pixel * 1.5).fill()
-            NSColor.white.setFill()
-            NSBezierPath(roundedRect: NSRect(x: p.x - size * 0.7, y: p.y + size * 0.16, width: size * 0.42, height: size * 0.42),
-                         xRadius: pixel * 1.2, yRadius: pixel * 1.2).fill()
+            drawMattress(centerX: p.x, y: p.y, size: size, pixel: pixel, pillowOnLeft: true)
+            if colony.romance.stage != .single { // a bed for two: a second mattress beside hers, its pillow at the far end
+                drawMattress(centerX: p.x + Romance.bedOffset.x, y: p.y, size: size, pixel: pixel, pillowOnLeft: false)
+            }
+        case .arch:
+            // the wedding arch: two posts and a bow of flowers, behind the two of them
+            let post = NSColor(calibratedRed: 0.62, green: 0.45, blue: 0.3, alpha: 1)
+            let colors = [NSColor(calibratedRed: 0.95, green: 0.45, blue: 0.6, alpha: 1), NSColor(calibratedWhite: 1, alpha: 1),
+                          NSColor(calibratedRed: 0.98, green: 0.82, blue: 0.35, alpha: 1)]
+            let left = p.x - size * 0.7, right = p.x + size * 0.7 + 8
+            post.setFill()
+            NSRect(x: left, y: ground, width: pixel * 1.4, height: size * 1.2).fill()
+            NSRect(x: right, y: ground, width: pixel * 1.4, height: size * 1.2).fill()
+            for k in 0...8 {
+                let t = CGFloat(k) / 8
+                let x = left + (right - left) * t
+                let y = ground + size * 1.2 + sin(t * .pi) * size * 0.32
+                colors[k % 3].setFill()
+                NSBezierPath(ovalIn: NSRect(x: x - pixel * 1.2, y: y - pixel * 1.2, width: pixel * 2.4, height: pixel * 2.4)).fill()
+            }
+            for k in 0..<4 {
+                colors[(k + 1) % 3].setFill()
+                NSBezierPath(ovalIn: NSRect(x: left - pixel * 0.3, y: ground + CGFloat(k) * size * 0.28, width: pixel * 2, height: pixel * 2)).fill()
+                NSBezierPath(ovalIn: NSRect(x: right - pixel * 0.3, y: ground + CGFloat(k) * size * 0.28, width: pixel * 2, height: pixel * 2)).fill()
+            }
         }
     }
 
-    /// The blanket over a sleeping princess, from her waist down.
-    private func drawBlanket(at p: CGPoint, size: CGFloat) {
+    /// A mattress and a pillow: the pillow at the head end.
+    private func drawMattress(centerX x: CGFloat, y: CGFloat, size: CGFloat, pixel: CGFloat, pillowOnLeft: Bool) {
+        let outline = NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 1)
+        let mattress = NSRect(x: x - size * 0.72, y: y + size * 0.05, width: size * 1.44, height: size * 0.62)
+        outline.setFill()
+        NSBezierPath(roundedRect: mattress.insetBy(dx: -pixel * 0.6, dy: -pixel * 0.6), xRadius: pixel * 2, yRadius: pixel * 2).fill()
+        NSColor(calibratedRed: 0.82, green: 0.87, blue: 0.95, alpha: 1).setFill()
+        NSBezierPath(roundedRect: mattress, xRadius: pixel * 1.5, yRadius: pixel * 1.5).fill()
+        let pillowX = pillowOnLeft ? x - size * 0.7 : x + size * 0.28
+        let pillow = NSRect(x: pillowX, y: y + size * 0.16, width: size * 0.42, height: size * 0.42)
+        outline.setFill()
+        NSBezierPath(roundedRect: pillow.insetBy(dx: -pixel * 0.5, dy: -pixel * 0.5), xRadius: pixel * 1.5, yRadius: pixel * 1.5).fill()
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: pillow, xRadius: pixel * 1.2, yRadius: pixel * 1.2).fill()
+    }
+
+    /// The blanket over a sleeping princess, from her waist down (or, mirrored, over the one beside her).
+    private func drawBlanket(at p: CGPoint, size: CGFloat, mirrored: Bool = false) {
         let pixel = size / 16
-        let blanket = NSRect(x: p.x - size * 0.02, y: p.y + size * 0.06, width: size * 0.7, height: size * 0.6)
+        let blanket = NSRect(x: mirrored ? p.x - size * 0.68 : p.x - size * 0.02, y: p.y + size * 0.06, width: size * 0.7, height: size * 0.6)
         NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 1).setFill()
         NSBezierPath(roundedRect: blanket.insetBy(dx: -pixel * 0.5, dy: -pixel * 0.5), xRadius: pixel, yRadius: pixel).fill()
         NSColor(calibratedRed: 0.55, green: 0.68, blue: 0.9, alpha: 1).setFill()
         NSBezierPath(roundedRect: blanket, xRadius: pixel * 0.8, yRadius: pixel * 0.8).fill()
         NSColor(calibratedWhite: 1, alpha: 0.9).setFill() // a folded-over edge
-        NSBezierPath(rect: NSRect(x: blanket.minX, y: blanket.minY, width: pixel * 1.6, height: blanket.height)).fill()
+        NSBezierPath(rect: NSRect(x: mirrored ? blanket.maxX - pixel * 1.6 : blanket.minX, y: blanket.minY, width: pixel * 1.6, height: blanket.height)).fill()
     }
 
     /// The princess lying across the two goblins carrying her, head toward where they are going.
@@ -1482,6 +1525,30 @@ final class AntView: NSView {
         NSBezierPath(ovalIn: NSRect(x: p.x - radius, y: p.y - radius, width: radius * 2, height: radius * 2)).fill()
     }
 
+    private func drawHeart(at c: CGPoint, size s: CGFloat, alpha: CGFloat) {
+        NSColor(calibratedRed: 0.95, green: 0.3, blue: 0.42, alpha: max(0, alpha)).setFill()
+        NSRect(x: c.x - 2 * s, y: c.y + 0.5 * s, width: 1.6 * s, height: 1.6 * s).fill()
+        NSRect(x: c.x + 0.4 * s, y: c.y + 0.5 * s, width: 1.6 * s, height: 1.6 * s).fill()
+        NSRect(x: c.x - 2 * s, y: c.y - 0.6 * s, width: 4 * s, height: 1.3 * s).fill()
+        NSRect(x: c.x - 1 * s, y: c.y - 1.5 * s, width: 2 * s, height: 1 * s).fill()
+    }
+
+    /// A speech bubble, with "…" in it while somebody speaks (or a heart).
+    private func drawBubble(at c: CGPoint, size s: CGFloat, dots: Int, heart: Bool) {
+        let box = NSRect(x: c.x - 4 * s, y: c.y, width: 8 * s, height: 5 * s)
+        NSColor(calibratedRed: 0.27, green: 0.17, blue: 0.13, alpha: 0.9).setFill()
+        NSBezierPath(roundedRect: box.insetBy(dx: -0.6 * s, dy: -0.6 * s), xRadius: 2 * s, yRadius: 2 * s).fill()
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: box, xRadius: 1.6 * s, yRadius: 1.6 * s).fill()
+        NSBezierPath(rect: NSRect(x: c.x - 0.8 * s, y: c.y - 1.4 * s, width: 1.6 * s, height: 1.6 * s)).fill()
+        if heart {
+            drawHeart(at: CGPoint(x: c.x, y: c.y + 2.6 * s), size: s * 0.7, alpha: 1)
+        } else if dots > 0 {
+            NSColor(calibratedWhite: 0.3, alpha: 1).setFill()
+            for k in 0..<dots { NSRect(x: c.x + (CGFloat(k) - 1) * 2.2 * s - 0.5 * s, y: c.y + 2 * s, width: 1 * s, height: 1 * s).fill() }
+        }
+    }
+
     /// Floating "z z z", yawn bubbles and thought bubbles beside the queen's head.
     private func drawDecoration(_ decoration: Queen.Decoration, at p: CGPoint, scale s: CGFloat) {
         switch decoration {
@@ -1493,6 +1560,36 @@ final class AntView: NSView {
                 NSColor(calibratedWhite: 1, alpha: CGFloat(0.85 * sin(t * .pi))).setFill()
                 let x = cup.x + CGFloat(sin(t * 6 + Double(k))) * s * 0.8 + CGFloat(k - 1) * s * 0.8
                 NSBezierPath(rect: NSRect(x: x, y: cup.y + CGFloat(t) * 7 * s, width: s * 0.9, height: s * 0.9)).fill()
+            }
+        case .hearts(let clock):
+            for k in 0..<3 {
+                let t = (clock * 0.5 + Double(k) / 3).truncatingRemainder(dividingBy: 1)
+                drawHeart(at: CGPoint(x: p.x + (CGFloat(k) - 1) * 6 * s + CGFloat(sin(t * 6 + Double(k) * 2)) * 1.5 * s, y: p.y + (13 + 10 * CGFloat(t)) * s),
+                          size: s * 0.9, alpha: CGFloat(sin(t * .pi)))
+            }
+        case .anger(let clock):
+            let pulse = 1 + 0.15 * CGFloat(sin(clock * 9))
+            NSColor(calibratedRed: 0.9, green: 0.15, blue: 0.15, alpha: 1).setStroke()
+            let path = NSBezierPath()
+            let c = CGPoint(x: p.x + 5 * s, y: p.y + 14.5 * s), r = 2.2 * s * pulse
+            for (dx, dy) in [(-1.0, 1.0), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
+                path.move(to: CGPoint(x: c.x + CGFloat(dx) * r * 0.35, y: c.y + CGFloat(dy) * r * 0.35))
+                path.line(to: CGPoint(x: c.x + CGFloat(dx) * r, y: c.y + CGFloat(dy) * r))
+            }
+            path.lineWidth = max(1, s * 0.6)
+            path.stroke()
+        case .chat(let clock):
+            // two speech bubbles taking turns: over her head (she lies down, so a little to the side) and over his
+            let turn = Int(clock / 2.2) % 2
+            drawBubble(at: CGPoint(x: p.x - 4 * s, y: p.y + 13 * s), size: s, dots: turn == 0 ? 3 : 0, heart: turn == 0 && Int(clock / 2.2) % 4 == 0)
+            drawBubble(at: CGPoint(x: p.x + Romance.bedOffset.x + 4 * s, y: p.y + 12 * s), size: s, dots: turn == 1 ? 3 : 0, heart: false)
+        case .confetti(let clock):
+            let colors: [NSColor] = [.systemPink, .systemYellow, .white, .systemTeal]
+            for k in 0..<14 {
+                let t = (clock * 0.6 + Double(k) * 0.137).truncatingRemainder(dividingBy: 1)
+                let x = p.x + (CGFloat(k) - 7) * 4.5 * s * 0.6 + CGFloat(sin(t * 8 + Double(k))) * 2 * s
+                colors[k % colors.count].withAlphaComponent(CGFloat(1 - t * 0.6)).setFill()
+                NSRect(x: x, y: p.y + (26 - 26 * CGFloat(t)) * s, width: s * 1.1, height: s * 1.1).fill()
             }
         case .notes(let clock):
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 7 * s, weight: .bold),

@@ -149,6 +149,9 @@ struct AntWorld {
     var gatherSlots = 0
     var partners: [Int: CGPoint] = [:]
     var bosses: [Int: CGPoint] = [:]
+    /// Where each goblin keeping the princess company (her suitor, her partner, her guards) should stand, and what they look at.
+    var attendTargets: [Int: CGPoint] = [:]
+    var attendFace: CGPoint?
     var crowded: Bool { crowd >= 1 }
 
     enum Axis { case horizontal, vertical }

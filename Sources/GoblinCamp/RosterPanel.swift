@@ -160,6 +160,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         let noun = Characters.current.noun
         summary.stringValue = "現有 \(rows.count) 隻\(noun)" + (byBreed.isEmpty ? "" : "\n\(byBreed)")
             + "\n累積搬回食物 \(colony.foodDelivered) 份　已老死 \(colony.deaths - colony.slain) 隻　打獵犧牲 \(colony.slain) 隻"
+            + "\n\(colony.romanceSummary)"
 
         table.reloadData()
         if let id = colony.selectedAntID, let row = rows.firstIndex(where: { $0.id == id }) {
@@ -176,7 +177,11 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         let breed = breeds[min(ant.breedIndex, breeds.count - 1)]
         let t = ant.traits
         let left = max(0, t.lifespan - ant.age)
-        var text = "\(ant.name)（#\(ant.id)）\(breed.name)　\(breed.blurb)\n"
+        var text = "\(ant.name)（#\(ant.id)）\(ant.female ? "♀" : "♂") \(breed.name)　\(breed.blurb)\n"
+        if !ant.parents.isEmpty { text += "父母：\(ant.parents)\n" }
+        if colony.romance.partnerID == ant.id, colony.romance.stage != .single {
+            text += (colony.romance.stage == .married ? "配偶：" : colony.romance.stage == .dating ? "交往中：" : "正在追求：") + (colony.princessName.isEmpty ? "公主" : colony.princessName) + "\n"
+        }
         text += "年齡 \(IntervalFormat.text(ant.age.rounded()))，還剩約 \(IntervalFormat.text(left.rounded()))\n"
         text += String(format: "速度 ×%.2f　感知 ×%.2f　休息 ×%.2f\n", t.speed, t.sense, t.rest)
         text += "一次搬 \(t.carry) 份　叫同伴 +\(t.recruit)" + (ant.lifeFraction > Ant.elderStart ? "　（年老，走得慢）" : "")

@@ -300,7 +300,7 @@ def goblin_face():
     return c
 
 
-# --- the human girl ---------------------------------------------------------------------------------------------
+# --- the young woman ---------------------------------------------------------------------------------------------
 # She is drawn once per outfit: the same hair and face, different clothes. An outfit says what she wears on top
 # (`sleeves`), below (`bottom`: dress, gown, skirt, shorts, pants, coat) and on her head (`hat`), plus its colours.
 # Q/q = top and its shade, D/d = skirt or trousers and their shade, K = shoes, U/u = hat, A = accent, T = tights.
@@ -324,10 +324,40 @@ OUTFITS = [
     dict(id="winter", name="冬季外套", bottom="coat", sleeves="long", hat="beret",
          pal={"Q": (190, 50, 60), "q": (140, 34, 46), "D": (190, 50, 60), "d": (140, 34, 46), "U": (190, 50, 60),
               "u": (140, 34, 46), "A": (80, 130, 200), "K": (94, 62, 46)}),
+    dict(id="maternity1", name="孕婦裝（初期）", bottom="dress", sleeves="puff", hat="tiara", belly=1,
+         pal={"Q": (190, 160, 226), "q": (150, 120, 190), "D": (190, 160, 226), "d": (150, 120, 190), "R": (250, 214, 130)}),
+    dict(id="maternity2", name="孕婦裝（後期）", bottom="dress", sleeves="puff", hat="tiara", belly=2,
+         pal={"Q": (190, 160, 226), "q": (150, 120, 190), "D": (190, 160, 226), "d": (150, 120, 190), "R": (250, 214, 130)}),
     dict(id="pajamas", name="睡衣", bottom="pants", sleeves="long", hat="cap",
          pal={"Q": (250, 200, 215), "q": (222, 164, 184), "D": (250, 200, 215), "d": (222, 164, 184), "U": (140, 170, 230),
               "u": (104, 132, 196), "K": (240, 170, 190)}),
 ]
+
+
+# Proportions: a grown woman, not a child. The head is 7 rows (0-6), then a neck (7), shoulders (8), a waist (10),
+# a long skirt (11-14) and the shoes (15). Poses below are written with the old shoulder line at y=10, so they are drawn
+# through `Shift`, which moves everything up two rows onto the new one.
+class Shift:
+    """A canvas view that moves everything drawn through it up by `dy` rows."""
+    def __init__(self, canvas, dy=-2):
+        self.canvas, self.dy = canvas, dy
+
+    def put(self, x, y, col):
+        self.canvas.put(x, y + self.dy, col)
+
+    def rect(self, x0, y0, x1, y1, col):
+        self.canvas.rect(x0, y0 + self.dy, x1, y1 + self.dy, col)
+
+    def cells(self, pts, col):
+        self.canvas.cells([(x, y + self.dy) for x, y in pts], col)
+
+
+def squash(c, o):
+    """Takes two rows out of the body (and lowers everything one row) so she is not tall: the head keeps its size,
+    the body ends up a row longer than the old chibi one, with a waist."""
+    gone = (9, 13) if o.get("belly") else (9, 12)
+    rows = [c.px[y] for y in range(SIZE) if y not in gone]
+    c.px = [[None] * SIZE] + rows + [[None] * SIZE]      # blank rows on top and below: she stands on the same line as before
 
 
 def girl_lower(c, phase, o, apart=False):
@@ -335,124 +365,149 @@ def girl_lower(c, phase, o, apart=False):
     kind = o["bottom"]
     left = (6, 7) if phase == 1 else (5, 6)
     right = (8, 9) if phase == 3 else (9, 10)
+    c.rect(5, 11, 10, 11, "D")                            # hips
+    belly = o.get("belly", 0)
+    if belly:                                             # an empire-line dress over a round belly
+        top, wide = (4, 11), (3, 12)
+        edge = top if belly == 1 else wide
+        c.rect(edge[0], 10, edge[1], 10 + belly, "D")
+        c.rect(edge[0], 10 + belly, edge[1], 10 + belly, "d")
+        c.cells([(edge[0] + 1, 10 + belly - 1)], "W")
     if kind == "gown":                                    # reaches the floor: no legs or shoes to see
         c.rect(4, 12, 11, 12, "D")
         c.rect(3, 13, 12, 13, "D")
-        c.rect(3, 14, 12, 14, "W")
-        c.cells([(4, 12), (11, 12), (3, 13), (12, 13)], "d")
+        c.rect(3, 14, 12, 15, "D")
+        c.rect(3, 15, 12, 15, "W")
+        c.cells([(4, 12), (11, 12), (3, 13), (12, 13), (3, 14), (12, 14)], "d")
+        c.cells([(6, 12), (9, 13), (7, 14)], "d")           # folds
         return
     if kind == "dress":
-        c.rect(4, 12, 11, 12, "D")                        # flares out to a white hem
-        c.rect(3, 13, 12, 13, "W")
-        c.cells([(4, 12), (11, 12), (5, 13), (10, 13)], "d")
+        c.rect(3 if belly == 2 else 4, 12, 12 if belly == 2 else 11, 12, "D")     # flares out to a white hem
+        c.rect(3, 13, 12, 13, "D")
+        c.rect(3, 14, 12, 14, "W")
+        c.cells([(4, 12), (11, 12), (3, 13), (12, 13), (6, 13), (9, 13)], "d")
     elif kind == "skirt":                                 # short: legs show
         c.rect(4, 12, 11, 12, "D")
         c.cells([(4, 12), (11, 12)], "d")
-        c.cells([(6, 13), (9, 13)], "s")
+        c.rect(6, 13, 6, 14, "s")
+        c.rect(9, 13, 9, 14, "s")
     elif kind == "shorts":
         c.rect(5, 12, 10, 12, "D")
         c.cells([(5, 12), (10, 12)], "d")
-        c.cells([(6, 13), (9, 13)], "s")
+        c.rect(6, 13, 6, 14, "s")
+        c.rect(9, 13, 9, 14, "s")
     elif kind == "pants":
         c.rect(5, 12, 10, 12, "D")
-        c.rect(5, 13, 6, 13, "D")
-        c.rect(9, 13, 10, 13, "D")
+        c.rect(5, 13, 6, 14, "D")
+        c.rect(9, 13, 10, 14, "D")
     elif kind == "coat":
-        c.cells([(6, 13), (9, 13)], "T")                  # tights
+        c.rect(4, 12, 11, 12, "Q")
+        c.rect(6, 13, 6, 14, "T")                         # tights
+        c.rect(9, 13, 9, 14, "T")
     if apart:
         left, right = (3, 4), (11, 12)
-    c.rect(left[0], 14, left[1], 14, "K")
-    c.rect(right[0], 14, right[1], 14, "K")
+    c.rect(left[0], 15, left[1], 15, "K")
+    c.rect(right[0], 15, right[1], 15, "K")
 
 
 def girl_upper(c, phase, o, back, arms=True):
     kind = o["bottom"]
     coat = kind == "coat"
-    c.rect(4 if coat else 5, 10, 11 if coat else 10, 12 if coat else 11, "Q")
+    c.rect(4, 8, 11, 8, "Q")                                # shoulders
+    c.rect(5, 9, 10, 9, "Q")                                # bodice
+    c.rect(6, 10, 9, 10, "Q")                                                        # the waist
+    if kind in ("dress", "gown"):
+        c.cells([(7, 10), (8, 10)], "R")                                             # a small bow
+    if o.get("belly"):
+        c.rect(5, 9, 10, 9, "R")                                                     # the sash sits right under the bust
+    if coat:
+        c.rect(5, 10, 10, 11, "Q")
     if back:
         if kind in ("dress", "gown"):
-            c.cells([(6, 10), (7, 10), (8, 10), (9, 10), (7, 11), (8, 11)], "R")    # a big bow at the back
+            c.cells([(5, 10), (10, 10), (7, 11), (8, 11)], "R")                     # the bow's tails at the back
     elif coat:
-        c.cells([(7, 11), (7, 12), (8, 10)], "W")                                    # buttons
-        c.rect(5, 10, 10, 10, "A")                                                   # scarf
-        c.cells([(5, 11), (5, 12)], "A")
+        c.cells([(7, 9), (7, 10), (7, 11)], "W")                                     # buttons
+        c.rect(5, 8, 10, 8, "A")                                                     # scarf
+        c.cells([(5, 9), (5, 10)], "A")
     elif kind in ("dress", "gown"):
-        c.cells([(7, 10), (8, 10)], "W")                                             # collar
-        c.cells([(7, 11), (8, 11)], "R")                                             # a small bow at the waist
+        c.cells([(7, 8), (8, 8)], "W")                                               # collar
     elif kind == "pants":
-        c.cells([(7, 10), (7, 11)], "W")                                             # pyjama buttons
+        c.cells([(7, 9), (7, 10)], "W")                                              # pyjama buttons
     elif o["sleeves"] == "none":
-        c.cells([(7, 10), (8, 10)], "s")                                             # the neck of a tank top
+        c.cells([(7, 8), (8, 8)], "s")                                               # the neck of a tank top
     swing = {0: 0, 1: -1, 2: 0, 3: 1}[phase]
-    for x, sign in (((3 if coat else 4), 1), ((12 if coat else 11), -1)) if arms else ():
+    for x, sign in ((4, 1), (11, -1)) if arms else ():
         dy = sign * swing if swing else 0
         if o["sleeves"] == "puff":
-            c.put(x, 10 + dy, "Q")
-            c.put(x, 11 + dy, "s")
-        elif o["sleeves"] == "none":
+            c.put(x, 8, "Q")
+            c.put(x, 9 + dy, "s")
             c.put(x, 10 + dy, "s")
-            c.put(x, 11 + dy, "s")
+        elif o["sleeves"] == "none":
+            c.put(x, 8, "s")
+            c.put(x, 9 + dy, "s")
+            c.put(x, 10 + dy, "s")
         else:                                                                        # long sleeves, small hand
-            c.put(x, 10 + dy, "Q")
-            c.put(x, 11 + dy, "Q")
-            c.put(x, 12 + dy, "s")
+            c.put(x, 8, "Q")
+            c.put(x, 9 + dy, "Q")
+            c.put(x, 10 + dy, "s")
 
 
 def girl_head_top(c, o, side=False):
     """Hair on top, then whatever she wears on it."""
     hat = o["hat"]
-    c.rect(4, 2, 11, 3, "H")
-    c.cells([(6, 3), (7, 3)], "h")
+    c.rect(6, 0, 9, 0, "H")
+    c.rect(5, 1, 10, 1, "H")
+    c.rect(4, 2, 11, 2, "H")
+    c.cells([(7, 0), (8, 1)], "h")
     x0, x1 = (5, 10) if side else (4, 11)
     if hat == "tiara":
-        c.rect(6, 2, 9, 2, "c")
-        c.cells([(7, 1), (8, 1)], "c")
+        c.cells([(7, 0), (8, 0)], "c")
+        c.cells([(6, 1), (9, 1)], "c")
     elif hat == "straw":
-        c.rect(2, 3, 13, 3, "U")                            # a wide brim
-        c.rect(x0, 2, x1, 2, "A")                           # ribbon
-        c.rect(x0 + 1, 1, x1 - 1, 1, "U")
-        c.cells([(2, 3), (13, 3)], "u")
+        c.rect(2, 2, 13, 2, "U")                            # a wide brim
+        c.rect(x0, 1, x1, 1, "A")                           # ribbon
+        c.rect(x0 + 1, 0, x1 - 1, 0, "U")
+        c.cells([(2, 2), (13, 2)], "u")
     elif hat == "beret":
-        c.rect(3, 2, 12, 2, "U")
-        c.rect(5, 1, 10, 1, "U")
-        c.cells([(3, 2), (4, 2)], "u")
+        c.rect(3, 1, 12, 1, "U")
+        c.rect(5, 0, 10, 0, "U")
+        c.cells([(3, 1), (4, 1)], "u")
     elif hat == "cap":                                      # a night cap with a bobble
-        c.rect(4, 2, 11, 2, "U")
-        c.rect(5, 1, 9, 1, "U")
-        c.cells([(12, 2), (12, 3), (12, 4)], "U")
-        c.put(12, 5, "W")
+        c.rect(4, 1, 11, 1, "U")
+        c.rect(5, 0, 9, 0, "U")
+        c.cells([(12, 1), (12, 2), (12, 3)], "U")
+        c.put(12, 4, "W")
     elif hat == "band":                                     # a sweatband
-        c.rect(4, 3, 11, 3, "A")
+        c.rect(4, 2, 11, 2, "A")
 
 
 def girl_front(phase, o, arms=True, mouth="smile", eyes="open", extra=None, apart=False):
     c = Canvas()
     girl_lower(c, phase, o, apart=apart)
     girl_upper(c, phase, o, back=False, arms=arms)
-    c.rect(3, 4, 4, 9, "H")                                 # shoulder-length hair on both sides
-    c.rect(11, 4, 12, 9, "H")
+    c.rect(3, 4, 4, 7, "H")                                 # shoulder-length hair on both sides, as she always had it
+    c.rect(11, 4, 12, 7, "H")
+    c.cells([(3, 7), (12, 7), (4, 7), (11, 7)], "J")
     girl_head_top(c, o)
-    c.rect(5, 4, 10, 8, "s")                                # face
-    c.rect(6, 9, 9, 9, "s")
-    c.cells([(5, 4), (6, 4), (9, 4), (10, 4), (5, 5), (10, 5)], "H")     # bangs
-    c.cells([(7, 4), (8, 4)], "s")
-    c.cells([(3, 9), (12, 9)], "J")
-    if extra:
-        extra(c)                                            # arms and things she holds, in front of the hair
-    c.outline()
+    c.rect(5, 3, 10, 7, "s")                                # face
+    c.cells([(5, 3), (6, 3), (9, 3), (10, 3), (5, 4), (10, 4)], "H")     # bangs
     if eyes == "open":
-        c.cells([(5, 6), (6, 6), (9, 6), (10, 6)], "L")                  # eyes
-        c.cells([(5, 7), (10, 7)], "i")
-        c.cells([(6, 7), (9, 7)], "w")
+        c.cells([(5, 4), (6, 4), (9, 4), (10, 4)], "L")                  # lashes
+        c.cells([(5, 5), (10, 5)], "i")                                  # iris
+        c.cells([(6, 5), (9, 5)], "w")                                   # the white, with a glint
     else:                                                   # looking down, or closed
-        c.cells([(5, 7), (6, 7), (9, 7), (10, 7)], "L")
-    c.cells([(5, 8), (10, 8)], "p")
+        c.cells([(5, 5), (6, 5), (9, 5), (10, 5)], "L")
+    c.cells([(5, 6), (10, 6)], "p")                                      # blush
     if mouth == "open":
-        c.cells([(7, 8), (8, 8), (7, 9), (8, 9)], "m")
+        c.cells([(7, 6), (8, 6), (7, 7), (8, 7)], "m")
     elif mouth == "wide":
-        c.cells([(7, 8), (8, 8), (6, 9), (7, 9), (8, 9), (9, 9)], "m")
+        c.cells([(7, 6), (8, 6), (6, 7), (7, 7), (8, 7), (9, 7)], "m")
     elif mouth != "hidden":
-        c.cells([(7, 8), (8, 8)], "m")
+        c.cells([(7, 6), (8, 6)], "m")
+    if extra:
+        extra(Shift(c))                                     # arms and things she holds, in front of the hair
+    squash(c, o)
+    c.outline()
     return c
 
 
@@ -460,10 +515,11 @@ def girl_back(phase, o):
     c = Canvas()
     girl_lower(c, phase, o)
     girl_upper(c, phase, o, back=True)
-    c.rect(3, 4, 12, 9, "H")                                # hair covers the whole back of the head
-    c.rect(4, 8, 11, 9, "J")
+    c.rect(3, 3, 12, 8, "H")                                # hair covers the whole back of the head
+    c.rect(3, 7, 12, 8, "J")
     girl_head_top(c, o)
-    c.cells([(7, 5), (8, 5), (6, 6), (9, 6)], "h")
+    c.cells([(7, 4), (8, 4), (6, 5), (9, 5)], "h")
+    squash(c, o)
     c.outline()
     return c
 
@@ -472,66 +528,79 @@ def girl_side(phase, o):
     c = Canvas()
     kind = o["bottom"]
     # skirt or trousers and legs
+    c.rect(6, 11, 9, 11, "D")
     if kind == "gown":
         c.rect(5, 12, 10, 12, "D")
         c.rect(4, 13, 11, 13, "D")
-        c.rect(4, 14, 11, 14, "W")
+        c.rect(4, 14, 11, 15, "D")
+        c.rect(4, 15, 11, 15, "W")
     else:
         if kind == "dress":
             c.rect(5, 12, 10, 12, "D")
-            c.rect(4, 13, 11, 13, "W")
-            c.cells([(5, 12), (10, 12)], "d")
+            c.rect(4, 13, 11, 13, "D")
+            c.rect(4, 14, 11, 14, "W")
+            c.cells([(5, 12), (10, 12), (4, 13), (11, 13)], "d")
         elif kind == "skirt":
             c.rect(5, 12, 10, 12, "D")
-            c.cells([(7, 13), (9, 13)], "s")
+            c.rect(7, 13, 7, 14, "s")
+            c.rect(9, 13, 9, 14, "s")
         elif kind == "shorts":
             c.rect(6, 12, 9, 12, "D")
-            c.cells([(7, 13), (9, 13)], "s")
+            c.rect(7, 13, 7, 14, "s")
+            c.rect(9, 13, 9, 14, "s")
         elif kind == "pants":
             c.rect(6, 12, 9, 12, "D")
-            c.cells([(7, 13), (9, 13)], "D")
+            c.rect(7, 13, 7, 14, "D")
+            c.rect(9, 13, 9, 14, "D")
         elif kind == "coat":
             c.rect(5, 12, 10, 12, "Q")
-            c.cells([(7, 13), (9, 13)], "T")
+            c.rect(7, 13, 7, 14, "T")
+            c.rect(9, 13, 9, 14, "T")
         if phase in (0, 2):                                 # shoes
-            c.rect(6, 14, 7, 14, "K")
-            c.rect(9, 14, 10, 14, "K")
+            c.rect(6, 15, 7, 15, "K")
+            c.rect(9, 15, 10, 15, "K")
         else:
-            c.rect(7, 14, 9, 14, "K")
+            c.rect(7, 15, 9, 15, "K")
+    belly = o.get("belly", 0)
+    if belly:                                               # the belly bulges forward (to the right)
+        c.rect(9, 10, 10 + belly, 9 + belly, "D")
+        c.rect(9, 10 + belly, 10 + belly, 10 + belly, "d")
     # top
     coat = kind == "coat"
-    c.rect(5 if coat else 6, 10, 10 if coat else 9, 12 if coat else 11, "Q")
+    c.rect(5 if coat else 6, 8, 10 if coat else 9, 10, "Q")
     if coat:
-        c.rect(5, 10, 10, 10, "A")                          # scarf
+        c.rect(5, 8, 10, 8, "A")                            # scarf
+        c.rect(5, 11, 10, 11, "Q")
     elif kind in ("dress", "gown"):
-        c.put(6, 11, "R")
-    arm_x, y0 = {0: (8, 10), 1: (9, 10), 2: (8, 10), 3: (7, 10)}[phase]
+        c.rect(6, 10, 9, 10, "R")
+    arm_x, y0 = {0: (8, 9), 1: (9, 9), 2: (8, 9), 3: (7, 9)}[phase]
     if o["sleeves"] == "puff":
-        c.put(arm_x, y0, "Q")
+        c.put(arm_x, 8, "Q")
+        c.put(arm_x, y0, "s")
         c.put(arm_x, y0 + 1, "s")
     elif o["sleeves"] == "none":
+        c.put(arm_x, 8, "s")
         c.put(arm_x, y0, "s")
         c.put(arm_x, y0 + 1, "s")
     else:
+        c.put(arm_x, 8, "Q")
         c.put(arm_x, y0, "Q")
-        c.put(arm_x, y0 + 1, "Q")
-        c.put(arm_x, y0 + 2, "s")
-    # hair flowing behind, fringe in front
-    c.rect(4, 3, 8, 10, "H")
+        c.put(arm_x, y0 + 1, "s")
+    # hair flowing long behind, fringe in front
+    c.rect(3, 3, 7, 8, "H")
+    c.rect(3, 7, 6, 8, "J")
     c.rect(5, 2, 10, 2, "H")
-    c.rect(4, 9, 6, 10, "J")
-    c.rect(5, 3, 11, 3, "H")
-    c.rect(9, 4, 11, 4, "H")
+    c.rect(8, 3, 10, 3, "H")
     # face in profile
-    c.rect(9, 5, 11, 8, "s")
-    c.rect(9, 9, 10, 9, "s")
-    c.put(12, 6, "s")                                       # nose
+    c.rect(8, 4, 10, 7, "s")
+    c.put(11, 5, "s")                                       # nose
     girl_head_top(c, o, side=True)
+    c.put(9, 4, "L")
+    c.put(9, 5, "i")
+    c.put(10, 6, "m")
+    c.put(8, 6, "p")
+    squash(c, o)
     c.outline()
-    c.put(10, 6, "L")
-    c.put(10, 7, "i")
-    c.put(11, 8, "m")
-    c.put(10, 8, "p")
     return c
 
 
@@ -550,8 +619,8 @@ def arm(c, o, pts):
 
 
 def _down(c, o):
-    arm(c, o, [(4, 10), (4, 11)])
-    arm(c, o, [(11, 10), (11, 11)])
+    arm(c, o, [(4, 10), (4, 11), (4, 12)])
+    arm(c, o, [(11, 10), (11, 11), (11, 12)])
 
 
 def pose_tea(f, o):
@@ -559,7 +628,7 @@ def pose_tea(f, o):
     cup = [(12, 9), (11, 8), (9, 7), (11, 8)][f]
 
     def extra(c):
-        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(4, 10), (4, 11), (4, 12)])
         arm(c, o, [(11, 10), hands])
         x, y = cup
         c.cells([(x, y), (x + 1, y)], "V")                  # the tea
@@ -599,8 +668,8 @@ def pose_read(f, o):
 
 def pose_water(f, o):
     def extra(c):
-        arm(c, o, [(4, 10), (4, 11)])
-        arm(c, o, [(11, 10), (11, 11)])
+        arm(c, o, [(4, 10), (4, 11), (4, 12)])
+        arm(c, o, [(11, 10), (11, 11), (11, 12)])
         c.rect(11, 10, 13, 12, "C")                         # the watering can
         c.put(10, 10, "C")
         spout_y = [10, 10, 11, 10][f]
@@ -614,7 +683,7 @@ def pose_comb(f, o):
     y = 6 if f in (0, 2) else 5
 
     def extra(c):
-        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(4, 10), (4, 11), (4, 12)])
         arm(c, o, [(11, 10), (12, 8), (12, y)])
         c.cells([(13, y - 1), (13, y), (13, y + 1)], "A")   # the comb
     return girl_front(0, o, arms=False, extra=extra)
@@ -643,14 +712,14 @@ def pose_dance(f, o):
 
 def pose_wave(f, o):
     def extra(c):
-        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(4, 10), (4, 11), (4, 12)])
         arm(c, o, [(11, 10), (12, 8), (13 if f in (0, 2) else 12, 6)])
     return girl_front(0, o, arms=False, mouth="open", extra=extra)
 
 
 def pose_yawn(f, o):
     def extra(c):
-        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(4, 10), (4, 11), (4, 12)])
         if f == 0:
             arm(c, o, [(11, 10), (11, 9), (10, 8)])         # a hand over the mouth
         else:
@@ -660,15 +729,26 @@ def pose_yawn(f, o):
 
 def pose_think(f, o):
     def extra(c):
-        arm(c, o, [(4, 10), (4, 11)])
+        arm(c, o, [(4, 10), (4, 11), (4, 12)])
         arm(c, o, [(11, 10), (11, 9), (9, 9)])              # a finger at the chin
     return girl_front(0, o, arms=False, extra=extra, mouth="hidden")
+
+
+def pose_hug(f, o):
+    """Arms open, then closed around someone standing at her right side."""
+    def extra(c):
+        arm(c, o, [(4, 10), (4, 11), (4, 12)])
+        if f in (0, 1):
+            arm(c, o, [(11, 10), (12, 10), (13, 9)])            # reaching out
+        else:
+            arm(c, o, [(11, 10), (12, 10), (13, 10), (14, 10)])   # holding on
+    return girl_front(0, o, arms=False, mouth="smile" if f < 2 else "hidden", eyes="open" if f < 2 else "down", extra=extra)
 
 
 # name, drawing function, number of distinct frames
 POSES = [("tea", pose_tea, 4), ("exercise", pose_exercise, 4), ("read", pose_read, 4), ("water", pose_water, 4),
          ("comb", pose_comb, 4), ("sing", pose_sing, 4), ("dance", pose_dance, 4), ("wave", pose_wave, 4),
-         ("yawn", pose_yawn, 2), ("think", pose_think, 2)]
+         ("yawn", pose_yawn, 2), ("think", pose_think, 2), ("hug", pose_hug, 4)]
 
 
 def face_image():
@@ -775,6 +855,50 @@ def golden_post(c, view, phase):
         c.put(x, y, "W")
 
 
+def hybrid_pre(level):
+    """A half-human child: `level` 0 leans goblin (green, a tuft of hair, tusks), 1 is in between, 2 leans human
+    (peach skin, a full head of hair, round ears, no tusks)."""
+    def pre(c, view, phase):
+        y0 = 2
+        if view == "back":
+            if level == 2:
+                c.rect(5, y0 + 2, 10, y0 + 3, "N")
+            return
+        if view == "side":
+            top = (5, 10)
+            if level == 0:
+                c.cells([(7, y0), (8, y0), (9, y0)], "N")
+            else:
+                c.rect(top[0], y0, top[1], y0, "N")
+                if level == 2:
+                    c.rect(5, y0 + 1, 11, y0 + 1, "N")
+                    c.rect(5, y0 + 2, 7, y0 + 3, "N")
+                else:
+                    c.cells([(5, y0 + 1), (6, y0 + 1)], "N")
+            return
+        if level == 0:
+            c.cells([(6, y0), (7, y0), (8, y0), (9, y0)], "N")
+        else:
+            c.rect(5, y0, 10, y0, "N")
+            if level == 2:
+                c.rect(4, y0 + 1, 11, y0 + 1, "N")
+                c.cells([(4, y0 + 2), (11, y0 + 2), (4, y0 + 3), (11, y0 + 3)], "N")
+            else:
+                c.cells([(4, y0 + 1), (5, y0 + 1), (10, y0 + 1), (11, y0 + 1)], "N")
+    return pre
+
+
+def hybrid_post(level):
+    def post(c, view, phase):
+        if level == 0:
+            return
+        if view == "front":
+            c.cells([(6, 6), (9, 6)], "g")                        # no tusks
+        elif view == "side":
+            c.put(10, 6, "g")
+    return post
+
+
 BREEDS = [
     # id, name, weight, boost, blurb, stats, sheet, look
     ("common", "平民", 100, 0, "最普通的哥布林，什麼都會一點。", {}, "worker.png", Look()),
@@ -796,6 +920,19 @@ BREEDS = [
      {"speed": 1.1, "sense": 1.1, "recruit": 1, "rest": 0.9, "lifespan": 2.0, "might": 1.2, "health": 4}, "golden.png",
      Look({"g": (238, 196, 60), "G": (200, 150, 30), "h": (255, 232, 120)}, hair="W",
           pre=golden_pre, post=golden_post)),
+    # Half-human children (the princess and a golden goblin). Never born by chance: weight 0.
+    ("half_gob", "混血・偏哥布林", 0, 0, "公主與金皮的孩子，偏向哥布林：綠皮膚、一撮棕髮，還留著小獠牙。",
+     {"speed": 1.0, "sense": 1.1, "rest": 1.0, "lifespan": 1.4, "might": 1.15, "health": 4, "recruit": 1}, "half_gob.png",
+     Look({"g": (132, 186, 84), "G": (96, 150, 60), "h": (170, 214, 120), "N": (176, 120, 60)}, hair="N",
+          build=Build(ear="wide"), pre=hybrid_pre(0), post=hybrid_post(0))),
+    ("half_mix", "混血・各半", 0, 0, "公主與金皮的孩子，人和哥布林各一半：淡黃綠的皮膚，尖尖的耳朵，沒有獠牙。",
+     {"speed": 1.05, "sense": 1.15, "rest": 0.95, "lifespan": 1.5, "might": 1.0, "health": 3.5, "recruit": 1}, "half_mix.png",
+     Look({"g": (190, 204, 110), "G": (150, 166, 80), "h": (220, 232, 150), "N": (190, 130, 60), "y": (240, 230, 130)}, hair="N",
+          build=Build(ear="long"), pre=hybrid_pre(1), post=hybrid_post(1))),
+    ("half_hum", "混血・偏人", 0, 0, "公主與金皮的孩子，偏向人類：膚色像人，一頭金棕色頭髮，只剩一點點尖耳朵。",
+     {"speed": 1.0, "sense": 1.2, "rest": 0.9, "lifespan": 1.6, "might": 0.9, "health": 3, "recruit": 2}, "half_hum.png",
+     Look({"g": (238, 198, 164), "G": (204, 158, 124), "h": (252, 228, 200), "N": (206, 150, 60), "y": (250, 250, 250)}, hair="N",
+          build=Build(ear="stub"), pre=hybrid_pre(2), post=hybrid_post(2))),
 ]
 
 

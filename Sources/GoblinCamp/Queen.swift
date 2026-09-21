@@ -12,6 +12,20 @@ struct Surroundings {
     var outfit: String = ""
     /// A monster is close: she goes into the hole and stays there until it is gone.
     var danger = false
+    /// She is expecting: no exercise, no spinning, no dancing.
+    var pregnant = false
+}
+
+/// Something she does with the one she loves; the colony (see Romance.swift) starts these and watches for them to end.
+enum SceneKind: Equatable {
+    /// Walking somewhere together (a stroll near the camp, or further afield on an outing).
+    case walk(to: CGPoint)
+    case hug
+    /// Not speaking, each looking away.
+    case quarrel
+    case wedding
+    /// In bed, talking (asleep at last).
+    case bed
 }
 
 /// Things the princess does that come with a pose of their own (and sometimes a prop and an outfit that suits it).
@@ -65,7 +79,7 @@ enum Activity: String, CaseIterable {
 }
 
 /// Something drawn next to her while she does it.
-enum Prop { case teaTable, mat, flowerPots, bed }
+enum Prop { case teaTable, mat, flowerPots, bed, arch }
 
 /// The queen: crawls out of the nest hole, then lives beside it as a state machine.
 /// See QUEEN_BEHAVIORS.md for the full list of things she does.
@@ -93,6 +107,8 @@ struct Queen {
         case changingOutfit
         case doing(Activity)
         case curious
+        /// Together with somebody (see `SceneKind`).
+        case scene(SceneKind)
     }
 
     /// Things the colony has to react to.
@@ -110,6 +126,11 @@ struct Queen {
         case sparkles(progress: Double)
         case steam(clock: Double)
         case notes(clock: Double)
+        case hearts(clock: Double)
+        case anger(clock: Double)
+        /// Talking in bed: speech bubbles over her and (`partnerDX` away) over the one beside her.
+        case chat(clock: Double)
+        case confetti(clock: Double)
     }
 
     private(set) var pos: CGPoint
@@ -120,7 +141,7 @@ struct Queen {
     private(set) var walking = false
 
     private let nest: CGPoint
-    private let home: CGPoint // where she stands when idle
+    private(set) var home: CGPoint // where she stands when idle (moved out to a picnic spot on an outing)
     private var clock: Double = 0
     private var timer: Double = 0
     private var duration: Double = 0
@@ -131,6 +152,7 @@ struct Queen {
     private var desiredOutfit: String?
     private var pending: Pending?
     private var currentOutfit = ""
+    private var pregnant = false
 
     private enum Pending {
         case doing(Activity)
@@ -180,6 +202,11 @@ struct Queen {
         case .changingOutfit: return .sparkles(progress: progress)
         case .doing(.tea): return .steam(clock: clock)
         case .doing(.sing): return .notes(clock: clock)
+        case .scene(.hug): return .hearts(clock: clock)
+        case .scene(.walk): return .hearts(clock: clock * 0.5)
+        case .scene(.quarrel): return .anger(clock: clock)
+        case .scene(.wedding): return .confetti(clock: clock)
+        case .scene(.bed): return .chat(clock: clock)
         default: return nil
         }
     }
@@ -193,22 +220,73 @@ struct Queen {
         case .thinking: return ("think", Int(clock * 1.2))
         case .dancing: return ("dance", Int(clock * 4))
         case .greeting: return ("wave", Int(clock * 4))
+        case .scene(.hug):
+            let elapsed = duration * progress // the arms open, then close around him
+            return ("hug", elapsed < 1.2 ? Int(elapsed * 2) % 2 : 2 + Int(clock * 1.2) % 2)
+        case .scene(.quarrel): return ("think", 0)
+        case .scene(.wedding): return ("dance", Int(clock * 3))
         default: return nil
         }
+    }
+
+    /// Standing about, free for a scene.
+    var isFree: Bool {
+        switch state {
+        case .resting, .wandering: return true
+        default: return false
+        }
+    }
+
+    /// Not busy with anything that must not be cut short (she can put down her tea for him).
+    var isAvailable: Bool {
+        switch state {
+        case .carried, .enteringHole, .inHole, .leavingHole, .peeking, .changingOutfit, .scene: return false
+        default: return true
+        }
+    }
+
+    var homePoint: CGPoint { home }
+
+    /// On an outing she idles around the spot instead of the camp.
+    mutating func setHome(_ point: CGPoint) { home = point }
+
+    mutating func resetHome(nest: CGPoint, walkable: [CGRect]) { home = Queen.homeSpot(for: nest, walkable: walkable) }
+
+    /// The scene she is in, if any.
+    var scene: SceneKind? {
+        if case .scene(let kind) = state { return kind }
+        return nil
+    }
+
+    /// Starts a scene if she is free for one. `duration` is how long it lasts (a walk ends when she gets there).
+    @discardableResult
+    mutating func startScene(_ kind: SceneKind, duration: Double) -> Bool {
+        guard canBeInterrupted else { return false }
+        begin(.scene(kind), duration: duration)
+        if case .walk(let target) = kind { heading = atan2(target.y - pos.y, target.x - pos.x) }
+        return true
+    }
+
+    /// The scene is over (something frightened them, or the colony decided).
+    mutating func endScene() {
+        if scene != nil { beginResting() }
     }
 
     var prop: Prop? {
         switch state {
         case .doing(let activity): return activity.prop
-        case .sleeping: return .bed
+        case .sleeping, .scene(.bed): return .bed
+        case .scene(.wedding): return .arch
         default: return nil
         }
     }
 
     /// Lying down to sleep.
     var isLying: Bool {
-        if case .sleeping = state { return true }
-        return false
+        switch state {
+        case .sleeping, .scene(.bed): return true
+        default: return false
+        }
     }
 
     var stateName: String {
@@ -233,6 +311,7 @@ struct Queen {
         case .changingOutfit: return "changingOutfit"
         case .doing(let activity): return "doing:\(activity.rawValue)"
         case .curious: return "curious"
+        case .scene(let kind): return "scene:\(kind)"
         }
     }
 
@@ -289,6 +368,7 @@ struct Queen {
         clock += dt
         walking = false
         currentOutfit = around.outfit
+        pregnant = around.pregnant
         reactCooldown = max(0, reactCooldown - dt)
         var event: Event?
 
@@ -320,6 +400,14 @@ struct Queen {
         case .grooming, .yawning, .thinking, .sleeping, .doing:
             timer -= dt
             if timer <= 0 { beginResting() }
+
+        case .scene(let kind):
+            timer -= dt
+            if case .walk(let target) = kind {
+                if walk(to: target, speed: 20, dt: dt) { beginResting() }
+            } else if timer <= 0 {
+                beginResting()
+            }
 
         case .greeting:
             timer -= dt
@@ -438,14 +526,14 @@ struct Queen {
 
     /// A newborn appeared: turn to face it for a moment.
     mutating func greet(toward point: CGPoint) {
-        guard canBeInterrupted else { return }
+        guard canBeInterrupted, scene == nil else { return }
         heading = atan2(point.y - pos.y, point.x - pos.x)
         begin(.greeting, duration: 1.8)
     }
 
     /// The colony hit a milestone: wiggle.
     mutating func celebrate() {
-        guard canBeInterrupted else { return }
+        guard canBeInterrupted, !pregnant, scene == nil else { return }
         begin(.dancing, duration: 2.5)
     }
 
@@ -581,7 +669,7 @@ struct Queen {
         } else if chance(5) {
             begin(.layingEgg, duration: 2.6)
             eggLaid = false
-        } else if chance(3) {
+        } else if !pregnant && chance(3) {
             begin(.spinning, duration: 1.3)
         } else if chance(5) {
             begin(.lookingAround, duration: 2.6)
@@ -601,7 +689,7 @@ struct Queen {
             begin(.changingOutfit, duration: 1.8)
         } else if chance(9) {
             startOrChange(.doing(.tea))
-        } else if chance(7) {
+        } else if !pregnant && chance(7) {
             startOrChange(.doing(.exercise))
         } else if chance(7) {
             startOrChange(.doing(.read))

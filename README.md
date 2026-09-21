@@ -102,7 +102,7 @@ open GoblinCamp.app
 
 <p align="center"><img src="docs/images/characters.png" alt="五個品種的哥布林" width="100%"></p>
 
-- **像素風角色，四個方向**：哥布林與少女都是 16×16 的像素畫，會依走路方向轉向、有走路動畫。
+- **像素風角色，四個方向**：哥布林與公主都是 16×16 的像素畫，會依走路方向轉向、有走路動畫。
 - **五個品種**：平民、敏捷、壯碩、聰明、金皮。出生時抽品種：大多是平民，稀有品種的機率會隨**累積搬回的食物**變高，每次出生還有一點隨機突變。每隻還有自己的小差異。
 - **數值真的影響動作**：敏捷的走得快、眼尖；壯碩的一次搬兩份；聰明的容易發現食物、叫來的同伴比較多；金皮各方面都好一點。
 - **會老死**：每隻有壽命，平民基準是 **1 天**（只計算 App 開著的時間），品種不同壽命不同；快到壽命時走得比較慢，最後會淡出離開，營地有空位再生新的。
@@ -264,7 +264,7 @@ Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 
 | 項目 | 說明 |
 |---|---|
-| 暫停 / 繼續 | 暫停時所有角色（含少女）都停住 |
+| 暫停 / 繼續 | 暫停時所有角色（含公主）都停住 |
 | 選擇營地位置… / 重新選擇營地位置 | 進入選位置畫面（點一下決定，**Esc 取消**）。已有營地時，要真的點下新位置才會清空哥布林；按 Esc 就維持原樣 |
 | 放食物 | 水滴 / 蜂蜜：選一種後點畫面放下（**Esc 取消**）。最多同時 6 份，最舊的會被取代；「清除所有食物」可全部收走。需要先有營地 |
 | 編輯營地位置 | 畫面微暗、營地周圍出現虛線圈，拖曳它就能移動；Esc、Return 或再按一次選單結束。哥布林會繼續走動 |
@@ -300,6 +300,7 @@ Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 
 食物**不會存檔**：重開 App 後畫面上的食物就沒了（營地與數量會還原）。
 
+| 公主的感情線 | 遊戲進行一天以後，隨機的某個時候金皮哥布林會開始追求公主（可能失敗、可能好幾天都沒有）。成功會**牽手散步、擁抱、有護衛跟著的遠行約會、晚上同床聊天**，也會**吵架、冷戰、分手**；有機會**結婚**、**懷孕**（孕婦裝，肚子慢慢變大），生下**混血寶寶**（偏哥布林／各半／偏人三種新品種，男女各半）。所有哥布林有公母，母的有粉紅蝴蝶結。詳見 [ROMANCE.md](ROMANCE.md) |
 自己的營地圖片建議用透明背景的 PNG；一般 JPG 會帶著方形底色。
 
 ## 資料存放位置
@@ -320,7 +321,7 @@ rm -rf ~/Library/Application\ Support/GoblinCamp
 defaults delete dev.goblincamp.game
 ```
 
-App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點擊位置（用來讓少女對游標有反應）。
+App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點擊位置（用來讓公主對游標有反應）。
 
 ## 開發
 
@@ -422,7 +423,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_TIME_SCALE=倍數` | 讓年齡增加得更快（測試老死） |
 | `CAMP_TEST_ROSTER=秒` | 該時間點打開名冊並選中一隻（配合 `CAMP_SNAPSHOT` 會把名冊視窗也截圖存成 `-roster.png`） |
 | `CAMP_DEBUG` | 每次生成角色或還原存檔時印 log |
-| `CAMP_QUEEN_FORCE=名稱` | 強制少女（首領）進入某個動作（sleeping、yawning、thinking、dancing、digging、carrying、peeking） |
+| `CAMP_QUEEN_FORCE=名稱` | 強制公主進入某個動作（sleeping、yawning、thinking、dancing、digging、carrying、peeking） |
 | `CAMP_SNAPSHOT=/路徑前綴` `CAMP_SNAPSHOT_AFTER=秒` | App 把自己的視窗（營地附近）截圖存成 PNG，不需要螢幕錄製權限；加 `CAMP_SNAPSHOT_FULL=1` 改截整個螢幕（縮小一半） |
 | `CAMP_TEST_ESC=秒` | 用合成事件按一次 Esc（測試取消選位置） |
 | `CAMP_TEST_FOOD=種類,dx,dy` | 用合成事件走完「選單放食物 → 點擊放下」：在營地旁 (dx, dy) 放 `water` 或 `honey`，並每 5 秒印一次覓食狀態；加 `CAMP_TEST_FOOD_CANCEL=1` 會另外測試放食物時按 Esc |
@@ -452,6 +453,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_TEST_NAMES=set／show` | 測試名字：`set` 在 20 秒時改名並存檔，`show` 印出載入的名字 |
 | `CAMP_TEST_MANUAL=路徑` | 打開說明手冊並把它畫成 PNG |
 | `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
+| `CAMP_ROMANCE` `CAMP_ROMANCE_STAGE` `CAMP_ROMANCE_SCALE` `CAMP_ROMANCE_CHEM` `CAMP_ROMANCE_FORCE` | 公主感情線的測試（見 [ROMANCE.md](ROMANCE.md)） |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
 | `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |
 | `CAMP_TEST_WILD=種類,dx,dy` | 在營地旁 (dx, dy) 放一隻動物（`chicken`／`sheep`／`pig`）與一棵果樹，並每 3 秒印一次狀態 |
@@ -464,7 +466,8 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 
 - [PLAN.md](PLAN.md)：設計、開發階段與進度、效能實驗紀錄（包含失敗的做法）
 - [SCENARIOS.md](SCENARIOS.md)：工作與遊玩的各種使用情境、三種模式對照與待決定事項
-- [QUEEN_BEHAVIORS.md](QUEEN_BEHAVIORS.md)：少女（首領）的 20 種動作、狀態機、如何新增動作
+- [QUEEN_BEHAVIORS.md](QUEEN_BEHAVIORS.md)：公主的 20 種動作、狀態機、如何新增動作
+- [ROMANCE.md](ROMANCE.md)：公主的感情線（追求、約會、結婚、懷孕、混血寶寶、吵架分手）與測試用變數
 
 ## 已知限制
 

@@ -105,6 +105,57 @@
         "health": 4
       },
       "sheet": "golden.png"
+    },
+    {
+      "id": "half_gob",
+      "name": "混血・偏哥布林",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "公主與金皮的孩子，偏向哥布林：綠皮膚、一撮棕髮，還留著小獠牙。",
+      "stats": {
+        "speed": 1.0,
+        "sense": 1.1,
+        "rest": 1.0,
+        "lifespan": 1.4,
+        "might": 1.15,
+        "health": 4,
+        "recruit": 1
+      },
+      "sheet": "half_gob.png"
+    },
+    {
+      "id": "half_mix",
+      "name": "混血・各半",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "公主與金皮的孩子，人和哥布林各一半：淡黃綠的皮膚，尖尖的耳朵，沒有獠牙。",
+      "stats": {
+        "speed": 1.05,
+        "sense": 1.15,
+        "rest": 0.95,
+        "lifespan": 1.5,
+        "might": 1.0,
+        "health": 3.5,
+        "recruit": 1
+      },
+      "sheet": "half_mix.png"
+    },
+    {
+      "id": "half_hum",
+      "name": "混血・偏人",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "公主與金皮的孩子，偏向人類：膚色像人，一頭金棕色頭髮，只剩一點點尖耳朵。",
+      "stats": {
+        "speed": 1.0,
+        "sense": 1.2,
+        "rest": 0.9,
+        "lifespan": 1.6,
+        "might": 0.9,
+        "health": 3,
+        "recruit": 2
+      },
+      "sheet": "half_hum.png"
     }
   ],
   "queen": {
@@ -186,6 +237,12 @@
       "think": [
         48,
         49
+      ],
+      "hug": [
+        52,
+        53,
+        54,
+        55
       ]
     },
     "outfits": [
@@ -218,6 +275,16 @@
         "id": "winter",
         "name": "冬季外套",
         "sheet": "queen_winter.png"
+      },
+      {
+        "id": "maternity1",
+        "name": "孕婦裝（初期）",
+        "sheet": "queen_maternity1.png"
+      },
+      {
+        "id": "maternity2",
+        "name": "孕婦裝（後期）",
+        "sheet": "queen_maternity2.png"
       },
       {
         "id": "pajamas",

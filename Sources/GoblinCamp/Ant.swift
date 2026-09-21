@@ -28,6 +28,8 @@ struct Ant {
         case cook(spot: CGPoint, pot: CGPoint)
         /// Felling a tree (0) or mining a rock (1) at `face`, standing at `spot`; `hitsLeft` more blows to go.
         case gather(kind: Int, spot: CGPoint, face: CGPoint, id: Int, hitsLeft: Int)
+        /// Keeping the princess company (a suitor, her partner, or a guard): the colony says where to stand (`AntWorld.attendTargets`).
+        case attend
 
         var label: String {
             switch self {
@@ -40,6 +42,7 @@ struct Ant {
             case .serve: return "伺候金皮"
             case .gather(let kind, _, _, _, _): return kind == 0 ? "砍樹" : "採石"
             case .cook: return "煮飯"
+            case .attend: return "陪伴公主"
             case .mind: return "照顧小哥布林"
             case .farm(_, let action, _, _): return "耕田：" + ["翻土", "播種", "收成", "澆水"][min(3, action)]
             }
@@ -216,6 +219,13 @@ struct Ant {
 
     /// Its name: made from its seed, or what the player called it.
     var name: String
+
+    /// Lying in the bed beside the princess (drawn lying down; the colony sets it).
+    var lying = false
+    /// Who its parents were, for the young ones born to the princess ("" for the rest).
+    var parents = ""
+    /// Girl or boy: settled by the seed (half of them each), shown as a little bow on the girls.
+    var female: Bool { (seed >> 4) & 1 == 1 }
 
     init(at pos: CGPoint, id: Int, breedIndex: Int, traits: Traits, seed: UInt64, age: Double = 0, name: String? = nil) {
         self.id = id
@@ -561,6 +571,7 @@ struct Ant {
         case .cook: return 200 // (a limit; see the cooking time below)
         case .farm: return 90
         case .mind: return 60
+        case .attend: return 1_000_000 // (the colony ends it)
         }
     }
 
@@ -686,6 +697,14 @@ struct Ant {
                     heading = Double.random(in: 0..<(2 * .pi))
                     return .cooked(pot: pot)
                 }
+            }
+        case .attend:
+            guard let target = world.attendTargets[id] else { return giveUp() }
+            let distance = hypot(target.x - pos.x, target.y - pos.y)
+            if distance > 3 {
+                walk(toward: target, distance: distance, speed: effectiveSpeed * (distance > 40 ? 1.5 : 1), dt: dt)
+            } else if let face = world.attendFace {
+                turn(toward: atan2(face.y - pos.y, face.x - pos.x), rate: 4, dt: dt)
             }
         case .serve(let boss, let offset):
             guard let leader = world.bosses[boss] else { return giveUp() }

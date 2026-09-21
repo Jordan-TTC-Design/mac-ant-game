@@ -31,6 +31,8 @@ struct SavedGoblin: Codable {
     var name: String?
     /// What it wears (slot → gear id).
     var gear: [String: SavedGear]?
+    /// The names of its parents, for the ones born to the princess.
+    var parents: String?
 }
 
 struct SavedState: Codable {
@@ -57,6 +59,8 @@ struct SavedState: Codable {
     var armory: [String: Int]?
     /// The same with wear (newer saves).
     var armoryItems: [SavedGear]?
+    /// The princess's love life.
+    var romance: RomanceState?
 }
 
 /// Colony progress in ~/Library/Application Support/GoblinCamp/state.json.

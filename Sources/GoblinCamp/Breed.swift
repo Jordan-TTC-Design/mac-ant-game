@@ -122,7 +122,8 @@ enum Breeding {
             for (i, w) in weights.enumerated() { pick -= w; if pick < 0 { return i } }
             return 0
         }
-        if Double.random(in: 0..<1) < 0.02 { return Int.random(in: 1..<breeds.count) }
+        let mutable = breeds.indices.filter { $0 > 0 && breeds[$0].weight > 0 }
+        if let pick = mutable.randomElement(), Double.random(in: 0..<1) < 0.02 { return pick }
         let wealth = min(2.0, Double(delivered) / 60) // 0 ... 2, reached after 120 pieces
         let weights = breeds.enumerated().map { $0.offset == 0 ? $0.element.weight : $0.element.weight * (1 + wealth * $0.element.prosperityBoost) }
         var pick = Double.random(in: 0..<weights.reduce(0, +))

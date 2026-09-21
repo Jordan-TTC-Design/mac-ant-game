@@ -34,14 +34,14 @@ final class Colony {
 
     /// Which breeds exist. Normally the current character's; tests can put their own here.
     var breedOverride: [Breed]?
-    private var breeds: [Breed] { breedOverride ?? Characters.current.breeds }
+    var breeds: [Breed] { breedOverride ?? Characters.current.breeds }
 
     private(set) var phase: Phase = .choosingNest
     /// Set while picking a new spot for an existing colony, so Esc can put things back as they were.
     private var phaseBeforePicking: Phase?
     private(set) var nest: CGPoint?
-    private(set) var queen: Queen?
-    private(set) var ants: [Ant] = []
+    var queen: Queen?
+    var ants: [Ant] = []
     private(set) var eggs: [Egg] = []
     private(set) var foods: [FoodSource] = []
     private(set) var pendingFood: FoodKind?
@@ -74,8 +74,12 @@ final class Colony {
     struct Floater { var text: String; var rarity: Rarity; var pos: CGPoint; var age = 0.0 }
     private(set) var floaters: [Floater] = []
     /// At most a few labels at a time, so a crowd of deliveries or deaths never fills the camp with text.
-    private func addFloater(_ text: String, _ rarity: Rarity, at pos: CGPoint) {
-        guard floaters.count < 3 else { return }
+    /// (A story beat, `important`, pushes the oldest label out instead of being dropped.)
+    func addFloater(_ text: String, _ rarity: Rarity, at pos: CGPoint, important: Bool = false) {
+        if floaters.count >= 3 {
+            guard important else { return }
+            floaters.removeFirst()
+        }
         floaters.append(Floater(text: text, rarity: rarity, pos: pos))
     }
     /// Green pluses around the princess while she heals the wounded (their ages).
@@ -88,7 +92,10 @@ final class Colony {
     private var animalTimer: Double = -1
     private var treeTimer: Double = -1
     /// Which of the princess's outfits she wears now. `CAMP_OUTFIT` picks the first one (for testing).
-    private(set) var outfitIndex: Int = Int(ProcessInfo.processInfo.environment["CAMP_OUTFIT"] ?? "") ?? 0
+    var outfitIndex: Int = Int(ProcessInfo.processInfo.environment["CAMP_OUTFIT"] ?? "") ?? 0
+    /// The princess's love life (see Romance.swift), and the parts of it that are only about the moment.
+    var romance = RomanceState()
+    var romanceRuntime = RomanceRuntime()
     /// The individual highlighted from the roster, if any.
     var selectedAntID: Int?
     private var nextFoodID = 1
@@ -191,7 +198,7 @@ final class Colony {
     }
 
     /// The most goblins the camp has ever had: what the camp has grown to (its tents, totem and the rest of it turn up as this grows).
-    private(set) var peakAnts = 0
+    var peakAnts = 0
     /// Game time: seconds the camp has been going (only while the app runs). Things arrive by it: animals after a few minutes, the first
     /// monsters after half an hour, stronger ones later. `CAMP_WILD_SCALE` runs it faster (tests).
     private(set) var playSeconds = 0.0
@@ -428,6 +435,8 @@ final class Colony {
         phase = .running
         clearDecorations()
         ants = []
+        romance = RomanceState()
+        romanceRuntime = RomanceRuntime()
         spawnTimer = 0
         beginCarrying(to: point)
         primeWildlifeTimers()
@@ -569,7 +578,7 @@ final class Colony {
     var monsterNear: Bool { creatures.contains { $0.kind.hostile } }
 
     /// A monster is close enough to the princess to frighten her.
-    private var princessInDanger: Bool {
+    var princessInDanger: Bool {
         guard let queen else { return false }
         return creatures.contains { $0.kind.hostile && hypot($0.pos.x - queen.pos.x, $0.pos.y - queen.pos.y) < 190 }
     }
@@ -1289,6 +1298,7 @@ final class Colony {
         kills = saved.kills ?? [:]
         peakAnts = max(saved.peak ?? 0, saved.goblins?.count ?? saved.antCount)
         playSeconds = saved.playSeconds ?? 0
+        romance = saved.romance ?? RomanceState()
         larder = saved.larder ?? [:]
         savedLife = saved.terrain
         scene?.growth = peakAnts
@@ -1304,6 +1314,7 @@ final class Colony {
         if let goblins = saved.goblins {
             ants = goblins.prefix(settings.maxAnts).map { g in
                 var ant = makeAnt(at: scattered(), breedIndex: breeds.firstIndex { $0.id == g.breed } ?? 0, age: g.age, seed: g.seed, id: g.id, name: g.name)
+                ant.parents = g.parents ?? ""
                 for (slot, saved) in g.gear ?? [:] where GearSlot(rawValue: slot) != nil && Gears.by(id: saved.id) != nil {
                     _ = ant.equip(GearItem(id: saved.id, left: saved.left))
                 }
@@ -1327,9 +1338,10 @@ final class Colony {
         let breeds = self.breeds
         return SavedState(nestX: nest.x, nestY: nest.y, antCount: ants.count,
                           goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name,
-                                                    gear: savedGear(of: $0)) },
+                                                    gear: savedGear(of: $0), parents: $0.parents.isEmpty ? nil : $0.parents) },
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
-                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: life?.state ?? savedLife, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) })
+                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: life?.state ?? savedLife, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) },
+                          romance: romance)
     }
 
     private func savedGear(of ant: Ant) -> [String: SavedGear]? {
@@ -1339,7 +1351,7 @@ final class Colony {
     }
 
     /// Births and restores both go through here so every individual gets its traits the same way.
-    private func makeAnt(at pos: CGPoint, breedIndex: Int? = nil, age: Double = 0, seed: UInt64? = nil, id: Int? = nil, name: String? = nil) -> Ant {
+    func makeAnt(at pos: CGPoint, breedIndex: Int? = nil, age: Double = 0, seed: UInt64? = nil, id: Int? = nil, name: String? = nil) -> Ant {
         let breeds = self.breeds
         let index = min(breedIndex ?? Breeding.roll(from: breeds, delivered: foodDelivered), breeds.count - 1)
         var seed = seed ?? UInt64.random(in: 0...UInt64(UInt32.max))
@@ -1467,15 +1479,20 @@ final class Colony {
         guard isSimulating, !isPaused, let nest else { return }
         let outfits = Characters.current.outfits
         let around = Surroundings(cursor: cursor, cursorSpeed: cursorSpeed, newestAnt: ants.last?.pos,
-                                  outfit: outfits.isEmpty ? "" : outfits[min(outfitIndex, outfits.count - 1)].id, danger: princessInDanger)
+                                  outfit: outfits.isEmpty ? "" : outfits[min(outfitIndex, outfits.count - 1)].id, danger: princessInDanger,
+                                  pregnant: romance.pregnancy != nil)
         if let event = queen?.update(dt: dt, walkable: walkable, around: around) {
             switch event {
             case .outfitChange(let wanted):
                 let outfits = Characters.current.outfits
-                if let wanted, let index = outfits.firstIndex(where: { $0.id == wanted }) {
+                if romance.pregnancy != nil {
+                    // expecting: she keeps the maternity dress (the twirl was only for show)
+                } else if let wanted, let index = outfits.firstIndex(where: { $0.id == wanted }) {
                     outfitIndex = index
                 } else if outfits.count > 1 {
-                    outfitIndex = (outfitIndex + Int.random(in: 1..<outfits.count)) % outfits.count // always a different one
+                    // always a different one (and never a maternity dress when she is not expecting)
+                    let others = outfits.indices.filter { $0 != outfitIndex && !outfits[$0].id.hasPrefix("maternity") }
+                    if let pick = others.randomElement() { outfitIndex = pick }
                 }
             case .layEgg:
                 // she plants a flower next to her feet
@@ -1554,6 +1571,7 @@ final class Colony {
             world.gatherSlots = peakAnts >= 12 ? max(0, max(1, ants.count / 25) - working.count) : 0 // (a tiny camp has no time for it)
         }
         world.activitiesOn = !isRaining && fire == nil && world.crowd < 1.2
+        updateRomance(dt: dt, world: &world)
         matchTimer -= dt
         if matchTimer <= 0, !campHidden {
             matchTimer = 2.5
