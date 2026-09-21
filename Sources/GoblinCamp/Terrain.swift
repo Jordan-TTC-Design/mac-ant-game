@@ -1249,7 +1249,9 @@ final class TerrainScene {
 
     private func draw(_ item: TerrainItem, in ctx: CGContext, season x: Double = 1.4) {
         guard let image = TerrainArt.image(item.sprite, mode: TerrainArt.mode(for: item, biome: biome, season: x, snow: snowAmount(at: x))) else { return }
-        let scale = TerrainArt.scale(item.sprite)
+        // (on a strip the things are drawn a quarter smaller: the same size of pixel as the goblins, so tents and rocks are not crowding a path only
+        // thirty or forty points wide)
+        let scale = TerrainArt.scale(item.sprite) * (isStrip ? 0.75 : 1)
         let w = CGFloat(image.width) * scale, h = CGFloat(image.height) * scale
         ctx.draw(image, in: CGRect(x: item.foot.x - w / 2, y: item.foot.y - 2, width: w, height: h))
     }
