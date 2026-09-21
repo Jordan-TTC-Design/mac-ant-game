@@ -80,13 +80,29 @@ open GoblinCamp.app
 
 App 會自己更新，不用再傳 zip 給每個人。
 
-發布新版（你這邊）：
+發布新版（你這邊）。以 0.9.0 為例：
 
 ```bash
-# 1. 改 Resources/Info.plist 的 CFBundleShortVersionString 與 CFBundleVersion
-./build.sh --release "這次改了什麼"   # 產生 dist/GoblinCamp-<版本>.zip 與 dist/version.json
-# 2. 依照指令最後印出的步驟，把「兩個檔案」一起放到 GitHub Releases
+# 1. 改 Resources/Info.plist 的 CFBundleShortVersionString（0.9.0）與 CFBundleVersion（9）
+
+# 2. 打包：產生 dist/GoblinCamp-0.9.0.zip 與 dist/version.json
+./build.sh --release "這次改了什麼"
+
+# 3. 程式碼進 git
+git add -A && git commit -m "v0.9.0: ..." && git push
+
+# 4. 標版本
+git tag v0.9.0 && git push origin v0.9.0
+
+# 5. 建立 release，兩個檔案一起附上去  ← 少了這步，使用者不會收到更新
+gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.9.0
 ```
+
+`build.sh --release` 跑完會把第 5 步那行（含版本號與檔名）印出來，照著貼就好。
+
+第 5 步需要 [GitHub CLI](https://cli.github.com)（`brew install gh`，第一次要 `gh auth login`，之後永久有效）。不想裝的話就到 Releases 頁面手動建立，把兩個檔案拖進**下面那塊 `Attach binaries` 虛線框**——不是上面寫說明的文字框，拖錯地方不算附件。（release 自動附的 `Source code (zip)` / `(tar.gz)` 是 GitHub 產生的原始碼壓縮檔，不是你要給使用者的 App。）
+
+第 3 步和第 5 步是分開的兩件事：只 `git push` 不建 release，使用者的 App 什麼都不會收到；反過來只建 release 不 push，更新照樣會發生。
 
 `version.json` 是更新用的清單（版本號、下載網址、SHA-256、最低系統版本），必須和 zip 一起上傳到**同一個 release**。App 讀的是 `releases/latest/download/version.json`，GitHub 會自動指向最新的 release，所以網址永遠不用改。
 
@@ -490,6 +506,48 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 - [SCENARIOS.md](SCENARIOS.md)：工作與遊玩的各種使用情境、三種模式對照與待決定事項
 - [QUEEN_BEHAVIORS.md](QUEEN_BEHAVIORS.md)：公主的 20 種動作、狀態機、如何新增動作
 - [ROMANCE.md](ROMANCE.md)：公主的感情線（追求、約會、結婚、懷孕、混血寶寶、吵架分手）與測試用變數
+
+## 版本紀錄
+
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新。
+
+### v0.8.0
+
+- **自動更新**：選單多了「檢查更新…」，App 每天看一次有沒有新版，有的話跳出來問；按「更新」就會自己下載、換好、重新打開。進度、統計與 Claude Code 的連接都不會不見。可以在「偏好設定 → 自動檢查更新」關掉。
+- **公主的感情線**：追求、約會、結婚、懷孕，以及半人類的孩子（見 [ROMANCE.md](ROMANCE.md)）。
+
+裝 0.8.0 之前的版本沒有更新功能，所以這一版要手動換一次 App；之後就不用了。
+
+### v0.7.0
+
+- 採集、煮飯、種田，小哥布林會長大。
+- 固定大小的場景畫布、更多魔獸、裝備可以修理、名冊分欄、隨季節變化的營地物件、選單重新分組。
+
+### v0.6.0
+
+- 哥布林的日常生活（睡覺、釣魚、砍樹採石、玩耍、看書、鬧著玩打架）。
+- 效能保護：畫面太卡時自動減少同時出現的哥布林。
+- 會長大、也會一直變化的地貌。
+
+### v0.5.0
+
+- 魔獸來襲（史萊姆、巨鼠）、掉落素材與倉庫。
+- 工坊與裝備，裝備會耗損。
+- 哥布林的攻擊動畫。
+
+### v0.4.0
+
+- 番茄鐘的多輪、長休息、暫停與跳過。
+- 休息時的營火晚會、下雨、自然生成的池塘。
+
+### v0.3.0
+
+- 走動範圍與背景、獨立的營地視窗。
+- 哥布林與公主的名字、選擇出現在哪個桌面、「允許並記住」。
+
+### v0.2.0
+
+- App 內的說明手冊與「關於」視窗。
 
 ## 已知限制
 
