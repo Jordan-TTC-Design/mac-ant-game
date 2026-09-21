@@ -53,6 +53,15 @@ struct Planting: Codable {
 
 /// Something the goblins took from the place: a tree they felled (a stump is left, and rots away after a few days) or a chunk of a rock (a
 /// rock shrinks with each one and is gone when it has none left). Found again by where it stood, as a fraction of the clearing.
+/// A log or a stone that has turned up on a strip's path since the place was made (fallen from the trees behind, washed up by the rain).
+struct Drift: Codable {
+    var fx: Double
+    var fy: Double
+    /// 0 a log, 1 a small rock.
+    var kind: Int
+    var born: Double
+}
+
 struct Cut: Codable {
     var fx: Double
     var fy: Double
@@ -96,6 +105,8 @@ struct TerrainLifeState: Codable {
     var cuts: [Cut] = []
     /// The state of each farm plot (by its number in the scene).
     var plots: [PlotState] = []
+    /// New logs and stones on a strip's path (the strip grows no saplings; these are how wood and stone come back).
+    var drift: [Drift] = []
     /// How places are recorded: 2 = as offsets in points from the nest (earlier saves used fractions of the window, which no longer mean anything).
     var layout = 2
 
@@ -107,7 +118,7 @@ struct TerrainLifeState: Codable {
     }
 
     // (written by hand so that saves from before a field was added still load)
-    private enum Keys: String, CodingKey { case seed, epoch, seasonOffset, lastRoll, puddles, plantings, heat, heatTime, cuts, plots, layout }
+    private enum Keys: String, CodingKey { case seed, epoch, seasonOffset, lastRoll, puddles, plantings, heat, heatTime, cuts, plots, layout, drift }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -121,6 +132,7 @@ struct TerrainLifeState: Codable {
         heatTime = try c.decodeIfPresent(Double.self, forKey: .heatTime) ?? 0
         cuts = try c.decodeIfPresent([Cut].self, forKey: .cuts) ?? []
         plots = try c.decodeIfPresent([PlotState].self, forKey: .plots) ?? []
+        drift = try c.decodeIfPresent([Drift].self, forKey: .drift) ?? []
         layout = try c.decodeIfPresent(Int.self, forKey: .layout) ?? 1
         if layout < 2 { // positions from before the canvas mean nothing now: start those over
             puddles = []
@@ -287,6 +299,20 @@ final class TerrainLife {
         guard let p = spot(&rng, 18) else { return }
         let f = fraction(p)
         state.puddles.append(Puddle(fx: Double(f.x), fy: Double(f.y), radius: rng.range(12, 36), born: now, life: rng.range(1.5, 7) * 3600))
+        version += 1
+        onChange?()
+    }
+
+    // MARK: Logs and stones that turn up
+
+    /// Now and then a log falls or a stone comes to light on a strip's path (about one in a quarter of an hour), while there are fewer than `cap`.
+    func addDrift(alive: Int, cap: Int, now: Double = TerrainClock.now, spot: (inout TerrainRandom) -> CGPoint?, fraction: (CGPoint) -> CGPoint) {
+        var rng = TerrainRandom(seed: state.seed &* 131 &+ UInt64(bitPattern: Int64(now)))
+        // (`CAMP_DRIFT_SCALE` makes them come faster: tests)
+        guard alive < cap, rng.chance(0.035 * Settings.shared.pace * (Double(ProcessInfo.processInfo.environment["CAMP_DRIFT_SCALE"] ?? "") ?? 1)) else { return }
+        guard let p = spot(&rng) else { return }
+        let f = fraction(p)
+        state.drift.append(Drift(fx: Double(f.x), fy: Double(f.y), kind: rng.chance(0.75) ? 0 : 1, born: now))
         version += 1
         onChange?()
     }

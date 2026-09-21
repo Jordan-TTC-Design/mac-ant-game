@@ -212,6 +212,10 @@ final class Colony {
             lifeTimer = 30
             let strip = scene.isStrip // (a strip grows no saplings of its own: they would be drawn at the camp window's size)
             life.advance(spot: { strip ? nil : scene.freeSpot(&$0, $1) }, fraction: { scene.fraction($0) })
+            if strip { // ...but now and then a log falls or a stone shows, so wood and stone come back
+                let alive = scene.resourceSpots().count
+                life.addDrift(alive: alive, cap: max(6, Int(scene.world.width * scene.world.height / 4200)), spot: { scene.driftSpot(&$0) }, fraction: { scene.fraction($0) })
+            }
         }
     }
 
@@ -983,8 +987,9 @@ final class Colony {
             let trees = scene.resourceSpots().filter { $0.kind == .tree }.count
             let roll = Double.random(in: 0..<1)
             // the fewer trees are left, the less likely one falls (and never below six)
-            let plenty = min(1, Double(trees - 6) / 8)
-            if roll < (strong ? 0.68 : 0.58) * plenty, trees > 6 {
+            let floor = scene.isStrip ? 1 : 6 // (a strip has few: it may run low, and new logs turn up)
+            let plenty = min(1, Double(trees - floor) / (scene.isStrip ? 3 : 8))
+            if roll < (strong ? 0.68 : 0.58) * plenty, trees > floor {
                 items.append(("scrap_wood", Int.random(in: 3...6) + (strong ? 1 : 0)))
                 message = "砍倒了一棵樹"
                 if spot.planted { life.fellPlanting(nearFraction: scene.fraction(spot.foot)) } else { life.cut(kind: 0, at: scene.fraction(spot.foot)) }

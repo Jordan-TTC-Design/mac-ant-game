@@ -847,7 +847,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 after(start + 5 + Double(k) * step) {
                     let c = self.colony
-                    log("  memory: \(c.lifeReport)")
+                    log("  memory: \(c.lifeReport) | drift \(c.life?.state.drift.count ?? 0), wood spots \(c.scene?.resourceSpots().filter { $0.kind == .tree }.count ?? 0)")
                     let outside = c.ants.filter { a in !a.isHidden && !c.walkable.contains { $0.insetBy(dx: -8, dy: -8).contains(a.pos) } }.count
                     let far = c.ants.filter { a in !a.isHidden }.map { a in c.walkable.map { r in hypot(max(r.minX - a.pos.x, 0, a.pos.x - r.maxX), max(r.minY - a.pos.y, 0, a.pos.y - r.maxY)) }.min() ?? 0 }.max() ?? 0
                     log("mode \(mode): walkable \(c.walkable.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" }), nest \(String(describing: c.nest)), goblins \(c.ants.count) out \(c.ants.filter { !$0.isHidden }.count), outside the range \(outside) (furthest \(Int(far)) away), scene \(c.scene == nil ? "none" : "yes, camp at \(c.scene!.campNest)")")

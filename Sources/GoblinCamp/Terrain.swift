@@ -191,6 +191,39 @@ final class TerrainScene {
             + plantedSolids.filter { near.contains($0.center) } as [Obstacle]
     }
 
+    // MARK: What turns up on a strip
+
+    /// The logs and stones that have arrived on the path since the place was made, that nobody has taken.
+    var driftItems: [(item: TerrainItem, kind: Int)] {
+        guard isStrip, let life else { return [] }
+        return life.state.drift.compactMap { d in
+            let foot = point(d.fx, d.fy)
+            if cut(at: foot) != nil { return nil }
+            return (TerrainItem(sprite: d.kind == 0 ? "log-\(biome.rawValue)" : "rock-\(biome.rawValue)-0", foot: foot), d.kind)
+        }
+    }
+
+    /// A free place at the back of the path for something new to lie (not in a pond, not on the camp).
+    func driftSpot(_ rng: inout TerrainRandom) -> CGPoint? {
+        guard let edge = stripEdge else { return nil }
+        let horizontal = edge == .bottom
+        let length = horizontal ? world.width : world.height, across = horizontal ? world.height : world.width
+        for _ in 0..<30 {
+            let u = CGFloat(rng.range(24, Double(max(30, length - 24)))), v = CGFloat(rng.range(Double(across * 0.6), Double(across - 3)))
+            let p: CGPoint
+            switch edge {
+            case .bottom: p = CGPoint(x: world.minX + u, y: world.minY + v)
+            case .right: p = CGPoint(x: world.maxX - v, y: world.minY + u)
+            case .left: p = CGPoint(x: world.minX + v, y: world.minY + u)
+            }
+            if ponds.contains(where: { $0.picture.insetBy(dx: -6, dy: -6).contains(p) }) { continue }
+            if solids.contains(where: { $0.blocks(p, margin: 6) }) { continue }
+            if hypot(p.x - campNest.x, p.y - campNest.y) < 60 { continue }
+            return p
+        }
+        return nil
+    }
+
     // MARK: The tents
 
     /// Where a goblin steps into each tent that is up: just in front of it (outside the tent's own bulk, so it can be reached).
@@ -245,6 +278,10 @@ final class TerrainScene {
         for solid in solids where solid.resource != 0 && solid.unlock <= growth && !isCut(solid) {
             guard let foot = solid.foot, visible(foot) else { continue }
             spots.append(ResourceSpot(id: id(foot), kind: solid.resource == 1 ? .tree : .rock, foot: foot, standAt: stand(foot, solid.radius), planted: false))
+        }
+        for (drift, kind) in driftItems {
+            guard visible(drift.foot) else { continue }
+            spots.append(ResourceSpot(id: id(drift.foot), kind: kind == 0 ? .tree : .rock, foot: drift.foot, standAt: stand(drift.foot, kind == 0 ? 6 : 8), planted: false))
         }
         if let life {
             let now = clock ?? TerrainClock.now
@@ -934,7 +971,7 @@ final class TerrainScene {
 
         // flat things first: the soft patches, the trampled earth round the camp
         for patch in patches { paintBlob(patch.center, patch.rx, patch.ry, patch.color, shadow: patch.color, feather: true) }
-        if !isStrip { paintSnow(amount: snowAmount(at: x)) }
+        if isStrip { paintStripSnow(amount: snowAmount(at: x)) } else { paintSnow(amount: snowAmount(at: x)) }
         if var clearing {
             clearing.radius *= CGFloat(min(1, 0.3 + Double(growth) / 110)) // the trampled earth spreads as the camp grows
             let earth = [NSColor(calibratedRed: 0.5, green: 0.38, blue: 0.24, alpha: 1), NSColor(calibratedRed: 0.45, green: 0.34, blue: 0.21, alpha: 1), NSColor(calibratedRed: 0.55, green: 0.43, blue: 0.28, alpha: 1)]
@@ -998,7 +1035,7 @@ final class TerrainScene {
         for pond in ponds { if let image = pond.image(frozen: frozen) { ctx.draw(image, in: pond.picture) } }
         drawFarm(in: ctx)
         for item in lying where item.unlock <= growth && !(isStrip && item.sprite.hasPrefix("log-") && cut(at: item.foot) != nil) { draw(item, in: ctx, season: x) }
-        for item in plantedItems.lying + stumps + seasonalCampItems(at: x) { draw(item, in: ctx, season: x) }
+        for item in plantedItems.lying + stumps + seasonalCampItems(at: x) + driftItems.map(\.item) { draw(item, in: ctx, season: x) }
         for item in (trees).sorted(by: { $0.foot.y > $1.foot.y }) { draw(item, in: ctx, season: x) }
 
         // the light of the hour over all of it
@@ -1137,6 +1174,25 @@ final class TerrainScene {
             guard renderBounds.insetBy(dx: -60, dy: -60).contains(c) else { continue } // (off the screen)
             let alpha = CGFloat(min(0.85, 0.3 + amount * 0.55))
             paintBlob(CGPoint(x: c.x, y: c.y - 2), rx + 2, ry + 1, NSColor(calibratedRed: 0.62, green: 0.74, blue: 0.9, alpha: alpha * 0.7), shadow: NSColor(calibratedRed: 0.62, green: 0.74, blue: 0.9, alpha: alpha * 0.7), feather: true)
+            paintBlob(c, rx, ry, NSColor(calibratedRed: 0.98, green: 0.99, blue: 1, alpha: alpha), shadow: NSColor(calibratedRed: 0.9, green: 0.95, blue: 1, alpha: alpha), feather: true)
+        }
+    }
+
+    /// Snow lying on a strip's path: low drifts along it, thicker toward the back, more of them the deeper the winter.
+    private func paintStripSnow(amount: Double) {
+        guard amount > 0.02 else { return }
+        var rng = TerrainRandom(seed: seed &+ 999)
+        let horizontal = stripEdge == .bottom
+        let length = horizontal ? world.width : world.height, across = horizontal ? world.height : world.width
+        let count = Int(amount * Double(length) / 9)
+        for _ in 0..<count {
+            let along = CGFloat(rng.next()) * length, depth = CGFloat(rng.next()) * across
+            let c = horizontal ? CGPoint(x: world.minX + along, y: world.minY + depth) : CGPoint(x: world.minX + depth, y: world.minY + along)
+            let r = CGFloat(rng.range(8, 22))
+            let rx = horizontal ? r : r * 0.5, ry = horizontal ? r * 0.32 : r * 0.9
+            guard renderBounds.insetBy(dx: -40, dy: -40).contains(c) else { continue }
+            let alpha = CGFloat(min(0.85, 0.35 + amount * 0.5))
+            paintBlob(CGPoint(x: c.x, y: c.y - 1), rx + 1.5, ry + 1, NSColor(calibratedRed: 0.62, green: 0.74, blue: 0.9, alpha: alpha * 0.7), shadow: NSColor(calibratedRed: 0.62, green: 0.74, blue: 0.9, alpha: alpha * 0.7), feather: true)
             paintBlob(c, rx, ry, NSColor(calibratedRed: 0.98, green: 0.99, blue: 1, alpha: alpha), shadow: NSColor(calibratedRed: 0.9, green: 0.95, blue: 1, alpha: alpha), feather: true)
         }
     }

@@ -345,7 +345,23 @@ final class AntView: NSView {
         let local = CGRect(x: rect.minX - origin.x, y: rect.minY - origin.y, width: rect.width, height: rect.height)
         guard bounds.intersects(local) else { return }
         Scenery.drawStrip(tile, in: local, side: rangeSide, into: ctx)
-        if let scene = colony.scene, scene.isStrip { drawStripScene(scene, ctx: ctx) }
+        if let scene = colony.scene, scene.isStrip {
+            tintStripForest(scene, strip: rect)
+            drawStripScene(scene, ctx: ctx)
+        }
+    }
+
+    /// The seasons over the strip's forest (just the forest: the camp stands over it in its own colours): a light frost in winter, orange
+    /// leaves in autumn, a little frost in early spring. Winter's snow lies on the path (see `TerrainScene.paintStripSnow`).
+    private func tintStripForest(_ scene: TerrainScene, strip: CGRect) {
+        guard scene.life != nil else { return }
+        let x = scene.seasonPosition
+        let tint: (NSColor, CGFloat)? = x >= 3.0 ? (NSColor(calibratedRed: 0.88, green: 0.94, blue: 1, alpha: 1), 0.24)
+            : x >= 2.1 ? (NSColor(calibratedRed: 0.92, green: 0.5, blue: 0.1, alpha: 1), CGFloat(min(0.34, (x - 2.1) * 0.7)))
+            : x < 0.4 ? (NSColor(calibratedRed: 0.9, green: 0.96, blue: 1, alpha: 1), CGFloat((0.4 - x) * 0.6)) : nil
+        guard let (color, alpha) = tint, alpha > 0.01 else { return }
+        color.withAlphaComponent(alpha).setFill()
+        NSRect(x: strip.minX - origin.x, y: strip.minY - origin.y, width: strip.width, height: strip.height).fill(using: .sourceAtop) // (only over the forest, not the empty screen)
     }
 
     private var stripCache: (key: String, image: CGImage)?
@@ -366,18 +382,7 @@ final class AntView: NSView {
             ctx.restoreGState()
         }
         for pond in scene.ponds { drawPond(pond) }
-        // the seasons over the strip's forest: snow in winter, orange leaves in autumn, a little frost in early spring
-        if scene.life != nil, let strip = rangeRect {
-            let x = scene.seasonPosition
-            // (stronger than in the camp window: here the whole strip is forest, and it has to read as winter or autumn at a glance)
-            let tint: (NSColor, CGFloat)? = x >= 3.0 ? (NSColor(calibratedRed: 0.96, green: 0.98, blue: 1, alpha: 1), 0.42)
-                : x >= 2.1 ? (NSColor(calibratedRed: 0.92, green: 0.5, blue: 0.1, alpha: 1), CGFloat(min(0.34, (x - 2.1) * 0.7)))
-                : x < 0.4 ? (NSColor(calibratedRed: 0.95, green: 0.98, blue: 1, alpha: 1), CGFloat((0.4 - x) * 0.8)) : nil
-            if let (color, alpha) = tint, alpha > 0.01 {
-                color.withAlphaComponent(alpha).setFill() // (only over what is there, not the empty screen: `.sourceAtop`)
-                NSRect(x: strip.minX - origin.x, y: strip.minY - origin.y, width: strip.width, height: strip.height).fill(using: .sourceAtop)
-            }
-        }
+
     }
 
     /// Seven-segment digit layouts: top, top-left, top-right, middle, bottom-left, bottom-right, bottom.
