@@ -1,0 +1,151 @@
+/**
+ * The rules of holding land in the big world (WORLD.md §3, §6): when a camp may open the big world, how cells are taken and
+ * held, nests on held cells, towns, how long a party walks, and the protection a camp gets after losing.
+ */
+import { cellDistance, type CellId } from "./grid.ts";
+
+// --- opening the big world ---------------------------------------------------------------------------------------
+
+/** A camp may open the big world once it has ever had this many residents (the camp's third and last look). */
+export const WORLD_UNLOCK_PEAK = 90;
+
+export function canOpenWorld(peakResidents: number): boolean {
+  return peakResidents >= WORLD_UNLOCK_PEAK;
+}
+
+// --- holding cells -------------------------------------------------------------------------------------------------
+
+/** Residents that must live on a cell to hold it (more hold it better). */
+export const GARRISON_MIN = 5;
+/** Most residents one cell can house (the camp itself has its own, larger, limit). */
+export const CELL_CAPACITY = 30;
+
+/** The state of one cell the server keeps (a cell nobody touched is not stored: see contents.ts). */
+export interface CellState {
+  cell: CellId;
+  /** The player who holds it, or null. */
+  owner: string | null;
+  /** Residents living there (ids). */
+  garrison: string[];
+  /** A nest built there, and when it was finished (null while building or none). */
+  nest: { builtAt: string | null; startedAt: string } | null;
+  /** A town (needs TOWN_MIN_CELLS held cells). */
+  town: boolean;
+  /** When the lair that was here was cleared (it comes back after its respawn time), if it was. */
+  clearedAt: string | null;
+}
+
+export type OccupyRefusal = "held" | "lair" | "too_few" | "too_many" | "not_open" | "shielded";
+
+/**
+ * Whether a camp may move `settlers` residents onto a cell. A cell is free if nobody holds it and its lair (if any) has been
+ * cleared (and has not come back). A camp that has not opened the big world, or is shielded after a loss, cannot.
+ */
+export function checkOccupy(options: {
+  cell: CellState | null;
+  hasLair: boolean;
+  lairBack: boolean;
+  settlers: number;
+  player: PlayerWorldState;
+}): OccupyRefusal | null {
+  const { cell, settlers, player } = options;
+  if (!player.open) return "not_open";
+  if (player.shieldedSince) return "shielded";
+  if (cell?.owner) return "held";
+  if (options.hasLair && (!cell?.clearedAt || options.lairBack)) return "lair";
+  if (settlers < GARRISON_MIN) return "too_few";
+  if (settlers > CELL_CAPACITY) return "too_many";
+  return null;
+}
+
+/** How many cells a camp could hold with this many residents to spare (every held cell needs its garrison). */
+export function maxCells(spareResidents: number): number {
+  return Math.max(0, Math.floor(spareResidents / GARRISON_MIN));
+}
+
+// --- nests on held cells ------------------------------------------------------------------------------------------
+
+/** What a nest costs (material ids the camp already collects) and how long it takes. */
+export const NEST_COST: Record<string, number> = { scrap_wood: 30, scrap_iron: 10, scrap_rag: 10 };
+export const NEST_BUILD_HOURS = 2;
+/** A cell with a finished nest raises a new resident this often, until it is full. */
+export const NEST_SPAWN_MINUTES = 30;
+
+export function canAfford(have: Record<string, number>, cost: Record<string, number>): boolean {
+  return Object.entries(cost).every(([id, n]) => (have[id] ?? 0) >= n);
+}
+
+export function nestReady(nest: CellState["nest"], now: Date): boolean {
+  if (!nest) return false;
+  return now.getTime() - new Date(nest.startedAt).getTime() >= NEST_BUILD_HOURS * 3_600_000;
+}
+
+/** New residents a finished nest has raised between two times (whole ones only), not past the cell's room. */
+export function nestBirths(since: Date, now: Date, garrison: number): number {
+  const births = Math.floor((now.getTime() - since.getTime()) / (NEST_SPAWN_MINUTES * 60_000));
+  return Math.max(0, Math.min(births, CELL_CAPACITY - garrison));
+}
+
+// --- towns ---------------------------------------------------------------------------------------------------------
+
+/** A town can be built once the camp holds this many cells (castles come later). */
+export const TOWN_MIN_CELLS = 4;
+export const TOWN_COST: Record<string, number> = { scrap_wood: 120, scrap_iron: 60, scrap_rag: 40, crystal_shard: 2 };
+
+export function canBuildTown(heldCells: number, have: Record<string, number>, alreadyTown: boolean): boolean {
+  return !alreadyTown && heldCells >= TOWN_MIN_CELLS && canAfford(have, TOWN_COST);
+}
+
+// --- walking there --------------------------------------------------------------------------------------------------
+
+/** A party walks this many minutes per kilometre, plus a few to set out, and never more than the cap (WORLD.md §5). */
+export const MINUTES_PER_KM = 4;
+export const SETOUT_MINUTES = 3;
+export const MAX_TRAVEL_MINUTES = 180;
+
+/** How long a party takes between two cells; `speed` is the slowest member's pace (carrots help). */
+export function travelMinutes(from: CellId, to: CellId, speed = 1): number {
+  const km = cellDistance(from, to) / 1000;
+  const minutes = Math.min(MAX_TRAVEL_MINUTES, SETOUT_MINUTES + km * MINUTES_PER_KM);
+  return Math.max(1, Math.round(minutes / Math.max(0.2, speed)));
+}
+
+// --- losing, and the protection that follows -----------------------------------------------------------------------
+
+/**
+ * A player's standing in the big world. After losing a battle a camp "turtles": it goes back to its camp, and nobody can
+ * attack its camp or any of its cells until it opens the big world again (decided 2026-09-27: protect everything for now).
+ * Against someone losing on purpose to hide, a camp is only shielded again once SHIELD_COOLDOWN_HOURS have passed since the
+ * last shield ended (a proposal, WORLD.md §11).
+ */
+export interface PlayerWorldState {
+  open: boolean;
+  /** When the current shield began, or null. */
+  shieldedSince: string | null;
+  /** When the last shield ended, or null. */
+  lastShieldEnded: string | null;
+}
+
+export const SHIELD_COOLDOWN_HOURS = 12;
+
+export function afterDefeat(state: PlayerWorldState, now: Date): PlayerWorldState {
+  const last = state.lastShieldEnded ? new Date(state.lastShieldEnded).getTime() : -Infinity;
+  if (now.getTime() - last < SHIELD_COOLDOWN_HOURS * 3_600_000) return state; // shielded too recently: no shield this time
+  return { open: false, shieldedSince: now.toISOString(), lastShieldEnded: state.lastShieldEnded };
+}
+
+/** The player opens the big world (again): the shield, if any, ends. */
+export function openWorld(state: PlayerWorldState, now: Date): PlayerWorldState {
+  return { open: true, shieldedSince: null, lastShieldEnded: state.shieldedSince ? now.toISOString() : state.lastShieldEnded };
+}
+
+export type AttackRefusal = "own" | "you_closed" | "target_shielded" | "target_closed";
+
+/** Whether `attacker` may send a party against something `target` holds. Everyone may attack everyone (teams come later). */
+export function checkAttack(attackerId: string, attacker: PlayerWorldState, targetId: string, target: PlayerWorldState): AttackRefusal | null {
+  if (attackerId === targetId) return "own";
+  if (!attacker.open || attacker.shieldedSince) return "you_closed";
+  if (target.shieldedSince) return "target_shielded";
+  if (!target.open) return "target_closed";
+  return null;
+}
