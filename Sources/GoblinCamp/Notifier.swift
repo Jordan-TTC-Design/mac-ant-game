@@ -82,6 +82,8 @@ enum Interaction {
     case decision
     /// Claude is done: type a reply, or go and look.
     case reply
+    /// A sticky note's reminder: 知道了, later, or tomorrow.
+    case reminder
 }
 
 struct Message {

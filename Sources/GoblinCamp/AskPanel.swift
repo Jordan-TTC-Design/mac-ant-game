@@ -9,8 +9,10 @@ enum AskAnswer {
     case look
     /// Allow it, and let this kind of thing through for the rest of the conversation.
     case allowAndRemember
-    /// Closed without an answer.
+    /// Closed without an answer (for a sticky note's reminder: 知道了).
     case dismiss
+    /// A sticky note's reminder: come back at this time.
+    case remindAgain(Date)
 }
 
 /// A button drawn by hand, so its label is always readable whatever the system appearance is (dark mode made the
@@ -73,10 +75,15 @@ final class AskPanel: NSPanel {
         let textWidth = width(for: message) - padding * 2
         var height = padding * 2 + 16 // title
         height += textHeight(message.text, font: .systemFont(ofSize: 14, weight: .semibold), width: textWidth) + 4
-        if !message.displayContext.isEmpty { height += textHeight(message.displayContext, font: .monospacedSystemFont(ofSize: 11, weight: .regular), width: textWidth, lines: 4) + 4 }
+        if !message.displayContext.isEmpty { height += textHeight(message.displayContext, font: contextFont(for: message), width: textWidth, lines: 4) + 4 }
         height += message.interaction == .reply ? 28 + 8 : 0
         height += 28 + 4 // button row
         return NSSize(width: width(for: message), height: ceil(height))
+    }
+
+    /// What Claude wants to run is code; what a sticky note says is not.
+    private static func contextFont(for message: Message) -> NSFont {
+        message.interaction == .reminder ? .systemFont(ofSize: 12, weight: .regular) : .monospacedSystemFont(ofSize: 11, weight: .regular)
     }
 
     private static func textHeight(_ string: String, font: NSFont, width: CGFloat, lines: Int = 6) -> CGFloat {
@@ -128,7 +135,7 @@ final class AskPanel: NSPanel {
         y -= mainHeight + 4
         root.addSubview(label(message.text, font: mainFont, color: NSColor(calibratedWhite: 0.12, alpha: 1), frame: NSRect(x: padding, y: y, width: textWidth, height: mainHeight)))
         if !message.displayContext.isEmpty {
-            let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            let font = AskPanel.contextFont(for: message)
             let h = AskPanel.textHeight(message.displayContext, font: font, width: textWidth, lines: 4)
             y -= h + 4
             root.addSubview(label(message.displayContext, font: font, color: NSColor(calibratedWhite: 0.38, alpha: 1), frame: NSRect(x: padding, y: y, width: textWidth, height: h), lines: 4))
@@ -156,6 +163,10 @@ final class AskPanel: NSPanel {
             list += [("拒絕", red, .white, { [weak self] in self?.onAnswer(.deny) }),
                      ("自己去看", grey, ink, { [weak self] in self?.onAnswer(.look) })]
             specs = list
+        } else if message.interaction == .reminder {
+            specs = [("知道了", green, .white, { [weak self] in self?.onAnswer(.dismiss) }),
+                     ("10 分鐘後", grey, ink, { [weak self] in self?.onAnswer(.remindAgain(Date().addingTimeInterval(600))) }),
+                     ("明天", grey, ink, { [weak self] in self?.onAnswer(.remindAgain(NoteTime.at(hour: 9, days: 1))) })]
         } else {
             specs = [("送出", green, .white, { [weak self] in self?.sendReply() }),
                      ("自己去看", grey, ink, { [weak self] in self?.onAnswer(.look) }),

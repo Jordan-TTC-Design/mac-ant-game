@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Whether windows can be put on chosen desktops at all (else the goblins are hidden by not drawing them).
     private var spaceAssignWorks = true
     private let colony = Colony()
+    /// The sticky notes on the desktop (each with a goblin of its own).
+    private let notes = NoteController()
     private let settings = Settings.shared
     private var frameTimer: Timer?
     private var lastTick = Date()
@@ -98,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !message.silent { GoblinVoice.shared.speak(message.text, as: message.speaker, level: self.settings.notifyVolume) }
         }
         colony.pomodoro.onEvent = { [weak self] event in self?.pomodoroEvent(event) }
+        notes.onReminder = { [weak self] note in self?.showNoteReminder(note) ?? false }
+        notes.start()
         setupMenuBar()
         rebuildOverlays()
         startFullscreenWatch()
@@ -265,6 +269,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let rep = NSBitmapImageRep(cgImage: cg)
                 if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-roster.png")) }
                 log("roster captured \(cg.width)x\(cg.height)")
+            }
+        }
+        if let prefix = env["CAMP_TEST_NOTES"] { // one note in each mood, drawn into PNGs; one reminder that fires after 4 s
+            let now = Date()
+            let specs: [(String, (inout StickyNote) -> Void)] = [
+                ("idle", { $0.text = "買咖啡豆\n回信給設計師"; $0.color = "yellow" }),
+                ("soon", { $0.text = "週會簡報要準備好"; $0.dueAt = now.addingTimeInterval(1500); $0.color = "pink" }),
+                ("late", { $0.text = "交出設計稿！"; $0.dueAt = now.addingTimeInterval(-600); $0.color = "blue" }),
+                ("done", { $0.text = "修好登入的 bug"; $0.done = true; $0.color = "green"; $0.dueAt = now }),
+                ("ringing", { $0.text = "打電話給廠商"; $0.remindAt = now.addingTimeInterval(-60); $0.remindFired = true; $0.color = "purple" }),
+                ("remind", { $0.text = "站起來喝水"; $0.remindAt = now.addingTimeInterval(4); $0.color = "yellow"; $0.breed = "brute" }),
+            ]
+            let area = NSScreen.screens[0].visibleFrame
+            for (i, (name, body)) in specs.enumerated() {
+                let note = notes.newNote(at: NSPoint(x: area.minX + 30 + CGFloat(i) * 230, y: area.minY + 60), edit: false)
+                notes.change(note.id, body)
+                after(3) {
+                    guard let view = self.notes.view(note.id), let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return log("note \(name): no view") }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-\(name).png")) }
+                    log("note \(name): mood \(view.mood), drawn")
+                }
+            }
+            if let first = notes.store.live.first { // write on the first note the way a double-click does, then click elsewhere
+                after(3.5) {
+                    guard let view = self.notes.view(first.id), let window = view.window else { return }
+                    view.beginEditing()
+                    view.editor?.insertText("（加一行）", replacementRange: NSRange(location: (view.editor!.string as NSString).length, length: 0))
+                    log("editing: \(view.editor != nil), key: \(window.isKeyWindow)")
+                    window.resignKey()
+                    self.notes.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification, object: window))
+                    log("after writing: \(self.notes.store.note(first.id)?.text.replacingOccurrences(of: "\n", with: " / ") ?? "?"), still editing: \(view.editor != nil)")
+                }
+            }
+            if env["CAMP_TEST_NOTES_FOCUS"] != nil { // focus mode from 2 s to 8 s: the reminder must wait for it
+                after(2) { self.setMode(.focus); log("focus on") }
+                after(6) { log("in focus: reminder popup on screen = \(self.colony.stage.current?.interaction == .reminder)") }
+                after(8) { self.setMode(nil); log("focus off") }
+            }
+            for t in [5.5, 9.5, 12.0] {
+                after(t) { log("t=\(t): popup = \(self.colony.stage.current.map { "\($0.interaction.map { "\($0)" } ?? "plain") \($0.phase) \($0.name)" } ?? "none"), panel = \(self.askPanel != nil)") }
             }
         }
         if env["CAMP_TEST_HIDE"] != nil { // hide for 2 s, and check the windows and the clock (CAMP_TEST_HIDE_AT = when, default 3 s)
@@ -957,6 +1002,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // tools you reach for while you work
         menu.addItem(pomodoroMenu())
+        menu.addItem(notesMenu())
         alertScreenItem = NSMenuItem(title: "提醒顯示的螢幕（番茄鐘與通知）", action: nil, keyEquivalent: "")
         alertScreenItem.submenu = NSMenu(title: "提醒顯示的螢幕")
         menu.addItem(group("Claude Code", [claudeConnectMenu(), notifyMenu(), .separator(), alertScreenItem]))
@@ -1264,6 +1310,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return (Speakers.common, 0, "")
     }
 
+    // MARK: Sticky notes
+
+    static let noteAskPrefix = "note-"
+
+    /// A note's reminder is due: its goblin jumps out and says so, with 知道了 / 10 分鐘後 / 明天 on the bubble.
+    /// Not in focus mode (a reminder in the middle of a meeting would be odd): it stays due and comes when focus mode ends.
+    private func showNoteReminder(_ note: StickyNote) -> Bool {
+        let askID = AppDelegate.noteAskPrefix + note.id
+        guard !isSilenced, !colony.stage.isFull, !colony.stage.hasAsk(askID) else { return false }
+        let character = Characters.current
+        let speaker = Speakers.forBreed(note.breed)
+        let firstLines = note.text.split(whereSeparator: \.isNewline).prefix(3).joined(separator: "\n")
+        let lines = ["時間到啦！便利貼上的事！", "嘿！該做這件事囉！", "叮叮叮！提醒你一下！"]
+        var message = Message(kind: .permission, speaker: speaker, breedIndex: character.breedIndex(id: note.breed), project: "", appBundleID: nil,
+                              screen: alertScreenFrame(), text: lines.randomElement()!, interaction: .reminder, askID: askID,
+                              context: String((firstLines.isEmpty ? "（空白的便利貼）" : firstLines).prefix(90)), talkTime: 90)
+        message.name = note.goblinName
+        colony.stage.enqueue(message)
+        redrawAll()
+        return true
+    }
+
+    private func notesMenu() -> NSMenuItem {
+        let parent = NSMenuItem(title: "便利貼", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "便利貼")
+        sub.autoenablesItems = false
+        let add = ClosureMenuItem(title: "新增便利貼") { [weak self] in self?.notes.newNote() }
+        add.keyEquivalent = "n"
+        add.keyEquivalentModifierMask = [.control, .option]
+        sub.addItem(add)
+        let raise = ClosureMenuItem(title: "把便利貼叫到最上面") { [weak self] in
+            guard let self else { return }
+            self.notes.setRaised(!self.notes.raised)
+        }
+        raise.keyEquivalent = "m"
+        raise.keyEquivalentModifierMask = [.control, .option]
+        raise.toolTip = "便利貼平常貼在桌面、被視窗蓋住；叫上來之後，切到別的 App 就會回去"
+        raise.stateProvider = { [weak self] in self?.notes.raised ?? false }
+        sub.addItem(raise)
+        sub.addItem(ClosureMenuItem(title: "全部集合到這個螢幕") { [weak self] in self?.notes.gather() })
+        sub.addItem(.separator())
+        let tip = NSMenuItem(title: "雙擊寫字、拖曳移動、右下角調大小、右鍵設定時間", action: nil, keyEquivalent: "")
+        tip.isEnabled = false
+        sub.addItem(tip)
+        parent.submenu = sub
+        return parent
+    }
+
     // MARK: Questions from hooks (answer on the bubble)
 
     private func after(_ seconds: Double, _ block: @escaping () -> Void) { DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: block) }
@@ -1362,6 +1456,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func answered(_ answer: AskAnswer) {
         guard let id = askPanelID else { return }
         let app = colony.stage.current?.appBundleID
+        if id.hasPrefix(AppDelegate.noteAskPrefix) {
+            let noteID = String(id.dropFirst(AppDelegate.noteAskPrefix.count))
+            if case .remindAgain(let date) = answer { notes.snooze(noteID, until: date) } else { notes.acknowledge(noteID) }
+            colony.stage.dismissCurrent()
+            GoblinVoice.shared.stop()
+            askPanel?.orderOut(nil)
+            askPanel = nil
+            askPanelID = nil
+            return
+        }
         switch answer {
         case .allow: finishAsk(id, ["action": "allow"])
         case .allowAndRemember: finishAsk(id, ["action": "allowRemember"])
@@ -1370,7 +1474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .look:
             finishAsk(id, ["action": "none"])
             bringForward(app)
-        case .dismiss: finishAsk(id, ["action": "none"])
+        case .dismiss, .remindAgain: finishAsk(id, ["action": "none"])
         }
         colony.stage.dismissCurrent()
         GoblinVoice.shared.stop()
@@ -1736,6 +1840,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             away = nil
             showReturnSummary(gone)
         }
+        notes.frozen = isFrozen
+        if mode != .focus { notes.checkReminders() } // reminders that waited out focus mode come now
         if wasFrozen, !isFrozen { lastTick = Date() } // do not count the time spent frozen
         wasFrozen = isFrozen
         syncWindows()
@@ -2595,6 +2701,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for (code, mode) in keys {
             let ok = HotKeys.shared.register(keyCode: code) { [weak self] in self?.chooseMode(mode) }
             if !ok, ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: shortcut for key \(code) was not accepted") }
+        }
+        HotKeys.shared.register(keyCode: 45) { [weak self] in self?.notes.newNote() } // ⌃⌥N a new sticky note
+        HotKeys.shared.register(keyCode: 46) { [weak self] in // ⌃⌥M the notes above the windows, and back
+            guard let self else { return }
+            self.notes.setRaised(!self.notes.raised)
         }
     }
 
