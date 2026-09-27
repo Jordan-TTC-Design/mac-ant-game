@@ -15,6 +15,13 @@
       "when": 1790487622868,
       "tag": "0001_users",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790487887142,
+      "tag": "0002_accounts",
+      "breakpoints": true
     }
   ]
 }

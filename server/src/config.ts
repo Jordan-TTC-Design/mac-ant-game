@@ -1,8 +1,15 @@
 import { z } from "zod";
 
 const schema = z.object({
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: z.url(),
   PORT: z.coerce.number().int().positive().default(8787),
+  /** Where the PWA lives; the links in the emails point there, and cookie requests must come from it. */
+  APP_URL: z.url().default("http://localhost:3000"),
+  /** Behind Caddy: take the visitor's address from X-Forwarded-For (never set this when the server faces the internet directly). */
+  TRUST_PROXY: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 export type Config = z.infer<typeof schema>;

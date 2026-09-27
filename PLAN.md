@@ -634,3 +634,14 @@ Characters/<id>/
 - corepack 0.33 無法執行 pnpm 12（找不到 `pnpm.cjs`），所以用 `npx pnpm@12.6.0` 或全域安裝；沒有替使用者全域安裝任何東西。
 - 已驗證：`pnpm typecheck` 通過；`pnpm test` 3 個測試通過（health 正常、資料庫不通時 503、email 欄位是 citext）；實際啟動伺服器，`curl /api/health` 回 200 `{"ok":true,"db":"ok","apiVersion":1}`，開發資料庫裡有 `users` 表。
 
+## 後端階段 1：帳號（2026-09-27）
+- 新資料表：`devices`、`sessions`、`email_tokens`、`invites`（migration `0002_accounts`）。token、邀請碼都只存 SHA-256；密碼 argon2id（OWASP 參數）。
+- API：`/api/auth` 的 register、verify-email、resend-verification、login、logout、me、sessions（列出／登出某台）、forgot-password、reset-password。Mac 用 Bearer token，手機用 HttpOnly cookie（用 cookie 的修改請求要從 APP_URL 的網頁送出）。session 90 天沒用就過期，有用就延長；同一台裝置重新登入會取代舊的。
+- 不透露信箱有沒有註冊：註冊（已註冊的信箱改寄「有人想用你的信箱註冊」，邀請碼不會被用掉）、重寄確認信、忘記密碼都回一樣的 202；登入時不存在的信箱也跑一次密碼雜湊，花的時間一樣；信件不等寄完就回應。
+- 邀請碼：`pnpm invite create [--count N] [--days D]`、`pnpm invite list`；格式 GOBLIN-XXXX-XXXX（易讀字元，輸入小寫、空格都可以）。好友代碼 GOB-XXXXXX（6 碼）。
+- 寄信：`Mailer` 介面，開發時 `ConsoleMailer` 印在終端機，測試用 `MemoryMailer`；Resend 留到部署。
+- 頻率限制在記憶體裡（單一伺服器夠用）。
+- 已驗證：`pnpm typecheck` 通過；`pnpm test` 26 個測試通過（完整流程、錯的／用過的／過期的邀請碼、已註冊信箱不透露、確認連結過期與只能用一次、大小寫、手機 cookie、登入頻率限制、裝置列表與登出別台、不能登出別人的、同裝置重登、90 天過期與延長、cookie 跨站請求被擋、忘記密碼全流程與過期）；實際啟動伺服器，用 `pnpm invite create` 的碼和 curl 從註冊走到登入、列出裝置。
+- 沒做：刪除帳號（DESIGN §3 有寫，之後再做）；真的寄信（Resend）。
+- 測試踩到的坑：階段 0 手動測試時用 `pkill -f "tsx src/index.ts"` 只關到 tsx 外層，裡面的 node 還佔著 8787；要用 `pkill -f "src/index.ts"`。
+

@@ -79,7 +79,7 @@ users (
   email           citext unique not null,
   password_hash   text not null,
   display_name    text not null,           -- 使者上顯示的名字，不顯示信箱
-  friend_code     text unique not null,    -- 例如 GOB-7K2Q，加好友用
+  friend_code     text unique not null,    -- 例如 GOB-7K2QXM，加好友用
   email_verified_at timestamptz,
   created_at      timestamptz not null,
   deleting_at     timestamptz              -- 要求刪除帳號的時間，30 天後清除
@@ -202,7 +202,7 @@ Mac 上已經有的便利貼全部上傳，伺服器上已經有的（例如另�
 
 ### 規則（先求簡單，之後再加玩法）
 
-- **只能派給好友**：用對方的好友代碼（例如 `GOB-7K2Q`）送出邀請，對方同意才成為好友。這樣不會被陌生人騷擾，也不會洩漏信箱。
+- **只能派給好友**：用對方的好友代碼（例如 `GOB-7K2QXM`）送出邀請，對方同意才成為好友。這樣不會被陌生人騷擾，也不會洩漏信箱。
 - **可以派的**：
   - `message`：一句話（最多 200 字）
   - `kudos`：一句「謝啦」「辛苦了」之類的，附一個小圖示
@@ -247,7 +247,7 @@ Mac 上已經有的便利貼全部上傳，伺服器上已經有的（例如另�
 | 階段 | 內容 | 做完可以 |
 |---|---|---|
 | 0 ✅ | pnpm workspace、`server/` `shared/` 骨架、本機用 Docker 跑 PostgreSQL、健康檢查、migration（2026-09-27 完成） | 本機跑得起來 |
-| 1 | 帳號：邀請碼（`pnpm invite create` 產生）、註冊、驗證信（本機先印在終端機）、登入、登出、忘記密碼、頻率限制、測試 | 用 curl 或測試跑完整流程 |
+| 1 ✅ | 帳號（2026-09-27 完成；刪除帳號留到之後）：邀請碼（`pnpm invite create` 產生）、註冊、驗證信（本機先印在終端機）、登入、登出、忘記密碼、頻率限制、測試 | 用 curl 或測試跑完整流程 |
 | 2 | 便利貼同步 API＋WebSocket；Mac 的登入視窗與 `SyncEngine` | 兩台 Mac 之間同步便利貼 |
 | 3 | PWA：登入、便利貼列表與編輯、離線、推播；伺服器的提醒推播 | 手機看、改便利貼，收到提醒 |
 | 4 | 好友與使者：API、Mac 上使者走進來、PWA 收件匣 | 同事之間派使者、送便利貼 |

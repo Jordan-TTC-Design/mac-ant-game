@@ -10,6 +10,7 @@
     "db:down": "docker compose -f server/compose.dev.yml down",
     "dev": "pnpm --filter @goblincamp/server dev",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "invite": "pnpm --filter @goblincamp/server invite"
   }
 }

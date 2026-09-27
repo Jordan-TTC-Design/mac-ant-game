@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./auth.ts";
+
 /** Bumped when the API changes in a way older apps cannot follow. */
 export const API_VERSION = 1;
 
