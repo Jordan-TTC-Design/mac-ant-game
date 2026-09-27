@@ -66,7 +66,7 @@
 ## 怎麼加一種新魔獸
 
 1. 在 `tools/make_monsters.py` 的 `MONSTERS` 加一筆：畫走路的格子與兩個攻擊姿勢（蓄力、出擊，放在走路格子的後面）、寫下 `hp`、`speed`、`radius`、`damage`、`attackEvery`、`attackStyle`、`pack`、`drops`（至少三樣）。
-2. `python3 tools/make_monsters.py --preview out.png` 看圖，然後執行 `./build.sh`。
+2. 在 `mac/` 裡用 `python3 tools/make_monsters.py --preview out.png` 看圖，然後執行 `./build.sh`。
 3. 如果需要新的攻擊風格，在 `Animal.swift` 的 `AttackStyle` 加一種（蓄力與出擊的時間），並在 `AntView.drawCreature` 加它的動作。
 
 使用者也可以自己在 `~/Library/Application Support/GoblinCamp/Animals/` 放資料夾，格式相同。

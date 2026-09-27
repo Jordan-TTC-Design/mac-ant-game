@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Draws the pictures used in README.md (docs/images/*.png) from the game's own sprite sheets.
-Run:  python3 tools/make_readme_art.py [name ...]   (no name = all)"""
+"""Draws the pictures used in README.md (docs/images/*.png at the top of the repo) from the game's own sprite sheets.
+Run:  python3 mac/tools/make_readme_art.py [name ...]   (no name = all)"""
 import math
 import os
 import random
@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pixelart import *  # noqa: E402,F401
 
-OUT = os.path.join(ROOT, "docs", "images")
+OUT = os.path.join(ROOT, "..", "docs", "images")  # ROOT is mac/; the README and its pictures are at the top
 GOLD, DARK = (255, 216, 92, 255), (64, 34, 12, 255)
 WHITE = (255, 255, 255, 255)
 

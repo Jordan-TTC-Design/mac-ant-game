@@ -40,7 +40,7 @@
 - **Claude 通知**：Claude Code 需要你決定、或做完事情時，哥布林（有時是公主）跳出來，用各自的聲音與語氣告訴你；**泡泡上可以直接按允許／拒絕、輸入回覆**，或是自己去看。
 - **四種狀態**：全開、工作（營地在背景跑）、節能（營地暫停）、專注（完全靜音），可以用快捷鍵一鍵切換；全螢幕影片或簡報時自動專注。
 
-> 前身是「螞蟻農場 AntFarm」，現在專心做哥布林（螞蟻版已移除）。所有圖片都由專案自己的精靈圖與 `tools/make_readme_art.py` 產生。
+> 前身是「螞蟻農場 AntFarm」，現在專心做哥布林（螞蟻版已移除）。所有圖片都由專案自己的精靈圖與 `mac/tools/make_readme_art.py` 產生。
 
 ## 快速開始
 
@@ -51,8 +51,11 @@
 
 ### 建置與執行
 
+Mac App 的程式都在 `mac/` 資料夾（後端在 `server/`，見下方「專案結構」）：
+
 ```bash
-./build.sh          # 快速建置，產生 GoblinCamp.app（只給這台 Mac 用）
+cd mac
+./build.sh          # 快速建置，產生 mac/GoblinCamp.app（只給這台 Mac 用）
 open GoblinCamp.app
 ```
 
@@ -61,6 +64,7 @@ open GoblinCamp.app
 ### 分享給別人
 
 ```bash
+cd mac
 ./build.sh --release   # 同時支援 Apple Silicon 與 Intel，並產生 dist/GoblinCamp-<版本>.zip
 ```
 
@@ -81,10 +85,10 @@ open GoblinCamp.app
 
 App 會自己更新，不用再傳 zip 給每個人。
 
-發布新版（你這邊）。以 0.9.0 為例：
+發布新版（你這邊）。以 0.9.0 為例，以下指令都在 `mac/` 資料夾裡執行：
 
 ```bash
-# 1. 改 Resources/Info.plist 的 CFBundleShortVersionString（0.9.0）與 CFBundleVersion（9）
+# 1. 改 mac/Resources/Info.plist 的 CFBundleShortVersionString（0.9.0）與 CFBundleVersion（9）
 
 # 2. 打包：產生 dist/GoblinCamp-0.9.0.zip 與 dist/version.json
 ./build.sh --release "這次改了什麼"
@@ -283,7 +287,7 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 - `timeout` 是這個 hook 最多等多久（秒），要比選單的「等你回覆多久」長。
 - 測試：先開著哥布林營地，在終端機執行
   `echo '{"cwd":"/path/to/project","tool_name":"Bash","tool_input":{"command":"ls"}}' | /Applications/GoblinCamp.app/Contents/MacOS/GoblinCamp --hook ask permission`，右上角會有哥布林問你能不能執行；按「允許」，終端機會印出一行 JSON。
-- 專案裡的 `tools/goblin-notify.sh`、`tools/goblin-ask.sh` 只是舊設定用的轉接腳本，效果一樣。
+- 專案裡的 `mac/tools/goblin-notify.sh`、`mac/tools/goblin-ask.sh` 只是舊設定用的轉接腳本，效果一樣。
 
 **通訊方式**：hook 是遊戲執行檔的小幫手模式（`GoblinCamp --hook …`，不需要 Python 或其他工具），用 `goblincamp://notify` / `goblincamp://ask` 交給執行中的遊戲，問答則在 `~/Library/Application Support/GoblinCamp/replies/` 用一次性編號的檔案傳答案（收到確認 4 秒內沒有就放棄，不會讓 Claude Code 卡住）。遊戲沒開時它什麼都不做。每次 `./build.sh` 會重新向系統登記 `goblincamp://`。
 
@@ -379,75 +383,78 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
 ### 專案結構
 
 ```
-├── Package.swift
-├── build.sh                    # 編譯並組出 GoblinCamp.app（含角色、營地與 App 圖示）
+├── README.md、PLAN.md、*.md       # 文件（整個專案共用）
 ├── docs/images/                # README 的封面與說明圖（點陣風）
-├── Resources/
-│   ├── Info.plist              # LSUIElement（沒有 Dock 圖示）、bundle id、圖示
-│   ├── AppIcon.icns            # App 圖示（由 tools/make_icons.py 產生）
-│   ├── Characters/goblin/      # 內建角色：五個品種的哥布林、公主、頭像（由 tools/make_goblin.py 產生）
-│   ├── Camps/                  # 四種預設營地，各三個成長階段（由 tools/make_camps.py 產生）
-│   ├── Scenery/                # 森林、草地、營地視窗草地（由 tools/make_scenery.py 產生）
-│   ├── Terrain/                # 營地視窗四種主題的地面、樹、石頭、營地小物、會長大的樹（由 tools/make_terrain.py 產生）
-│   └── Animals/                # 雞、羊、豬與魔獸（史萊姆、巨鼠）（由 tools/make_animals.py、make_monsters.py 產生）
-├── tools/
-│   ├── make_goblin.py          # 用程式畫哥布林各品種、公主與頭像，輸出精靈圖與 manifest.json
-│   ├── make_camps.py           # 畫預設營地
-│   ├── make_scenery.py         # 畫森林、草地與營地視窗的草地（Resources/Scenery）
-│   ├── make_animals.py         # 畫雞、羊、豬
-│   ├── make_monsters.py        # 畫魔獸（史萊姆、巨鼠）的走路與攻擊姿勢，寫下血量與掉落
-│   ├── make_terrain.py         # 畫營地視窗的地形與營地小物（Resources/Terrain）
-│   ├── pixelart.py             # README 圖片用的點陣繪圖小工具
-│   ├── make_readme_art.py      # 產生 docs/images 裡的封面與說明圖
-│   ├── goblin-notify.sh        # 舊設定用的轉接腳本（呼叫遊戲的 --hook 模式）
-│   ├── goblin-ask.sh           # 同上，可回答的版本
-│   └── make_icons.py           # 產生 AppIcon.icns
-└── Sources/GoblinCamp/
-    ├── main.swift              # 進入點（先跑舊資料搬家）
-    ├── AppDelegate.swift       # 選單列、覆蓋視窗、主迴圈（30fps，數量多時 20fps）
-    ├── OverlayWindow.swift     # 每個螢幕一個透明、滑鼠可穿透的視窗
-    ├── AntView.swift           # 全部繪製：角色、營地、氣泡、食物、選取圈
-    ├── RosterPanel.swift       # 右側名冊視窗
-    ├── Character.swift         # 角色：讀精靈圖與 manifest、方向與影格、品種清單
-    ├── Camp.swift              # 營地外觀：讀圖與成長階段
-    ├── Breed.swift             # 品種、個體特質、出生時抽品種
-    ├── Colony.swift            # 遊戲狀態：營地、居民、食物、出生與老死、螢幕變化
-    ├── Ant.swift               # 單一居民：漫步、回巢休息、覓食、搬運、老死（名稱沿用 Ant，是「居民」的通稱）
-    ├── Queen.swift             # 公主的狀態機
-    ├── Food.swift              # 食物種類與資料
-    ├── Animal.swift            # 動物與魔獸：資料、走路、追擊、蓄力與出擊、反擊
-    ├── Materials.swift         # 魔獸掉落的素材、稀有度、擲骰子（含所有魔獸都會掉的雜物）
-    ├── Equipment.swift         # 裝備：七個部位、24 款配方、耐久度
-    ├── WorkshopWindow.swift    # 工坊視窗：用素材做武器與裝備
-    ├── Pond.swift              # 池塘：不規則輪廓、小島、石頭、蘆葦；清澈、結冰、混濁三種水
-    ├── Terrain.swift           # 營地視窗的場景：四種主題、由種子生成、烘成一張圖、依季節上色
-    ├── TerrainLife.swift       # 場地持續變化：季節、雨後水窪、樹苗長大、被踩出的小路、補算離線時間
-    ├── Perf.swift              # 效能保護：太卡時減少同時出現的哥布林
-    ├── Notifier.swift          # Claude 通知：說話者（各品種與公主）、泡泡、音效與語音
-    ├── Scenery.swift           # 森林、草地、營地視窗草地（載入與依時間變色）
-    ├── MapWindow.swift         # 獨立的營地視窗
-    ├── Diagnostics.swift       # 最近的顯示／隱藏變化，選單可複製診斷資訊
-    ├── ScreenChoice.swift      # 有多個螢幕時，哥布林可以在哪些螢幕（家、所有、指定）
-    ├── Spaces.swift            # 讀出每個螢幕現在是哪個桌面（全螢幕 App 也算），決定哥布林要不要出現
-    ├── Names.swift             # 哥布林的名字與公主的名字點子
-    ├── ManualWindow.swift      # 說明手冊（選單「說明手冊…」）
-    ├── AskPanel.swift          # 可回答的泡泡（按鈕與輸入框）
-    ├── HookCLI.swift           # Claude Code hook 的小幫手模式（GoblinCamp --hook …）
-    ├── HookInstaller.swift     # 選單一鍵連接 Claude Code：寫腳本、改 settings.json、移除
-    ├── Pomodoro.swift          # 番茄鐘：計時、哥布林舉時鐘
-    ├── Stats.swift             # 每日統計（番茄鐘、通知）
-    ├── HotKeys.swift           # 全域快捷鍵 ⌃⌥1～4
-    ├── Settings.swift          # 選單設定（UserDefaults）與時間格式
-    ├── Persistence.swift       # state.json 存檔
-    ├── NestImageStore.swift    # 自己的營地圖片
-    └── SeededRandom.swift      # 可重現的亂數（個體特質）
+├── server/                     # 後端（帳號、便利貼同步、使者）；設計見 server/DESIGN.md
+└── mac/                        # Mac App（Swift）
+    ├── Package.swift
+    ├── build.sh                    # 編譯並組出 GoblinCamp.app（含角色、營地與 App 圖示）
+    ├── Resources/
+    │   ├── Info.plist              # LSUIElement（沒有 Dock 圖示）、bundle id、圖示
+    │   ├── AppIcon.icns            # App 圖示（由 tools/make_icons.py 產生）
+    │   ├── Characters/goblin/      # 內建角色：五個品種的哥布林、公主、頭像（由 tools/make_goblin.py 產生）
+    │   ├── Camps/                  # 四種預設營地，各三個成長階段（由 tools/make_camps.py 產生）
+    │   ├── Scenery/                # 森林、草地、營地視窗草地（由 tools/make_scenery.py 產生）
+    │   ├── Terrain/                # 營地視窗四種主題的地面、樹、石頭、營地小物、會長大的樹（由 tools/make_terrain.py 產生）
+    │   └── Animals/                # 雞、羊、豬與魔獸（史萊姆、巨鼠）（由 tools/make_animals.py、make_monsters.py 產生）
+    ├── tools/
+    │   ├── make_goblin.py          # 用程式畫哥布林各品種、公主與頭像，輸出精靈圖與 manifest.json
+    │   ├── make_camps.py           # 畫預設營地
+    │   ├── make_scenery.py         # 畫森林、草地與營地視窗的草地（Resources/Scenery）
+    │   ├── make_animals.py         # 畫雞、羊、豬
+    │   ├── make_monsters.py        # 畫魔獸（史萊姆、巨鼠）的走路與攻擊姿勢，寫下血量與掉落
+    │   ├── make_terrain.py         # 畫營地視窗的地形與營地小物（Resources/Terrain）
+    │   ├── pixelart.py             # README 圖片用的點陣繪圖小工具
+    │   ├── make_readme_art.py      # 產生 docs/images 裡的封面與說明圖
+    │   ├── goblin-notify.sh        # 舊設定用的轉接腳本（呼叫遊戲的 --hook 模式）
+    │   ├── goblin-ask.sh           # 同上，可回答的版本
+    │   └── make_icons.py           # 產生 AppIcon.icns
+    └── Sources/GoblinCamp/
+        ├── main.swift              # 進入點（先跑舊資料搬家）
+        ├── AppDelegate.swift       # 選單列、覆蓋視窗、主迴圈（30fps，數量多時 20fps）
+        ├── OverlayWindow.swift     # 每個螢幕一個透明、滑鼠可穿透的視窗
+        ├── AntView.swift           # 全部繪製：角色、營地、氣泡、食物、選取圈
+        ├── RosterPanel.swift       # 右側名冊視窗
+        ├── Character.swift         # 角色：讀精靈圖與 manifest、方向與影格、品種清單
+        ├── Camp.swift              # 營地外觀：讀圖與成長階段
+        ├── Breed.swift             # 品種、個體特質、出生時抽品種
+        ├── Colony.swift            # 遊戲狀態：營地、居民、食物、出生與老死、螢幕變化
+        ├── Ant.swift               # 單一居民：漫步、回巢休息、覓食、搬運、老死（名稱沿用 Ant，是「居民」的通稱）
+        ├── Queen.swift             # 公主的狀態機
+        ├── Food.swift              # 食物種類與資料
+        ├── Animal.swift            # 動物與魔獸：資料、走路、追擊、蓄力與出擊、反擊
+        ├── Materials.swift         # 魔獸掉落的素材、稀有度、擲骰子（含所有魔獸都會掉的雜物）
+        ├── Equipment.swift         # 裝備：七個部位、24 款配方、耐久度
+        ├── WorkshopWindow.swift    # 工坊視窗：用素材做武器與裝備
+        ├── Pond.swift              # 池塘：不規則輪廓、小島、石頭、蘆葦；清澈、結冰、混濁三種水
+        ├── Terrain.swift           # 營地視窗的場景：四種主題、由種子生成、烘成一張圖、依季節上色
+        ├── TerrainLife.swift       # 場地持續變化：季節、雨後水窪、樹苗長大、被踩出的小路、補算離線時間
+        ├── Perf.swift              # 效能保護：太卡時減少同時出現的哥布林
+        ├── Notifier.swift          # Claude 通知：說話者（各品種與公主）、泡泡、音效與語音
+        ├── Scenery.swift           # 森林、草地、營地視窗草地（載入與依時間變色）
+        ├── MapWindow.swift         # 獨立的營地視窗
+        ├── Diagnostics.swift       # 最近的顯示／隱藏變化，選單可複製診斷資訊
+        ├── ScreenChoice.swift      # 有多個螢幕時，哥布林可以在哪些螢幕（家、所有、指定）
+        ├── Spaces.swift            # 讀出每個螢幕現在是哪個桌面（全螢幕 App 也算），決定哥布林要不要出現
+        ├── Names.swift             # 哥布林的名字與公主的名字點子
+        ├── ManualWindow.swift      # 說明手冊（選單「說明手冊…」）
+        ├── AskPanel.swift          # 可回答的泡泡（按鈕與輸入框）
+        ├── HookCLI.swift           # Claude Code hook 的小幫手模式（GoblinCamp --hook …）
+        ├── HookInstaller.swift     # 選單一鍵連接 Claude Code：寫腳本、改 settings.json、移除
+        ├── Pomodoro.swift          # 番茄鐘：計時、哥布林舉時鐘
+        ├── Stats.swift             # 每日統計（番茄鐘、通知）
+        ├── HotKeys.swift           # 全域快捷鍵 ⌃⌥1～4
+        ├── Settings.swift          # 選單設定（UserDefaults）與時間格式
+        ├── Persistence.swift       # state.json 存檔
+        ├── NestImageStore.swift    # 自己的營地圖片
+        └── SeededRandom.swift      # 可重現的亂數（個體特質）
 ```
 
 座標一律使用全域螢幕座標（原點在主螢幕左下角）；每個視窗繪製時再減掉自己的原點。
 
 ### 自訂角色
 
-一個角色就是一個資料夾，放在 `~/Library/Application Support/GoblinCamp/Characters/<名稱>/`，內容仿照 `Resources/Characters/goblin/`：
+一個角色就是一個資料夾，放在 `~/Library/Application Support/GoblinCamp/Characters/<名稱>/`，內容仿照 `mac/Resources/Characters/goblin/`：
 
 - `manifest.json`：`id`、`name`（選單顯示）、`noun`（例如「哥布林」）、`emoji`、`nestName`（例如「營地」）、`frame`（每格邊長，內建是 16）、`icon`（選單列小圖，可省略）、`defaultMaxCount`，以及 `worker`（必要）與 `queen`（可省略，省略時用 `worker`）。
 - `breeds`（可省略）：品種清單，每個有 `id`、`name`、`weight`（出生比例）、`boost`（累積食物對機率的加成）、`sheet`、`blurb` 與 `stats`（`speed`、`sense`、`rest`、`lifespan` 為倍率，`carry` 為一次搬幾份，`recruit` 為通知時多叫幾隻）。沒寫時只有一個平民，用 `worker` 的圖。
@@ -458,7 +465,7 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
 
 ### 測試用環境變數
 
-需要直接執行執行檔才會帶入（`open` 不一定會傳環境變數）：
+需要直接執行執行檔才會帶入（`open` 不一定會傳環境變數），在 `mac/` 裡執行：
 
 ```bash
 CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/MacOS/GoblinCamp
@@ -509,7 +516,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_FAKE_SPACE=1／2／fs` | 假裝目前在桌面 1、桌面 2 或全螢幕 App 的桌面（測試用） |
 | `CAMP_TEST_NAMES=set／show` | 測試名字：`set` 在 20 秒時改名並存檔，`show` 印出載入的名字 |
 | `CAMP_TEST_MANUAL=路徑` | 打開說明手冊並把它畫成 PNG |
-| `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
+| `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `mac/tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
 | `CAMP_TEST_NOTES=路徑前綴` `CAMP_TEST_NOTES_FOCUS=1` | 建立每種狀態各一張便利貼並畫成 PNG、模擬寫字、4 秒後響一個提醒；加上 FOCUS 會在 2～8 秒進入專注模式，檢查提醒有等到離開才出現。便利貼會寫進 `CAMP_DATA_DIR`（有設時），不會碰到正式資料 |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
 | `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |

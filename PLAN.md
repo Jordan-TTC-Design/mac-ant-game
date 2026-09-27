@@ -617,3 +617,9 @@ Characters/<id>/
 - 提醒：伺服器是唯一的鬧鐘，Mac 本機也排一份以防斷線；以便利貼 id 去重，任何一台按「知道了」其他裝置一起消失。
 - 限制：iPhone 需 iOS 16.4+ 且加入主畫面才收得到推播；內容不是端對端加密。
 - 開始前：先給使用者看 API 與資料表設計；需要網域與寄信服務帳號。
+
+## 搬家：Mac App 進 mac/（2026-09-27）
+- `Package.swift`、`Sources/`、`Resources/`、`build.sh`、`tools/` 用 `git mv` 搬進 `mac/`（歷史保留）。`build.sh` 本來就以自己的位置為準，不用改；產物變成 `mac/GoblinCamp.app`、`mac/dist/`。`make_readme_art.py` 改成寫到最上層的 `docs/images/`。README 的指令改成先 `cd mac`，專案結構圖更新；MONSTERS.md、TERRAIN.md 的路徑同步。
+- 最上層舊的 `GoblinCamp.app`、`dist/`、`.build/` 沒有動（都在 .gitignore；使用者正在跑的是 `dist/GoblinCamp.app`），確認不用之後可以自己刪。
+- 這一段以前的紀錄仍寫舊路徑（`Sources/…`、`./build.sh`），是當時的樣子，不改。
+- 已驗證：`mac/build.sh` 建置成功；新位置的 App 跑 `CAMP_TEST_NOTES` 正常；`make_readme_art.py` 寫到正確的 `docs/images/`（測試用的圖已還原）。

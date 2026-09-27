@@ -114,7 +114,7 @@
 
 - `Terrain.swift`：`Biome`、`Obstacle`／`Solid`、`TerrainScene`（從種子生成、把靜止的部分**烘成一張圖**：地面、色塊、小路、溪、橋、池塘、樹與石頭，依時間變色）、`TerrainArt`（讀 `Resources/Terrain` 的圖）。畫面上只有池塘的閃光與哥布林每個畫面重畫，所以場景很豐富也不會變卡（150 隻約每個畫面 1～2 毫秒）。
 - `Pond.swift`：池塘（加了「清澈、結冰、混濁」三種水）。
-- `tools/make_terrain.py`：所有地形與營地小物的像素圖（樹、石頭、帳篷、圖騰、曬肉架…）；`python3 tools/make_terrain.py --preview out.png` 看一張總表。
+- `mac/tools/make_terrain.py`：所有地形與營地小物的像素圖（樹、石頭、帳篷、圖騰、曬肉架…）；`python3 tools/make_terrain.py --preview out.png` 看一張總表。
 - 場景種子存在設定（`terrainSeed`、`terrainBiome`、`terrainAlive`）；持續變化的狀態（季節起點、水窪、樹苗、被踩的地）存在存檔的 `terrain`。
 - `TerrainLife.swift`：季節時鐘（`TerrainClock`）、隨機事件（每 10 分鐘一步）、水窪、樹苗與樹、被踩的地（`heat`）。`Terrain.swift` 的 `render` 依季節位置（0～4）上色、換樹的樣子（`TerrainArt.Mode`：變紅葉、光禿、開花、積雪）、畫積雪、水窪、被踩的地、長出來的樹；`AntView.drawAtmosphere` 畫霧、螢火蟲、落葉、花瓣、雪。
 
