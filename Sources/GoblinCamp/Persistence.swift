@@ -63,6 +63,9 @@ struct SavedState: Codable {
     var armoryItems: [SavedGear]?
     /// The princess's love life.
     var romance: RomanceState?
+    /// What the food brought home is still doing (seconds left, by food), and how long before each can be put down again.
+    var boosts: [String: Double]?
+    var foodCooldowns: [String: Double]?
 }
 
 /// Colony progress in ~/Library/Application Support/GoblinCamp/state.json.

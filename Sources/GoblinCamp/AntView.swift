@@ -1299,47 +1299,57 @@ final class AntView: NSView {
         drawPill("\(kind.emoji) 點一下，放下\(kind.label)　·　按 Esc 取消", center: NSPoint(x: bounds.midX, y: bounds.maxY - 70), fontSize: 16)
     }
 
-    /// A puddle of water or a blob of honey, shrinking as the ants carry it off.
+    /// A food on the ground: the fruit tree, a monster's leavings, the stew pot, or one of the pixel pictures of what the player put down
+    /// (it changes to the "little left" picture once most of it has been carried off).
     private func drawFood(_ food: FoodSource, at p: CGPoint, scale: CGFloat) {
-        let r = CGFloat(food.radius(scale: Double(scale)))
-        let w = r * 1.25, h = r * 0.95 // a little wider than tall, like something spilled
-        let body = NSRect(x: p.x - w, y: p.y - h, width: w * 2, height: h * 2)
-
-        // soft shadow underneath
-        NSColor(calibratedWhite: 0, alpha: 0.12).setFill()
-        NSBezierPath(ovalIn: body.offsetBy(dx: 0.6, dy: -1.2)).fill()
-
         switch food.kind {
-        case .water:
-            NSColor(calibratedRed: 0.42, green: 0.70, blue: 0.95, alpha: 0.62).setFill()
-            NSBezierPath(ovalIn: body).fill()
-            NSColor(calibratedRed: 0.25, green: 0.52, blue: 0.85, alpha: 0.75).setStroke()
-            let rim = NSBezierPath(ovalIn: body)
-            rim.lineWidth = 0.8
-            rim.stroke()
-            NSColor(calibratedWhite: 1, alpha: 0.75).setFill() // highlight
-            NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.55, y: p.y + h * 0.15, width: w * 0.6, height: h * 0.32)).fill()
-        case .fruit:
-            drawTree(food, at: p)
-        case .meat:
-            drawMeat(food, at: p, w: w, h: h)
-        case .loot:
-            drawLoot(food, at: p)
-        case .stew:
-            drawStew(food, at: p)
-        case .honey:
-            // a main blob with a smaller drip beside it, so it looks gooey
-            let drip = NSRect(x: p.x + w * 0.45, y: p.y - h * 0.95, width: w * 0.85, height: h * 0.75)
-            for shape in [body, drip] {
-                NSColor(calibratedRed: 0.93, green: 0.64, blue: 0.08, alpha: 0.96).setFill()
-                NSBezierPath(ovalIn: shape).fill()
+        case .fruit: drawTree(food, at: p)
+        case .loot: drawLoot(food, at: p)
+        case .stew: drawStew(food, at: p)
+        default: drawFoodSprite(food, at: p, scale: scale)
+        }
+    }
+
+    private func drawFoodSprite(_ food: FoodSource, at p: CGPoint, scale: CGFloat) {
+        let low = Double(food.amount) < Double(food.capacity) * 0.4
+        guard let image = FoodSprites.image(food.kind, low: low), let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let u = max(1, (2 * scale).rounded()) // one art pixel, in points (whole points keep the pixels crisp)
+        let w = CGFloat(image.width) * u, h = CGFloat(image.height) * u
+        let rect = CGRect(x: (p.x - w / 2).rounded(), y: (p.y - h * 0.35).rounded(), width: w, height: h)
+        NSColor(calibratedWhite: 0, alpha: 0.18).setFill() // a soft shadow under it
+        NSBezierPath(ovalIn: NSRect(x: rect.minX + u, y: rect.minY - u * 1.5, width: w - 2 * u, height: u * 3)).fill()
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: rect)
+        ctx.restoreGState()
+        drawFoodLife(food, in: rect, pixel: u, low: low)
+    }
+
+    /// The little things that move: a glint on the water, a drop of honey falling, the candle, a wisp of steam off what is still warm.
+    private func drawFoodLife(_ food: FoodSource, in rect: CGRect, pixel u: CGFloat, low: Bool) {
+        let t = Date().timeIntervalSinceReferenceDate + Double(food.id) * 0.7
+        func px(_ x: CGFloat, _ yFromTop: CGFloat, _ color: NSColor) { // in art pixels from the picture's top left
+            color.setFill()
+            NSRect(x: rect.minX + x * u, y: rect.maxY - (yFromTop + 1) * u, width: u, height: u).fill()
+        }
+        switch food.kind {
+        case .water where !low:
+            if Int(t * 1.5) % 3 == 0 { px(CGFloat(4 + Int(t * 1.5) % 5), 1, .white) }
+        case .honey where !low:
+            let phase = CGFloat((t * 0.5).truncatingRemainder(dividingBy: 1))
+            let drop = NSColor(calibratedRed: 1, green: 0.72, blue: 0.1, alpha: 1 - phase * 0.6)
+            px(3, 6 + phase * 6, drop)
+        case .cake:
+            if !low { px(7, 0, Int(t * 6) % 2 == 0 ? NSColor(calibratedRed: 1, green: 0.95, blue: 0.6, alpha: 1) : NSColor(calibratedRed: 1, green: 0.62, blue: 0.2, alpha: 1)) }
+        case .meat, .fish, .bread:
+            for k in 0..<2 {
+                let phase = (t * 0.5 + Double(k) * 0.5).truncatingRemainder(dividingBy: 1)
+                NSColor(calibratedWhite: 1, alpha: 0.35 * CGFloat(1 - phase)).setFill()
+                let x = rect.midX - u * 2 + CGFloat(k) * u * 4 + CGFloat(sin(t * 2 + Double(k))) * u
+                NSBezierPath(ovalIn: NSRect(x: x, y: rect.maxY - u * 2 + CGFloat(phase) * u * 7, width: u * 2, height: u * 1.5)).fill()
             }
-            NSColor(calibratedRed: 0.70, green: 0.42, blue: 0.04, alpha: 0.85).setStroke()
-            let rim = NSBezierPath(ovalIn: body)
-            rim.lineWidth = 0.8
-            rim.stroke()
-            NSColor(calibratedRed: 1, green: 0.90, blue: 0.55, alpha: 0.9).setFill() // shine
-            NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.5, y: p.y + h * 0.2, width: w * 0.55, height: h * 0.3)).fill()
+        default:
+            break
         }
     }
 
@@ -1365,21 +1375,6 @@ final class AntView: NSView {
         let spots: [(CGFloat, CGFloat)] = [(-3, 5), (2, 6), (0, 8), (-1, 6), (3, 4), (-4, 7)]
         let fruit = NSColor(calibratedRed: 0.90, green: 0.18, blue: 0.16, alpha: 1)
         for i in 0..<min(food.amount, spots.count) { px(spots[i].0, spots[i].1, 1.4, 1.4, fruit) }
-    }
-
-    private func drawMeat(_ food: FoodSource, at p: CGPoint, w: CGFloat, h: CGFloat) {
-        let bone = NSColor(calibratedRed: 0.96, green: 0.93, blue: 0.84, alpha: 1)
-        bone.setFill()
-        NSBezierPath(ovalIn: NSRect(x: p.x + w * 0.5, y: p.y + h * 0.1, width: w * 0.5, height: h * 0.5)).fill()
-        NSBezierPath(ovalIn: NSRect(x: p.x + w * 0.5, y: p.y - h * 0.5, width: w * 0.5, height: h * 0.5)).fill()
-        NSColor(calibratedRed: 0.78, green: 0.32, blue: 0.24, alpha: 1).setFill()
-        NSBezierPath(ovalIn: NSRect(x: p.x - w, y: p.y - h, width: w * 1.7, height: h * 2)).fill()
-        NSColor(calibratedRed: 0.55, green: 0.18, blue: 0.14, alpha: 0.9).setStroke()
-        let rim = NSBezierPath(ovalIn: NSRect(x: p.x - w, y: p.y - h, width: w * 1.7, height: h * 2))
-        rim.lineWidth = 0.8
-        rim.stroke()
-        NSColor(calibratedRed: 0.95, green: 0.6, blue: 0.5, alpha: 0.9).setFill()
-        NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.6, y: p.y + h * 0.1, width: w * 0.6, height: h * 0.5)).fill()
     }
 
     /// A pot of stew set down for the goblins: a dark iron pot, the stew inside, and steam while it is hot.

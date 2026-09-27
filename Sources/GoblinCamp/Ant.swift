@@ -84,7 +84,7 @@ struct Ant {
         case foundFood(Int)
         case newsDelivered(Int)
         case tookPiece(Int)
-        case delivered(Int, pieces: Int)
+        case delivered(Int, kind: FoodKind, pieces: Int)
         case died
         case carrierArrived
         case foundCreature(Int)
@@ -257,7 +257,9 @@ struct Ant {
     var lifeFraction: Double { min(1, age / max(traits.lifespan, 1)) }
 
     /// Old ones walk slower.
-    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed * (isChild ? 0.85 : 1) * (sick > 0 ? 0.5 : 1) }
+    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed * (isChild ? 0.85 : 1) * (sick > 0 ? 0.5 : 1) * foodSpeed }
+    /// Carrots brought home: everyone walks a little faster for a while (set from the world on each update).
+    private var foodSpeed = 1.0
 
     var isCarryingPrincess: Bool {
         switch mode {
@@ -327,6 +329,7 @@ struct Ant {
 
     mutating func update(dt: Double, ageDt: Double, world: AntWorld) -> Event? {
         facing = SpriteDirection(heading: heading, previous: facing)
+        foodSpeed = world.speedBoost
         moving = false
         swing = max(0, swing - dt)
         catchShow = max(0, catchShow - dt)
@@ -378,12 +381,12 @@ struct Ant {
                 return .newsDelivered(id)
             }
 
-        case .hauling(let id, _, let pieces):
+        case .hauling(let id, let kind, let pieces):
             if walkHome(dt: dt, world: world, speedFactor: 0.7) {
                 // Most ants rest a moment and go back for more while there is food left.
                 let more = world.food(id) != nil && Double.random(in: 0..<1) < 0.85
                 mode = .inNest(remaining: more ? Double.random(in: 3...8) : Double.random(in: 10...30), thenForage: more ? id : nil)
-                return .delivered(id, pieces: pieces)
+                return .delivered(id, kind: kind, pieces: pieces)
             }
 
         case .huntNews(let id):
@@ -614,7 +617,7 @@ struct Ant {
                 biteTimer -= dt
                 if biteTimer <= 0 {
                     biteTimer = Double.random(in: 6...14)
-                    if Double.random(in: 0..<1) < 0.5 {
+                    if Double.random(in: 0..<1) < min(0.9, 0.5 * world.fishBoost) {
                         catchShow = 1.8
                         event = .caughtFish
                     }
@@ -645,7 +648,7 @@ struct Ant {
                 gatherHits = 0
             } else {
                 turn(toward: atan2(face.y - pos.y, face.x - pos.x), rate: 5, dt: dt)
-                gatherTimer -= dt
+                gatherTimer -= dt * world.workBoost
                 if gatherTimer <= 0 { // a blow, and a short rest before the next
                     gatherTimer = Double.random(in: 0.8...1.5)
                     swing = Ant.swingTime

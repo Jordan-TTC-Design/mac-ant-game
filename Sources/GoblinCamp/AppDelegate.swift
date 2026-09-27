@@ -850,6 +850,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        if let s = env["CAMP_TEST_FOODS"] { // every food the player can put down, in a ring round the camp; the boosts are logged, and a path saves pictures
+            after(3) {
+                guard let nest = self.colony.nest else { return log("no nest") }
+                for (i, kind) in FoodKind.placeable.enumerated() {
+                    let a = Double(i) / Double(FoodKind.placeable.count) * 2 * .pi
+                    self.colony.debugPlaceFood(kind, at: CGPoint(x: nest.x + cos(a) * 110, y: nest.y + sin(a) * 70))
+                }
+                log("placed: \(self.colony.foods.map { "\($0.kind.rawValue)x\($0.amount)" })")
+                for k in 1...24 { after(Double(k) * 5) { log("t+\(k * 5)s \(self.colony.foodSummary())") } }
+                guard s.hasPrefix("/") else { return }
+                for (k, delay) in [1.0, 60.0].enumerated() {
+                    after(delay) {
+                        guard let map = self.mapWindow, let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(map.window.windowNumber), [.boundsIgnoreFraming, .bestResolution]) else { return log("capture failed: camp window visible \(self.mapWindow?.isVisible ?? false), miniaturized \(self.mapWindow?.window.isMiniaturized ?? false), on screen \(self.mapWindow?.window.isOnActiveSpace ?? false)") }
+                        if let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(s)-\(k).png")) }
+                        log("captured \(s)-\(k).png")
+                    }
+                }
+            }
+        }
         if let s = env["CAMP_TEST_FOOD"] {
             let parts = s.split(separator: ",")
             guard parts.count == 3, let kind = FoodKind(rawValue: String(parts[0])), let dx = Double(parts[1]), let dy = Double(parts[2]) else { return }
@@ -859,16 +878,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.syncWindows()
                 log("phase: \(self.colony.phase), window accepts input: \(self.windows.contains { !$0.ignoresMouseEvents })")
                 let target = CGPoint(x: nest.x + dx, y: nest.y + dy)
-                if let window = self.windows.first(where: { $0.frame.contains(target) }) {
+                if self.isWindowMode, let map = self.mapWindow { // the camp window: its world starts at 0,0 in its content view
+                    let global = map.window.convertPoint(toScreen: map.view.convert(target, to: nil))
+                    if env["CAMP_TEST_FOOD_REALCLICK"] != nil { // a real click from outside (a helper posts it where this says)
+                        log("click here: \(Int(global.x)) \(Int(global.y))")
+                    } else {
+                        mouse(.leftMouseDown, at: global, in: map.window)
+                        after(0.2) { mouse(.leftMouseUp, at: global, in: map.window) }
+                    }
+                } else if let window = self.windows.first(where: { $0.frame.contains(target) }) {
                     mouse(.leftMouseDown, at: target, in: window)
                     after(0.2) { mouse(.leftMouseUp, at: target, in: window) }
                 }
-                after(0.5) { log("placed: \(self.colony.foods.map { "\($0.kind.rawValue)@\($0.pos) x\($0.amount)" }), phase \(self.colony.phase)") }
-                for k in 1...40 { after(0.5 + Double(k) * 5) { log("t+\(k * 5)s \(self.colony.foodSummary())") } }
+                after(env["CAMP_TEST_FOOD_REALCLICK"] != nil ? 4 : 0.5) { log("placed: \(self.colony.foods.map { "\($0.kind.rawValue)@\($0.pos) x\($0.amount)" }), phase \(self.colony.phase), camp window visible \(self.mapWindow?.isVisible ?? false)") }
+                for k in 1...40 { after(0.5 + Double(k) * 5) { log("t+\(k * 5)s \(self.colony.foodSummary()), camp window visible \(self.mapWindow?.isVisible ?? false)") } }
             }
             if env["CAMP_TEST_FOOD_CANCEL"] != nil { // press Esc while placing instead of clicking
                 after(10) {
-                    self.colony.beginPlacingFood(.water)
+                    self.colony.beginPlacingFood(.honey) // (not water: that one was just put down and has to wait)
                     self.syncWindows()
                     log("placing again: phase \(self.colony.phase), pending \(String(describing: self.colony.pendingFood))")
                     after(2.5) { pressKey(53, "\u{1b}") } // leave the hint on screen long enough to be captured
@@ -2539,21 +2566,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// "Put down food": pick a kind, then click on the screen.
+    /// "Put down food": pick a kind (each says what it does), then click on the screen. The boosts on now are listed at the top.
     private func foodMenu() -> NSMenuItem {
         foodMenuItem = NSMenuItem(title: "放食物", action: nil, keyEquivalent: "")
         let sub = NSMenu(title: "放食物")
-        for kind in FoodKind.placeable {
-            sub.addItem(ClosureMenuItem(title: "\(kind.emoji) \(kind.label)") { [weak self] in self?.colony.beginPlacingFood(kind) })
-        }
-        sub.addItem(.separator())
+        sub.autoenablesItems = false // a food that was just put down is greyed out until it may go down again
         clearFoodItem = ClosureMenuItem(title: "清除所有食物") { [weak self] in
             self?.colony.clearFoods()
             self?.redrawAll()
         }
-        sub.addItem(clearFoodItem)
         foodMenuItem.submenu = sub
+        refreshFoodMenu()
         return foodMenuItem
+    }
+
+    /// Fills the food menu afresh (the boosts and the waits change all the time).
+    private func refreshFoodMenu() {
+        guard let sub = foodMenuItem?.submenu else { return }
+        sub.removeAllItems()
+        func minutes(_ seconds: Double) -> String { "\(max(1, Int((seconds / 60).rounded(.up)))) 分" }
+        let on = (FoodKind.placeable + [.stew]).filter { colony.boostLeft($0) > 0 }
+        if !on.isEmpty {
+            let header = NSMenuItem(title: "目前加成", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            sub.addItem(header)
+            for kind in on {
+                let item = NSMenuItem(title: "　\(kind.emoji) \(kind.effect)（剩 \(minutes(colony.boostLeft(kind)))）", action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                sub.addItem(item)
+            }
+            sub.addItem(.separator())
+        }
+        for kind in FoodKind.placeable {
+            let wait = colony.cooldownLeft(kind)
+            let item = ClosureMenuItem(title: "\(kind.emoji) \(kind.label)　\(kind.effect)\(wait > 0 ? "（\(minutes(wait))後可以再放）" : "")") { [weak self] in
+                self?.colony.beginPlacingFood(kind)
+            }
+            item.isEnabled = wait <= 0 && foodMenuItem.isEnabled
+            sub.addItem(item)
+        }
+        sub.addItem(.separator())
+        sub.addItem(clearFoodItem)
     }
 
     /// Submenu of mutually exclusive options with a checkmark on the current one.
@@ -2621,6 +2674,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         editItem.isEnabled = (colony.phase == .running || colony.phase == .editing) && !isHiddenByUser
         foodMenuItem.isEnabled = colony.phase == .running && !isHiddenByUser
         clearFoodItem.isEnabled = !colony.foods.isEmpty
+        refreshFoodMenu()
         refreshStates(in: menu)
     }
 

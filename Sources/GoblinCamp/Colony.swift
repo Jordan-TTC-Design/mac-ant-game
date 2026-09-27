@@ -23,7 +23,7 @@ final class Colony {
         var alpha: Double { min(1, (Egg.lifetime - age) / 2) }
     }
 
-    static let maxFoods = 6
+    static let maxFoods = 10
     /// At most this many ants work on one food at a time.
     static let maxForagers = 10
 
@@ -325,7 +325,7 @@ final class Colony {
     // MARK: Food
 
     func beginPlacingFood(_ kind: FoodKind) {
-        guard phase == .running else { return }
+        guard phase == .running, cooldownLeft(kind) <= 0 else { return }
         pendingFood = kind
         phase = .placingFood
         onChange?()
@@ -343,6 +343,7 @@ final class Colony {
         let spot = isWalkable(point) ? point : nearestWalkable(to: point)
         foods.append(FoodSource(id: nextFoodID, kind: kind, pos: spot, amount: kind.initialAmount))
         nextFoodID += 1
+        foodCooldowns[kind] = Colony.foodCooldown
         if foods.filter({ $0.origin == .placed }).count > Colony.maxFoods, let oldest = foods.firstIndex(where: { $0.origin == .placed }) {
             foods.remove(at: oldest)
         }
@@ -417,7 +418,7 @@ final class Colony {
                     foods.remove(at: i)
                 }
             }
-        case .delivered(let id, let pieces):
+        case .delivered(let id, let kind, let pieces):
             if let material = lootMaterial[id] {
                 materials[material, default: 0] += pieces
                 addFloater("+\(pieces) \(Materials.info(material)?.name ?? material)", Materials.info(material)?.rarity ?? .common, at: nest ?? .zero)
@@ -426,6 +427,7 @@ final class Colony {
                 return
             }
             foodDelivered += pieces
+            if let boost = kind.boost { feed(boost, pieces: pieces) }
             // every successful trip can bring one or two more helpers
             if Double.random(in: 0..<1) < 0.5 { recruit(for: id, count: Int.random(in: 1...2)) }
         case .foundCreature(let id):
@@ -468,6 +470,8 @@ final class Colony {
         deaths = 0
         slain = 0
         larder = [:]
+        boosts = [:]
+        foodCooldowns = [:]
         armory = []
         peakAnts = 0
         playSeconds = 0
@@ -766,7 +770,7 @@ final class Colony {
     /// A goblin hits an animal. A fighting one hits back now and then; a timid one runs.
     private func attack(creature id: Int, by index: Int) {
         guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
-        creatures[ci].hp -= ants[index].might
+        creatures[ci].hp -= ants[index].might * (1 + 0.2 * boost(.meat))
         wear(.weapon, of: index, by: 1)
         ants[index].swing = Ant.swingTime
         ants[index].swingHeading = atan2(creatures[ci].pos.y - ants[index].pos.y, creatures[ci].pos.x - ants[index].pos.x)
@@ -788,6 +792,10 @@ final class Colony {
 
     /// The animal bites: the goblin loses health, limps home when it is nearly done for, and may be killed.
     private func hurt(ant index: Int) {
+        if Double.random(in: 0..<1) < 0.2 * boost(.cheese) { // well fed, it shrugs the blow off
+            hits.append((pos: ants[index].pos, age: 0))
+            return
+        }
         ants[index].health -= 1
         hits.append((pos: ants[index].pos, age: 0))
         if ants[index].health <= 0 {
@@ -917,6 +925,50 @@ final class Colony {
         onAntsChanged?()
     }
 
+    // MARK: What the food does
+
+    /// What each food brought home is still doing (seconds left, by the boost), and how long before each kind may be put down again.
+    /// Both count down while the camp is running and are saved with it, so they do not run out while the app is closed.
+    private(set) var boosts: [FoodKind: Double] = [:]
+    private(set) var foodCooldowns: [FoodKind: Double] = [:]
+    /// Every piece carried home adds this much (a pot of stew, which helps with everything, half as much), up to the cap.
+    static let boostPerPiece = 240.0
+    static let boostCap = 3600.0
+    /// After putting a food down, the same kind cannot be put down again for this long.
+    static let foodCooldown: Double = Double(ProcessInfo.processInfo.environment["CAMP_FOOD_COOLDOWN"] ?? "") ?? 1200
+
+    /// How strongly a boost is on: 1 while its food's time lasts, a third while only stew's does, else 0.
+    func boost(_ kind: FoodKind) -> Double {
+        if boosts[kind, default: 0] > 0 { return 1 }
+        return boosts[.stew, default: 0] > 0 ? 1.0 / 3 : 0
+    }
+
+    func boostLeft(_ kind: FoodKind) -> Double { boosts[kind, default: 0] }
+    func cooldownLeft(_ kind: FoodKind) -> Double { foodCooldowns[kind, default: 0] }
+
+    private func feed(_ kind: FoodKind, pieces: Int) {
+        let was = boosts[kind, default: 0]
+        let per = kind == .stew ? Colony.boostPerPiece / 2 : Colony.boostPerPiece
+        boosts[kind] = min(Colony.boostCap, was + per * Double(pieces))
+        if was <= 0, let nest { addFloater("\(kind.emoji) \(kind.effect)", .uncommon, at: nest) } // it has just started
+    }
+
+    private func updateBoosts(dt: Double) {
+        for (kind, left) in boosts { boosts[kind] = left - dt > 0 ? left - dt : nil }
+        for (kind, left) in foodCooldowns { foodCooldowns[kind] = left - dt > 0 ? left - dt : nil }
+    }
+
+    /// Saved by name (an unknown name from a newer version is skipped).
+    static func kinds(_ saved: [String: Double]?) -> [FoodKind: Double] {
+        var result: [FoodKind: Double] = [:]
+        for (name, value) in saved ?? [:] { if let kind = FoodKind(rawValue: name), value > 0 { result[kind] = value } }
+        return result
+    }
+
+    static func names(_ values: [FoodKind: Double]) -> [String: Double] {
+        Dictionary(uniqueKeysWithValues: values.map { ($0.key.rawValue, $0.value) })
+    }
+
     // MARK: The young ones
 
     private var childTimer = 0.0
@@ -941,9 +993,11 @@ final class Colony {
         guard childTimer <= 0 else { return }
         childTimer = 5
         var now = Set<Int>()
+        let berries = boost(.berries)
         for i in ants.indices where ants[i].isChild {
             now.insert(ants[i].id)
-            if ants[i].sick <= 0, Double.random(in: 0..<1) < 0.001 * Ant.childCatchScale { ants[i].sick = Double.random(in: 300...420) }
+            if ants[i].sick <= 0, Double.random(in: 0..<1) < 0.001 * Ant.childCatchScale * (1 - 0.7 * berries) { ants[i].sick = Double.random(in: 300...420) }
+            ants[i].age += 5 * Colony.timeScale * 0.5 * berries // berries: they grow up half as fast again
         }
         for id in knownChildren.subtracting(now) {
             if let a = ants.first(where: { $0.id == id }), Double.random(in: 0..<1) < 0.4 { addFloater("\(a.name) 長大了", .uncommon, at: a.pos) }
@@ -992,6 +1046,7 @@ final class Colony {
             var yield = plot.density / 2 + Int.random(in: 0...2) + (ants[ant].traits.personality == .calm ? 1 : 0)
             var giant = false
             if plot.crop == 1, Double.random(in: 0..<1) < 0.05 { yield *= 2; giant = true }
+            yield = Int((Double(yield) * (1 + 0.3 * boost(.fish))).rounded())
             life.setPlot(index) { $0 = PlotState(state: 0, changed: now) }
             let room = Colony.larderLimit + 8 - larder["veg", default: 0]
             larder["veg", default: 0] += min(max(0, room), yield)
@@ -1294,6 +1349,11 @@ final class Colony {
     }
 
     func debugStock(_ items: [String: Int]) { for (k, v) in items { larder[k, default: 0] += v } }
+    /// Test aid: puts a food down at a spot (no picking, no waiting).
+    func debugPlaceFood(_ kind: FoodKind, at point: CGPoint) {
+        foods.append(FoodSource(id: nextFoodID, kind: kind, pos: isWalkable(point) ? point : nearestWalkable(to: point), amount: kind.initialAmount))
+        nextFoodID += 1
+    }
 
     /// Test aid: everybody gets a full set of gear.
     func debugEquipEveryone() {
@@ -1369,6 +1429,8 @@ final class Colony {
         playSeconds = saved.playSeconds ?? 0
         romance = saved.romance ?? RomanceState()
         larder = saved.larder ?? [:]
+        boosts = Colony.kinds(saved.boosts)
+        foodCooldowns = Colony.kinds(saved.foodCooldowns)
         savedLives = saved.terrains ?? [:]
         if savedLives["window"] == nil, let older = saved.terrain { savedLives["window"] = older } // (saves from before there were strips)
         scene?.growth = peakAnts
@@ -1411,7 +1473,8 @@ final class Colony {
                                                     gear: savedGear(of: $0), parents: $0.parents.isEmpty ? nil : $0.parents) },
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
                           materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: allLives["window"], terrains: allLives.isEmpty ? nil : allLives, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) },
-                          romance: romance)
+                          romance: romance, boosts: boosts.isEmpty ? nil : Colony.names(boosts),
+                          foodCooldowns: foodCooldowns.isEmpty ? nil : Colony.names(foodCooldowns))
     }
 
     private func savedGear(of ant: Ant) -> [String: SavedGear]? {
@@ -1423,7 +1486,7 @@ final class Colony {
     /// Births and restores both go through here so every individual gets its traits the same way.
     func makeAnt(at pos: CGPoint, breedIndex: Int? = nil, age: Double = 0, seed: UInt64? = nil, id: Int? = nil, name: String? = nil) -> Ant {
         let breeds = self.breeds
-        let index = min(breedIndex ?? Breeding.roll(from: breeds, delivered: foodDelivered), breeds.count - 1)
+        let index = min(breedIndex ?? Breeding.roll(from: breeds, delivered: foodDelivered, luck: boost(.mushroom)), breeds.count - 1)
         var seed = seed ?? UInt64.random(in: 0...UInt64(UInt32.max))
         if id == nil { // a birth: try for a name nobody living has yet (a restored goblin keeps its seed and so its name)
             let taken = Set(ants.map(\.name))
@@ -1538,7 +1601,8 @@ final class Colony {
         let hidden = ants.filter(\.isHidden).count
         let amounts = foods.map { "\($0.kind.rawValue):\($0.amount)\($0.reported ? "*" : "")" }.joined(separator: ",")
         let working = foods.map { foragers(of: $0.id) }
-        return "ants=\(ants.count) inNest=\(hidden) foods=[\(amounts)] foragers=\(working) delivered=\(foodDelivered)"
+        let boosted = boosts.sorted { $0.key.rawValue < $1.key.rawValue }.map { "\($0.key.rawValue):\(Int($0.value))s" }.joined(separator: ",")
+        return "ants=\(ants.count) inNest=\(hidden) foods=[\(amounts)] foragers=\(working) delivered=\(foodDelivered) boosts=[\(boosted)]"
     }
 
     private func clearDecorations() {
@@ -1591,7 +1655,7 @@ final class Colony {
 
         // The clock only starts once the queen has crawled out.
         if queen?.arrived == true, ants.count < settings.maxAnts {
-            spawnTimer += dt
+            spawnTimer += dt * (1 + boost(.honey) / 3) // honey: a quarter less waiting
             if spawnTimer >= settings.spawnInterval {
                 spawnTimer = 0
                 let jitter = { CGFloat.random(in: -4...4) }
@@ -1675,7 +1739,10 @@ final class Colony {
         }
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
-        world.healRate = tending ? 0.4 : 0.05
+        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water))
+        world.speedBoost = 1 + 0.15 * boost(.carrot)
+        world.workBoost = 1 + 0.3 * boost(.bread)
+        world.fishBoost = 1 + 0.3 * boost(.fish)
         healTimer -= dt
         if healTimer <= 0 {
             healTimer = 1.1
@@ -1691,6 +1758,7 @@ final class Colony {
         updateWildlife(dt: dt)
         updateTerrainLife(dt: dt)
         updateChildren(dt: dt)
+        updateBoosts(dt: dt)
         playSeconds += dt * Colony.wildScale * settings.pace
         // the dead leave the colony (highest index first so the others keep their places)
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)

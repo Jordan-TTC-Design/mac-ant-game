@@ -150,7 +150,7 @@ extension Colony {
     /// Called every tick, before the goblins move: runs the story and says where the company should stand.
     func updateRomance(dt: Double, world: inout AntWorld) {
         guard let queen, queen.arrived, !queen.isCarried, !campHidden else { return }
-        romance.clock += dt * Romance.speed
+        romance.clock += dt * Romance.speed * (1 + 0.5 * boost(.cake)) // honey cake: their story moves along faster
         romanceRuntime.glow = max(0, romanceRuntime.glow - dt)
         romanceRuntime.sulk = max(0, romanceRuntime.sulk - dt)
         if !romanceRuntime.debugApplied { applyDebugStage() }

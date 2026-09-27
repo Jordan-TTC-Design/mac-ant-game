@@ -108,7 +108,8 @@ struct Traits {
 enum Breeding {
     /// Picks the breed of a newborn. Rare breeds get likelier as the colony brings home more food, and every
     /// birth has a small chance of a random "mutation" into any non-plain breed.
-    static func roll(from breeds: [Breed], delivered: Int) -> Int {
+    /// `luck` (0...1, mushrooms brought home) makes a rare breed more likely.
+    static func roll(from breeds: [Breed], delivered: Int, luck: Double = 0) -> Int {
         guard breeds.count > 1 else { return 0 }
         // `CAMP_BREEDS=common:40,scout:20,sage:15,golden:5`: fixed shares by breed id (tests)
         if let spec = ProcessInfo.processInfo.environment["CAMP_BREEDS"] {
@@ -123,7 +124,7 @@ enum Breeding {
             return 0
         }
         let mutable = breeds.indices.filter { $0 > 0 && breeds[$0].weight > 0 }
-        if let pick = mutable.randomElement(), Double.random(in: 0..<1) < 0.02 { return pick }
+        if let pick = mutable.randomElement(), Double.random(in: 0..<1) < 0.02 + 0.08 * luck { return pick }
         let wealth = min(2.0, Double(delivered) / 60) // 0 ... 2, reached after 120 pieces
         let weights = breeds.enumerated().map { $0.offset == 0 ? $0.element.weight : $0.element.weight * (1 + wealth * $0.element.prosperityBoost) }
         var pick = Double.random(in: 0..<weights.reduce(0, +))
