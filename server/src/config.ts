@@ -11,6 +11,9 @@ const schema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional().transform((v) => v || undefined),
   /** Who runs the server, for the push services (mailto: or https:). */
   VAPID_SUBJECT: z.string().default("mailto:admin@goblincamp.invalid"),
+  /** Resend for the confirmation and reset mails. Without a key the mails go to the log (`make logs`) instead. */
+  RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
+  MAIL_FROM: z.string().default("哥布林營地 <noreply@goblincamp.invalid>"),
   TRUST_PROXY: z
     .enum(["true", "false"])
     .default("false")

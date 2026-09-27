@@ -30,3 +30,7 @@ server/dist/
 
 # Playwright (browser tests) output
 .playwright-mcp/
+
+# Docker deployment: settings and database backups
+/.env
+backups/

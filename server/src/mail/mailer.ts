@@ -16,6 +16,25 @@ export class ConsoleMailer implements Mailer {
   }
 }
 
+/** Sends through Resend (https://resend.com): the sending domain must be verified there (DNS records). */
+export class ResendMailer implements Mailer {
+  constructor(
+    private readonly apiKey: string,
+    /** 「哥布林營地 <noreply@your-domain>」 */
+    private readonly from: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  async send(mail: Mail) {
+    const res = await this.fetchImpl("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ from: this.from, to: [mail.to], subject: mail.subject, text: mail.text }),
+    });
+    if (!res.ok) throw new Error(`Resend answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
+}
+
 /** Keeps the mail for tests to read. */
 export class MemoryMailer implements Mailer {
   readonly sent: Mail[] = [];

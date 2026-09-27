@@ -1,0 +1,19 @@
+# Only what the two images need goes into the build (no node_modules from the Mac, no secrets)
+**/node_modules
+**/.nuxt
+**/.output
+pwa/dist
+pwa/public/sprites
+server/.env
+.env
+.git
+.claude
+.playwright-mcp
+dist
+mac/.build
+mac/.swiftpm
+mac/GoblinCamp.app
+mac/dist
+mac/Sources
+mac/tools
+*.log

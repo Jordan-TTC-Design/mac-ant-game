@@ -37,7 +37,8 @@ final class AccountStore {
     private let testMode: Bool
     private static let keychainService = "dev.goblincamp.game.account"
 
-    /// `http://localhost:8787` until the server is deployed; `CAMP_SERVER_URL` points elsewhere.
+    /// Where the server is: `CAMP_SERVER_URL` (tests), else `GoblinServerURL` in Info.plist (set for the builds colleagues get),
+    /// else `http://localhost:8787` (development).
     let serverURL: URL
 
     init() {
@@ -46,7 +47,8 @@ final class AccountStore {
         let base = env["CAMP_DATA_DIR"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GoblinCamp")
         url = base.appendingPathComponent("account.json")
-        serverURL = URL(string: env["CAMP_SERVER_URL"] ?? "http://localhost:8787")!
+        let planned = Bundle.main.object(forInfoDictionaryKey: "GoblinServerURL") as? String
+        serverURL = URL(string: env["CAMP_SERVER_URL"] ?? (planned?.isEmpty == false ? planned! : "http://localhost:8787")) ?? URL(string: "http://localhost:8787")!
         if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode(File.self, from: data) { file = saved } else { save() }
     }
 

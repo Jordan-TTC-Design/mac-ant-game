@@ -1,0 +1,65 @@
+# 本機試跑整套（和線上一樣的映像）— make up-dev／make deploy-dev（docker compose -f docker-compose_dev.yaml …）
+#
+# 資料庫卷：db_data_dev（獨立，不會動到線上資料）。
+# 平常開發不需要這個：pnpm db:up ＋ pnpm dev ＋ pnpm pwa 比較快（見 server/README.md）。
+services:
+  web:
+    container_name: ${COMPOSE_PROJECT_NAME}_web
+    build:
+      context: .
+      dockerfile: pwa/Dockerfile
+    restart: always
+    ports:
+      - '${WEB_PORT}:80'
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  server:
+    container_name: ${COMPOSE_PROJECT_NAME}_server
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: postgres://goblin:${POSTGRES_PASSWORD}@postgres:5432/goblin
+      PORT: 8787
+      APP_URL: ${APP_URL}
+      TRUST_PROXY: "true"
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      MAIL_FROM: ${MAIL_FROM}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  postgres:
+    container_name: ${COMPOSE_PROJECT_NAME}_postgres
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: goblin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: goblin
+    volumes:
+      - db_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goblin -d goblin"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  db_data_dev:
