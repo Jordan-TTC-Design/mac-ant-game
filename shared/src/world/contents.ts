@@ -49,6 +49,10 @@ export interface LairKind {
 
 export const FOES: Record<string, FoeTemplate> = {
   slime: { id: "slime", name: "史萊姆", hp: 18, attack: 3, range: 0, speed: 0.6, row: "front" },
+  // the camp's own monsters (raids on the home camp, server/CAMP.md §3.2), scaled from the Mac's numbers against the slime's
+  giant_rat: { id: "giant_rat", name: "巨鼠", hp: 12, attack: 5, range: 0, speed: 1.3, row: "front" },
+  bat: { id: "bat", name: "蝙蝠", hp: 9, attack: 4, range: 0, speed: 1.6, row: "front" },
+  frog: { id: "frog", name: "巨蛙", hp: 16, attack: 4, range: 0, speed: 0.7, row: "front" },
   big_slime: { id: "big_slime", name: "大史萊姆", hp: 45, attack: 5, range: 0, speed: 0.4, row: "front" },
   wolf: { id: "wolf", name: "野狼", hp: 22, attack: 6, range: 0, speed: 1.4, row: "front" },
   alpha_wolf: { id: "alpha_wolf", name: "狼王", hp: 50, attack: 9, range: 0, speed: 1.3, row: "front" },

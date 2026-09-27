@@ -8,6 +8,7 @@ import type { Database } from "./db/client.ts";
 import { apiError } from "./http.ts";
 import type { RateLimiter } from "./lib/rate-limit.ts";
 import type { Mailer } from "./mail/mailer.ts";
+import { campRoutes } from "./camp/routes.ts";
 import { noteRoutes } from "./notes/routes.ts";
 import { pushRoutes } from "./push/routes.ts";
 import { NoPushSender, type PushSender } from "./push/sender.ts";
@@ -44,6 +45,7 @@ export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; 
 
   app.route("/auth", authRoutes(deps));
   app.route("/notes", noteRoutes(deps));
+  app.route("/camp", campRoutes(deps));
   app.route("/push", pushRoutes(deps));
 
   // Signed-in devices keep this open and are told when something changed (then they fetch it).

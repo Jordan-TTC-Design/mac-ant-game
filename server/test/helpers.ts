@@ -19,7 +19,7 @@ export async function openTestDatabase(): Promise<Database> {
 }
 
 export async function emptyTables(database: Database) {
-  await database.sql`truncate users, devices, sessions, email_tokens, invites, notes cascade`;
+  await database.sql`truncate users, devices, sessions, email_tokens, invites, notes, camps, camp_residents, camp_events cascade`;
 }
 
 /** An app with its own clock, mailbox and rate limits, plus shortcuts for requests. */

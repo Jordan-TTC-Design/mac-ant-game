@@ -77,7 +77,7 @@ export interface ChangesResponse {
 }
 
 /** What the server says over the WebSocket (`/api/ws`). */
-export type ServerEvent = { type: "notes.changed"; seq: number } | { type: "hello"; userId: string };
+export type ServerEvent = { type: "notes.changed"; seq: number } | { type: "camp.changed"; version: number } | { type: "hello"; userId: string };
 
 /** A phone's Web Push subscription, as the browser gives it (`PushSubscription.toJSON()`). */
 export const pushSubscriptionSchema = z.object({

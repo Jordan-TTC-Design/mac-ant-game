@@ -67,6 +67,7 @@ export interface ApiError {
     | "unauthorized"
     | "forbidden"
     | "not_found"
+    | "conflict"
     | "rate_limited"
     | "unsupported_media_type";
   message: string;
