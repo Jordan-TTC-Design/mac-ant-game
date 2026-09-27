@@ -1,4 +1,5 @@
 import AppKit
+import CampRules
 
 /// Turning seconds into "30 秒" / "5 分鐘" / "2 小時" and back.
 enum IntervalFormat {
@@ -65,7 +66,7 @@ final class Settings {
         let now = CACurrentMediaTime()
         if now - Settings.paceStamp > 1 || Settings.paceStamp == 0 {
             Settings.paceStamp = now
-            if let v = Settings.paceOverride { Settings.paceCache = v } else { Settings.paceCache = min(4, max(0.25, 180 / max(1, spawnInterval))) }
+            if let v = Settings.paceOverride { Settings.paceCache = v } else if booksDriven { Settings.paceCache = 1 } else { Settings.paceCache = min(4, max(0.25, 180 / max(1, spawnInterval))) }
         }
         return Settings.paceCache
     }
@@ -76,8 +77,14 @@ final class Settings {
     /// The cap is remembered per character.
     private var maxAntsKey: String { "maxAnts.\(Characters.current.id)" }
 
+    /// The camp is kept by the server (server/CAMP.md): its pace, cap and raids are the race's, not these settings (set at launch).
+    var booksDriven = false
+
     var maxAnts: Int {
-        get { number(maxAntsKey, argument: "maxAnts").map { Int($0) } ?? Characters.current.defaultMaxCount }
+        get {
+            if booksDriven { return Races.rules(Characters.current.id).homeCap }
+            return number(maxAntsKey, argument: "maxAnts").map { Int($0) } ?? Characters.current.defaultMaxCount
+        }
         set { defaults.set(newValue, forKey: maxAntsKey) }
     }
 
@@ -309,7 +316,7 @@ final class Settings {
     }
     /// How often monsters raid the camp: 0 never, 1 now and then, 2 (default) sometimes, 3 often.
     var monsters: Int {
-        get { number("monsters", argument: "monsters").map { min(3, max(0, Int($0))) } ?? 2 }
+        get { booksDriven ? 2 : (number("monsters", argument: "monsters").map { min(3, max(0, Int($0))) } ?? 2) }
         set { defaults.set(newValue, forKey: "monsters") }
     }
     var wildlife: Int {

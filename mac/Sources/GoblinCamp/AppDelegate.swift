@@ -1,4 +1,5 @@
 import AppKit
+import CampRules
 import UniformTypeIdentifiers
 import ServiceManagement
 
@@ -110,6 +111,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return panel
     }()
     private var capMenuItem: NSMenuItem!
+    /// A server camp: what its race's pace is (instead of the settings for it).
+    private let campPaceItem: NSMenuItem = {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }()
     private var updateItem: ClosureMenuItem!
     private let countItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private var pauseItem: ClosureMenuItem!
@@ -146,6 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if colony.nest != nil { applyWalkable() } // (the land is made round where the camp really is)
         // the very first launch: pick a race before picking the spot (tests that drop the nest by themselves skip it)
         if serverCamp {
+            settings.booksDriven = true
+            refreshCampPace()
             colony.cancelPicking() // nothing to place until the account's camp is known
             sync.onSignedIn = { [weak self] in self?.bootstrapCamp() }
             DispatchQueue.main.async { [weak self] in self?.bootstrapCamp() }
@@ -1231,6 +1240,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                  options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
         let workshop = ClosureMenuItem(title: "工坊（做武器與裝備）…") { [weak self] in self?.showWorkshop() }
+        let wildlife = choiceMenu(title: "野生動物與果樹",
+                                  options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
+                                  get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 })
+        // a camp kept by the server has its race's pace, cap and raids (the same for everyone, for the ranking): no settings for them
+        let pace: [NSMenuItem] = serverCamp
+            ? [campPaceItem]
+            : [spawnMenu(), capMenuItem, wildlife,
+               choiceMenu(title: "魔獸來襲頻率",
+                          options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
+                          get: { self.settings.monsters }, set: { self.settings.monsters = $0 })]
         menu.addItem(group("營地", [
             foodMenu(), workshop,
             .separator(),
@@ -1238,15 +1257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } },
             nestImageMenu(),
             .separator(),
-            spawnMenu(),
-            capMenuItem,
-            choiceMenu(title: "野生動物與果樹",
-                       options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
-                       get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 }),
-            choiceMenu(title: "魔獸來襲頻率",
-                       options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
-                       get: { self.settings.monsters }, set: { self.settings.monsters = $0 }),
-        ]))
+        ] + pace + (serverCamp ? [wildlife] : [])))
 
         // records: everything you can look up
         rosterItem = ClosureMenuItem(title: "居民名冊…") { [weak self] in self?.roster.toggle() }
@@ -1539,6 +1550,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         accountMenuItems = (status, syncState, friendCode, devices, signIn, signOut)
         parent.submenu = sub
         return parent
+    }
+
+    /// "營地的節奏：每 5 分鐘生一隻，上限 300 隻" for the camp's race (server/CAMP.md §11).
+    private func refreshCampPace() {
+        let rules = Races.rules(Characters.current.id)
+        let minutes = rules.homeBirthMinutes == rules.homeBirthMinutes.rounded() ? "\(Int(rules.homeBirthMinutes))" : String(format: "%.1f", rules.homeBirthMinutes)
+        campPaceItem.title = "營地的節奏：每 \(minutes) 分鐘生一隻，上限 \(rules.homeCap) 隻（伺服器決定）"
+        campPaceItem.toolTip = "大家的營地照同一套規則長大，排行榜才公平。之後在大世界佔領的地，每一格也會自己長人口。"
     }
 
     private func refreshAccountMenu() {
@@ -3168,7 +3187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pickItem.isEnabled = colony.phase != .choosingNest && !isHiddenByUser
         editItem.title = colony.phase == .editing ? "完成編輯（Esc）" : "編輯\(home)位置"
         capMenuItem.title = "\(character.noun)數量上限"
-        customSpawnItem.title = AppDelegate.spawnPresets.contains(settings.spawnInterval)
+        refreshCampPace()
+        customSpawnItem?.title = AppDelegate.spawnPresets.contains(settings.spawnInterval)
             ? "自訂…" : "自訂…（目前 \(IntervalFormat.text(settings.spawnInterval))）"
         updateCount()
         editItem.isEnabled = (colony.phase == .running || colony.phase == .editing) && !isHiddenByUser
