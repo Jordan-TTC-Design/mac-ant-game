@@ -36,6 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let colony = Colony()
     /// The sticky notes on the desktop (each with a goblin of its own).
     private let notes = NoteController()
+    /// The account and keeping the notes the same on every device (nothing happens until someone signs in).
+    private lazy var sync = SyncEngine(notes: notes)
+    private var accountWindow: AccountWindow?
+    private var devicesWindow: DevicesWindow?
+    private var accountMenuItems: (status: NSMenuItem, syncState: NSMenuItem, friendCode: ClosureMenuItem, devices: ClosureMenuItem, signIn: ClosureMenuItem, signOut: ClosureMenuItem)!
     private let settings = Settings.shared
     private var frameTimer: Timer?
     private var lastTick = Date()
@@ -102,6 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.pomodoro.onEvent = { [weak self] event in self?.pomodoroEvent(event) }
         notes.onReminder = { [weak self] note in self?.showNoteReminder(note) ?? false }
         notes.start()
+        notes.onRemoteChange = { [weak self] note in self?.noteChangedElsewhere(note) }
+        sync.start()
         setupMenuBar()
         rebuildOverlays()
         startFullscreenWatch()
@@ -278,6 +285,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let rep = NSBitmapImageRep(cgImage: cg)
                 if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-roster.png")) }
                 log("roster captured \(cg.width)x\(cg.height)")
+            }
+        }
+        if let prefix = env["CAMP_TEST_ACCOUNT"] { // the sign-in window's two tabs, drawn into PNGs
+            func shot(_ name: String) {
+                guard let view = self.accountWindow?.window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return log("account \(name): no window") }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-\(name).png")) }
+                log("account \(name): drawn \(Int(view.bounds.width))x\(Int(view.bounds.height))")
+            }
+            after(1.5) { self.showAccountWindow(); after(0.5) { shot("login") } }
+            after(2.5) { self.accountWindow?.show(.register); after(0.5) { shot("register") } }
+            after(3.5) { self.accountWindow?.window.orderOut(nil) }
+        }
+        if let login = env["CAMP_TEST_LOGIN"] { // sign in as "email|password", then (CAMP_TEST_SYNC_NOTE) write a note that reminds in 8 s
+            let parts = login.split(separator: "|", maxSplits: 1).map(String.init)
+            after(1) {
+                Task { @MainActor in
+                    do {
+                        let count = try await self.sync.signIn(email: parts[0], password: parts.count > 1 ? parts[1] : "")
+                        log("signed in as \(self.sync.user?.email ?? "?"), \(count) local note(s)")
+                        if let text = env["CAMP_TEST_SYNC_NOTE"] {
+                            let note = self.notes.newNote(text: text, edit: false)
+                            self.notes.change(note.id) { $0.remindAt = Date().addingTimeInterval(8) }
+                            log("wrote a note: \(text)")
+                        }
+                    } catch {
+                        log("sign-in failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+            for t in [4.0, 8.0, 12.0, 16.0, 20.0] {
+                after(t) {
+                    let texts = self.notes.store.live.map { $0.text.replacingOccurrences(of: "\n", with: " / ") }
+                    let popup = self.colony.stage.current.map { "\($0.interaction.map { "\($0)" } ?? "plain") \($0.phase)" } ?? "none"
+                    log("t=\(Int(t)): sync \(self.sync.status), notes \(texts), pending \(self.notes.store.pending.count), popup \(popup)")
+                }
+            }
+            if let how = env["CAMP_TEST_SIGNOUT"] { // sign out at 6 s, keeping the notes ("keep") or taking them off this Mac
+                after(6) {
+                    Task { @MainActor in
+                        let before = self.notes.store.live.map(\.id)
+                        await self.sync.signOut(keep: how == "keep")
+                        let after = self.notes.store.live.map(\.id)
+                        log("signed out (\(how)): notes \(before.count) → \(after.count), same ids \(!after.isEmpty && Set(before) == Set(after)), signed in \(self.sync.user != nil), status \(self.sync.status)")
+                    }
+                }
+            }
+            if let s = env["CAMP_TEST_NOTE_ACK_AT"], let t = Double(s) { // press 知道了 on the reminder at t seconds
+                after(t) {
+                    log("pressing 知道了 (panel up: \(self.askPanel != nil))")
+                    self.askPanel?.answer(.dismiss)
+                }
             }
         }
         if let prefix = env["CAMP_TEST_NOTES"] { // one note in each mood, drawn into PNGs; one reminder that fires after 4 s
@@ -1060,6 +1119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // tools you reach for while you work
         menu.addItem(pomodoroMenu())
         menu.addItem(notesMenu())
+        menu.addItem(accountMenu())
         alertScreenItem = NSMenuItem(title: "提醒顯示的螢幕（番茄鐘與通知）", action: nil, keyEquivalent: "")
         alertScreenItem.submenu = NSMenu(title: "提醒顯示的螢幕")
         menu.addItem(group("Claude Code", [claudeConnectMenu(), notifyMenu(), .separator(), alertScreenItem]))
@@ -1365,6 +1425,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return (Speakers.forBreed(character.breeds[min(ant.breedIndex, character.breeds.count - 1)].id), ant.breedIndex, ant.name)
         }
         return (Speakers.common, 0, "")
+    }
+
+    // MARK: Account
+
+    private func accountMenu() -> NSMenuItem {
+        let parent = NSMenuItem(title: "帳號", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "帳號")
+        sub.autoenablesItems = false
+        let status = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        let syncState = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        syncState.isEnabled = false
+        let friendCode = ClosureMenuItem(title: "") { [weak self] in
+            guard let code = self?.sync.user?.friendCode else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(code, forType: .string)
+        }
+        friendCode.toolTip = "點一下複製；朋友用這個代碼加你（好友與使者在之後的版本）"
+        let devices = ClosureMenuItem(title: "登入中的裝置…") { [weak self] in self?.showDevices() }
+        let signIn = ClosureMenuItem(title: "登入或註冊…") { [weak self] in self?.showAccountWindow() }
+        let signOut = ClosureMenuItem(title: "登出…") { [weak self] in self?.confirmSignOut() }
+        for item in [status, syncState, friendCode, devices, signIn, signOut] { sub.addItem(item) }
+        accountMenuItems = (status, syncState, friendCode, devices, signIn, signOut)
+        parent.submenu = sub
+        return parent
+    }
+
+    private func refreshAccountMenu() {
+        guard let items = accountMenuItems else { return }
+        let user = sync.user
+        items.status.title = user.map { "\($0.displayName)（\($0.email)）" } ?? (sync.status == .needsLogin ? "登入已經過期，請重新登入" : "沒有登入：便利貼只存在這台 Mac")
+        items.syncState.title = syncText()
+        items.syncState.isHidden = user == nil
+        items.friendCode.title = "好友代碼：\(user?.friendCode ?? "")（點一下複製）"
+        items.friendCode.isHidden = user == nil
+        items.devices.isHidden = user == nil
+        items.signOut.isHidden = user == nil
+        items.signIn.isHidden = user != nil
+        items.signIn.title = sync.status == .needsLogin ? "重新登入…" : "登入或註冊…"
+    }
+
+    private func syncText() -> String {
+        switch sync.status {
+        case .signedOut, .needsLogin: return ""
+        case .syncing: return "便利貼同步中…"
+        case .offline: return "離線中：改動先存在這台，連上後會同步"
+        case .problem(let text): return "同步出了問題：\(text)"
+        case .synced(let at):
+            let seconds = Int(Date().timeIntervalSince(at))
+            return "便利貼已同步・" + (seconds < 60 ? "剛剛" : (seconds < 3600 ? "\(seconds / 60) 分鐘前" : NoteTime.text(at)))
+        }
+    }
+
+    private func showAccountWindow() {
+        if accountWindow == nil {
+            accountWindow = AccountWindow(sync: sync) { [weak self] line in self?.say(line) }
+        }
+        accountWindow?.show()
+    }
+
+    private func showDevices() {
+        if devicesWindow == nil { devicesWindow = DevicesWindow(api: sync.api) }
+        devicesWindow?.show()
+    }
+
+    private func confirmSignOut() {
+        let alert = NSAlert()
+        alert.messageText = "要登出嗎？"
+        alert.informativeText = "帳號裡的便利貼不會被刪除，下次登入會再同步回來。\n\n這台 Mac 上的便利貼要怎麼辦？\n・保留：留在這台 Mac，但不再同步。\n・從這台拿掉：只從這台 Mac 拿掉。"
+        alert.addButton(withTitle: "登出並保留")
+        alert.addButton(withTitle: "登出並從這台拿掉")
+        alert.addButton(withTitle: "取消")
+        let answer = alert.runInFront()
+        guard answer != .alertThirdButtonReturn else { return }
+        Task { @MainActor in
+            await self.sync.signOut(keep: answer == .alertFirstButtonReturn)
+            self.say("登出了。")
+        }
+    }
+
+    /// A short, silent line from the princess (what just happened with the account).
+    private func say(_ text: String) {
+        guard !isSilenced else { return }
+        var message = Message(kind: .done, speaker: Speakers.princess, breedIndex: 0, project: "", appBundleID: nil,
+                              screen: alertScreenFrame(), text: text, silent: true)
+        message.name = colony.princessName
+        colony.stage.enqueue(message)
+        redrawAll()
+    }
+
+    /// Someone answered this note's reminder on another device (or deleted the note): its goblin here goes away too.
+    private func noteChangedElsewhere(_ note: StickyNote) {
+        guard note.remindAt == nil || note.deleted, let m = colony.stage.current, m.askID == AppDelegate.noteAskPrefix + note.id else { return }
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: the reminder was answered on another device") }
+        colony.stage.dismissCurrent()
+        GoblinVoice.shared.stop()
+        askPanel?.orderOut(nil)
+        askPanel = nil
+        askPanelID = nil
     }
 
     // MARK: Sticky notes
@@ -2675,6 +2834,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         foodMenuItem.isEnabled = colony.phase == .running && !isHiddenByUser
         clearFoodItem.isEnabled = !colony.foods.isEmpty
         refreshFoodMenu()
+        refreshAccountMenu()
         refreshStates(in: menu)
     }
 

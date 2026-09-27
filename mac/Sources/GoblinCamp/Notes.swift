@@ -4,7 +4,8 @@ import AppKit
 /// the time it last changed and a deletion mark (a deleted note is kept as a tombstone, not wiped). Where it sits on the
 /// screen is not part of it: that is kept per Mac (`NoteStore.frames`), since every Mac has different screens.
 struct StickyNote: Codable, Equatable {
-    var id: String = UUID().uuidString
+    /// Lower case, the way the server writes a UUID (so the same note is the same id everywhere).
+    var id: String = UUID().uuidString.lowercased()
     var text = ""
     /// Paper colour, one of `NotePaper.all`.
     var color = "yellow"
@@ -21,6 +22,35 @@ struct StickyNote: Codable, Equatable {
     var createdAt = Date()
     var updatedAt = Date()
     var deleted = false
+
+    /// The fields that sync (the names the server uses), and which of them differ from `old`.
+    static let syncedFields = ["text", "color", "breed", "goblinName", "dueAt", "remindAt", "remindFired", "done", "deleted"]
+    func changedFields(from old: StickyNote) -> Set<String> {
+        var out = Set<String>()
+        if text != old.text { out.insert("text") }
+        if color != old.color { out.insert("color") }
+        if breed != old.breed { out.insert("breed") }
+        if goblinName != old.goblinName { out.insert("goblinName") }
+        if dueAt != old.dueAt { out.insert("dueAt") }
+        if remindAt != old.remindAt { out.insert("remindAt") }
+        if remindFired != old.remindFired { out.insert("remindFired") }
+        if done != old.done { out.insert("done") }
+        if deleted != old.deleted { out.insert("deleted") }
+        return out
+    }
+
+    /// Takes the server's value of every synced field but those in `except`.
+    mutating func merge(_ other: StickyNote, except: Set<String>) {
+        if !except.contains("text") { text = other.text }
+        if !except.contains("color") { color = other.color }
+        if !except.contains("breed") { breed = other.breed }
+        if !except.contains("goblinName") { goblinName = other.goblinName }
+        if !except.contains("dueAt") { dueAt = other.dueAt }
+        if !except.contains("remindAt") { remindAt = other.remindAt }
+        if !except.contains("remindFired") { remindFired = other.remindFired }
+        if !except.contains("done") { done = other.done }
+        if !except.contains("deleted") { deleted = other.deleted }
+    }
 
     /// Whether the reminder should pop up now.
     func reminderDue(at now: Date) -> Bool { !deleted && !remindFired && (remindAt.map { $0 <= now } ?? false) }
@@ -53,14 +83,29 @@ struct NotePaper {
 /// The notes and where they sit, in ~/Library/Application Support/GoblinCamp/notes.json.
 final class NoteStore {
     struct Frame: Codable { var x, y, w, h: Double }
+    /// How a note stands with the server: the server's number for it (0 = the server has never seen it) and the fields
+    /// changed here since then. Kept even when nobody is signed in, so signing in later sends everything that is new.
+    struct SyncMeta: Codable, Equatable {
+        var seq = 0
+        var dirty: Set<String> = []
+    }
     private struct File: Codable {
         var version = 1
         var notes: [StickyNote] = []
         var frames: [String: Frame] = [:]
+        var sync: [String: SyncMeta]? = [:]
+        /// The account these numbers belong to, and the highest change number fetched from it.
+        var syncUser: String?
+        var lastSeq: Int? = 0
     }
 
     private(set) var notes: [StickyNote] = []
     private(set) var frames: [String: Frame] = [:]
+    private(set) var meta: [String: SyncMeta] = [:]
+    private(set) var syncUser: String?
+    private(set) var lastSeq = 0
+    /// Called after a note changed here (not for changes that came from the server), so they can be sent.
+    var onLocalChange: (() -> Void)?
     private let url: URL
     private let noDisk: Bool
 
@@ -73,16 +118,22 @@ final class NoteStore {
         guard !noDisk, let data = try? Data(contentsOf: url) else { return }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let file = try? decoder.decode(File.self, from: data) else {
+        guard var file = try? decoder.decode(File.self, from: data) else {
             // keep the unreadable file aside instead of writing over it with an empty list
             NSLog("GoblinCamp: notes.json could not be read; kept aside as notes-unreadable-<time>.json")
             try? FileManager.default.moveItem(at: url, to: base.appendingPathComponent("notes-unreadable-\(Int(Date().timeIntervalSince1970)).json"))
             return
         }
-        // tombstones are only needed until the notes can sync; a month is plenty
+        // ids from before syncing were upper case; the server's are lower case
+        frames = Dictionary(file.frames.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a })
+        meta = Dictionary((file.sync ?? [:]).map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { a, _ in a })
+        file.notes = file.notes.map { var n = $0; n.id = n.id.lowercased(); return n }
+        syncUser = file.syncUser
+        lastSeq = file.lastSeq ?? 0
+        // a deletion only has to be kept until the server has it (or a month, when nobody signs in)
         let cutoff = Date().addingTimeInterval(-30 * 86400)
-        notes = file.notes.filter { !$0.deleted || $0.updatedAt > cutoff }
-        frames = file.frames
+        notes = file.notes.filter { !$0.deleted || $0.updatedAt > cutoff || !(meta[$0.id]?.dirty.isEmpty ?? true) }
+        for note in notes where meta[note.id] == nil { meta[note.id] = SyncMeta(seq: 0, dirty: Set(StickyNote.syncedFields)) } // (notes from before syncing)
     }
 
     var live: [StickyNote] { notes.filter { !$0.deleted } }
@@ -95,14 +146,19 @@ final class NoteStore {
         var note = notes[i]
         body(&note)
         guard note != notes[i] else { return }
+        let changed = note.changedFields(from: notes[i])
         note.updatedAt = Date()
         notes[i] = note
+        if !changed.isEmpty { meta[id, default: SyncMeta()].dirty.formUnion(changed) }
         save()
+        if !changed.isEmpty { onLocalChange?() }
     }
 
     func add(_ note: StickyNote, frame: NSRect) {
         notes.append(note)
+        meta[note.id] = SyncMeta(seq: 0, dirty: Set(StickyNote.syncedFields))
         setFrame(frame, for: note.id)
+        onLocalChange?()
     }
 
     func delete(_ id: String) {
@@ -123,6 +179,97 @@ final class NoteStore {
         save()
     }
 
+    // MARK: Syncing (see Sync.swift)
+
+    /// Notes with something the server does not have yet.
+    var pending: [(note: StickyNote, meta: SyncMeta)] {
+        notes.compactMap { note in meta[note.id].flatMap { $0.dirty.isEmpty ? nil : (note, $0) } }
+    }
+
+    /// Signed in as `userID`. Another account than last time: its numbers mean nothing here, so everything is sent as new.
+    func beginSync(for userID: String) {
+        guard syncUser != userID else { return }
+        syncUser = userID
+        lastSeq = 0
+        for note in notes { meta[note.id] = SyncMeta(seq: 0, dirty: Set(StickyNote.syncedFields)) }
+        notes.removeAll { $0.deleted } // (a deletion from before is nothing to the new account)
+        save()
+    }
+
+    func setLastSeq(_ seq: Int) {
+        guard seq > lastSeq else { return }
+        lastSeq = seq
+        save()
+    }
+
+    /// What happened to a note that came from the server.
+    enum RemoteOutcome { case added, updated, removed, unchanged }
+
+    /// A note as the server has it. Fields changed here and not sent yet stay as they are (the server sorts it out when they are sent).
+    @discardableResult
+    func applyRemote(_ remote: StickyNote, seq: Int) -> RemoteOutcome {
+        guard let i = notes.firstIndex(where: { $0.id == remote.id }) else {
+            guard !remote.deleted else { return .unchanged } // (never seen here, already deleted)
+            notes.append(remote)
+            meta[remote.id] = SyncMeta(seq: seq)
+            save()
+            return .added
+        }
+        let dirty = meta[remote.id]?.dirty ?? []
+        let wasDeleted = notes[i].deleted
+        var note = notes[i]
+        note.merge(remote, except: dirty)
+        meta[remote.id, default: SyncMeta()].seq = max(meta[remote.id]?.seq ?? 0, seq)
+        let changed = note != notes[i]
+        notes[i] = note
+        save()
+        if note.deleted, !wasDeleted { frames[note.id] = nil; save(); return .removed }
+        if !note.deleted, wasDeleted { return .added }
+        return changed ? .updated : .unchanged
+    }
+
+    /// The server took what was sent: those fields are no longer waiting (unless they were changed again meanwhile).
+    func sent(_ id: String, fields: Set<String>, as sentNote: StickyNote) {
+        guard let current = note(id) else { return }
+        let changedSince = current.changedFields(from: sentNote)
+        meta[id, default: SyncMeta()].dirty.subtract(fields.subtracting(changedSince))
+        if current.deleted, meta[id]?.dirty.isEmpty == true { notes.removeAll { $0.id == id }; meta[id] = nil } // the server has the deletion
+        save()
+    }
+
+    /// The id is someone else's on the server (it came from another account): this note gets a new one.
+    func renew(_ id: String) -> String? {
+        guard let i = notes.firstIndex(where: { $0.id == id }) else { return nil }
+        let fresh = UUID().uuidString.lowercased()
+        notes[i].id = fresh
+        meta[id] = nil
+        meta[fresh] = SyncMeta(seq: 0, dirty: Set(StickyNote.syncedFields))
+        if let frame = frames.removeValue(forKey: id) { frames[fresh] = frame }
+        save()
+        return fresh
+    }
+
+    /// The server lost the note (or never had it under this number): send it again as new.
+    func resend(_ id: String) {
+        meta[id] = SyncMeta(seq: 0, dirty: Set(StickyNote.syncedFields))
+        save()
+    }
+
+    /// Signed out. `keep`: the notes stay as this Mac's own (with new ids, so they belong to no account); otherwise they go.
+    func endSync(keep: Bool) {
+        if keep {
+            notes.removeAll { $0.deleted }
+            for note in notes { _ = renew(note.id) }
+        } else {
+            notes = []
+            frames = [:]
+            meta = [:]
+        }
+        syncUser = nil
+        lastSeq = 0
+        save()
+    }
+
     private func save() {
         guard !noDisk else { return }
         let encoder = JSONEncoder()
@@ -130,7 +277,7 @@ final class NoteStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoder.encode(File(notes: notes, frames: frames)).write(to: url, options: .atomic)
+            try encoder.encode(File(notes: notes, frames: frames, sync: meta, syncUser: syncUser, lastSeq: lastSeq)).write(to: url, options: .atomic)
         } catch {
             NSLog("GoblinCamp: saving notes failed: \(error)")
         }
@@ -620,7 +767,15 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
     }
 
     private func open(_ note: StickyNote) {
-        var frame = store.frame(for: note.id) ?? NSRect(origin: NSPoint(x: 200, y: 200), size: NoteView.defaultSize)
+        var frame: NSRect
+        if let saved = store.frame(for: note.id) {
+            frame = saved
+        } else { // a note that came from another device: somewhere in the middle of the main screen, stepped so they do not stack exactly
+            let area = (NSScreen.screens.first ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let spread = CGFloat(store.live.count % 6) * 24
+            frame = NSRect(origin: NSPoint(x: area.midX - NoteView.defaultSize.width / 2 + spread, y: area.midY - NoteView.defaultSize.height / 2 - spread), size: NoteView.defaultSize)
+            store.setFrame(frame, for: note.id)
+        }
         // a screen that is gone (unplugged): bring the note back where it can be seen
         if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame.insetBy(dx: 30, dy: 30)) }), let main = NSScreen.screens.first {
             frame.origin = NSPoint(x: main.visibleFrame.midX - frame.width / 2, y: main.visibleFrame.midY - frame.height / 2)
@@ -649,6 +804,51 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
         windows[id]?.orderOut(nil)
         windows[id] = nil
         store.delete(id)
+    }
+
+    // MARK: From the server (Sync.swift)
+
+    /// Called when a note changed because of another device (to dismiss a reminder someone answered elsewhere).
+    var onRemoteChange: ((StickyNote) -> Void)?
+
+    /// Notes as the server has them: new ones get a window, deleted ones lose theirs, changed ones are redrawn.
+    func applyRemote(_ list: [(note: StickyNote, seq: Int)]) {
+        for (remote, seq) in list {
+            let id = remote.id
+            switch store.applyRemote(remote, seq: seq) {
+            case .added:
+                if let note = store.note(id), windows[id] == nil { open(note) }
+            case .removed:
+                view(id)?.endEditing()
+                windows[id]?.orderOut(nil)
+                windows[id] = nil
+            case .updated:
+                if let note = store.note(id) { view(id)?.note = note }
+            case .unchanged:
+                continue
+            }
+            if let note = store.note(id) { onRemoteChange?(note) }
+        }
+    }
+
+    /// The note's id was someone else's on the server; it now has its own.
+    func renew(_ id: String) {
+        guard let fresh = store.renew(id) else { return }
+        if let window = windows.removeValue(forKey: id) {
+            windows[fresh] = window
+            if let note = store.note(fresh) { (window.contentView as? NoteView)?.note = note }
+        }
+    }
+
+    /// Signed out: the notes stay (as this Mac's own) or go.
+    func endSync(keep: Bool) {
+        for window in windows.values {
+            (window.contentView as? NoteView)?.endEditing()
+            window.orderOut(nil)
+        }
+        windows = [:]
+        store.endSync(keep: keep)
+        for note in store.live { open(note) }
     }
 
     /// 知道了: the reminder is over.

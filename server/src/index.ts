@@ -13,6 +13,7 @@ const app = createApp({ database, mailer: new ConsoleMailer(), config });
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`GoblinCamp server on http://localhost:${info.port}/api/health`);
 });
+app.injectWebSocket(server);
 
 async function shutdown() {
   server.close();

@@ -226,7 +226,8 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 - **提醒時間**：時間到，這隻哥布林從右上角跑出來提醒你，泡泡上有「知道了／10 分鐘後／明天」。沒人理的話，它回到便利貼上舉著鈴鐺一直搖，點一下便利貼就停。
 - **專注模式時不會跳出來**（開會中不該被打斷），等離開專注模式才出現；全螢幕自動專注也一樣。專注與節能模式時，便利貼上的哥布林會睡覺。
 - 被視窗蓋住找不到時：「把便利貼叫到最上面」（⌃⌥M）暫時浮到最上面，切到別的 App 就回去；「全部集合到這個螢幕」把所有便利貼排到滑鼠所在的螢幕。
-- 存在 `notes.json`。每張有自己的 id、最後修改時間與刪除標記，為之後跨裝置同步準備；位置只存在這台 Mac。實作在 `Notes.swift`。
+- 存在 `notes.json`。每張有自己的 id、最後修改時間與刪除標記；位置只存在這台 Mac。實作在 `Notes.swift`。
+- **登入帳號後會同步**（選單「帳號 → 登入或註冊…」，註冊要邀請碼）：改完一秒後送到伺服器，另一台 Mac 馬上收到；一台按「知道了」，其他台正在提醒的哥布林也會走掉。不登入一切照舊。伺服器在 `server/`（見 [server/README.md](server/README.md)），目前連 `http://localhost:8787`，用 `CAMP_SERVER_URL` 可以換。實作在 `Account.swift`（帳號、Keychain、API）、`Sync.swift`（同步與 WebSocket）、`AccountWindow.swift`（登入視窗、登入中的裝置）。
 
 ## Claude 通知（哥布林跳出來說話）
 
@@ -301,6 +302,7 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 模式：全開／工作模式／節能模式／專注模式    （⌃⌥1～4）
 番茄鐘 ▸
 便利貼 ▸        新增便利貼（⌃⌥N）· 把便利貼叫到最上面（⌃⌥M）· 全部集合到這個螢幕
+帳號 ▸          登入或註冊 · 同步狀態 · 好友代碼 · 登入中的裝置 · 登出
 Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 營地 ▸          放食物 · 工坊 · 編輯營地位置 · 開新世界 · 公主的名字 · 營地外觀
                 生成速度 · 哥布林數量上限 · 野生動物與果樹 · 魔獸來襲頻率
@@ -364,7 +366,8 @@ App 的資料都在你的使用者資料夾裡，**不在專案資料夾內，�
 | 內容 | 位置 |
 |---|---|
 | 營地位置、每一隻的品種／年齡／數值 | `~/Library/Application Support/GoblinCamp/state.json` |
-| 便利貼（內容、時間；位置只存本機） | `~/Library/Application Support/GoblinCamp/notes.json` |
+| 便利貼（內容、時間、同步狀態；位置只存本機） | `~/Library/Application Support/GoblinCamp/notes.json` |
+| 帳號（這台 Mac 的裝置 id、登入的人；登入憑證在鑰匙圈「dev.goblincamp.game.account」） | `~/Library/Application Support/GoblinCamp/account.json` |
 | 自訂營地圖片（縮小後的副本） | `~/Library/Application Support/GoblinCamp/nest.png` |
 | 自訂角色 | `~/Library/Application Support/GoblinCamp/Characters/<角色名>/`（格式見下） |
 | 選單設定 | UserDefaults，網域 `dev.goblincamp.game` |
@@ -518,6 +521,9 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_TEST_MANUAL=路徑` | 打開說明手冊並把它畫成 PNG |
 | `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `mac/tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
 | `CAMP_TEST_NOTES=路徑前綴` `CAMP_TEST_NOTES_FOCUS=1` | 建立每種狀態各一張便利貼並畫成 PNG、模擬寫字、4 秒後響一個提醒；加上 FOCUS 會在 2～8 秒進入專注模式，檢查提醒有等到離開才出現。便利貼會寫進 `CAMP_DATA_DIR`（有設時），不會碰到正式資料 |
+| `CAMP_TEST_ACCOUNT=路徑前綴` | 把登入視窗的兩個分頁畫成 PNG |
+| `CAMP_TEST_LOGIN=信箱\|密碼` `CAMP_TEST_SYNC_NOTE=文字` `CAMP_TEST_NOTE_ACK_AT=秒` `CAMP_TEST_SIGNOUT=keep／remove` | 啟動後自動登入（要有本機伺服器）；可再寫一張 8 秒後提醒的便利貼、在指定秒數按「知道了」、6 秒時登出。兩個實例用不同的 `CAMP_DATA_DIR` 就是兩台 Mac。測試資料夾裡的登入憑證存在 `account.json`，不碰鑰匙圈 |
+| `CAMP_SERVER_URL=網址` | 連別的伺服器（預設 `http://localhost:8787`） |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
 | `CAMP_WILD_SCALE=倍數` | 讓動物與果樹自動出現、長果實的速度加快（測試用） |
 | `CAMP_TEST_WILD=種類,dx,dy` | 在營地旁 (dx, dy) 放一隻動物（`chicken`／`sheep`／`pig`）與一棵果樹，並每 3 秒印一次狀態 |

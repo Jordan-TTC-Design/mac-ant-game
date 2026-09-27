@@ -1,4 +1,4 @@
-import { customType, index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, customType, index, jsonb, pgSequence, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /** Case-insensitive text (PostgreSQL's citext extension), so Me@Mail.com and me@mail.com are the same address. */
 const citext = customType<{ data: string }>({ dataType: () => "citext" });
@@ -73,3 +73,32 @@ export const invites = pgTable("invites", {
   usedAt: timestamp("used_at", { withTimezone: true }),
   usedBy: uuid("used_by").references(() => users.id, { onDelete: "set null" }),
 });
+
+/** Numbers every change to a note; devices ask for "everything after number N". */
+export const noteSeq = pgSequence("note_seq");
+
+/** See server/DESIGN.md §5. Where a note sits on a screen is not here: that stays on each Mac. */
+export const notes = pgTable(
+  "notes",
+  {
+    /** Made by the device that wrote the note (the id in the Mac's notes.json). */
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    color: text("color").notNull(),
+    breed: text("breed").notNull(),
+    goblinName: text("goblin_name").notNull(),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    remindAt: timestamp("remind_at", { withTimezone: true }),
+    remindFired: boolean("remind_fired").notNull().default(false),
+    done: boolean("done").notNull().default(false),
+    deleted: boolean("deleted").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+    /** The number of the last change. */
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    /** The number of the last change to each field, to tell a real conflict (both changed the words) from changes to different fields. */
+    fieldSeqs: jsonb("field_seqs").$type<Record<string, number>>().notNull().default({}),
+  },
+  (t) => [index("notes_user_seq_idx").on(t.userId, t.seq)],
+);

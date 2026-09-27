@@ -59,3 +59,16 @@ server/
   compose.dev.yml   本機開發用的資料庫
 shared/             server 與 pwa 共用的資料格式（zod）
 ```
+
+## API（階段 2：便利貼同步）
+
+需要登入（Mac：`Authorization: Bearer`；手機：cookie）。
+
+| 方法 | 路徑 | 做什麼 |
+|---|---|---|
+| GET | `/api/notes/changes?since=N` | `seq` 大於 N 的便利貼（每次最多 500 張，`more` 表示還有），回傳新的 `seq` |
+| POST | `/api/notes/push` | `{ changes: [{ id, baseSeq, fields, createdAt? }] }`，一次最多 100 張；`fields` 只放改過的欄位，新的便利貼要放齊全部欄位 |
+| GET | `/api/ws` | WebSocket。連上先收到 `hello`，之後有便利貼變了就收到 `{ "type": "notes.changed", "seq": N }`，收到後去拉 `/changes`；登出時伺服器會用 4001 關掉 |
+
+`push` 每張的結果：`applied`（照收）、`merged`（別台改了其他欄位，兩邊都留）、`conflict_copy`（兩邊都改了文字：伺服器的留著，這台的變成一張新的「（衝突副本）」，在 `copy`）、`delete_refused`（別台改過，刪除不算）、`rejected`（`reason`：`incomplete` 新便利貼欄位不齊、`id_taken` 別人的 id、`limit` 超過 500 張、`not_found`）。
+

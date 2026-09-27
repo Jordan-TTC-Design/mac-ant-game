@@ -14,6 +14,7 @@
   "dependencies": {
     "@goblincamp/shared": "workspace:*",
     "@hono/node-server": "^2.1.1",
+    "@hono/node-ws": "^1.3.1",
     "@node-rs/argon2": "^2.2.1",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.9",
@@ -22,9 +23,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
+    "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "ws": "^8.21.3"
   }
 }

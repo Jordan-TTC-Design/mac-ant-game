@@ -175,7 +175,12 @@ export function authRoutes(deps: AppDeps) {
     const at = now();
     const session = await db.transaction(async (tx) => {
       // this device is signed in once: whoever was signed in on it before (this account or another) is signed out there
-      await tx.update(sessions).set({ revokedAt: at }).where(and(eq(sessions.deviceId, device.id), isNull(sessions.revokedAt)));
+      const replaced = await tx
+        .update(sessions)
+        .set({ revokedAt: at })
+        .where(and(eq(sessions.deviceId, device.id), isNull(sessions.revokedAt)))
+        .returning({ id: sessions.id, userId: sessions.userId });
+      for (const old of replaced) deps.hub.close(old.userId, old.id);
       await tx
         .insert(devices)
         .values({ id: device.id, userId: user.id, kind: device.kind, name: device.name, createdAt: at, lastSeenAt: at })
@@ -190,7 +195,9 @@ export function authRoutes(deps: AppDeps) {
   });
 
   app.post("/logout", auth, async (c) => {
-    await db.update(sessions).set({ revokedAt: now() }).where(eq(sessions.id, c.get("session").id));
+    const me = c.get("session");
+    await db.update(sessions).set({ revokedAt: now() }).where(eq(sessions.id, me.id));
+    deps.hub.close(me.user.id, me.id);
     clearSessionCookie(c);
     return c.body(null, 204);
   });
@@ -229,6 +236,7 @@ export function authRoutes(deps: AppDeps) {
       .where(and(eq(sessions.id, id), eq(sessions.userId, me.user.id), isNull(sessions.revokedAt)))
       .returning({ id: sessions.id });
     if (done.length === 0) return apiError(c, 404, "not_found", "找不到這個登入。");
+    deps.hub.close(me.user.id, id);
     if (id === me.id) clearSessionCookie(c);
     return c.body(null, 204);
   });
@@ -254,22 +262,23 @@ export function authRoutes(deps: AppDeps) {
     if ("response" in body) return body.response;
     const at = now();
     const passwordHash = await hashPassword(body.data.password);
-    const ok = await db.transaction(async (tx) => {
+    const reset = await db.transaction(async (tx) => {
       const [row] = await tx
         .select()
         .from(emailTokens)
         .where(and(eq(emailTokens.tokenHash, hashSecret(body.data.token)), eq(emailTokens.purpose, "reset"), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, at)))
         .for("update");
-      if (!row) return false;
+      if (!row) return null;
       await tx.update(emailTokens).set({ usedAt: at }).where(eq(emailTokens.id, row.id));
       // the link came to the mailbox, so the address is proven too
       const [user] = await tx.select({ verified: users.emailVerifiedAt }).from(users).where(eq(users.id, row.userId));
       await tx.update(users).set({ passwordHash, emailVerifiedAt: user?.verified ?? at }).where(eq(users.id, row.userId));
       // every device signs in again with the new password
       await tx.update(sessions).set({ revokedAt: at }).where(and(eq(sessions.userId, row.userId), isNull(sessions.revokedAt)));
-      return true;
+      return row.userId;
     });
-    if (!ok) return apiError(c, 400, "token_invalid", "這個連結已經失效了，請重新申請一次。");
+    if (!reset) return apiError(c, 400, "token_invalid", "這個連結已經失效了，請重新申請一次。");
+    deps.hub.close(reset);
     return c.json({ ok: true, message: "新密碼設定好了，請重新登入。" });
   });
 
