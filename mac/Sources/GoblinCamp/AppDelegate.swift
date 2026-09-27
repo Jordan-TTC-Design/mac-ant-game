@@ -52,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var booksTimer: Timer?
     private var booksFetchedAt = Date.distantPast
     private var booksFetching = false
+    private var storySentAt = Date()
+    private var lastStory: Data?
     private var accountWindow: AccountWindow?
     private var devicesWindow: DevicesWindow?
     private var accountMenuItems: (status: NSMenuItem, syncState: NSMenuItem, friendCode: ClosureMenuItem, devices: ClosureMenuItem, signIn: ClosureMenuItem, signOut: ClosureMenuItem)!
@@ -327,6 +329,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if env["CAMP_TEST_BOOKS"] != nil { // following the books: fetch at CAMP_TEST_BOOKS_FETCH_AT, a princess's child at CAMP_TEST_PRINCESS_CHILD, a line every 5 s
             if let t = Double(env["CAMP_TEST_BOOKS_FETCH_AT"] ?? "") { after(t) { log("fetching the books"); self.refreshBooks() } }
+            for (key, action) in [("CAMP_TEST_BOOK_CRAFT", "craft"), ("CAMP_TEST_BOOK_CRAFT2", "craft"), ("CAMP_TEST_BOOK_FOOD", "food"), ("CAMP_TEST_BOOK_REPAIR", "repair")] {
+                guard let t = Double(env[key] ?? "") else { continue }
+                after(t) {
+                    switch action {
+                    case "craft": log("craft bone knife: \(self.colony.craft(Gears.by(id: "bone_knife")!)), queued \(self.ledger.pending.count)")
+                    case "food":
+                        self.colony.beginPlacingFood(.meat)
+                        if let nest = self.colony.nest { self.colony.placeFood(at: CGPoint(x: nest.x + 60, y: nest.y)) }
+                        log("put meat down, queued \(self.ledger.pending.count)")
+                    default:
+                        let jobs = self.colony.repairJobs()
+                        log("repair jobs \(jobs.count): \(jobs.first.map { self.colony.repair($0) } ?? false)")
+                    }
+                }
+            }
             if let t = Double(env["CAMP_TEST_PLAY_RAID"] ?? "") { // a made-up raid: two slimes, two rats, the two oldest residents fall
                 after(t) {
                     let fallen = Set(self.colony.ants.map(\.id).sorted().prefix(2))
@@ -1691,12 +1708,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func followBooks() {
         colony.followsBooks = true
         colony.onPrincessChild = { [weak self] breed, parents in self?.princessChild(breed: breed, parents: parents) }
+        colony.onBookCommand = { [weak self] command in self?.sendCommand(command) }
+        ledger.loadPending()
+        lastStory = try? JSONEncoder().encode(colony.romance)
         sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks() } }
         applyBooksToCamp()
         booksTimer?.invalidate()
         booksTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             guard let self else { return }
             if Date().timeIntervalSince(self.booksFetchedAt) > 180 { self.refreshBooks() }
+            if Date().timeIntervalSince(self.storySentAt) > 300 { self.sendStoryIfChanged() }
             if self.ledger.advanceHere() { self.applyBooksToCamp() }
         }
     }
@@ -1734,6 +1755,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         booksFetching = true
         Task { @MainActor in
             defer { self.booksFetching = false }
+            await self.flushCommands()
             do {
                 let events = try await self.ledger.newEvents()
                 if try await self.ledger.fetch() != nil {
@@ -1745,6 +1767,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.booksFetchedAt = Date() // offline: try again in three minutes (births go on here meanwhile)
             }
         }
+    }
+
+    /// Something the player did that the books must do: queued (it waits while offline) and sent in order.
+    private func sendCommand(_ command: BookCommand) {
+        var q: CampLedger.Queued
+        switch command {
+        case .craft(let gear): q = .init(kind: "craft"); q.gear = gear
+        case .repair(let resident, let slot, let stock): q = .init(kind: "repair"); q.resident = resident; q.slot = slot; q.stock = stock
+        case .food(let food): q = .init(kind: "food"); q.food = food
+        case .princessName(let name): q = .init(kind: "princess-name"); q.name = name
+        case .story(let romance): q = .init(kind: "story"); q.romance = romance
+        }
+        ledger.enqueue(q)
+        Task { @MainActor in await self.flushCommands() }
+    }
+
+    private func flushCommands() async {
+        await ledger.sendPending { [weak self] command, result in
+            guard let self else { return }
+            switch result {
+            case .success(let answer):
+                self.applyBooksToCamp()
+                if ["craft", "repair"].contains(command.kind), !answer.message.isEmpty {
+                    let who = answer.resident.flatMap { id in self.colony.ants.first { $0.id == id }?.name }
+                    self.workshopWindow?.show(answer.message + (who.map { "交給\($0)。" } ?? ""))
+                }
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: command \(command.kind): \(answer.message)") }
+            case .failure(let error):
+                self.applyBooksToCamp()
+                if ["craft", "repair"].contains(command.kind) { self.workshopWindow?.show(error.message) } else if command.kind != "story" { self.say(error.message) }
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: command \(command.kind) refused: \(error.code) \(error.message)") }
+            }
+        }
+    }
+
+    /// The princess's story runs on this Mac; the books keep a copy (sent when it changed, at most every five minutes).
+    private func sendStoryIfChanged() {
+        storySentAt = Date()
+        guard let now = try? JSONEncoder().encode(colony.romance), now != lastStory else { return }
+        lastStory = now
+        sendCommand(.story(colony.romance))
     }
 
     /// The princess had a child: the server adds it to the books, and it walks out of the camp.
@@ -2057,7 +2120,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let wasPaused = colony.isPaused
         colony.isPaused = true
-        defer { colony.isPaused = wasPaused; colony.needsPrincessName = false; persist(); redrawAll() }
+        let before = colony.princessName
+        defer {
+            colony.isPaused = wasPaused
+            colony.needsPrincessName = false
+            persist()
+            redrawAll()
+            if serverCamp, campReady, !colony.princessName.isEmpty, colony.princessName != before { sendCommand(.princessName(colony.princessName)) }
+        }
         var suggestion = colony.princessName.isEmpty ? Names.randomPrincess() : colony.princessName
         while true {
             let alert = NSAlert()

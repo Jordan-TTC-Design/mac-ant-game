@@ -168,8 +168,13 @@ final class CampLedger {
     /// What the camp owns, as the books have it.
     func bookStores() -> BookStores? {
         guard let view else { return nil }
+        let now = Date()
+        func secondsLeft(_ ends: [String: String]) -> [String: Double] {
+            ends.compactMapValues { ServerTime.parse($0).map { $0.timeIntervalSince(now) } }.filter { $0.value > 0 }
+        }
         return BookStores(materials: view.materials, kills: view.kills, larder: view.larder,
-                          armory: view.armory.map { GearItem(id: $0.id, left: $0.left) }, peak: max(view.peak, residents.count), delivered: view.delivered)
+                          armory: view.armory.map { GearItem(id: $0.id, left: $0.left) }, peak: max(view.peak, residents.count), delivered: view.delivered,
+                          boosts: secondsLeft(view.boosts), cooldowns: secondsLeft(view.foodCooldowns))
     }
 
     /// What happened since this Mac last looked (oldest first). The first time, everything before is taken as seen.
@@ -187,6 +192,63 @@ final class CampLedger {
         seenSeq = max(seenSeq ?? 0, since)
         try? JSONEncoder().encode(seenSeq).write(to: seenURL, options: .atomic)
         return first ? [] : all
+    }
+
+    // MARK: Commands, queued (so they wait while offline and are done once: each has its own requestId)
+
+    /// One command as it is sent (shared/src/camp/api.ts `campCommand`); fields a kind does not use stay out.
+    struct Queued: Codable {
+        let requestId: String
+        let kind: String
+        var gear: String?
+        var resident: Int?
+        var slot: String?
+        var stock: Int?
+        var food: String?
+        var name: String?
+        var romance: RomanceState?
+        init(kind: String) { requestId = UUID().uuidString.lowercased(); self.kind = kind }
+    }
+
+    private(set) var pending: [Queued] = []
+    private var pendingURL: URL { cacheURL.deletingLastPathComponent().appendingPathComponent("camp-pending.json") }
+    private var sending = false
+
+    func enqueue(_ command: Queued) {
+        pending.append(command)
+        savePending()
+    }
+
+    private func savePending() {
+        try? JSONEncoder().encode(pending).write(to: pendingURL, options: .atomic)
+    }
+
+    func loadPending() {
+        if let data = try? Data(contentsOf: pendingURL), let saved = try? JSONDecoder().decode([Queued].self, from: data) { pending = saved }
+    }
+
+    /// Sends the queue in order. Each answer (or refusal: its reason) goes to `answered`; offline, the rest wait for next time.
+    func sendPending(answered: @escaping (Queued, Result<CommandAnswer, APIError>) -> Void) async {
+        guard !sending else { return }
+        sending = true
+        defer { sending = false }
+        while let next = pending.first {
+            do {
+                let answer: CommandAnswer = try await api.request("POST", "camp/commands", body: next)
+                _ = keep(answer.camp)
+                pending.removeFirst()
+                savePending()
+                answered(next, .success(answer))
+            } catch let error as APIError where error.isOffline || error.isUnauthorized || error.status >= 500 {
+                return // try again later
+            } catch let error as APIError {
+                pending.removeFirst() // refused (not enough, cooling down…): it will not go through later either
+                savePending()
+                answered(next, .failure(error))
+            } catch {
+                return
+            }
+        }
     }
 
     /// `POST /api/camp/commands` (shared/src/camp/api.ts `campCommand`): the answer, and the books after it.

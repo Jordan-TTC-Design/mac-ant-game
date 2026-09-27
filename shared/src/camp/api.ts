@@ -46,19 +46,25 @@ export const migrateInput = z.object({
 });
 export type MigrateInput = z.infer<typeof migrateInput>;
 
+/**
+ * A number the device gives a command, so sending it again (a dropped connection, a queue sent twice) does it only once:
+ * a command whose requestId the server has done answers as it did then.
+ */
+const requestId = z.uuid().optional();
+
 /** `POST /api/camp/commands`: one thing the player does. The server checks it against the books (server/CAMP.md §3.3). */
 export const campCommand = z.discriminatedUnion("kind", [
   /** The workshop makes a piece; it goes to whoever needs it most. */
-  z.object({ kind: z.literal("craft"), gear: z.string().max(40) }),
+  z.object({ requestId, kind: z.literal("craft"), gear: z.string().max(40) }),
   /** Mends a piece a resident wears (`resident` + `slot`) or one in the store (`stock`, its place in the list). */
-  z.object({ kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
+  z.object({ requestId, kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
   /** Puts a food (or, for the undead, a soul) down. */
-  z.object({ kind: z.literal("food"), food: z.enum([...FOODS, ...SOULS]) }),
-  z.object({ kind: z.literal("princess-name"), name: z.string().trim().min(1).max(8) }),
+  z.object({ requestId, kind: z.literal("food"), food: z.enum([...FOODS, ...SOULS]) }),
+  z.object({ requestId, kind: z.literal("princess-name"), name: z.string().trim().min(1).max(8) }),
   /** The princess had a child (her story runs on the Mac): it joins the camp. At most one every PRINCESS_CHILD_HOURS. */
-  z.object({ kind: z.literal("princess-child"), breed: z.enum(["half_gob", "half_mix", "half_hum"]), parents: z.string().max(80).default("") }),
+  z.object({ requestId, kind: z.literal("princess-child"), breed: z.enum(["half_gob", "half_mix", "half_hum"]), parents: z.string().max(80).default("") }),
   /** The princess's story as the Mac has it now (kept as it is; it does not count for the ranking). */
-  z.object({ kind: z.literal("story"), romance: z.unknown() }),
+  z.object({ requestId, kind: z.literal("story"), romance: z.unknown() }),
 ]);
 export type CampCommand = z.infer<typeof campCommand>;
 

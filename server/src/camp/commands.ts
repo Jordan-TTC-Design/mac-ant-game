@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   canAfford,
   FOOD_BOOST_MINUTES,
@@ -26,7 +26,7 @@ type CampRow = typeof camps.$inferSelect;
 const MINUTE = 60_000;
 
 export type CommandResult =
-  | { ok: true; message: string; resident?: number }
+  | { ok: true; message: string; resident?: number; repeated?: boolean }
   | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big" | "too_soon"; message: string };
 
 const cost = (c: Record<string, number>) => Object.entries(c).map(([id, n]) => `${id} ×${n}`).join("、");
@@ -36,6 +36,18 @@ const cost = (c: Record<string, number>) => Object.entries(c).map(([id, n]) => `
  * advanced to `now` first. On success the books are written and the camp's version goes up.
  */
 export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, now: Date): Promise<CommandResult> {
+  if (command.requestId) {
+    // done before (a device sending its queue again): answer as then, do nothing
+    const [done] = await tx
+      .select({ data: campEvents.data })
+      .from(campEvents)
+      .where(and(eq(campEvents.userId, camp.userId), eq(campEvents.kind, "command"), sql`${campEvents.data}->'command'->>'requestId' = ${command.requestId}`))
+      .limit(1);
+    if (done) {
+      const data = done.data as { message?: string; resident?: number };
+      return { ok: true, message: data.message ?? "", resident: data.resident, repeated: true };
+    }
+  }
   const materials = { ...camp.materials };
   const store: GearItem[] = camp.armory.map((i) => ({ ...i }));
   const changes: Partial<CampRow> = {};
@@ -62,7 +74,8 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       spend(materials, rule.cost);
       give(pick, item, store);
       redistribute(camp.race, wearers!, store);
-      message = `做好了${rule.name}，給了 ${pick.id} 號。`;
+      message = `做好了${rule.name}。`;
+      resident = pick.id; // (the devices say who by name: names come from the seed on them)
       break;
     }
     case "repair": {

@@ -150,7 +150,7 @@ final class WorkshopWindow: NSObject {
         holder.addSubview(costLabel)
         let button = ClosureButton(title: affordable ? "修理" : "材料不足") { [weak self] in
             guard let self else { return }
-            self.lastMessage = self.colony.repair(job) ? "修好了 \(gear.name)（\(job.owner)）。" : "材料不夠。"
+            self.lastMessage = self.colony.repair(job) ? (self.colony.followsBooks ? "修\(gear.name)中…" : "修好了 \(gear.name)（\(job.owner)）。") : "材料不夠。"
             self.refresh()
         }
         button.isEnabled = affordable
@@ -160,11 +160,18 @@ final class WorkshopWindow: NSObject {
         return 34
     }
 
+    /// A line from the server about what was made or mended (the camp follows the books).
+    func show(_ message: String) {
+        lastMessage = message
+        refresh()
+    }
+
     private func make(_ gear: Gear) {
         switch colony.craft(gear) {
         case .made(let made, let by): lastMessage = "做好了 \(made.name)，交給 \(by)。"
         case .missing: lastMessage = "材料不夠。"
         case .nobodyNeeds: lastMessage = "大家身上這個位置都有一樣好或更好的了，先不做。"
+        case .sent(let gear): lastMessage = "做\(gear.name)中…（伺服器會決定交給誰）"
         }
         refresh()
     }

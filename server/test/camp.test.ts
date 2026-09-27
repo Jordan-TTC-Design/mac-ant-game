@@ -308,6 +308,17 @@ describe("commands", () => {
     expect((await cmd(me, { kind: "princess-child", breed: "half_gob" })).status).toBe(200);
   });
 
+  it("does a command sent twice (same requestId) only once", async () => {
+    const me = await campWith({ rat_fang: 10, rat_tail: 3 });
+    const requestId = "11111111-2222-4333-8444-555555555555";
+    const first = await cmd(me, { kind: "craft", gear: "bone_knife", requestId });
+    const again = await cmd(me, { kind: "craft", gear: "bone_knife", requestId });
+    expect(again.status).toBe(200);
+    expect(again.body.message).toBe(first.body.message);
+    expect(again.body.camp.materials).toEqual({ rat_fang: 6, rat_tail: 2 }); // spent once
+    expect((await cmd(me, { kind: "craft", gear: "bone_knife", requestId: "11111111-2222-4333-8444-555555555556" })).body.camp.materials).toEqual({ rat_fang: 2, rat_tail: 1 });
+  });
+
   it("names the princess and keeps her story", async () => {
     const me = await campWith({});
     expect((await cmd(me, { kind: "princess-name", name: "艾莉雅" })).body.camp.princessName).toBe("艾莉雅");

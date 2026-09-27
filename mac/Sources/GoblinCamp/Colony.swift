@@ -48,6 +48,8 @@ final class Colony {
     var doomed = Set<Int>()
     /// The raid being played: when it began (real seconds), and its monsters' ids.
     var raidPlaying: (began: Double, monsters: Set<Int>)?
+    /// Something the player did that the books must do (craft, repair, food) while the camp follows the books.
+    var onBookCommand: ((BookCommand) -> Void)?
     /// The princess had a child while the camp follows the books: the server adds it (breed id, parents).
     var onPrincessChild: ((String, String) -> Void)?
     private(set) var eggs: [Egg] = []
@@ -352,6 +354,7 @@ final class Colony {
         foods.append(FoodSource(id: nextFoodID, kind: kind, pos: spot, amount: kind.initialAmount))
         nextFoodID += 1
         foodCooldowns[kind] = Colony.foodCooldown
+        if followsBooks { onBookCommand?(.food(kind.rawValue)) } // the books start its boost and cooldown
         if foods.filter({ $0.origin == .placed }).count > Colony.maxFoods, let oldest = foods.firstIndex(where: { $0.origin == .placed }) {
             foods.remove(at: oldest)
         }
@@ -1057,6 +1060,7 @@ final class Colony {
     func cooldownLeft(_ kind: FoodKind) -> Double { foodCooldowns[kind, default: 0] }
 
     private func feed(_ kind: FoodKind, pieces: Int) {
+        if followsBooks { return } // (the books have its boost from when it was put down)
         let was = boosts[kind, default: 0]
         let per = kind == .stew ? Colony.boostPerPiece / 2 : Colony.boostPerPiece
         boosts[kind] = min(Colony.boostCap, was + per * Double(pieces))
@@ -1311,6 +1315,8 @@ final class Colony {
         case missing
         /// Everybody already wears something at least as good for that slot.
         case nobodyNeeds
+        /// The camp follows the books: sent to the server, which makes it and says who got it.
+        case sent(gear: Gear)
     }
 
     func canAfford(_ gear: Gear) -> Bool { gear.cost.allSatisfy { materials[$0.0, default: 0] >= $0.1 } }
@@ -1321,6 +1327,10 @@ final class Colony {
     /// Makes a piece of gear from the stored materials and gives it to the goblin who gains most from it (see `neediest`).
     func craft(_ gear: Gear) -> CraftResult {
         guard canAfford(gear) else { return .missing }
+        if followsBooks {
+            onBookCommand?(.craft(gear.id))
+            return .sent(gear: gear)
+        }
         let item = GearItem(gear)
         guard let pick = neediest(for: item) else { return .nobodyNeeds }
         for (id, count) in gear.cost {
@@ -1416,6 +1426,13 @@ final class Colony {
     @discardableResult
     func repair(_ job: RepairJob) -> Bool {
         guard canAffordRepair(job.gear) else { return false }
+        if followsBooks {
+            switch job.place {
+            case .worn(let id, let slot): onBookCommand?(.repair(resident: id, slot: slot.rawValue, stock: nil))
+            case .stock(let index): onBookCommand?(.repair(resident: nil, slot: nil, stock: index))
+            }
+            return true
+        }
         for (id, count) in Colony.repairCost(job.gear) {
             materials[id, default: 0] -= count
             if materials[id] == 0 { materials[id] = nil }
@@ -1919,6 +1936,15 @@ struct BookResident {
     let gear: [String: GearItem]
 }
 
+/// A player's action the server does when the camp follows the books (shared/src/camp/api.ts `campCommand`).
+enum BookCommand {
+    case craft(String)
+    case repair(resident: Int?, slot: String?, stock: Int?)
+    case food(String)
+    case princessName(String)
+    case story(RomanceState)
+}
+
 /// What the camp owns, as the books have it.
 struct BookStores {
     let materials: [String: Int]
@@ -1927,6 +1953,9 @@ struct BookStores {
     let armory: [GearItem]
     let peak: Int
     let delivered: Int
+    /// Food boosts and cooldowns: seconds left, by food id.
+    let boosts: [String: Double]
+    let cooldowns: [String: Double]
 }
 
 extension Colony {
@@ -1981,6 +2010,8 @@ extension Colony {
         larder = stores.larder
         armory = stores.armory.filter { $0.gear != nil }
         foodDelivered = stores.delivered
+        boosts = Colony.kinds(stores.boosts)
+        foodCooldowns = Colony.kinds(stores.cooldowns)
         if stores.peak > peakAnts {
             peakAnts = stores.peak
             if let scene {
