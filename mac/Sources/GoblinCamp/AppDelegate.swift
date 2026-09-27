@@ -2171,7 +2171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let env = ProcessInfo.processInfo.environment
         if settings.terrainSeed == 0 { settings.terrainSeed = UInt64.random(in: 1...UInt64.max) }
         let seed = UInt64(env["CAMP_TERRAIN_SEED"] ?? "") ?? settings.terrainSeed
-        let biome = Biome(rawValue: env["CAMP_TERRAIN"] ?? settings.terrainBiome) ?? Biome.pick(seed: seed)
+        // a race with land of its own (the elves' ancient forest, the undead's graveyard) always has it; the goblins' is picked
+        let raceBiome = Characters.current.rules.biome.flatMap(Biome.init(rawValue:))
+        let biome = Biome(rawValue: env["CAMP_TERRAIN"] ?? "") ?? raceBiome ?? Biome(rawValue: settings.terrainBiome) ?? Biome.pick(seed: seed)
         let nest = colony.nest ?? CGPoint(x: world.midX, y: world.midY)
         // The land is made round one fixed spot (where the camp first was) so it never changes when the camp is moved or the mode is switched.
         if settings.terrainAnchor == nil, colony.nest != nil { settings.terrainAnchor = nest } // (not while the camp's spot is still unknown)
@@ -2339,7 +2341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let terrain = NSMenuItem(title: "地貌", action: nil, keyEquivalent: "")
         let terrainMenu = NSMenu(title: "地貌")
         terrainMenu.autoenablesItems = false
-        for (title, id) in [("隨機（依種子）", "auto")] + Biome.allCases.map({ ($0.name, $0.rawValue) }) {
+        for (title, id) in [("隨機（依種子）", "auto")] + Biome.common.map({ ($0.name, $0.rawValue) }) { // (the elves and the undead keep their own)
             let item = ClosureMenuItem(title: title) { [weak self] in
                 self?.settings.terrainBiome = id
                 self?.applyWalkable()
@@ -2783,7 +2785,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let sub = foodMenuItem?.submenu else { return }
         sub.removeAllItems()
         func minutes(_ seconds: Double) -> String { "\(max(1, Int((seconds / 60).rounded(.up)))) 分" }
-        let on = (FoodKind.placeable + [.stew]).filter { colony.boostLeft($0) > 0 }
+        let race = Characters.current
+        foodMenuItem.title = race.rules.eats == false ? "放魂魄" : "放食物"
+        let on = (race.placeableFoods + [.stew]).filter { colony.boostLeft($0) > 0 }
         if !on.isEmpty {
             let header = NSMenuItem(title: "目前加成", action: nil, keyEquivalent: "")
             header.isEnabled = false
@@ -2795,8 +2799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             sub.addItem(.separator())
         }
-        let race = Characters.current
-        for kind in FoodKind.placeable {
+        for kind in race.placeableFoods {
             let wait = colony.cooldownLeft(kind)
             let scale = race.rules.foodScale(kind.rawValue)
             // what this race makes of it: elves get more from fruit and nothing from meat

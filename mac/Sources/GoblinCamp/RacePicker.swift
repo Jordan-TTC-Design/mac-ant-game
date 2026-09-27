@@ -12,7 +12,7 @@ final class RacePicker: NSObject, NSWindowDelegate {
     private static var current: RacePicker?
 
     /// Races that are planned but not playable yet: shown greyed out so it is clear more are coming.
-    private static let coming: [(name: String, tagline: String)] = [("死靈", "不吃東西、不會老死；魂塔收集魂魄、骨頭長出同伴。製作中。")]
+    private static let coming: [(name: String, tagline: String)] = []
 
     static func show(current id: String?, onPick: @escaping (Character) -> Void) {
         Self.current?.close()
@@ -26,7 +26,8 @@ final class RacePicker: NSObject, NSWindowDelegate {
     private init(current id: String?, onPick: @escaping (Character) -> Void) {
         self.onPick = onPick
         // the goblins first (the race everyone knows), then the others as they were found
-        let races = Characters.all.filter { $0.id != "none" }.sorted { ($0.id == "goblin" ? 0 : 1) < ($1.id == "goblin" ? 0 : 1) }
+        let order = ["goblin", "elf", "undead"]
+        let races = Characters.all.filter { $0.id != "none" }.sorted { (order.firstIndex(of: $0.id) ?? 9) < (order.firstIndex(of: $1.id) ?? 9) }
         let cardW: CGFloat = 240, cardH: CGFloat = 420, gap: CGFloat = 14
         let count = CGFloat(races.count + Self.coming.count)
         let size = NSSize(width: count * cardW + (count + 1) * gap, height: cardH + 70)

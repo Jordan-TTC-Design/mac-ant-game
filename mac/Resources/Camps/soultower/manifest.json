@@ -1,0 +1,32 @@
+{
+  "id": "soultower",
+  "name": "魂塔",
+  "blurb": "石頭砌的細塔，塔頂燒著靈魂之火，窗戶透出青光。",
+  "pixelScale": 1.5,
+  "stages": [
+    {
+      "sheet": "stage1.png",
+      "minCount": 0,
+      "entrance": [
+        12,
+        23
+      ]
+    },
+    {
+      "sheet": "stage2.png",
+      "minCount": 30,
+      "entrance": [
+        14,
+        29
+      ]
+    },
+    {
+      "sheet": "stage3.png",
+      "minCount": 90,
+      "entrance": [
+        16,
+        37
+      ]
+    }
+  ]
+}

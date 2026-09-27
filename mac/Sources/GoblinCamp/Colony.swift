@@ -325,7 +325,7 @@ final class Colony {
     // MARK: Food
 
     func beginPlacingFood(_ kind: FoodKind) {
-        guard phase == .running, cooldownLeft(kind) <= 0 else { return }
+        guard phase == .running, cooldownLeft(kind) <= 0, Characters.current.placeableFoods.contains(kind) else { return }
         pendingFood = kind
         phase = .placingFood
         onChange?()
@@ -427,7 +427,11 @@ final class Colony {
                 return
             }
             foodDelivered += pieces
-            if let boost = kind.boost { feed(boost, pieces: pieces) }
+            if kind.grows {
+                grow(kind == .bones ? "bone" : "soul", pieces: pieces)
+            } else if let boost = kind.boost, Characters.current.rules.eats != false || kind.actsAs != nil {
+                feed(boost, pieces: pieces)
+            }
             // every successful trip can bring one or two more helpers
             if Double.random(in: 0..<1) < 0.5 { recruit(for: id, count: Int.random(in: 1...2)) }
         case .foundCreature(let id):
@@ -770,7 +774,8 @@ final class Colony {
     /// A goblin hits an animal. A fighting one hits back now and then; a timid one runs.
     private func attack(creature id: Int, by index: Int) {
         guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
-        creatures[ci].hp -= ants[index].might * (1 + 0.2 * boost(.meat))
+        let rules = Characters.current.rules
+        creatures[ci].hp -= ants[index].might * (1 + 0.2 * boost(.meat)) * (Colony.isNight ? rules.nightMight ?? 1 : 1)
         wear(.weapon, of: index, by: 1)
         ants[index].swing = Ant.swingTime
         ants[index].swingHeading = atan2(creatures[ci].pos.y - ants[index].pos.y, creatures[ci].pos.x - ants[index].pos.x)
@@ -814,9 +819,11 @@ final class Colony {
             killMonster(animal)
             return
         }
-        var meat = FoodSource(id: nextFoodID, kind: .meat, pos: animal.pos, amount: animal.kind.meat)
+        let eats = Characters.current.rules.eats != false
+        let amount = eats ? animal.kind.meat : max(3, animal.kind.meat / 2)
+        var meat = FoodSource(id: nextFoodID, kind: eats ? .meat : .bones, pos: animal.pos, amount: amount) // (the undead take the bones)
         meat.origin = .meat
-        meat.capacityOverride = animal.kind.meat
+        meat.capacityOverride = amount
         meat.scouted = true
         meat.reported = true
         foods.append(meat)
@@ -834,6 +841,7 @@ final class Colony {
     /// A monster is down: it may split, it leaves materials (each with its own chance), and the hunters carry them home.
     private func killMonster(_ monster: Creature) {
         kills[monster.kind.id, default: 0] += 1
+        if Characters.current.rules.lineage != nil { releaseSoul(at: monster.pos, coloured: Double.random(in: 0..<1) < 0.3) }
         if monster.generation == 0, monster.kind.monster.splits > 0 { // a slime breaks into smaller ones
             for k in 0..<monster.kind.monster.splits {
                 var small = Creature(id: nextCreatureID, kind: monster.kind, start: monster.pos, enter: monster.pos, stay: 240)
@@ -926,6 +934,79 @@ final class Colony {
         onAntsChanged?()
     }
 
+    // MARK: The undead: souls and bones
+
+    /// Which kind the next new one will be ("bone" after bones came home, "soul" after a soul), or nil for either.
+    private var nextLineage: String?
+    private var soulTimer = 30.0
+
+    /// Bones or souls reached the soul tower: the next new one comes sooner, and of that kind.
+    private func grow(_ lineage: String, pieces: Int) {
+        spawnTimer += (lineage == "bone" ? 40 : 60) * Double(pieces)
+        nextLineage = lineage
+        if let nest, Double.random(in: 0..<1) < 0.35 { addFloater(lineage == "bone" ? "骨頭搬回了魂塔" : "魂魄飄進了靈魂之火", .common, at: nest) }
+    }
+
+    /// The breed of a new one for a race that grows from bones and souls (nil = any, by the usual roll).
+    private func lineageBreed() -> Int? {
+        guard let lineage = Characters.current.rules.lineage else { return nil }
+        let kind = nextLineage ?? (Bool.random() ? "bone" : "soul")
+        nextLineage = nil
+        let ids = kind == "bone" ? lineage.bone : lineage.soul
+        let candidates = breeds.indices.filter { ids.contains(breeds[$0].id) && breeds[$0].weight > 0 }
+        guard !candidates.isEmpty else { return nil }
+        var pick = Double.random(in: 0..<candidates.reduce(0) { $0 + breeds[$1].weight })
+        for i in candidates {
+            pick -= breeds[i].weight
+            if pick < 0 { return i }
+        }
+        return candidates.last
+    }
+
+    /// A soul set loose (a monster fell): it drifts to the soul fire by itself; now and then it is a coloured one (a boost).
+    private func releaseSoul(at pos: CGPoint, coloured: Bool) {
+        let kind: FoodKind = coloured ? [.soulBlue, .soulGreen, .soulPurple].randomElement()! : .soul
+        var soul = FoodSource(id: nextFoodID, kind: kind, pos: nearestWalkable(to: pos), amount: coloured ? 4 : 1)
+        soul.capacityOverride = soul.amount
+        soul.origin = .meat // (gone once taken, like what a hunt leaves)
+        foods.append(soul)
+        nextFoodID += 1
+    }
+
+    /// For a race that grows from bones and souls: now and then a soul turns up somewhere about and drifts toward the soul fire (it
+    /// arrives by itself; carrying it is quicker), and now and then a pile of bones is found to be dug up and carried home.
+    private func updateSouls(dt: Double) {
+        guard Characters.current.rules.lineage != nil, let nest else { return }
+        soulTimer -= dt * settings.pace
+        if soulTimer <= 0 {
+            soulTimer = Double.random(in: 70...150)
+            let souls = foods.filter { $0.kind == .soul }.count, piles = foods.filter { $0.kind == .bones }.count
+            let angle = Double.random(in: 0..<(2 * .pi)), radius = Double.random(in: 90...260)
+            let spot = nearestWalkable(to: CGPoint(x: nest.x + cos(angle) * radius, y: nest.y + sin(angle) * radius))
+            if Double.random(in: 0..<1) < 0.6 {
+                if souls < 4 { releaseSoul(at: spot, coloured: Double.random(in: 0..<1) < 0.1) }
+            } else if piles < 3 {
+                var bones = FoodSource(id: nextFoodID, kind: .bones, pos: spot, amount: 6)
+                bones.capacityOverride = 6
+                foods.append(bones)
+                nextFoodID += 1
+            }
+        }
+        // the soul fire draws the plain souls in
+        let pull = 3.0 * dt * settings.pace * (1 + boost(.honey) / 2)
+        var arrived: [Int] = []
+        for i in foods.indices where foods[i].kind == .soul {
+            let dx = nest.x - foods[i].pos.x, dy = nest.y - foods[i].pos.y, d = hypot(dx, dy)
+            if d < 14 { arrived.append(i); continue }
+            foods[i].pos.x += dx / d * pull
+            foods[i].pos.y += dy / d * pull
+        }
+        for i in arrived.sorted(by: >) {
+            foods.remove(at: i)
+            grow("soul", pieces: 1)
+        }
+    }
+
     // MARK: What the food does
 
     /// What each food brought home is still doing (seconds left, by the boost), and how long before each kind may be put down again.
@@ -941,6 +1022,12 @@ final class Colony {
     /// How strongly a boost is on: 1 while its food's time lasts, a third while only stew's does, else 0; times what that food does
     /// for this race (elves: fruit 1.5, meat nothing).
     func boost(_ kind: FoodKind) -> Double {
+        var best = strength(kind)
+        for soul in [FoodKind.soulBlue, .soulGreen, .soulPurple] where soul.actsAs == kind { best = max(best, strength(soul)) } // the undead's souls
+        return best
+    }
+
+    private func strength(_ kind: FoodKind) -> Double {
         let scale = Characters.current.rules.foodScale(kind.rawValue)
         if boosts[kind, default: 0] > 0 { return scale }
         return boosts[.stew, default: 0] > 0 ? scale / 3 : 0
@@ -1679,7 +1766,7 @@ final class Colony {
             if spawnTimer >= settings.spawnInterval * (Characters.current.rules.spawnScale ?? 1) { // (elves come half as often)
                 spawnTimer = 0
                 let jitter = { CGFloat.random(in: -4...4) }
-                var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()))
+                var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()), breedIndex: lineageBreed())
                 if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) } // no room outside yet
                 ants.append(born)
                 if ants.count > peakAnts { // the camp grows: something new may turn up on the ground
@@ -1760,7 +1847,8 @@ final class Colony {
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
         world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water))
-        world.speedBoost = 1 + 0.15 * boost(.carrot)
+        let raceRules = Characters.current.rules
+        world.speedBoost = (1 + 0.15 * boost(.carrot)) * (Colony.isNight ? raceRules.nightSpeed ?? 1 : raceRules.daySpeed ?? 1)
         world.workBoost = 1 + 0.3 * boost(.bread)
         world.fishBoost = 1 + 0.3 * boost(.fish)
         world.rangedReach = Characters.current.rules.ranged ?? 0
@@ -1780,6 +1868,7 @@ final class Colony {
         updateTerrainLife(dt: dt)
         updateChildren(dt: dt)
         updateBoosts(dt: dt)
+        updateSouls(dt: dt)
         playSeconds += dt * Colony.wildScale * settings.pace
         // the dead leave the colony (highest index first so the others keep their places)
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)

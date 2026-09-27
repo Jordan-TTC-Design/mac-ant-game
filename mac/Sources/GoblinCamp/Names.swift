@@ -93,6 +93,7 @@ enum Names {
     static func resident(seed: UInt64) -> String {
         switch Characters.current.rules.names {
         case "elf": return elf(seed: seed)
+        case "undead": return undead(seed: seed)
         default: return goblin(seed: seed)
         }
     }
@@ -108,6 +109,26 @@ enum Names {
         case 0..<45: h = mix(h); return pick(elfStarts) + pick(elfMiddles) + pick(elfEnds)   // 艾菈兒
         case 45..<75: h = mix(h); return pick(elfStarts) + pick(elfEnds)                     // 琉恩
         default: h = mix(h); return pick(elfNature) + pick(elfNatureEnds)                    // 月語
+        }
+    }
+
+    // The undead: rattling, whispering, cold sounds, made cute (咔啦、幽幽、骨丸、冥露…).
+    private static let boneSounds = ["咔", "啦", "喀", "噠", "嘎", "骨", "叩", "嗑", "咯", "喳"]
+    private static let soulSounds = ["幽", "冥", "朧", "魅", "霧", "嗚", "颯", "螢", "影", "寂", "夜", "燐"]
+    private static let undeadEnds = ["丸", "仔", "露", "兒", "寶", "醬", "嚕", "啾", "米", "妮"]
+
+    static func undead(seed: UInt64) -> String {
+        var h = mix(seed ^ 0xDEAD)
+        func pick(_ list: [String]) -> String {
+            let item = list[Int(h % UInt64(list.count))]
+            h = mix(h)
+            return item
+        }
+        switch Int(h % 100) {
+        case 0..<30: h = mix(h); return pick(boneSounds) + pick(boneSounds)                 // 咔啦
+        case 30..<55: h = mix(h); let s = pick(soulSounds); return s + s                   // 幽幽
+        case 55..<80: h = mix(h); return pick(boneSounds + soulSounds) + pick(undeadEnds)  // 骨丸、冥露
+        default: h = mix(h); return pick(soulSounds) + pick(boneSounds) + pick(undeadEnds) // 霧喀兒
         }
     }
 

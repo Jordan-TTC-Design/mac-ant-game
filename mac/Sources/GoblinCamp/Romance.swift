@@ -122,7 +122,8 @@ extension Colony {
         case .married: line = "\(name)：和 \(romance.partnerName) 結婚了（好感 \(Int(romance.affection))）"
         }
         if let began = romance.pregnancy, romance.pregnancyLength > 0 {
-            line += "，懷孕 \(min(100, Int((romance.clock - began) / romance.pregnancyLength * 100)))%"
+            let what = Characters.current.rules.soulBond == true ? "靈魂交流" : "懷孕" // (the undead: a child of the soul fire)
+            line += "，\(what) \(min(100, Int((romance.clock - began) / romance.pregnancyLength * 100)))%"
         }
         if romance.children > 0 { line += "，孩子 \(romance.children) 個" }
         if romance.stage != .single, romance.coldUntil > romance.clock { line += "（冷戰中）" }
@@ -373,7 +374,7 @@ extension Colony {
             romance.pregnancy = romance.clock
             romance.pregnancyLength = Romance.random(1800...2700)
             romance.fatherName = romance.partnerName
-            say("\(princess)有喜了！", rarity: .rare)
+            say(Characters.current.rules.soulBond == true ? "\(princess)和\(romance.partnerName)的靈魂交融在一起，靈魂之火亮了起來" : "\(princess)有喜了！", rarity: .rare)
             romanceRuntime.glow = 8
             maintainPregnancy()
             return
@@ -625,14 +626,16 @@ extension Colony {
         let roll = Double.random(in: 0..<1)
         let id = roll < 0.35 ? "half_gob" : roll < 0.65 ? "half_mix" : "half_hum" // it may take after either of them
         let index = breeds.firstIndex { $0.id == id } ?? breeds.firstIndex { $0.id == "golden" } ?? 0
-        var baby = makeAnt(at: CGPoint(x: queen.pos.x + 12, y: queen.pos.y - 4), breedIndex: index, age: 0)
+        let bond = Characters.current.rules.soulBond == true
+        let born = bond ? (nest ?? queen.pos) : CGPoint(x: queen.pos.x + 12, y: queen.pos.y - 4) // (a soul-born comes out of the soul fire)
+        var baby = makeAnt(at: born, breedIndex: index, age: 0)
         baby.parents = "\(princess) × \(romance.fatherName.isEmpty ? romance.partnerName : romance.fatherName)"
         ants.append(baby)
         romance.pregnancy = nil
         romance.children += 1
         outfitIndex = 0
         let kind = baby.female ? "女孩" : "男孩"
-        say("\(princess)生下了一個\(kind)：\(baby.name)（\(breeds[index].name)）", rarity: .rare)
+        say(bond ? "靈魂之火裡誕生了一個\(kind)：\(baby.name)（\(breeds[index].name)）" : "\(princess)生下了一個\(kind)：\(baby.name)（\(breeds[index].name)）", rarity: .rare)
         romanceRuntime.glow = 10
         if ants.count > peakAnts { peakAnts = ants.count }
         onAntsChanged?()

@@ -6,6 +6,23 @@ import AppKit
 enum FoodKind: String, CaseIterable {
     case water, honey, bread, meat, cheese, carrot, mushroom, berries, fish, cake
     case fruit, loot, stew
+    /// The undead's: coloured souls give boosts instead of food; bones and wandering souls grow new undead (see RACES.md).
+    case soulBlue = "soul_blue", soulGreen = "soul_green", soulPurple = "soul_purple"
+    case bones, soul
+
+    /// What each coloured soul does: the same as this food (blue hits harder like roast meat, green heals like water, purple
+    /// hurries the soul tower like honey hurries births).
+    var actsAs: FoodKind? {
+        switch self {
+        case .soulBlue: return .meat
+        case .soulGreen: return .water
+        case .soulPurple: return .honey
+        default: return nil
+        }
+    }
+
+    /// Bones and wandering souls: carried to the soul tower, they become new undead rather than a boost.
+    var grows: Bool { self == .bones || self == .soul }
 
     /// What the player can put down from the menu.
     static let placeable: [FoodKind] = [.water, .honey, .bread, .meat, .cheese, .carrot, .mushroom, .berries, .fish, .cake]
@@ -25,6 +42,11 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return "果實"
         case .loot: return "素材"
         case .stew: return "燉菜"
+        case .soulBlue: return "藍魂"
+        case .soulGreen: return "綠魂"
+        case .soulPurple: return "紫魂"
+        case .bones: return "骨頭"
+        case .soul: return "魂魄"
         }
     }
 
@@ -43,6 +65,11 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return "🍎"
         case .loot: return "💎"
         case .stew: return "🍲"
+        case .soulBlue: return "🔵"
+        case .soulGreen: return "🟢"
+        case .soulPurple: return "🟣"
+        case .bones: return "🦴"
+        case .soul: return "👻"
         }
     }
 
@@ -50,7 +77,7 @@ enum FoodKind: String, CaseIterable {
     var boost: FoodKind? {
         switch self {
         case .fruit: return .berries
-        case .loot: return nil
+        case .loot, .bones, .soul: return nil
         default: return self
         }
     }
@@ -69,6 +96,11 @@ enum FoodKind: String, CaseIterable {
         case .fish: return "釣魚、種田收成 +30%"
         case .cake: return "公主的感情進展加快"
         case .stew: return "每一樣都有一點"
+        case .soulBlue: return "攻擊 +20%"
+        case .soulGreen: return "在魂塔裡回血 +50%"
+        case .soulPurple: return "魂塔收集加快"
+        case .bones: return "搬回魂塔，長出骨系死靈"
+        case .soul: return "被靈魂之火吸過去，長出魂系死靈"
         case .fruit, .loot: return ""
         }
     }
@@ -80,6 +112,8 @@ enum FoodKind: String, CaseIterable {
         case .meat: return 12
         case .loot: return 1
         case .stew: return 10
+        case .bones: return 6
+        case .soul: return 1
         default: return 12
         }
     }
@@ -90,7 +124,8 @@ enum FoodKind: String, CaseIterable {
         case .fruit: return 10 // the foot of the tree
         case .loot: return 5
         case .stew: return 8
-        case .water, .honey, .berries, .cake: return 11
+        case .soul: return 5
+        case .water, .honey, .berries, .cake, .soulBlue, .soulGreen, .soulPurple, .bones: return 11
         default: return 13
         }
     }
@@ -112,6 +147,11 @@ enum FoodKind: String, CaseIterable {
         case .fruit: rgb = (0.88, 0.2, 0.2)
         case .loot: rgb = (0.95, 0.82, 0.3)
         case .stew: rgb = (0.86, 0.55, 0.22)
+        case .soulBlue: rgb = (0.4, 0.6, 1.0)
+        case .soulGreen: rgb = (0.45, 0.92, 0.6)
+        case .soulPurple: rgb = (0.75, 0.5, 1.0)
+        case .bones: rgb = (0.94, 0.92, 0.84)
+        case .soul: rgb = (0.6, 0.95, 0.9)
         }
         return NSColor(calibratedRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
     }
@@ -150,6 +190,9 @@ enum FoodSprites {
 
     /// The colours the food pictures use, by the letter in the grids.
     static let palette: [Swift.Character: (UInt8, UInt8, UInt8)] = [
+        // the undead's souls and bones: a cold outline, green, blue and purple souls, the pale wandering soul
+        "0": (34, 30, 46), "Z": (200, 255, 230), "P": (90, 220, 160), "I": (190, 220, 255), "J": (90, 140, 250),
+        "N": (236, 200, 255), "V": (170, 110, 240), "D": (200, 255, 244),
         "A": (255, 166, 64), "B": (150, 152, 164), "C": (204, 124, 78), "E": (42, 98, 46), "F": (248, 218, 184), "G": (132, 200, 86),
         "H": (255, 244, 170), "K": (214, 170, 98), "L": (206, 160, 100), "M": (222, 104, 78), "Q": (255, 230, 116), "R": (232, 72, 62),
         "S": (255, 252, 244), "T": (244, 202, 124), "U": (128, 136, 230), "W": (228, 248, 255), "X": (248, 244, 230), "Y": (255, 216, 72),
@@ -160,7 +203,45 @@ enum FoodSprites {
     ]
 
     /// Each food as it is put down, and when little is left (top row first; `.` is empty).
-    static let grids: [FoodKind: (full: [String], low: [String])] = [
+    static let grids: [FoodKind: (full: [String], low: [String])] = soulGrids.merging(baseGrids) { a, _ in a }
+
+    private static let soulFlame = [
+        "....00....",
+        "...0Q0....",
+        "..0QQQ0...",
+        ".0QQZQQ0..",
+        ".0QZZZQ0..",
+        "0QZZZZZQ0.",
+        "0QZZZZZQ0.",
+        ".0QZZZQ0..",
+        "..00000...",
+    ]
+    private static func tinted(_ grid: [String], _ light: Swift.Character, _ mid: Swift.Character) -> [String] {
+        grid.map { String($0.map { $0 == "Z" ? light : $0 == "Q" ? mid : $0 }) }
+    }
+    private static let soulGrids: [FoodKind: (full: [String], low: [String])] = [
+        .soulBlue: (tinted(soulFlame, "I", "J"), tinted(Array(soulFlame.suffix(5)), "I", "J")),
+        .soulGreen: (tinted(soulFlame, "Z", "P"), tinted(Array(soulFlame.suffix(5)), "Z", "P")),
+        .soulPurple: (tinted(soulFlame, "N", "V"), tinted(Array(soulFlame.suffix(5)), "N", "V")),
+        .soul: (["..00..", ".0DD0.", "0DDDD0", "0DDDD0", ".0DD0.", "..00.."], ["..00..", ".0DD0.", "..00.."]),
+        .bones: ([
+            "......0000......",
+            ".....0XXXX0.....",
+            "..00.0XoXo0.00..",
+            ".0XX00XXXX00XX0.",
+            "0XXXXXX00XXXXXX0",
+            "0XXxxxXXXXxxXXX0",
+            ".00XXXX00XXXX00.",
+            "...0000000000...",
+        ], [
+            "..00......00..",
+            ".0XX000000XX0.",
+            "0XXXXXXXXXXXX0",
+            ".000000000000.",
+        ]),
+    ]
+
+    static let baseGrids: [FoodKind: (full: [String], low: [String])] = [
         .water: ([
             "...oooooooo...",
             "..oWWwwwwwwo..",

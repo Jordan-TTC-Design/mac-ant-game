@@ -3,6 +3,11 @@ import AppKit
 /// What kind of place the camp window is: the ground, the trees, the rocks and the water all follow it.
 enum Biome: String, CaseIterable {
     case meadow, forest, snow, swamp
+    /// The races' own (RACES.md): the elves' ancient forest (giant trees, terraces, lanterns) and the undead's graveyard.
+    case elfwood, graveyard
+
+    /// The four the goblins' land is picked from.
+    static let common: [Biome] = [.meadow, .forest, .snow, .swamp]
 
     var name: String {
         switch self {
@@ -10,6 +15,8 @@ enum Biome: String, CaseIterable {
         case .forest: return "森林空地"
         case .snow: return "雪地"
         case .swamp: return "沼澤"
+        case .elfwood: return "精靈古林"
+        case .graveyard: return "死靈墓地"
         }
     }
 
@@ -20,7 +27,7 @@ enum Biome: String, CaseIterable {
         return roll < 35 ? .meadow : roll < 65 ? .forest : roll < 82 ? .snow : .swamp
     }
 
-    var waterStyle: WaterStyle { self == .snow ? .ice : self == .swamp ? .murk : .clear }
+    var waterStyle: WaterStyle { self == .snow ? .ice : self == .swamp || self == .graveyard ? .murk : .clear }
 
     /// A colour over the ring of forest round the clearing, so the edge matches the ground.
     var ringTint: (NSColor, CGFloat)? {
@@ -28,6 +35,8 @@ enum Biome: String, CaseIterable {
         case .snow: return (NSColor(calibratedRed: 0.93, green: 0.96, blue: 1, alpha: 1), 0.32)
         case .swamp: return (NSColor(calibratedRed: 0.16, green: 0.24, blue: 0.14, alpha: 1), 0.25)
         case .forest: return (NSColor(calibratedRed: 0.02, green: 0.08, blue: 0.04, alpha: 1), 0.12)
+        case .elfwood: return (NSColor(calibratedRed: 0.02, green: 0.12, blue: 0.08, alpha: 1), 0.2)
+        case .graveyard: return (NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.22, alpha: 1), 0.45)
         case .meadow: return nil
         }
     }
@@ -40,6 +49,43 @@ protocol Obstacle: AnyObject {
 
 extension Obstacle {
     func blocks(_ p: CGPoint) -> Bool { blocks(p, margin: 3) }
+}
+
+/// A raised shelf of the ancient forest: a wavy edge across part of the ground with an earth-and-stone face below it, and stone
+/// steps cut into it. Residents walk round the face or up and down the steps; the shelf itself is ordinary ground.
+final class Terrace: Obstacle {
+    let minX: CGFloat, maxX: CGFloat, baseY: CGFloat
+    /// The face's height (points): it hangs below the edge.
+    static let face: CGFloat = 16
+    private let wobble: [CGFloat]
+    let steps: [CGFloat]
+
+    init(minX: CGFloat, maxX: CGFloat, baseY: CGFloat, seed: UInt64, steps: [CGFloat]) {
+        self.minX = minX
+        self.maxX = maxX
+        self.baseY = baseY
+        self.steps = steps
+        var rng = TerrainRandom(seed: seed)
+        var y: CGFloat = 0
+        wobble = (0...Int((maxX - minX) / 12) + 1).map { _ in
+            y = max(-8, min(8, y + CGFloat(rng.range(-3, 3))))
+            return y
+        }
+    }
+
+    /// Where the edge is at `x` (the top of the face).
+    func edge(at x: CGFloat) -> CGFloat {
+        let t = max(0, (x - minX) / 12), i = min(wobble.count - 2, Int(t)), f = t - CGFloat(i)
+        return baseY + wobble[i] + (wobble[i + 1] - wobble[i]) * f
+    }
+
+    func onSteps(_ x: CGFloat) -> Bool { steps.contains { abs($0 - x) < 11 } }
+
+    func blocks(_ p: CGPoint, margin: CGFloat) -> Bool {
+        guard p.x >= minX - margin, p.x <= maxX + margin, !onSteps(p.x) else { return false }
+        let top = edge(at: min(max(p.x, minX), maxX))
+        return p.y <= top + margin && p.y >= top - Terrace.face - margin
+    }
 }
 
 /// A round obstacle (a tree trunk, a boulder, a bit of stream).
@@ -138,6 +184,8 @@ final class TerrainScene {
     private var dots: [(CGPoint, NSColor)] = []
     private var mounds: [(center: CGPoint, rx: CGFloat, ry: CGFloat)] = []
     private var mud: [(center: CGPoint, rx: CGFloat, ry: CGFloat)] = []
+    /// The ancient forest's shelves (see `Terrace`).
+    private(set) var terraces: [Terrace] = []
     private var rings: [(center: CGPoint, radius: CGFloat)] = []
     /// Mushrooms lying about, in clumps of a few near trees and stumps, or alone (never a neat pattern, except now and then a fairy ring).
     private var mushrooms: [(pos: CGPoint, size: Int, kind: Int)] = []
@@ -189,6 +237,7 @@ final class TerrainScene {
         return ponds.filter { world.insetBy(dx: -80, dy: -80).intersects($0.picture) } as [Obstacle]
             + solids.filter { $0.unlock <= growth && near.contains($0.center) && !isCut($0) } as [Obstacle]
             + plantedSolids.filter { near.contains($0.center) } as [Obstacle]
+            + terraces as [Obstacle]
     }
 
     // MARK: What turns up on a strip
@@ -609,6 +658,33 @@ final class TerrainScene {
 
     // MARK: Making a place
 
+    /// The elves' ancient forest (RACES.md): one or two shelves of higher ground behind the camp, each with stone steps, the giant
+    /// trees up on them, and lanterns round the camp.
+    private func makeAncientForest(_ rng: inout TerrainRandom, nest: CGPoint, inner: CGRect, taken: inout [(CGPoint, CGFloat)]) {
+        let rows = [nest.y + CGFloat(rng.range(130, 170)), nest.y + CGFloat(rng.range(300, 360))]
+        for (k, y) in rows.enumerated() where y < inner.maxY - 60 && (k == 0 || rng.chance(0.6)) {
+            let half = CGFloat(rng.range(220, 360))
+            let minX = max(inner.minX + 20, nest.x - half + CGFloat(rng.range(-60, 60))), maxX = min(inner.maxX - 20, nest.x + half + CGFloat(rng.range(-60, 60)))
+            let steps = [nest.x + CGFloat(rng.range(-50, 50)), rng.chance(0.5) ? minX + (maxX - minX) * 0.2 : maxX - (maxX - minX) * 0.2]
+            let terrace = Terrace(minX: minX, maxX: maxX, baseY: y, seed: seed &+ UInt64(k * 17 + 3), steps: steps)
+            terraces.append(terrace)
+            for x in stride(from: minX, through: maxX, by: 24) { taken.append((CGPoint(x: x, y: terrace.edge(at: x) - Terrace.face / 2), 16)) }
+            // giant trees up on the shelf, a little back from the edge
+            for _ in 0..<(k == 0 ? rng.int(2...3) : rng.int(1...2)) {
+                let x = minX + CGFloat(rng.next()) * (maxX - minX)
+                let foot = CGPoint(x: x, y: terrace.edge(at: x) + CGFloat(rng.range(28, 70)))
+                guard taken.allSatisfy({ hypot($0.0.x - foot.x, $0.0.y - foot.y) > $0.1 + 50 }) else { continue }
+                standing.append(TerrainItem(sprite: "giant-elfwood-\(rng.int(0...1))", foot: foot))
+                solids.append(Solid(center: CGPoint(x: foot.x, y: foot.y + 6), radius: 18))
+                taken.append((foot, 70))
+            }
+        }
+        for dx in [-46.0, 52.0] { // lanterns either side of the camp
+            let foot = CGPoint(x: nest.x + CGFloat(dx), y: nest.y + CGFloat(rng.range(-6, 10)))
+            standing.append(TerrainItem(sprite: "lantern-elfwood", foot: foot))
+        }
+    }
+
     private func generate(nest: CGPoint) {
         var rng = TerrainRandom(seed: seed)
         let inner = canvas.insetBy(dx: 36, dy: 36)
@@ -637,6 +713,7 @@ final class TerrainScene {
         if biome != .swamp, rng.chance(0.45) { makeStream(&rng, nest: nest, taken: &taken) }
 
         makeCamp(&rng, nest: nest, inner: inner)
+        if biome == .elfwood { makeAncientForest(&rng, nest: nest, inner: inner, taken: &taken) }
 
         // farm plots a little way from the camp, dug as it grows (one, two or three)
         if big {
@@ -664,6 +741,10 @@ final class TerrainScene {
                                    NSColor(calibratedRed: 1, green: 1, blue: 1, alpha: 0.5)]
         case .swamp: patchColors = [NSColor(calibratedRed: 0.3, green: 0.24, blue: 0.13, alpha: 0.3), NSColor(calibratedRed: 0.46, green: 0.54, blue: 0.26, alpha: 0.22),
                                     NSColor(calibratedRed: 0.14, green: 0.2, blue: 0.12, alpha: 0.3)]
+        case .elfwood: patchColors = [NSColor(calibratedRed: 0.3, green: 0.6, blue: 0.36, alpha: 0.2), NSColor(calibratedRed: 0.06, green: 0.2, blue: 0.12, alpha: 0.24),
+                                      NSColor(calibratedRed: 0.5, green: 0.42, blue: 0.2, alpha: 0.16)]
+        case .graveyard: patchColors = [NSColor(calibratedRed: 0.2, green: 0.2, blue: 0.24, alpha: 0.3), NSColor(calibratedRed: 0.42, green: 0.38, blue: 0.3, alpha: 0.22),
+                                        NSColor(calibratedRed: 0.3, green: 0.34, blue: 0.3, alpha: 0.2)]
         }
         for _ in 0..<Int(canvas.width * canvas.height / 14000) {
             let c = CGPoint(x: canvas.minX + CGFloat(rng.next()) * canvas.width, y: canvas.minY + CGFloat(rng.next()) * canvas.height)
@@ -677,6 +758,8 @@ final class TerrainScene {
         case .meadow: pondCount = Int(Double([0, 1, 1, 2][rng.int(0...3)]) * areaFactor * 0.85 + (rng.chance(0.5) ? 1 : 0))
         case .forest: pondCount = Int(Double([0, 0, 1, 2][rng.int(0...3)]) * areaFactor * 0.85 + (rng.chance(0.4) ? 1 : 0))
         case .snow: pondCount = Int(Double([0, 1, 1, 2][rng.int(0...3)]) * areaFactor * 0.85 + (rng.chance(0.5) ? 1 : 0))
+        case .elfwood: pondCount = max(1, Int(Double([0, 1, 1][rng.int(0...2)]) * areaFactor * 0.85)) // (always the moon pool)
+        case .graveyard: pondCount = Int(Double([0, 1, 1][rng.int(0...2)]) * areaFactor * 0.7)
         }
         if big {
             for i in 0..<pondCount {
@@ -719,6 +802,8 @@ final class TerrainScene {
         case .meadow: groves = Int(Double(rng.int(1...3)) * areaFactor)
         case .snow: groves = Int(Double(rng.int(2...5)) * areaFactor)
         case .swamp: groves = Int(Double(rng.int(2...4)) * areaFactor)
+        case .elfwood: groves = Int(Double(rng.int(6...12)) * areaFactor) // twice a forest's
+        case .graveyard: groves = Int(Double(rng.int(2...4)) * areaFactor)
         }
         let treeKinds = biome == .forest ? 4 : biome == .swamp ? 5 : 3
         for _ in 0..<groves {
@@ -751,7 +836,7 @@ final class TerrainScene {
         }
 
         // undergrowth: ferns and tufts of grass, stumps, and (now and then) a ring of standing stones
-        let fernCount = Int(Double(biome == .forest ? rng.int(14...28) : biome == .swamp ? rng.int(8...16) : biome == .meadow ? rng.int(4...10) : rng.int(2...5)) * areaFactor)
+        let fernCount = Int(Double(biome == .forest || biome == .elfwood ? rng.int(14...28) : biome == .swamp ? rng.int(8...16) : biome == .meadow ? rng.int(4...10) : rng.int(2...5)) * areaFactor)
         for _ in 0..<fernCount {
             guard let c = spot(8, tries: 8) else { continue }
             lying.append(TerrainItem(sprite: "fern-\(biome.rawValue)-\(rng.int(0...1))", foot: c))
@@ -760,7 +845,7 @@ final class TerrainScene {
             guard let c = spot(4, tries: 4) else { continue }
             lying.append(TerrainItem(sprite: "tuft-\(biome.rawValue)", foot: c))
         }
-        for _ in 0..<Int(Double(biome == .forest ? rng.int(2...5) : rng.int(0...2)) * areaFactor) {
+        for _ in 0..<Int(Double(biome == .forest ? rng.int(2...5) : biome == .elfwood ? 0 : rng.int(0...2)) * areaFactor) { // (the elves never fell a tree)
             guard let c = spot(10, tries: 10) else { continue }
             lying.append(TerrainItem(sprite: "stump-\(biome.rawValue)", foot: c))
             solids.append(Solid(center: CGPoint(x: c.x, y: c.y + 4), radius: 7))
@@ -807,6 +892,30 @@ final class TerrainScene {
             for _ in 0..<rng.int(5...10) { // mud
                 let c = CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height)
                 mud.append((c, CGFloat(rng.range(14, 40)), CGFloat(rng.range(8, 18))))
+            }
+        case .elfwood:
+            scatterMushrooms(&rng, clumps: Int(Double(rng.int(6...12)) * areaFactor), inner: inner)
+            for _ in 0..<rng.int(40...80) { // fallen leaves and tiny white flowers
+                dots.append((CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height),
+                             rng.chance(0.35) ? NSColor(calibratedRed: 0.96, green: 0.97, blue: 0.94, alpha: 1) : NSColor(calibratedRed: 0.6, green: 0.46, blue: 0.2, alpha: 1)))
+            }
+            for _ in 0..<Int(Double(rng.int(2...4)) * areaFactor) { // rings of pale mushrooms
+                guard let c = spot(18, tries: 12) else { continue }
+                lying.append(TerrainItem(sprite: "mushrooms-elfwood", foot: c))
+            }
+        case .graveyard:
+            for _ in 0..<rng.int(30...60) { // dead grass and bits of bone
+                dots.append((CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height),
+                             rng.chance(0.3) ? NSColor(calibratedRed: 0.86, green: 0.84, blue: 0.76, alpha: 1) : NSColor(calibratedRed: 0.44, green: 0.4, blue: 0.3, alpha: 1)))
+            }
+            for _ in 0..<Int(Double(rng.int(12...22)) * areaFactor) { // graves: headstones, crosses, stone coffins
+                guard let c = spot(12, tries: 10) else { continue }
+                standing.append(TerrainItem(sprite: "grave-graveyard-\(rng.int(0...2))", foot: c))
+                solids.append(Solid(center: CGPoint(x: c.x, y: c.y + 3), radius: 7))
+            }
+            for _ in 0..<Int(Double(rng.int(3...6)) * areaFactor) {
+                guard let c = spot(14, tries: 10) else { continue }
+                lying.append(TerrainItem(sprite: "bonepile-graveyard", foot: c))
             }
         }
 
@@ -975,6 +1084,7 @@ final class TerrainScene {
 
         // flat things first: the soft patches, the trampled earth round the camp
         for patch in patches { paintBlob(patch.center, patch.rx, patch.ry, patch.color, shadow: patch.color, feather: true) }
+        for terrace in terraces { paintTerrace(terrace, in: ctx) }
         if isStrip { paintStripSnow(amount: snowAmount(at: x)) } else { paintSnow(amount: snowAmount(at: x)) }
         if var clearing {
             clearing.radius *= CGFloat(min(1, 0.3 + Double(growth) / 110)) // the trampled earth spreads as the camp grows
@@ -1128,6 +1238,36 @@ final class TerrainScene {
         }
     }
 
+    /// A shelf: the higher ground a little lighter, a grassy lip, an earth-and-stone face below it with its shadow, and stone steps.
+    private func paintTerrace(_ t: Terrace, in ctx: CGContext) {
+        let top = canvas.maxY
+        let lipColor = NSColor(calibratedRed: 0.42, green: 0.66, blue: 0.4, alpha: 1).cgColor
+        let face = [NSColor(calibratedRed: 0.47, green: 0.36, blue: 0.24, alpha: 1).cgColor, NSColor(calibratedRed: 0.38, green: 0.28, blue: 0.19, alpha: 1).cgColor,
+                    NSColor(calibratedRed: 0.31, green: 0.23, blue: 0.16, alpha: 1).cgColor]
+        let stone = [NSColor(calibratedRed: 0.6, green: 0.6, blue: 0.58, alpha: 1).cgColor, NSColor(calibratedRed: 0.49, green: 0.49, blue: 0.47, alpha: 1).cgColor]
+        for x in stride(from: t.minX, through: t.maxX, by: 2) {
+            let edge = t.edge(at: x).rounded()
+            let fade = min(1, min(x - t.minX, t.maxX - x) / 60) // (fading out toward its ends, so it has no hard sides)
+            ctx.setFillColor(NSColor(calibratedWhite: 1, alpha: 0.045 * fade).cgColor) // the shelf, in the sun
+            ctx.fill(CGRect(x: x, y: edge, width: 2, height: top - edge))
+            ctx.setFillColor(NSColor(calibratedWhite: 0, alpha: 0.16).cgColor) // its shadow on the ground below
+            ctx.fill(CGRect(x: x, y: edge - Terrace.face - 8, width: 2, height: 8))
+            if t.onSteps(x) {
+                for k in 0..<4 {
+                    ctx.setFillColor(stone[k % 2])
+                    ctx.fill(CGRect(x: x, y: edge - CGFloat(k + 1) * 4, width: 2, height: 4))
+                }
+                continue
+            }
+            for k in 0..<Int(Terrace.face / 2) {
+                ctx.setFillColor(face[Int(x / 2 + CGFloat(k)) % 7 == 0 ? 2 : k < 4 ? 0 : 1])
+                ctx.fill(CGRect(x: x, y: edge - CGFloat(k + 1) * 2, width: 2, height: 2))
+            }
+            ctx.setFillColor(lipColor)
+            ctx.fill(CGRect(x: x, y: edge, width: 2, height: 2))
+        }
+    }
+
     // MARK: Seasons
 
     static func hash(_ p: CGPoint) -> Int { abs(Int(p.x) &* 73856093 ^ Int(p.y) &* 19349663) }
@@ -1161,6 +1301,7 @@ final class TerrainScene {
     /// How many of the flowers (or leaves) that lie about are out.
     private func dotDensity(at x: Double) -> Double {
         switch biome {
+        case .elfwood: return 1
         case .meadow: return x < 0.3 ? 0.3 + x : x < 2 ? 1 : x < 3 ? max(0, 1 - (x - 2) * 0.8) : 0
         case .forest: return x >= 2 && x < 3.4 ? 1 : 0.35
         default: return 1
@@ -1241,6 +1382,7 @@ final class TerrainScene {
                 case .meadow, .forest: name = plant.variant == 0 ? "tree-\(b)-\(plant.kind % 2)" : "tree-\(b)-\(biome == .forest && plant.kind == 2 ? 3 : 2)"
                 case .snow: name = "tree-snow-\(plant.kind % 3)"
                 case .swamp: name = plant.variant == 0 ? "tree-swamp-\(plant.kind % 3)" : "tree-swamp-\(3 + plant.kind % 2)"
+                case .elfwood, .graveyard: name = "tree-\(b)-\(plant.kind % 3)"
                 }
                 up.append(TerrainItem(sprite: name, foot: foot))
             case .fallen:
@@ -1299,7 +1441,7 @@ final class TerrainScene {
                         let d = hypot(CGFloat(dx) * 2, CGFloat(dy) * 2)
                         let wobble = CGFloat(((cx + dx) * 7 + (cy + dy) * 13) % 5) * 0.4
                         if d < half + wobble - 0.6 { cells[key(cx + dx, cy + dy)] = (d, false) }
-                        else if let bank, d < half + 3.6 + wobble, cells[key(cx + dx, cy + dy)] == nil { cells[key(cx + dx, cy + dy)] = (d, true) }
+                        else if bank != nil, d < half + 3.6 + wobble, cells[key(cx + dx, cy + dy)] == nil { cells[key(cx + dx, cy + dy)] = (d, true) }
                     }
                 }
             }

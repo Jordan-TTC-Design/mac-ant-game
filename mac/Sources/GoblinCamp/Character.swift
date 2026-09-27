@@ -90,6 +90,26 @@ struct RaceRules: Decodable {
     var princessNames: [String]?
     /// The camp look they start with (cave, mound, stump, tent).
     var camp: String?
+    /// False: they eat nothing (the undead). What they carry home only gives a boost if it is one of their own (coloured souls).
+    var eats: Bool?
+    /// What the player may put down for them (food ids); missing = the ten foods.
+    var placeable: [String]?
+    /// At night they hit this much harder and walk this much faster; by day they walk at `daySpeed` (the undead: 1.3, 1.15, 0.9).
+    var nightMight: Double?
+    var nightSpeed: Double?
+    var daySpeed: Double?
+    /// Where new ones come from, by breed id: bones carried home grow the bone kind, souls the soul fire draws in grow the soul kind.
+    /// Without it new ones are simply born (the goblins, the elves).
+    var lineage: Lineage?
+    /// True: the princess's children are born in the soul fire from a bond of souls, not carried (no pregnancy, no maternity dress).
+    var soulBond: Bool?
+    /// The terrain their camp stands in (elfwood, graveyard); missing = any of the goblins' four, by the land's seed.
+    var biome: String?
+
+    struct Lineage: Decodable {
+        var bone: [String]
+        var soul: [String]
+    }
 
     func foodScale(_ id: String) -> Double { food?[id] ?? 1 }
 }
@@ -143,6 +163,9 @@ final class Character {
     }
 
     func breedIndex(id: String) -> Int { breeds.firstIndex { $0.id == id } ?? 0 }
+
+    /// What the player may put down for this race (the undead: coloured souls instead of food).
+    var placeableFoods: [FoodKind] { rules.placeable?.compactMap(FoodKind.init(rawValue:)) ?? FoodKind.placeable }
 }
 
 enum Characters {
