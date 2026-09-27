@@ -97,7 +97,7 @@ final class AskPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        level = Levels.panel
+        level = Levels.dialog
         collectionBehavior = [.canJoinAllSpaces, .stationary]
         isFloatingPanel = true
         hidesOnDeactivate = false

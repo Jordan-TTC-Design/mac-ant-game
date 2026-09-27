@@ -117,6 +117,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if colony.nest != nil { applyWalkable() } // (the land is made round where the camp really is)
+        colony.onNewCamp = { [weak self] in
+            guard let self else { return }
+            // a new camp: the spots the old one had in the other ranges mean nothing now, and the land gets a new life to keep
+            for mode in ["screen", "bottom", "right", "left", "window"] where mode != self.settings.rangeMode { self.settings.clearModeNest(mode) }
+            self.settings.terrainSeed = UInt64.random(in: 1...UInt64.max) // a new world has new land too
+            self.settings.terrainAnchor = nil
+            for edge in ["bottom", "right", "left"] { self.settings.setStripAnchor(nil, edge: edge) }
+            self.sceneKey = ""
+        }
         colony.onChange = { [weak self] in
             self?.syncWindows()
             self?.persist()
@@ -880,6 +889,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        if let s = env["CAMP_TEST_RESTART"], let t = Double(s) { // start a new camp (re-pick the nest) at t seconds and say what is left of the old one
+            after(t) {
+                let c = self.colony
+                log("before: materials \(c.materials.values.reduce(0, +)), kills \(c.kills.values.reduce(0, +)), delivered \(c.foodDelivered), larder \(c.larder), armory \(c.armory.count), peak \(c.peakAnts), play \(Int(c.playSeconds)), romance \(c.romance.stage), life \(c.lifeReport)")
+                c.beginPicking()
+                if let nest = c.nest { c.placeNest(at: CGPoint(x: nest.x + 40, y: nest.y)) }
+                after(1.5) {
+                    let c = self.colony
+                    log("after: materials \(c.materials.values.reduce(0, +)), kills \(c.kills.values.reduce(0, +)), delivered \(c.foodDelivered), larder \(c.larder), armory \(c.armory.count), peak \(c.peakAnts), play \(Int(c.playSeconds)), romance \(c.romance.stage), life \(c.lifeReport), goblins \(c.ants.count), scene life \(c.scene?.life != nil)")
+                }
+            }
+        }
+        if env["CAMP_TEST_DIALOGLEVEL"] != nil { // the levels of the camp window and of a dialog, and whether the dialog is above it
+            after(4) {
+                let map = self.ensureMapWindow().window
+                let alert = NSAlert()
+                alert.messageText = "test"
+                alert.window.level = Levels.dialog
+                log("camp window level \(map.level.rawValue), dialog level \(alert.window.level.rawValue), dialog above: \(alert.window.level.rawValue > map.level.rawValue)")
+            }
+        }
         if let s = env["CAMP_TEST_RANGES"] { // switch the walking range every 8 s ("window,right,window,bottom"), like the menu, and report each time
             let modes = s.split(separator: ",").map(String.init)
             let start = Double(env["CAMP_TEST_RANGES_AT"] ?? "") ?? 6, step = Double(env["CAMP_TEST_RANGES_STEP"] ?? "") ?? 8
@@ -1009,7 +1039,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         // the camp: what is in it and how it runs
-        pickItem = ClosureMenuItem(title: "重新選擇營地位置（清空哥布林）") { [weak self] in self?.colony.beginPicking() }
+        pickItem = ClosureMenuItem(title: "開新世界…") { [weak self] in self?.startNewWorld() }
         editItem = ClosureMenuItem(title: "編輯營地位置") { [weak self] in
             guard let self else { return }
             if self.colony.phase == .editing { self.colony.endEditing() } else { self.colony.beginEditing() }
@@ -1241,17 +1271,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.accessoryView = box
         alert.addButton(withTitle: "開始")
         alert.addButton(withTitle: "取消")
-        alert.window.level = Levels.panel
+        alert.window.level = Levels.dialog
         alert.window.initialFirstResponder = focus
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runInFront() == .alertFirstButtonReturn else { return }
         guard let f = Double(focus.stringValue), (1...99).contains(f), let r = Double(rest.stringValue), (0...60).contains(r),
               let n = Int(rounds.stringValue), (1...12).contains(n), let l = Double(longRest.stringValue), (0...60).contains(l) else {
             let error = NSAlert()
             error.messageText = "看不懂這些數字"
             error.informativeText = "專注請填 1 到 99，休息 0 到 60，輪數 1 到 12，長休息 0 到 60。"
-            error.window.level = Levels.panel
-            error.runModal()
+            error.window.level = Levels.dialog
+            error.runInFront()
             return
         }
         settings.pomodoroFocus = f
@@ -1602,10 +1632,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.addButton(withTitle: "好")
             alert.addButton(withTitle: firstTime ? "換一個" : "取消")
             if firstTime { alert.addButton(withTitle: "先叫她公主") }
-            alert.window.level = Levels.panel
+            alert.window.level = Levels.dialog
             alert.window.initialFirstResponder = field
             NSApp.activate(ignoringOtherApps: true)
-            switch alert.runModal() {
+            switch alert.runInFront() {
             case .alertFirstButtonReturn:
                 let name = Names.clean(field.stringValue)
                 colony.princessName = name.isEmpty ? (colony.princessName.isEmpty ? "公主" : colony.princessName) : name
@@ -1721,9 +1751,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = title
         alert.informativeText = text
         buttons.forEach { alert.addButton(withTitle: $0) }
-        alert.window.level = Levels.panel
+        alert.window.level = Levels.dialog
         NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn
+        return alert.runInFront() == .alertFirstButtonReturn
     }
 
     private func confirmConnect(_ style: HookInstaller.Style) {
@@ -2349,8 +2379,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let alert = NSAlert()
                 alert.messageText = "無法設定開機啟動"
                 alert.informativeText = "\(error.localizedDescription)\n\n可以到「系統設定 → 一般 → 登入項目」自己加入或移除。"
-                alert.window.level = Levels.panel
-                alert.runModal()
+                alert.window.level = Levels.dialog
+                alert.runInFront()
             }
         }
         item.stateProvider = { SMAppService.mainApp.status == .enabled }
@@ -2380,15 +2410,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         workshopWindow?.present()
     }
 
+    /// A new world: everything starts over (the goblins, what they brought home, the camp's growth, the princess's story, the land itself).
+    /// That cannot be undone, so it is asked first; picking the spot can still be cancelled with Esc, and then nothing has changed.
+    private func startNewWorld() {
+        guard colony.nest != nil else { colony.beginPicking(); return }
+        let alert = NSAlert()
+        alert.messageText = "開新世界？"
+        alert.informativeText = "會清掉所有的\(Characters.current.noun)、素材與擊殺紀錄、倉庫、營地的成長和公主的故事，連地形也會重新生成，然後讓你重新選一個營地位置。\n\n只是想把營地搬到別的地方的話，請用「編輯營地位置」。\n（選位置時按 Esc 可以取消，那樣什麼都不會變。）"
+        alert.addButton(withTitle: "開新世界")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
+        guard alert.runInFront() == .alertFirstButtonReturn else { return }
+        colony.beginPicking()
+    }
+
     private func showWarehouse() {
         let alert = NSAlert()
         alert.messageText = "魔獸與素材圖鑑"
         let total = colony.materials.values.reduce(0, +)
         alert.informativeText = "哥布林從魔獸身上搬回來的素材（共 \(total) 件）。之後可以拿來做武器與裝備。\n\n" + warehouseText()
         alert.addButton(withTitle: "好")
-        alert.window.level = Levels.panel
+        alert.window.level = Levels.dialog
         NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        alert.runInFront()
     }
 
     private func showStats() {
@@ -2397,9 +2441,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = "每日統計"
         alert.informativeText = "今天\n\(text.today)\n\n近 7 天\n\(text.week)"
         alert.addButton(withTitle: "好")
-        alert.window.level = Levels.panel
+        alert.window.level = Levels.dialog
         NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        alert.runInFront()
     }
 
     /// The camp's look: the built-in camps (each grows as more goblins move in), or the player's own picture.
@@ -2442,7 +2486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Overlay windows sit at the status-bar level; keep the panel above them.
         panel.level = Levels.panel
         NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runInFront() == .OK, let url = panel.url else { return }
         if NestImageStore.importImage(from: url) {
             settings.campID = Camps.customID
             redrawAll()
@@ -2450,8 +2494,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let alert = NSAlert()
             alert.messageText = "無法讀取這張圖片"
             alert.informativeText = "請換一張 PNG 或 JPG 試試。"
-            alert.window.level = Levels.panel
-            alert.runModal()
+            alert.window.level = Levels.dialog
+            alert.runInFront()
         }
     }
 
@@ -2480,18 +2524,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.accessoryView = field
         alert.addButton(withTitle: "好")
         alert.addButton(withTitle: "取消")
-        alert.window.level = Levels.panel
+        alert.window.level = Levels.dialog
         alert.window.initialFirstResponder = field
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runInFront() == .alertFirstButtonReturn else { return }
         if let seconds = IntervalFormat.parse(field.stringValue) {
             settings.spawnInterval = seconds
         } else {
             let error = NSAlert()
             error.messageText = "看不懂這個時間"
             error.informativeText = "請輸入像 45、30s、5m、1.5h 這樣的時間（1 秒到 24 小時）。"
-            error.window.level = Levels.panel
-            error.runModal()
+            error.window.level = Levels.dialog
+            error.runInFront()
         }
     }
 
@@ -2566,7 +2610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildScreenMenu()
         rebuildRangeMenu()
         refreshClaudeStatus()
-        pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "重新選擇\(home)位置（清空\(character.noun)）"
+        pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "開新世界…"
         nestMenuItem.title = "\(home)外觀"
         pickItem.isEnabled = colony.phase != .choosingNest && !isHiddenByUser
         editItem.title = colony.phase == .editing ? "完成編輯（Esc）" : "編輯\(home)位置"

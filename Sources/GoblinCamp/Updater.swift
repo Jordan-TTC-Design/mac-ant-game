@@ -211,7 +211,7 @@ final class Updater {
     @discardableResult
     private func present(_ alert: NSAlert) -> NSApplication.ModalResponse {
         NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal()
+        return alert.runInFront()
     }
 
     // MARK: Downloading and installing

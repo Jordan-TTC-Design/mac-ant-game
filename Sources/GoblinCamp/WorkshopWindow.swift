@@ -34,7 +34,7 @@ final class WorkshopWindow: NSObject {
 
     func present() {
         refresh()
-        window.level = Levels.panel
+        window.level = Levels.dialog
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }

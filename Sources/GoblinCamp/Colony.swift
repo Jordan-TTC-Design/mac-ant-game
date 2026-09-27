@@ -455,6 +455,41 @@ final class Colony {
         }
     }
 
+    /// Everything a camp has earned is for that camp: a new camp starts with nothing: no materials or kills, an empty larder and armory, the
+    /// camp back to its first tent, the princess single, the ground (what was felled, dug and worn) as it was made.
+    /// (The settings, the camp window and the land itself stay.)
+    private func startOver() {
+        romance = RomanceState()
+        romanceRuntime = RomanceRuntime()
+        materials = [:]
+        kills = [:]
+        lootMaterial = [:]
+        foodDelivered = 0
+        deaths = 0
+        slain = 0
+        larder = [:]
+        armory = []
+        peakAnts = 0
+        playSeconds = 0
+        creatures = []
+        eggs = []
+        hits = []
+        healPulses = []
+        floaters = []
+        outfitIndex = Int(ProcessInfo.processInfo.environment["CAMP_OUTFIT"] ?? "") ?? 0
+        selectedAntID = nil
+        lives = [:]
+        savedLives = [:]
+        life = nil
+        scene?.life = nil
+        scene?.growth = 0
+        primeWildlifeTimers()
+        onNewCamp?()
+    }
+
+    /// Called when a new camp is started (so the app can forget things that belonged to the old one).
+    var onNewCamp: (() -> Void)?
+
     func placeNest(at point: CGPoint) {
         guard phase == .choosingNest else { return }
         phaseBeforePicking = nil
@@ -467,8 +502,7 @@ final class Colony {
         phase = .running
         clearDecorations()
         ants = []
-        romance = RomanceState()
-        romanceRuntime = RomanceRuntime()
+        startOver()
         spawnTimer = 0
         beginCarrying(to: point)
         primeWildlifeTimers()

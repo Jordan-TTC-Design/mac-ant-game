@@ -807,9 +807,7 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
         alert.accessoryView = picker
         alert.addButton(withTitle: "設定")
         alert.addButton(withTitle: "取消")
-        NSApp.activate(ignoringOtherApps: true)
-        alert.window.level = Levels.panel
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runInFront() == .alertFirstButtonReturn else { return }
         let date = picker.dateValue
         if reminder { snooze(id, until: date) } else { change(id) { $0.dueAt = date } }
     }
@@ -822,9 +820,7 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
             alert.informativeText = String(note.text.prefix(80))
             alert.addButton(withTitle: "刪除")
             alert.addButton(withTitle: "取消")
-            NSApp.activate(ignoringOtherApps: true)
-        alert.window.level = Levels.panel
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+            guard alert.runInFront() == .alertFirstButtonReturn else { return }
         }
         delete(id)
     }

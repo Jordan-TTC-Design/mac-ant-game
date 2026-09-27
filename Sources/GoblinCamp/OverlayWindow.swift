@@ -8,6 +8,29 @@ enum Levels {
     static let overlay = NSWindow.Level(rawValue: dock - 2)
     /// Our panels, popups and dialogs: above the overlays and above ordinary windows, still under the system's own.
     static let panel = NSWindow.Level(rawValue: dock - 1)
+    /// Dialogs, the manual and other windows you open on purpose: above everything else of ours, the camp window (which may be set to stay on
+    /// top, at `panel`) included, so what you click open is never hidden behind it.
+    static let dialog = NSWindow.Level(rawValue: dock)
+}
+
+extension NSAlert {
+    /// Runs the dialog in front of the camp window and everything else of ours.
+    @discardableResult
+    func runInFront() -> NSApplication.ModalResponse {
+        NSApp.activate(ignoringOtherApps: true)
+        window.level = Levels.dialog
+        window.orderFrontRegardless()
+        return runModal()
+    }
+}
+
+extension NSSavePanel {
+    /// The same for the file pickers.
+    func runInFront() -> NSApplication.ModalResponse {
+        NSApp.activate(ignoringOtherApps: true)
+        level = Levels.dialog
+        return runModal()
+    }
 }
 
 /// Borderless, transparent window covering one screen. Mouse-transparent by default;

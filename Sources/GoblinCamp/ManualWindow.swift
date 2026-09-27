@@ -114,7 +114,7 @@ final class ManualWindow: NSObject {
             "## 第一次打開被系統擋下？",
             "因為這個 App 沒有 Apple 的付費簽署。macOS 15 以上：到「系統設定 → 隱私權與安全性」按「仍要打開」；macOS 13、14：對 App 按右鍵 → 打開。",
             "## 想重新開始？",
-            "選單「重新選擇營地位置」會清空哥布林重來。想完全重置，結束程式後刪掉 ~/Library/Application Support/GoblinCamp。",
+            "選單「開新世界」會清空所有進度重來（設定不變）。",
         ]),
     ]
 
@@ -123,6 +123,7 @@ final class ManualWindow: NSObject {
                           backing: .buffered, defer: false)
         super.init()
         window.title = "哥布林營地 說明手冊"
+        window.level = Levels.dialog // (in front of the camp window, which may be set to stay on top)
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 420, height: 320)
         window.center()

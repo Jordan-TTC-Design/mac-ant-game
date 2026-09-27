@@ -279,6 +279,7 @@ final class Settings {
         let parts = (defaults.string(forKey: "modeNest.\(mode)") ?? "").split(separator: ",").compactMap { Double($0) }
         return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
     }
+    func clearModeNest(_ mode: String) { defaults.removeObject(forKey: "modeNest.\(mode)") }
     func setModeNest(_ point: CGPoint, mode: String) {
         defaults.set("\(point.x),\(point.y)", forKey: "modeNest.\(mode)")
     }
