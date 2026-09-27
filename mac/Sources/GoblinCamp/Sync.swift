@@ -68,6 +68,8 @@ final class SyncEngine {
     private let notes: NoteController
     private(set) var status: Status = .signedOut { didSet { if status != oldValue { onStatus?() } } }
     var onStatus: (() -> Void)?
+    /// Someone just signed in on this Mac (the camp starts from the account's books then).
+    var onSignedIn: (() -> Void)?
     private var running = false
     private var again = false
     private var debounce: Timer?
@@ -100,6 +102,7 @@ final class SyncEngine {
         account.signedIn(user: result.user, token: token)
         let before = notes.store.live.count
         beginSession()
+        onSignedIn?()
         return before
     }
 

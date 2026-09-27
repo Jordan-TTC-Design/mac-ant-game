@@ -38,6 +38,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let notes = NoteController()
     /// The account and keeping the notes the same on every device (nothing happens until someone signs in).
     private lazy var sync = SyncEngine(notes: notes)
+    /// The camp's books from the server (server/CAMP.md).
+    private lazy var ledger = CampLedger(api: sync.api)
+    /// The camp is kept by the server and needs signing in. Tests that drop the nest by themselves (`CAMP_AUTO_NEST`) or ask
+    /// for it (`CAMP_LOCAL_CAMP`) keep the old camp that lives only on this Mac, unless `CAMP_SERVER_CAMP` is set.
+    private let serverCamp: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        return env["CAMP_SERVER_CAMP"] != nil || (env["CAMP_AUTO_NEST"] == nil && env["CAMP_LOCAL_CAMP"] == nil)
+    }()
+    /// The camp has been set up from the books (so saving it now makes sense).
+    private var campReady = false
+    private var campStarting = false
     private var accountWindow: AccountWindow?
     private var devicesWindow: DevicesWindow?
     private var accountMenuItems: (status: NSMenuItem, syncState: NSMenuItem, friendCode: ClosureMenuItem, devices: ClosureMenuItem, signIn: ClosureMenuItem, signOut: ClosureMenuItem)!
@@ -115,7 +126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         purgeOldReplies()
 
         // Resume a saved colony if its nest is still on a screen; otherwise start at nest-picking.
-        if settings.saveProgress, let saved = Persistence.load() {
+        // (A camp kept by the server starts from its books once signed in: see bootstrapCamp.)
+        if !serverCamp, settings.saveProgress, let saved = Persistence.load() {
             // the camp's race first (its residents are made from that race's breeds); older saves are goblins
             let race = saved.race ?? "goblin"
             if Characters.all.contains(where: { $0.id == race }) { settings.characterID = race }
@@ -128,7 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if colony.nest != nil { applyWalkable() } // (the land is made round where the camp really is)
         // the very first launch: pick a race before picking the spot (tests that drop the nest by themselves skip it)
-        if colony.nest == nil, colony.phase == .choosingNest, ProcessInfo.processInfo.environment["CAMP_AUTO_NEST"] == nil {
+        if serverCamp {
+            colony.cancelPicking() // nothing to place until the account's camp is known
+            sync.onSignedIn = { [weak self] in self?.bootstrapCamp() }
+            DispatchQueue.main.async { [weak self] in self?.bootstrapCamp() }
+        } else if colony.nest == nil, colony.phase == .choosingNest, ProcessInfo.processInfo.environment["CAMP_AUTO_NEST"] == nil {
             colony.cancelPicking()
             DispatchQueue.main.async { [weak self] in self?.chooseRaceThenPick() }
         }
@@ -144,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.characterChanged()
                 }
             }
+            if self.serverCamp { self.startServerCamp() }
             // a new camp: the spots the old one had in the other ranges mean nothing now, and the land gets a new life to keep
             for mode in ["screen", "bottom", "right", "left", "window"] where mode != self.settings.rangeMode { self.settings.clearModeNest(mode) }
             self.settings.terrainSeed = UInt64.random(in: 1...UInt64.max) // a new world has new land too
@@ -1551,6 +1568,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         askPanel?.orderOut(nil)
         askPanel = nil
         askPanelID = nil
+    }
+
+    // MARK: The camp from the server (server/CAMP.md, stage C)
+
+    /// After signing in (or at launch when already signed in): the account's camp from its books. No camp yet: this Mac's
+    /// old camp moves in, or a new one is started (race, then spot). The account has one and this Mac has an old one too:
+    /// ask which to keep. Offline: the last books this Mac saw.
+    private func bootstrapCamp() {
+        guard serverCamp, !campReady, !campStarting else { return }
+        guard sync.user != nil else {
+            updateCount()
+            if ProcessInfo.processInfo.environment["CAMP_TEST_LOGIN"] == nil { showAccountWindow() }
+            return
+        }
+        campStarting = true
+        Task { @MainActor in
+            defer { self.campStarting = false }
+            do {
+                let old = Persistence.load(Persistence.oldCamp)
+                let hasOld = (old?.goblins?.count ?? old?.antCount ?? 0) > 0
+                if let view = try await self.ledger.fetch() {
+                    if let old, hasOld {
+                        if self.askWhichCamp(account: view.residents.count, mac: old.goblins?.count ?? old.antCount) == .mac {
+                            _ = try await self.ledger.migrate(old, replace: true)
+                        }
+                        Persistence.retireOldCamp()
+                    }
+                    self.restoreFromBooks(oldSpot: old)
+                } else if let old, hasOld {
+                    _ = try await self.ledger.migrate(old, replace: false)
+                    Persistence.retireOldCamp()
+                    self.restoreFromBooks(oldSpot: old)
+                    self.say("你的營地搬上伺服器了，之後每台裝置看到的都是同一個營地。")
+                } else {
+                    self.chooseRaceThenPick() // the server hears of it once the spot is picked (startServerCamp)
+                }
+            } catch let error as APIError where error.isOffline {
+                if self.ledger.view != nil {
+                    self.restoreFromBooks(oldSpot: nil)
+                } else {
+                    self.say("連不上伺服器，營地等連上再開始。")
+                    self.after(60) { self.bootstrapCamp() }
+                }
+            } catch {
+                self.say("營地出了點問題：\((error as? APIError)?.message ?? error.localizedDescription)")
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: camp bootstrap failed: \(error)") }
+            }
+        }
+    }
+
+    enum CampChoice { case account, mac }
+
+    /// The account has a camp and this Mac has its own old one: only one can be the account's.
+    private func askWhichCamp(account: Int, mac: Int) -> CampChoice {
+        if let forced = ProcessInfo.processInfo.environment["CAMP_TEST_CAMP_CHOICE"] { return forced == "mac" ? .mac : .account }
+        let alert = NSAlert()
+        alert.messageText = "要用哪一個營地？"
+        alert.informativeText = "這個帳號已經有營地了（\(account) 隻），這台 Mac 上也有一個舊的營地（\(mac) 隻）。\n一個帳號只有一個營地，每台裝置看到的都是同一個。\n\n沒選上的那個會在這台 Mac 上留一份備份（state-before-sync.json）。"
+        alert.addButton(withTitle: "用帳號的營地")
+        alert.addButton(withTitle: "用這台 Mac 的營地")
+        return alert.runInFront() == .alertSecondButtonReturn ? .mac : .account
+    }
+
+    /// Sets the camp up from the books: the race, the residents and what the camp owns from the server; where the camp stands
+    /// and its land from this Mac (camp-local.json, else the old camp's spot, else the middle of the main screen).
+    private func restoreFromBooks(oldSpot: SavedState?) {
+        guard let view = ledger.view else { return }
+        if Characters.all.contains(where: { $0.id == view.race }), view.race != settings.characterID {
+            settings.characterID = view.race
+            if let camp = Characters.current.rules.camp { settings.campID = camp }
+            characterChanged()
+        }
+        let local = Persistence.load(Persistence.localCamp)
+        let candidates = [local, oldSpot].compactMap { $0 }.map { CGPoint(x: $0.nestX, y: $0.nestY) }
+        let onScreen = candidates.first { spot in colony.walkable.contains { $0.contains(spot) } }
+        let fallback = colony.walkable.first.map { CGPoint(x: $0.midX, y: $0.midY) } ?? CGPoint(x: 400, y: 300)
+        let nest = onScreen ?? fallback
+        guard let saved = ledger.savedState(nest: nest, local: local ?? oldSpot) else { return }
+        colony.restore(nest: nest, saved: saved)
+        campReady = true
+        applyWalkable()
+        syncWindows()
+        updateCount()
+        persist()
+        redrawAll()
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: camp from the books: \(colony.ants.count) residents, race \(view.race)") }
+    }
+
+    /// A camp was just placed on this Mac (a new one, or 開新世界): tell the server, which opens (or replaces) the account's camp.
+    private func startServerCamp() {
+        let race = pendingRace ?? settings.characterID
+        let replace = ledger.view != nil
+        campReady = true
+        Task { @MainActor in
+            do {
+                let view = try await self.ledger.start(race: race, replace: replace)
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: camp started on the server: \(view.race), \(view.residents.count) residents") }
+            } catch {
+                self.say("營地還沒跟伺服器接上：\((error as? APIError)?.message ?? error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: Sticky notes
@@ -3029,10 +3147,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateCount() {
+        if serverCamp, !campReady, colony.nest == nil {
+            countItem.title = sync.user == nil ? "營地：登入之後開始（帳號 → 登入）" : "營地：準備中…"
+            return
+        }
         countItem.title = "\(Characters.current.noun)數：\(colony.ants.count)"
     }
 
     private func persist() {
+        if serverCamp { // the books are the server's; this Mac keeps where the camp stands and its land
+            if campReady, let state = colony.savedState() { Persistence.save(state, Persistence.localCamp) }
+            return
+        }
         guard settings.saveProgress else { return }
         if let state = colony.savedState() {
             Persistence.save(state)

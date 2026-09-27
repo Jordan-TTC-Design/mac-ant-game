@@ -71,29 +71,42 @@ struct SavedState: Codable {
 }
 
 /// Colony progress in ~/Library/Application Support/GoblinCamp/state.json.
+/// Once the camp is kept by the server (server/CAMP.md), the Mac writes camp-local.json instead: the same format, but only
+/// its own parts count there (where the camp stands, its land, the game clock); state.json is then the old camp waiting to
+/// be moved in (and after that it is renamed state-before-sync.json and kept as a backup).
 enum Persistence {
-    private static var url: URL {
+    static let oldCamp = "state.json"
+    static let localCamp = "camp-local.json"
+
+    static func url(_ file: String = oldCamp) -> URL {
         // `CAMP_DATA_DIR` moves the saves elsewhere (tests must not touch the real ones)
-        if let custom = ProcessInfo.processInfo.environment["CAMP_DATA_DIR"] { return URL(fileURLWithPath: custom).appendingPathComponent("state.json") }
+        if let custom = ProcessInfo.processInfo.environment["CAMP_DATA_DIR"] { return URL(fileURLWithPath: custom).appendingPathComponent(file) }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("GoblinCamp/state.json")
+        return base.appendingPathComponent("GoblinCamp/\(file)")
     }
 
-    static func load() -> SavedState? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+    static func load(_ file: String = oldCamp) -> SavedState? {
+        guard let data = try? Data(contentsOf: url(file)) else { return nil }
         return try? JSONDecoder().decode(SavedState.self, from: data)
     }
 
-    static func save(_ state: SavedState) {
+    static func save(_ state: SavedState, _ file: String = oldCamp) {
         do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(state).write(to: url, options: .atomic)
+            try FileManager.default.createDirectory(at: url(file).deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(state).write(to: url(file), options: .atomic)
         } catch {
             NSLog("GoblinCamp: save failed: \(error)")
         }
     }
 
-    static func clear() {
-        try? FileManager.default.removeItem(at: url)
+    static func clear(_ file: String = oldCamp) {
+        try? FileManager.default.removeItem(at: url(file))
+    }
+
+    /// The old camp has been moved in (or set aside): keep it as a backup under another name.
+    static func retireOldCamp() {
+        let backup = url("state-before-sync.json")
+        try? FileManager.default.removeItem(at: backup)
+        try? FileManager.default.moveItem(at: url(oldCamp), to: backup)
     }
 }
