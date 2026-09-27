@@ -4,7 +4,7 @@ import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
 import { runCommand } from "./commands.ts";
-import { advanceCamp, campView, eventsSince, lockCamp, migrateCamp, startCamp } from "./service.ts";
+import { advanceCamp, campView, eventsSince, lockCamp, migrateCamp, recentRaids, startCamp } from "./service.ts";
 
 /** 營地：the account's one camp, kept by the server (server/CAMP.md). */
 export function campRoutes(deps: AppDeps) {
@@ -32,6 +32,13 @@ export function campRoutes(deps: AppDeps) {
     if (!Number.isSafeInteger(since) || since < 0) return apiError(c, 400, "invalid_input", "since 要是 0 以上的整數。");
     const events = await db.transaction((tx) => eventsSince(tx, c.get("session").user.id, since));
     return c.json({ events, seq: events.at(-1)?.seq ?? since });
+  });
+
+  /** The latest monster raids, newest first, as a short report (who came, who fell, what was left). */
+  app.get("/raids", async (c) => {
+    const limit = Number(c.req.query("limit") ?? "10");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) return apiError(c, 400, "invalid_input", "limit 要是 1 到 50。");
+    return c.json({ raids: await db.transaction((tx) => recentRaids(tx, c.get("session").user.id, limit)) });
   });
 
   /** A new camp for an account that has none. */

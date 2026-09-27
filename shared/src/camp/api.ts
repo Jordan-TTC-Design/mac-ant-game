@@ -115,3 +115,17 @@ export interface CampEvent {
   kind: "started" | "migrated" | "population" | "raid" | "command";
   data: unknown;
 }
+
+/** `GET /api/camp/raids`: the latest monster raids, newest first, without the blow-by-blow (for the phone's report). */
+export interface RaidReport {
+  seq: number;
+  at: string;
+  monsters: { id: string; count: number }[];
+  defenders: number;
+  /** The residents who fell (their breed as they were). */
+  fallen: { id: number; breed: string; name: string | null }[];
+  killed: Record<string, number>;
+  loot: Record<string, number>;
+  broken: { resident: number; gear: string }[];
+  winner: "camp" | "monsters";
+}

@@ -4,6 +4,7 @@
 **/.output
 pwa/dist
 pwa/public/sprites
+pwa/public/camps
 server/.env
 .env
 .git

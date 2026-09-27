@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import {
   advance,
   aliveAt,
@@ -21,6 +21,7 @@ import {
   type MigrateInput,
   type Place,
   type Population,
+  type RaidReport,
   type Resident,
 } from "@goblincamp/shared/camp";
 import { hashString, randomFrom } from "@goblincamp/shared/world";
@@ -339,4 +340,33 @@ export async function eventsSince(tx: Tx, userId: string, since: number, limit =
     .orderBy(campEvents.seq)
     .limit(limit);
   return rows.map((e) => ({ seq: e.seq, at: e.at.toISOString(), kind: e.kind as CampEvent["kind"], data: e.data }));
+}
+
+/** The latest raids, newest first, without the replay and the wear (which the phone does not need and are most of the size). */
+export async function recentRaids(tx: Tx, userId: string, limit: number): Promise<RaidReport[]> {
+  const rows = await tx
+    .select({ seq: campEvents.seq, at: campEvents.at, data: sql<Omit<RaidOutcome, "events" | "wear">>`${campEvents.data} - 'events' - 'wear'` })
+    .from(campEvents)
+    .where(and(eq(campEvents.userId, userId), eq(campEvents.kind, "raid")))
+    .orderBy(desc(campEvents.seq))
+    .limit(limit);
+  const fallenIds = [...new Set(rows.flatMap((r) => r.data.fallen))];
+  const fallen = fallenIds.length
+    ? await tx
+        .select({ id: campResidents.id, breed: campResidents.breed, name: campResidents.name })
+        .from(campResidents)
+        .where(and(eq(campResidents.userId, userId), inArray(campResidents.id, fallenIds)))
+    : [];
+  const who = new Map(fallen.map((f) => [f.id, f]));
+  return rows.map(({ seq, at, data }) => ({
+    seq,
+    at: at.toISOString(),
+    monsters: data.monsters,
+    defenders: data.defenders.length,
+    fallen: data.fallen.map((id) => who.get(id) ?? { id, breed: "common", name: null }),
+    killed: data.killed,
+    loot: data.loot,
+    broken: data.broken ?? [],
+    winner: data.winner,
+  }));
 }

@@ -180,7 +180,10 @@ function connect() {
   const ws = new WebSocket(`${base}/api/ws`);
   socket = ws;
   ws.onmessage = (event) => {
-    if (String(event.data).includes('"notes.changed"')) void syncNow();
+    const text = String(event.data);
+    if (text.includes('"notes.changed"')) void syncNow();
+    // the camp page listens for this one (useCamp)
+    if (text.includes('"camp.changed"')) window.dispatchEvent(new Event("gc:camp-changed"));
   };
   ws.onclose = async () => {
     if (socket !== ws) return;

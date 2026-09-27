@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { advance, startHome, type CampView } from "@goblincamp/shared/camp";
+import { advance, startHome, type CampView, type RaidReport } from "@goblincamp/shared/camp";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -221,6 +221,26 @@ describe("monster raids", () => {
     // and those who fell are gone
     const fallen = await raidFallen(me);
     for (const r of camp.residents) expect(fallen.has(r.id)).toBe(false);
+  });
+
+  it("are reported to the phone in short: newest first, who fell by breed, no replay", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    t.advance(24 * HOUR);
+    await view(me);
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string; seq: number; data: { fallen: number[]; defenders: number[] } }[];
+    const raids = events.filter((e) => e.kind === "raid");
+    const res = await t.call("GET", "/camp/raids?limit=5", undefined, me);
+    expect(res.status).toBe(200);
+    const reports = res.body.raids as RaidReport[];
+    expect(reports.map((r) => r.seq)).toEqual(raids.map((e) => e.seq).reverse().slice(0, 5));
+    const newest = raids.at(-1)!.data;
+    expect(reports[0]!.defenders).toBe(newest.defenders.length);
+    expect(reports[0]!.fallen.map((f) => f.id)).toEqual(newest.fallen);
+    for (const f of reports.flatMap((r) => r.fallen)) expect(f.breed).toMatch(/^[a-z_]+$/);
+    expect(reports[0]).not.toHaveProperty("events");
+    expect(reports[0]).not.toHaveProperty("wear");
+    expect((await t.call("GET", "/camp/raids?limit=0", undefined, me)).status).toBe(400);
   });
 
   it("do not come to a camp of fewer than ten", async () => {

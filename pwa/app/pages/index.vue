@@ -26,6 +26,7 @@ function add() {
         <h1>便利貼</h1>
         <div class="sub">{{ user?.displayName }}・{{ syncLine }}</div>
       </div>
+      <NuxtLink to="/camp" class="icon-btn">營地</NuxtLink>
       <NuxtLink to="/settings" class="icon-btn">設定</NuxtLink>
     </header>
 
