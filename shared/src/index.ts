@@ -1,0 +1,12 @@
+import { z } from "zod";
+
+/** Bumped when the API changes in a way older apps cannot follow. */
+export const API_VERSION = 1;
+
+/** `GET /api/health`: whether the server and its database are up. */
+export const healthSchema = z.object({
+  ok: z.boolean(),
+  db: z.enum(["ok", "down"]),
+  apiVersion: z.number().int(),
+});
+export type Health = z.infer<typeof healthSchema>;

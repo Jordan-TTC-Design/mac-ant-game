@@ -1,0 +1,22 @@
+# The database for development and tests, on this Mac only: `pnpm db:up` (Docker Desktop must be running).
+# Port 5433 so it does not clash with a PostgreSQL already installed on 5432.
+name: goblincamp-dev
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: goblin
+      POSTGRES_PASSWORD: goblin
+      POSTGRES_DB: goblin
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./dev/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goblin -d goblin"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  pgdata:

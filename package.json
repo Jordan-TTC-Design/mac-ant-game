@@ -1,0 +1,15 @@
+{
+  "name": "goblincamp",
+  "private": true,
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:up": "docker compose -f server/compose.dev.yml up -d --wait",
+    "db:down": "docker compose -f server/compose.dev.yml down",
+    "dev": "pnpm --filter @goblincamp/server dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

@@ -1,0 +1,8 @@
+packages:
+  - server
+  - shared
+  - pwa
+
+# esbuild (used by tsx, vitest and drizzle-kit) puts its own binary in place when installed
+allowBuilds:
+  esbuild: true

@@ -617,9 +617,20 @@ Characters/<id>/
 - 提醒：伺服器是唯一的鬧鐘，Mac 本機也排一份以防斷線；以便利貼 id 去重，任何一台按「知道了」其他裝置一起消失。
 - 限制：iPhone 需 iOS 16.4+ 且加入主畫面才收得到推播；內容不是端對端加密。
 - 開始前：先給使用者看 API 與資料表設計；需要網域與寄信服務帳號。
+- 資料夾（使用者同意）：平鋪成 `mac/`、`server/`、`pwa/`、`shared/`，用 pnpm workspace 管 server、pwa、shared。Swift 等另一個工作階段（食物、當機）commit 之後，再用獨立的 commit 搬進 `mac/`。
+- 設計寫在 [server/DESIGN.md](server/DESIGN.md)（2026-09-27 初稿，等使用者確認；排程改用伺服器內的輪詢迴圈，不用 pg-boss）。
 
-## 搬家：Mac App 進 mac/（2026-09-27）
+## 搬家：Mac App 進 mac/（2026-09-27，尚未 commit）
 - `Package.swift`、`Sources/`、`Resources/`、`build.sh`、`tools/` 用 `git mv` 搬進 `mac/`（歷史保留）。`build.sh` 本來就以自己的位置為準，不用改；產物變成 `mac/GoblinCamp.app`、`mac/dist/`。`make_readme_art.py` 改成寫到最上層的 `docs/images/`。README 的指令改成先 `cd mac`，專案結構圖更新；MONSTERS.md、TERRAIN.md 的路徑同步。
 - 最上層舊的 `GoblinCamp.app`、`dist/`、`.build/` 沒有動（都在 .gitignore；使用者正在跑的是 `dist/GoblinCamp.app`），確認不用之後可以自己刪。
 - 這一段以前的紀錄仍寫舊路徑（`Sources/…`、`./build.sh`），是當時的樣子，不改。
 - 已驗證：`mac/build.sh` 建置成功；新位置的 App 跑 `CAMP_TEST_NOTES` 正常；`make_readme_art.py` 寫到正確的 `docs/images/`（測試用的圖已還原）。
+
+## 後端階段 0：骨架（2026-09-27）
+- 最上層：`package.json`（pnpm 12.6.0，指令 `db:up`／`db:down`／`dev`／`test`／`typecheck`）、`pnpm-workspace.yaml`（server、shared、pwa；允許 esbuild 的安裝腳本）、`tsconfig.base.json`、`.nvmrc`（22）。
+- `server/`：Hono + `@hono/node-server`、Drizzle + postgres.js、zod；`GET /api/health`（資料庫不通回 503）；啟動時自動跑 migration；第一批 migration：`citext` 擴充、`users` 表（照 DESIGN §4）。`compose.dev.yml`：PostgreSQL 16 在 127.0.0.1:5433，另建 `goblin_test` 給測試。
+- `shared/`：`API_VERSION`、`healthSchema`。
+- 版本：TypeScript 7.0.2（不再自動載入 `@types`，server 的 tsconfig 要寫 `types: ["node"]`）、vitest 5、zod 4、Hono 4。
+- corepack 0.33 無法執行 pnpm 12（找不到 `pnpm.cjs`），所以用 `npx pnpm@12.6.0` 或全域安裝；沒有替使用者全域安裝任何東西。
+- 已驗證：`pnpm typecheck` 通過；`pnpm test` 3 個測試通過（health 正常、資料庫不通時 503、email 欄位是 citext）；實際啟動伺服器，`curl /api/health` 回 200 `{"ok":true,"db":"ok","apiVersion":1}`，開發資料庫裡有 `users` 表。
+

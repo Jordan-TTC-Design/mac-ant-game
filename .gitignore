@@ -22,3 +22,8 @@ DerivedData/
 __pycache__/
 *.pyc
 dist/
+
+# server / pwa / shared (Node)
+node_modules/
+.env
+server/dist/
