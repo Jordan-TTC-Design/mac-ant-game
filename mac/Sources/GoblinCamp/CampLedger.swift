@@ -71,8 +71,37 @@ final class CampLedger {
         }
     }
 
+    /// A raid the server fought (shared/src/camp: RaidOutcome), as far as the Mac plays it.
+    struct Raid: Decodable {
+        struct Monsters: Decodable { let id: String; let count: Int }
+        let monsters: [Monsters]
+        let fallen: [Int]
+        let loot: [String: Int]
+        let killed: [String: Int]
+        let winner: String
+    }
+
+    /// One thing that happened in the camp (`GET /api/camp/events`); only raids are read so far.
+    struct Event: Decodable {
+        let seq: Int
+        let at: String
+        let kind: String
+        let raid: Raid?
+        private enum CodingKeys: String, CodingKey { case seq, at, kind, data }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            seq = try c.decode(Int.self, forKey: .seq)
+            at = try c.decode(String.self, forKey: .at)
+            kind = try c.decode(String.self, forKey: .kind)
+            raid = kind == "raid" ? try? c.decode(Raid.self, forKey: .data) : nil
+        }
+    }
+
     private let api: APIClient
     private let cacheURL: URL
+    private let seenURL: URL
+    /// The newest event this Mac has handled (nil: none yet; the history before signing in here is not played).
+    private var seenSeq: Int?
     private let debug = ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil
     /// The last books this Mac saw (from the server, or from camp.json while offline).
     private(set) var view: View?
@@ -87,6 +116,8 @@ final class CampLedger {
         let base = env["CAMP_DATA_DIR"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GoblinCamp")
         cacheURL = base.appendingPathComponent("camp.json")
+        seenURL = base.appendingPathComponent("camp-seen.json")
+        if let data = try? Data(contentsOf: seenURL), let seq = try? JSONDecoder().decode(Int.self, from: data) { seenSeq = seq }
         if let data = try? Data(contentsOf: cacheURL), let saved = try? JSONDecoder().decode(View.self, from: data) { take(saved) }
     }
 
@@ -139,6 +170,23 @@ final class CampLedger {
         guard let view else { return nil }
         return BookStores(materials: view.materials, kills: view.kills, larder: view.larder,
                           armory: view.armory.map { GearItem(id: $0.id, left: $0.left) }, peak: max(view.peak, residents.count), delivered: view.delivered)
+    }
+
+    /// What happened since this Mac last looked (oldest first). The first time, everything before is taken as seen.
+    func newEvents() async throws -> [Event] {
+        struct Page: Decodable { let events: [Event]; let seq: Int }
+        var all: [Event] = []
+        var since = seenSeq ?? 0
+        for _ in 0..<40 {
+            let page: Page = try await api.request("GET", "camp/events?since=\(since)")
+            all += page.events
+            if page.events.count < 500 || page.seq == since { since = page.seq; break }
+            since = page.seq
+        }
+        let first = seenSeq == nil
+        seenSeq = max(seenSeq ?? 0, since)
+        try? JSONEncoder().encode(seenSeq).write(to: seenURL, options: .atomic)
+        return first ? [] : all
     }
 
     /// `POST /api/camp/commands` (shared/src/camp/api.ts `campCommand`): the answer, and the books after it.

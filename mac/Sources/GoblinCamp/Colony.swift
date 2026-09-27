@@ -44,6 +44,10 @@ final class Colony {
     var ants: [Ant] = []
     /// See `followsBooks`.
     fileprivate var booksDriven = false
+    /// Residents the books say fell in the raid being played: they die in the fight (or when it ends), nobody else does.
+    var doomed = Set<Int>()
+    /// The raid being played: when it began (real seconds), and its monsters' ids.
+    var raidPlaying: (began: Double, monsters: Set<Int>)?
     /// The princess had a child while the camp follows the books: the server adds it (breed id, parents).
     var onPrincessChild: ((String, String) -> Void)?
     private(set) var eggs: [Egg] = []
@@ -424,7 +428,7 @@ final class Colony {
             }
         case .delivered(let id, let kind, let pieces):
             if let material = lootMaterial[id] {
-                materials[material, default: 0] += pieces
+                if !followsBooks { materials[material, default: 0] += pieces } // (the books already have what raids drop; felling is only for show)
                 addFloater("+\(pieces) \(Materials.info(material)?.name ?? material)", Materials.info(material)?.rarity ?? .common, at: nest ?? .zero)
                 if !foods.contains(where: { $0.id == id }) { lootMaterial[id] = nil }
                 onAntsChanged?()
@@ -668,13 +672,18 @@ final class Colony {
         // Nothing comes for a young camp: the game must have run a while (the first raid comes half an hour to an hour in) and the camp must
         // have had some numbers to defend itself. The first one is then after a random wait, never at once.
         guard level > 0, !campHidden, ants.count >= 12, peakAnts >= 25, playSeconds >= 30 * 60, queen?.isCarried == false else { return }
+        if followsBooks { callOutAgainstMonsters(dt: dt); return } // raids come from the books (playRaid)
         if monsterTimer == -1 { monsterTimer = Colony.monsterEvery[level] * Double.random(in: 0.4...1.2) }
         monsterTimer -= dt * Colony.wildScale * settings.pace
         if monsterTimer < 0 {
             if monsterTimer < -1_000_000 || creatures.filter({ $0.kind.hostile }).count < Colony.maxMonsters[level] { spawnMonsters() }
             monsterTimer = Colony.monsterEvery[level] * Double.random(in: 0.6...1.4)
         }
-        // call the goblins out (again now and then, since the first ones may be hurt)
+        callOutAgainstMonsters(dt: dt)
+    }
+
+    /// Calls the goblins out when a monster gets close to the camp (again now and then, since the first ones may be hurt).
+    private func callOutAgainstMonsters(dt: Double) {
         raidTimer -= dt
         guard raidTimer <= 0, let nest else { return }
         raidTimer = 4
@@ -808,7 +817,11 @@ final class Colony {
         }
         ants[index].health -= 1
         hits.append((pos: ants[index].pos, age: 0))
-        if ants[index].health <= 0, followsBooks { // only the books say who dies: it faints and limps home
+        if ants[index].health <= 0, followsBooks, doomed.remove(ants[index].id) != nil { // the books say it fell in this raid
+            ants[index].ageless = false
+            ants[index].mode = .dying(remaining: Ant.dyingTime)
+            slain += 1
+        } else if ants[index].health <= 0, followsBooks { // only the books say who dies: it faints and limps home
             ants[index].health = 1
             ants[index].mode = .returningToNest
         } else if ants[index].health <= 0 {
@@ -847,7 +860,7 @@ final class Colony {
 
     /// A monster is down: it may split, it leaves materials (each with its own chance), and the hunters carry them home.
     private func killMonster(_ monster: Creature) {
-        kills[monster.kind.id, default: 0] += 1
+        if !followsBooks { kills[monster.kind.id, default: 0] += 1 }
         if Characters.current.rules.lineage != nil { releaseSoul(at: monster.pos, coloured: Double.random(in: 0..<1) < 0.3) }
         if monster.generation == 0, monster.kind.monster.splits > 0 { // a slime breaks into smaller ones
             for k in 0..<monster.kind.monster.splits {
@@ -1873,6 +1886,7 @@ final class Colony {
         for (index, event) in events { handle(event, from: index) }
         moveCarriedPrincess()
         updateWildlife(dt: dt)
+        if followsBooks { finishRaidIfOver() }
         updateTerrainLife(dt: dt)
         updateChildren(dt: dt)
         updateBoosts(dt: dt)
@@ -1931,7 +1945,7 @@ extension Colony {
         guard let nest else { return }
         let wanted = Set(residents.map(\.id))
         var changed = false
-        for i in ants.indices where !wanted.contains(ants[i].id) && !ants[i].isDying {
+        for i in ants.indices where !wanted.contains(ants[i].id) && !ants[i].isDying && !doomed.contains(ants[i].id) {
             ants[i].ageless = false
             if ants[i].isHidden { ants[i].age = ants[i].traits.lifespan } else { ants[i].mode = .dying(remaining: Ant.dyingTime) }
             changed = true
@@ -1978,5 +1992,51 @@ extension Colony {
             }
         }
         if changed { onAntsChanged?() }
+    }
+}
+
+// MARK: Raids from the books (server/CAMP.md §3.2, stage C3)
+
+extension Colony {
+    /// Plays a raid the server fought: its monsters walk in and fight, those the books say fell die in it, and when it is
+    /// over (every monster down, or two and a half minutes) the rest of the fallen go down and the monsters left walk off.
+    func playRaid(monsters: [(id: String, count: Int)], fallen: Set<Int>) {
+        let before = creatures.count
+        for (id, count) in monsters {
+            guard let kind = Animals.all.first(where: { $0.id == id }) else { continue }
+            for _ in 0..<count { spawnAnimal(of: kind) }
+        }
+        for i in before..<creatures.count { // a raid comes all at once, spread out a little, and heads for the camp
+            creatures[i].pos.x += CGFloat.random(in: -22...22)
+            creatures[i].pos.y += CGFloat.random(in: -22...22)
+            creatures[i].stay = Double.random(in: 200...320)
+        }
+        doomed.formUnion(fallen.filter { id in ants.contains { $0.id == id } })
+        raidPlaying = (Date().timeIntervalSinceReferenceDate, Set(creatures[before...].map(\.id)))
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: raid: \(creatures.count - before) monsters, \(doomed.count) will fall") }
+    }
+
+    /// Ends a raid being played once its monsters are gone or after two and a half minutes (slimes are slow). Call every frame.
+    func finishRaidIfOver() {
+        guard let raid = raidPlaying else { return }
+        let left = creatures.indices.filter { raid.monsters.contains(creatures[$0].id) }
+        guard left.isEmpty || Date().timeIntervalSinceReferenceDate - raid.began > 150 else { return }
+        for i in left { creatures[i].stay = 0 } // the rest walk off
+        for i in ants.indices where doomed.contains(ants[i].id) && !ants[i].isDying {
+            ants[i].ageless = false
+            ants[i].mode = .dying(remaining: Ant.dyingTime)
+        }
+        if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil {
+            NSLog("GoblinCamp: raid over: \(left.count) monsters walked off, fell at the end \(doomed.sorted()), dying now \(ants.filter(\.isDying).map(\.id).sorted())")
+        }
+        doomed = []
+        raidPlaying = nil
+        onAntsChanged?()
+    }
+
+    /// Floating words over the camp (what a raid left, and the like).
+    func announce(_ text: String) {
+        guard let nest else { return }
+        addFloater(text, .uncommon, at: nest)
     }
 }

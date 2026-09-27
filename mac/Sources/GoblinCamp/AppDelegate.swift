@@ -327,6 +327,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if env["CAMP_TEST_BOOKS"] != nil { // following the books: fetch at CAMP_TEST_BOOKS_FETCH_AT, a princess's child at CAMP_TEST_PRINCESS_CHILD, a line every 5 s
             if let t = Double(env["CAMP_TEST_BOOKS_FETCH_AT"] ?? "") { after(t) { log("fetching the books"); self.refreshBooks() } }
+            if let t = Double(env["CAMP_TEST_PLAY_RAID"] ?? "") { // a made-up raid: two slimes, two rats, the two oldest residents fall
+                after(t) {
+                    let fallen = Set(self.colony.ants.map(\.id).sorted().prefix(2))
+                    log("playing a test raid, fallen \(fallen.sorted())")
+                    self.colony.playRaid(monsters: [("slime", 2), ("giant_rat", 2)], fallen: fallen)
+                }
+            }
+            if let t = Double(env["CAMP_TEST_BOOKS_FETCH_AT2"] ?? "") { after(t) { log("fetching the books again"); self.refreshBooks() } }
+            for k in 1...60 {
+                after(Double(k) * 3) {
+                    guard let raid = self.colony.raidPlaying else { return }
+                    let monsters = self.colony.creatures.filter { raid.monsters.contains($0.id) }.count
+                    log("raid playing: monsters left \(monsters), doomed \(self.colony.doomed.sorted()), dying \(self.colony.ants.filter(\.isDying).map(\.id))")
+                }
+            }
             if let t = Double(env["CAMP_TEST_PRINCESS_CHILD"] ?? "") { after(t) { log("the princess has a child"); self.colony.onPrincessChild?("half_hum", "測試 × 咕嚕") } }
             for k in 1...12 {
                 after(Double(k) * 5) {
@@ -1662,6 +1677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.restore(nest: nest, saved: saved)
         campReady = true
         followBooks()
+        Task { @MainActor in _ = try? await self.ledger.newEvents() } // (what happened before this Mac joined is not played)
         applyWalkable()
         syncWindows()
         updateCount()
@@ -1685,6 +1701,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Raids the server fought since this Mac last looked: the newest one, if it was just now, is played out (its monsters
+    /// walk in and those who fell die in the fight); the ones from while this Mac was away are told in a line.
+    private func playRaids(_ raids: [CampLedger.Event]) {
+        guard !raids.isEmpty else { return }
+        let now = Date()
+        let isRecent = { (e: CampLedger.Event) in (ServerTime.parse(e.at).map { now.timeIntervalSince($0) } ?? .infinity) < 600 }
+        var older = raids
+        if let last = raids.last, isRecent(last), let raid = last.raid, !colony.campHidden {
+            older.removeLast()
+            colony.playRaid(monsters: raid.monsters.map { ($0.id, $0.count) }, fallen: Set(raid.fallen))
+            let loot = raid.loot.sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) +\($0.value)" }
+            if !loot.isEmpty { after(45) { self.colony.announce(loot.joined(separator: "  ")) } }
+        }
+        guard !older.isEmpty else { return }
+        let fell = older.reduce(0) { $0 + ($1.raid?.fallen.count ?? 0) }
+        var loot: [String: Int] = [:]
+        for e in older { for (id, n) in e.raid?.loot ?? [:] { loot[id, default: 0] += n } }
+        let top = loot.sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
+        say("魔獸來過 \(older.count) 次" + (fell > 0 ? "，倒下 \(fell) 隻" : "，大家都沒事") + (top.isEmpty ? "。" : "，撿回 \(top)。"))
+    }
+
     private func applyBooksToCamp() {
         guard campReady, let stores = ledger.bookStores() else { return }
         colony.applyBooks(ledger.bookResidents(), stores: stores)
@@ -1698,8 +1735,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { @MainActor in
             defer { self.booksFetching = false }
             do {
+                let events = try await self.ledger.newEvents()
                 if try await self.ledger.fetch() != nil {
                     self.booksFetchedAt = Date()
+                    self.playRaids(events.filter { $0.raid != nil })
                     self.applyBooksToCamp()
                 }
             } catch {
