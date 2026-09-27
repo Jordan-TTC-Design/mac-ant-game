@@ -5,8 +5,14 @@ import {
   aliveAt,
   BASE_LIFESPAN_HOURS,
   fall,
+  fightBoosts,
+  gearRule,
   planRaid,
   raidTime,
+  redistribute,
+  type GearItem,
+  type GearSlot,
+  type Wearer,
   campStage,
   raceRules,
   startHome,
@@ -30,6 +36,15 @@ const HOUR = 3_600_000;
 /** Caps for moving an old save in (server/CAMP.md §6). Residents: the race's home cap. */
 export const MIGRATE_CAPS = { material: 200, larder: 16, armoryPerGear: 10, romanceChars: 20_000 };
 
+/** A piece as an old save has it (just an id, or an id and the wear points left), or null for gear the workshop no longer knows. */
+function asGear(saved: string | { id: string; left?: number | null }): GearItem | null {
+  const id = typeof saved === "string" ? saved : saved.id;
+  const rule = gearRule(id);
+  if (!rule) return null;
+  const left = typeof saved === "string" ? rule.durability : (saved.left ?? rule.durability);
+  return { id, left: Math.min(rule.durability, Math.max(1, left)) };
+}
+
 /** The princess's children live longer than their race's plain residents (the Mac's manifests). */
 const HALF_BREED_LIFESPAN: Record<string, Record<string, number>> = {
   goblin: { half_gob: 1.4, half_mix: 1.5, half_hum: 1.6 },
@@ -46,7 +61,7 @@ function toResident(row: ResidentRow): Resident {
   return { id: row.id, breed: row.breed, seed: row.seed, bornAt: row.bornAt.getTime(), diesAt: row.diesAt?.getTime() ?? null, diedAt: row.diedAt?.getTime() ?? null };
 }
 
-async function addEvent(tx: Tx, userId: string, at: Date, kind: CampEvent["kind"], data: unknown) {
+export async function addEvent(tx: Tx, userId: string, at: Date, kind: CampEvent["kind"], data: unknown) {
   await tx.execute(sql`insert into camp_events (seq, user_id, at, kind, data) values (nextval('camp_event_seq'), ${userId}, ${at.toISOString()}::timestamptz, ${kind}, ${JSON.stringify(data)}::jsonb)`);
 }
 
@@ -77,6 +92,22 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const startedAt = camp.startedAt.getTime();
   let nextRaid = camp.nextRaid;
 
+  // gear: who wears what; the store; newborns are handed gear, the dead give theirs back (as on the Mac)
+  const store: GearItem[] = camp.armory.map((i) => ({ ...i }));
+  const wearers = new Map<number, Wearer>(rows.map((r) => [r.id, { id: r.id, breed: r.breed, gear: structuredClone(r.gear ?? {}) as Wearer["gear"] }]));
+  const gearBefore = new Map<number, string>(rows.map((r) => [r.id, JSON.stringify(r.gear ?? {})]));
+  const settleGear = () => {
+    for (const r of population.residents) {
+      if (r.diedAt === null && !wearers.has(r.id)) wearers.set(r.id, { id: r.id, breed: r.breed, gear: {} });
+      const w = wearers.get(r.id);
+      if (r.diedAt !== null && w) {
+        store.push(...(Object.values(w.gear) as GearItem[]));
+        wearers.delete(r.id);
+      }
+    }
+    redistribute(camp.race, [...wearers.values()], store);
+  };
+
   const moveTo = (time: number) => {
     const step = advance(place, population, camp.seed, time);
     born.push(...step.born);
@@ -84,18 +115,38 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   };
   for (let t = raidTime(camp.race, camp.seed, startedAt, nextRaid); t <= now.getTime(); t = raidTime(camp.race, camp.seed, startedAt, nextRaid)) {
     moveTo(t);
+    settleGear();
     const alive = aliveAt(population);
     const plan = planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length);
     if (plan) {
-      const outcome = resolveRaid(camp.race, camp.seed, plan, alive);
+      const outcome = resolveRaid(camp.race, camp.seed, plan, alive.map((r) => ({ ...r, gear: wearers.get(r.id)?.gear })), fightBoosts(camp.race, camp.boosts, t));
+      // wear, and what broke (about a third of what it was made from can be picked out of the wreck)
+      const broken: { resident: number; gear: string }[] = [];
+      for (const [id, slots] of Object.entries(outcome.wear)) {
+        const w = wearers.get(Number(id));
+        for (const [slot, n] of Object.entries(slots) as [GearSlot, number][]) {
+          const item = w?.gear[slot];
+          if (!w || !item) continue;
+          item.left -= n;
+          if (item.left > 0) continue;
+          delete w.gear[slot];
+          broken.push({ resident: w.id, gear: item.id });
+          const roll = randomFrom(hashString(`${camp.seed}|broken|${nextRaid}|${w.id}|${slot}`));
+          for (const [mat, count] of Object.entries(gearRule(item.id)?.cost ?? {})) {
+            for (let k = 0; k < count; k++) if (roll() < 0.3) materials[mat] = (materials[mat] ?? 0) + 1;
+          }
+        }
+      }
       fall(population, outcome.fallen, t);
       for (const [id, n] of Object.entries(outcome.loot)) materials[id] = (materials[id] ?? 0) + n;
       for (const [id, n] of Object.entries(outcome.killed)) kills[id] = (kills[id] ?? 0) + n;
-      raids.push(outcome);
+      raids.push({ ...outcome, broken } as RaidOutcome);
+      settleGear();
     }
     nextRaid++;
   }
   moveTo(now.getTime());
+  settleGear();
 
   if (born.length > 0) {
     await tx.insert(campResidents).values(
@@ -106,12 +157,19 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const byTime = new Map<number, number[]>();
   for (const r of population.residents) if (r.diedAt !== null) byTime.set(r.diedAt, [...(byTime.get(r.diedAt) ?? []), r.id]);
   for (const [at, ids] of byTime) {
-    await tx.update(campResidents).set({ diedAt: new Date(at) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, ids)));
+    await tx.update(campResidents).set({ diedAt: new Date(at), gear: null }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, ids)));
   }
+  // what the living wear now, where it changed
+  for (const w of wearers.values()) {
+    const now = JSON.stringify(w.gear);
+    if (now === (gearBefore.get(w.id) ?? "{}")) continue;
+    await tx.update(campResidents).set({ gear: Object.keys(w.gear).length ? (w.gear as Record<string, GearItem>) : null }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, w.id)));
+  }
+  const armoryChanged = JSON.stringify(store) !== JSON.stringify(camp.armory);
 
-  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0;
+  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged;
   const version = changed ? camp.version + 1 : camp.version;
-  const set = { advancedTo: now, nextSlot: population.nextSlot, nextId: population.nextId, peak: population.peak, nextRaid, materials, kills, version };
+  const set = { advancedTo: now, nextSlot: population.nextSlot, nextId: population.nextId, peak: population.peak, nextRaid, materials, kills, armory: store, version };
   await tx.update(camps).set(set).where(eq(camps.userId, camp.userId));
   if (born.length > 0 || agedOut.length > 0) {
     await addEvent(tx, camp.userId, now, "population", {
@@ -212,7 +270,10 @@ export async function migrateCamp(tx: Tx, userId: string, input: MigrateInput, n
       diesAt = Math.max(diesAt, now.getTime() + HOUR); // (the very old get an hour, instead of vanishing as they arrive)
     }
     const gear: Record<string, { id: string; left: number }> = {};
-    for (const [slot, item] of Object.entries(g.gear ?? {})) gear[slot] = typeof item === "string" ? { id: item, left: 1 } : { id: item.id, left: item.left ?? 1 };
+    for (const [slot, item] of Object.entries(g.gear ?? {})) {
+      const piece = asGear(item);
+      if (piece && gearRule(piece.id)?.slot === slot) gear[slot] = piece;
+    }
     return {
       userId,
       id: g.id,
@@ -231,9 +292,11 @@ export async function migrateCamp(tx: Tx, userId: string, input: MigrateInput, n
     Object.fromEntries(Object.entries(record ?? {}).filter(([, n]) => n > 0).map(([id, n]) => [id, Math.min(n, cap)]));
   const armoryCounts = new Map<string, number>();
   const armory: { id: string; left: number }[] = [];
-  const items = save.armoryItems?.length
-    ? save.armoryItems.map((i) => (typeof i === "string" ? { id: i, left: 1 } : { id: i.id, left: i.left ?? 1 }))
-    : Object.entries(save.armory ?? {}).flatMap(([id, n]) => Array.from({ length: Math.min(n, MIGRATE_CAPS.armoryPerGear) }, () => ({ id, left: 1 })));
+  const items = (
+    save.armoryItems?.length
+      ? save.armoryItems.map(asGear)
+      : Object.entries(save.armory ?? {}).flatMap(([id, n]) => Array.from({ length: Math.min(n, MIGRATE_CAPS.armoryPerGear) }, () => asGear(id)))
+  ).filter((i): i is GearItem => i !== null);
   for (const item of items) {
     const n = armoryCounts.get(item.id) ?? 0;
     if (n >= MIGRATE_CAPS.armoryPerGear) continue;

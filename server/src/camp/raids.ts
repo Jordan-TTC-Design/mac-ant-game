@@ -1,5 +1,5 @@
-import { MONSTER_DROPS, RACE_RANGE, residentAsFighter, SCRAP_DROPS, type RaidPlan } from "@goblincamp/shared/camp";
-import { FOES, hashString, randomFrom, residentFighter, simulateBattle, type BattleEvent, type Fighter } from "@goblincamp/shared/world";
+import { MONSTER_DROPS, RACE_RANGE, residentAsFighter, SCRAP_DROPS, type GearItem, type GearSlot, type RaidPlan } from "@goblincamp/shared/camp";
+import { FOES, hashString, randomFrom, residentFighter, simulateBattle, type BattleEvent, type FightBoosts, type Fighter } from "@goblincamp/shared/world";
 
 /** How many residents go out to meet each monster (the rest keep on with their day). */
 export const DEFENDERS_PER_MONSTER = 1.5;
@@ -21,7 +21,13 @@ export interface RaidOutcome {
   rounds: number;
   /** The fight, blow by blow, for the Mac to play (fighter ids: residents by number, monsters m0, m1…). */
   events: BattleEvent[];
+  /** What broke in the fight (filled in by the camp service). */
+  broken?: { resident: number; gear: string }[];
+  /** Wear the fight put on what the defenders wear: resident → slot → points. */
+  wear: Record<number, Partial<Record<GearSlot, number>>>;
 }
+
+const ARMOUR: GearSlot[] = ["head", "chest", "chest", "legs", "feet", "hands"];
 
 /** A bigger camp draws tougher monsters: level 1 up to 59 residents, then one more level every 60 (like a lair's level). */
 export function raidLevel(residents: number): number {
@@ -62,7 +68,13 @@ function monsterFighters(plan: RaidPlan, level: number): { fighters: Fighter[]; 
  * Fights raid `plan` out: one and a half residents per monster go out (picked from the seed), the battle rules decide it,
  * and every monster that falls rolls its drops (and the scraps any monster may leave).
  */
-export function resolveRaid(race: string, campSeed: number, plan: RaidPlan, alive: readonly { id: number; breed: string }[]): RaidOutcome {
+export function resolveRaid(
+  race: string,
+  campSeed: number,
+  plan: RaidPlan,
+  alive: readonly { id: number; breed: string; gear?: Partial<Record<GearSlot, GearItem>> | null }[],
+  boosts: FightBoosts = {},
+): RaidOutcome {
   const { fighters: monsters, kinds } = monsterFighters(plan, raidLevel(alive.length));
   const pick = randomFrom(hashString(`${campSeed}|raid-defenders|${plan.index}`));
   const pool = [...alive];
@@ -72,7 +84,7 @@ export function resolveRaid(race: string, campSeed: number, plan: RaidPlan, aliv
   }
   const defenders = pool.slice(0, Math.min(pool.length, Math.ceil(monsters.length * DEFENDERS_PER_MONSTER)));
   const traits = { id: race, ranged: RACE_RANGE[race] ?? 0 };
-  const defending = defenders.map((r) => residentFighter(residentAsFighter(race, r), "defend", traits));
+  const defending = defenders.map((r) => residentFighter(residentAsFighter(race, r), "defend", traits, boosts));
 
   const battle = simulateBattle(monsters, defending, { seed: hashString(`${campSeed}|raid-battle|${plan.index}`) });
 
@@ -87,7 +99,23 @@ export function resolveRaid(race: string, campSeed: number, plan: RaidPlan, aliv
       loot[drop.id] = (loot[drop.id] ?? 0) + drop.min + Math.floor(roll() * (drop.max - drop.min + 1));
     }
   }
+  // wear: a weapon one point per blow it strikes; for each hit taken, the shield and one piece of armour (as on the Mac)
+  const wear: Record<number, Partial<Record<GearSlot, number>>> = {};
+  const wearRoll = randomFrom(hashString(`${campSeed}|raid-wear|${plan.index}`));
+  const byId = new Map(defenders.map((r) => [String(r.id), r]));
+  const add = (id: number, slot: GearSlot, n: number) => ((wear[id] ??= {})[slot] = ((wear[id] ??= {})[slot] ?? 0) + n);
+  for (const e of battle.events) {
+    const striker = byId.get(e.actor);
+    if (striker?.gear?.weapon && (e.kind === "hit" || e.kind === "miss")) add(striker.id, "weapon", 1);
+    const struck = byId.get(e.target);
+    if (struck && e.kind === "hit") {
+      if (struck.gear?.shield) add(struck.id, "shield", 1);
+      const worn = ARMOUR.filter((slot) => struck.gear?.[slot]);
+      if (worn.length) add(struck.id, worn[Math.floor(wearRoll() * worn.length)]!, 1);
+    }
+  }
   return {
+    wear,
     index: plan.index,
     at: new Date(plan.at).toISOString(),
     monsters: plan.monsters,

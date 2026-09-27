@@ -144,7 +144,7 @@ describe("moving an old camp in", () => {
     const me = await account();
     const goblins = [
       ...Array.from({ length: 350 }, (_, i) => goblin(i + 1, 1000 + i * 100)),
-      goblin(999, 10, { breed: "brute", gear: { weapon: "bone_knife", shield: { id: "wood_shield", left: 0.4 } } }),
+      goblin(999, 10, { breed: "brute", gear: { weapon: "bone_knife", shield: { id: "wood_shield", left: 7 }, head: "made_up_hat" } }),
       goblin(1000, 20, { breed: "made_up" }),
     ];
     const res = await t.call("POST", "/camp/migrate", {
@@ -154,7 +154,7 @@ describe("moving an old camp in", () => {
         princessName: "艾莉雅",
         materials: { slime_goo: 999, rat_fang: 12, nothing: 0 },
         larder: { fish: 40 },
-        armoryItems: Array.from({ length: 15 }, () => ({ id: "bone_knife", left: 0.8 })),
+        armoryItems: Array.from({ length: 15 }, () => ({ id: "bone_knife", left: 90 })),
         peak: 900,
         romance: { stage: "dating", affection: 40 },
         delivered: 5000,
@@ -168,10 +168,13 @@ describe("moving an old camp in", () => {
     expect(camp.stage).toBe(3);
     expect(camp.materials).toEqual({ slime_goo: 200, rat_fang: 12 });
     expect(camp.larder).toEqual({ fish: 16 });
-    expect(camp.armory).toHaveLength(10);
+    // the store keeps 10 knives; the camp then hands them out to those with no weapon (so the store may be empty again)
+    expect(camp.armory.length + camp.residents.filter((r) => r.gear?.weapon?.id === "bone_knife").length).toBe(11);
     expect(camp).toMatchObject({ princessName: "艾莉雅", romance: { stage: "dating", affection: 40 }, delivered: 5000 });
     const brute = camp.residents.find((r) => r.id === 999)!;
-    expect(brute).toMatchObject({ breed: "brute", name: "咕嚕999", legacySeed: "18000000000000000999", gear: { weapon: { id: "bone_knife", left: 1 }, shield: { id: "wood_shield", left: 0.4 } } });
+    // wear points as the Mac saved them (a plain id is a new piece); gear the workshop does not know is dropped
+    expect(brute).toMatchObject({ breed: "brute", name: "咕嚕999", legacySeed: "18000000000000000999", gear: { weapon: { id: "bone_knife", left: 120 }, shield: { id: "wood_shield", left: 7 } } });
+    expect(brute.gear!.head).toBeUndefined();
     expect(camp.residents.find((r) => r.id === 1000)!.breed).toBe("common"); // (a breed the race does not have)
     expect(camp.nextId).toBe(1001);
   });
@@ -227,6 +230,104 @@ describe("monster raids", () => {
     await view(me);
     const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string }[];
     expect(events.filter((e) => e.kind === "raid")).toHaveLength(0);
+  });
+});
+
+describe("commands", () => {
+  async function campWith(materials: Record<string, number>, race = "goblin", n = 6) {
+    const me = await account();
+    const goblins = Array.from({ length: n }, (_, i) => ({ id: i + 1, breed: i === 0 ? "brute" : "common", age: 100, seed: String(i + 1) }));
+    await t.call("POST", "/camp/migrate", { race, save: { goblins, materials } }, me);
+    return me;
+  }
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+
+  it("crafts a piece for whoever needs it most, and spends the materials", async () => {
+    const me = await campWith({ rat_fang: 10, rat_tail: 3 });
+    const res = await cmd(me, { kind: "craft", gear: "bone_knife" });
+    expect(res.status).toBe(200);
+    const camp = res.body.camp as CampView;
+    expect(camp.materials).toEqual({ rat_fang: 6, rat_tail: 2 });
+    const armed = camp.residents.filter((r) => r.gear?.weapon);
+    expect(armed.map((r) => r.id)).toEqual([1]); // the brute: the strongest of those with no weapon
+    expect(armed[0]!.gear!.weapon).toEqual({ id: "bone_knife", left: 120 });
+  });
+
+  it("refuses what the camp cannot afford, or what nobody needs", async () => {
+    const me = await campWith({ rat_fang: 4, rat_tail: 1, scrap_rag: 100 }, "goblin", 1);
+    expect((await cmd(me, { kind: "craft", gear: "long_sword" })).body.error).toBe("not_enough");
+    expect((await cmd(me, { kind: "craft", gear: "gold_crown" })).body.error).toBe("unknown_gear");
+    expect((await cmd(me, { kind: "craft", gear: "cloth_cap" })).status).toBe(200);
+    const again = await cmd(me, { kind: "craft", gear: "cloth_cap" }); // the only resident already has one as good
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe("nobody_needs");
+    expect(again.body.camp.materials.scrap_rag).toBe(97); // nothing spent
+  });
+
+  it("mends a worn piece for a third of its materials", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/migrate", {
+      race: "goblin",
+      save: { goblins: [{ id: 1, breed: "common", age: 100, seed: "1", gear: { weapon: { id: "long_sword", left: 30 } } }], materials: { scrap_iron: 2, rat_pelt: 1, scrap_wood: 1 } },
+    }, me);
+    const res = await cmd(me, { kind: "repair", resident: 1, slot: "weapon" });
+    expect(res.status).toBe(200);
+    expect(res.body.camp.residents[0].gear.weapon).toEqual({ id: "long_sword", left: 200 });
+    expect(res.body.camp.materials).toEqual({}); // 6 iron → 2, 2 pelts → 1, 1 wood → 1
+    expect((await cmd(me, { kind: "repair", resident: 1, slot: "shield" })).body.error).toBe("not_found");
+  });
+
+  it("puts food down with a cooldown, and only what the race can use", async () => {
+    const me = await campWith({});
+    const put = await cmd(me, { kind: "food", food: "meat" });
+    expect(put.status).toBe(200);
+    const camp = put.body.camp as CampView;
+    expect(Date.parse(camp.boosts.meat!) - t.now().getTime()).toBe(48 * 60_000);
+    expect(Date.parse(camp.foodCooldowns.meat!) - t.now().getTime()).toBe(20 * 60_000);
+    expect((await cmd(me, { kind: "food", food: "meat" })).body.error).toBe("cooling_down");
+    t.advance(21 * 60_000);
+    const again = await cmd(me, { kind: "food", food: "meat" });
+    expect(Date.parse(again.body.camp.boosts.meat) - t.now().getTime()).toBe(60 * 60_000); // up to an hour
+    expect((await cmd(me, { kind: "food", food: "soul_blue" })).body.error).toBe("not_allowed");
+  });
+
+  it("gives the undead souls instead of food", async () => {
+    const me = await campWith({}, "undead");
+    expect((await cmd(me, { kind: "food", food: "soul_blue" })).status).toBe(200);
+    expect((await cmd(me, { kind: "food", food: "meat" })).body.error).toBe("not_allowed");
+  });
+
+  it("names the princess and keeps her story", async () => {
+    const me = await campWith({});
+    expect((await cmd(me, { kind: "princess-name", name: "艾莉雅" })).body.camp.princessName).toBe("艾莉雅");
+    expect((await cmd(me, { kind: "princess-name", name: "一個很長很長的名字喔" })).status).toBe(400);
+    expect((await cmd(me, { kind: "story", romance: { stage: "married" } })).body.camp.romance).toEqual({ stage: "married" });
+  });
+
+  it("hands a fallen or old resident's gear back to the store, and on to the next", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/migrate", {
+      race: "goblin",
+      save: { goblins: [{ id: 1, breed: "common", age: 47 * 3600, seed: "1", gear: { weapon: "long_sword" } }, { id: 2, breed: "common", age: 10, seed: "2" }] },
+    }, me);
+    t.advance(2 * 3600_000); // the old one dies; the sword goes to someone else
+    const camp = await view(me);
+    expect(camp.residents.some((r) => r.id === 1)).toBe(false);
+    expect(camp.residents.filter((r) => r.gear?.weapon?.id === "long_sword")).toHaveLength(1);
+  });
+
+  it("wears gear down in raids", async () => {
+    const me = await account();
+    const goblins = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, breed: "common", age: 10, seed: String(i + 1), gear: { weapon: "bone_knife", chest: "cloth_armor" } }));
+    await t.call("POST", "/camp/migrate", { race: "goblin", save: { goblins } }, me);
+    t.advance(10 * 3600_000);
+    const camp = await view(me);
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string; data: { wear?: Record<string, unknown>; broken?: unknown[] } }[];
+    const raids = events.filter((e) => e.kind === "raid");
+    expect(raids.length).toBeGreaterThan(0);
+    const worn = camp.residents.filter((r) => r.gear?.weapon && r.gear.weapon.left < 120);
+    const brokeSomething = raids.some((e) => (e.data.broken ?? []).length > 0);
+    expect(worn.length > 0 || brokeSomething).toBe(true);
   });
 });
 

@@ -2,7 +2,8 @@
  * What the camp fights with and what monsters leave behind (the Mac's character manifests and mac/Resources/Animals,
  * mac/Sources/GoblinCamp/Materials.swift). Only the server fights (raids and the big world); the Mac plays the result.
  */
-import type { Resident as Fighter } from "../world/battle.ts";
+import { ATTACK_PER_MIGHT, type Resident as Fighter } from "../world/battle.ts";
+import { gearRule, type GearItem, type GearSlot } from "./gear.ts";
 
 /** A breed's fighting stats, per race (might and health as multiples of a plain goblin; speed ×). Missing = 1 / 3 / 1. */
 export const BREED_STATS: Record<string, Record<string, { might?: number; health?: number; speed?: number }>> = {
@@ -41,10 +42,39 @@ export const BREED_STATS: Record<string, Record<string, { might?: number; health
 /** How a race fights as a whole (elves shoot from the back). */
 export const RACE_RANGE: Record<string, number> = { goblin: 0, elf: 34, undead: 0 };
 
-/** A resident as a fighter for the battle rules (world/battle.ts). */
-export function residentAsFighter(race: string, resident: { id: number; breed: string }, name = ""): Fighter {
+/**
+ * A resident as a fighter for the battle rules (world/battle.ts), with what it wears: weapon and gauntlets add to its
+ * blows, armour to its health, the shield turns blows aside, reach and speed carry over. A worn-out piece (under a
+ * quarter) works at half strength, as on the Mac.
+ */
+export function residentAsFighter(
+  race: string,
+  resident: { id: number; breed: string; gear?: Partial<Record<GearSlot, GearItem>> | null },
+  name = "",
+): Fighter {
   const stats = BREED_STATS[race]?.[resident.breed] ?? {};
-  return { id: String(resident.id), name, breed: resident.breed, might: stats.might ?? 1, health: stats.health ?? 3, speed: stats.speed ?? 1 };
+  let might = 0, health = 0, block = 0, speed = 0, reach = 0;
+  for (const item of Object.values(resident.gear ?? {})) {
+    const rule = item && gearRule(item.id);
+    if (!rule || !item) continue;
+    const k = item.left / rule.durability < 0.25 ? 0.5 : 1;
+    might += (rule.might ?? 0) * k;
+    health += (rule.health ?? 0) * k;
+    block += (rule.block ?? 0) * k;
+    speed += (rule.speed ?? 0) * k;
+    reach = Math.max(reach, rule.reach ?? 0);
+  }
+  return {
+    id: String(resident.id),
+    name,
+    breed: resident.breed,
+    might: stats.might ?? 1,
+    health: (stats.health ?? 3) + health,
+    speed: (stats.speed ?? 1) * (1 + speed),
+    gearAttack: might * ATTACK_PER_MIGHT,
+    gearReach: reach,
+    gearGuard: block,
+  };
 }
 
 export interface DropRule {

@@ -1,11 +1,14 @@
 import { z } from "zod";
+import { FOODS, SOULS } from "./food.ts";
+import { GEAR_SLOTS } from "./gear.ts";
 import { RACES } from "./races.ts";
 
 /** `POST /api/camp/start`: a new camp (for an account that has none). */
 export const startCampInput = z.object({ race: z.enum(RACES) });
 
 const count = z.number().int().min(0).max(1_000_000);
-const savedGear = z.union([z.string().max(40), z.object({ id: z.string().max(40), left: z.number().min(0).max(1).nullish() })]);
+/** A piece as the Mac saves it: just the id (older saves), or the id and the wear points it has left (0 … its durability). */
+const savedGear = z.union([z.string().max(40), z.object({ id: z.string().max(40), left: z.number().min(0).max(100_000).nullish() })]);
 
 /**
  * `POST /api/camp/migrate`: a Mac moving its old camp (state.json) in. The fields are the Mac's `SavedState` as it is; the
@@ -42,6 +45,20 @@ export const migrateInput = z.object({
   }),
 });
 export type MigrateInput = z.infer<typeof migrateInput>;
+
+/** `POST /api/camp/commands`: one thing the player does. The server checks it against the books (server/CAMP.md §3.3). */
+export const campCommand = z.discriminatedUnion("kind", [
+  /** The workshop makes a piece; it goes to whoever needs it most. */
+  z.object({ kind: z.literal("craft"), gear: z.string().max(40) }),
+  /** Mends a piece a resident wears (`resident` + `slot`) or one in the store (`stock`, its place in the list). */
+  z.object({ kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
+  /** Puts a food (or, for the undead, a soul) down. */
+  z.object({ kind: z.literal("food"), food: z.enum([...FOODS, ...SOULS]) }),
+  z.object({ kind: z.literal("princess-name"), name: z.string().trim().min(1).max(8) }),
+  /** The princess's story as the Mac has it now (kept as it is; it does not count for the ranking). */
+  z.object({ kind: z.literal("story"), romance: z.unknown() }),
+]);
+export type CampCommand = z.infer<typeof campCommand>;
 
 export interface CampResidentView {
   id: number;

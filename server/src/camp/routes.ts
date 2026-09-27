@@ -1,8 +1,9 @@
 import { Hono } from "hono";
-import { migrateInput, startCampInput } from "@goblincamp/shared/camp";
+import { campCommand, migrateInput, startCampInput } from "@goblincamp/shared/camp";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
+import { runCommand } from "./commands.ts";
 import { advanceCamp, campView, eventsSince, lockCamp, migrateCamp, startCamp } from "./service.ts";
 
 /** 營地：the account's one camp, kept by the server (server/CAMP.md). */
@@ -64,6 +65,24 @@ export function campRoutes(deps: AppDeps) {
     if (camp === "exists") return apiError(c, 409, "conflict", "這個帳號已經有營地了，要換成這台的請再確認一次。");
     deps.hub.notify(userId, { type: "camp.changed", version: camp.version });
     return c.json(await db.transaction((tx) => campView(tx, camp)), 201);
+  });
+
+  /** One thing the player does (craft, repair, food, the princess's name, her story), checked against the books. */
+  app.post("/commands", async (c) => {
+    const body = await readJson(c, campCommand);
+    if ("response" in body) return body.response;
+    const userId = c.get("session").user.id;
+    const out = await db.transaction(async (tx) => {
+      const camp = await lockCamp(tx, userId);
+      if (!camp) return null;
+      await advanceCamp(tx, camp, now());
+      const result = await runCommand(tx, camp, body.data, now());
+      return { result, view: await campView(tx, camp) };
+    });
+    if (!out) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
+    if (!out.result.ok) return c.json({ error: out.result.code, message: out.result.message, camp: out.view }, 409);
+    deps.hub.notify(userId, { type: "camp.changed", version: out.view.version });
+    return c.json({ message: out.result.message, camp: out.view });
   });
 
   return app;

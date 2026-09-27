@@ -1,0 +1,148 @@
+/**
+ * The workshop's gear and how the camp hands it out (the Mac's Equipment.swift and Colony's craft / neediest /
+ * redistributeArmory / repair / wear). Nobody equips by hand: a piece goes to whoever needs it most, what it replaces goes
+ * to the store, and the store is handed out again whenever someone is born, dies or a piece is made.
+ */
+import { BREED_STATS } from "./combat.ts";
+
+export type GearSlot = "weapon" | "shield" | "head" | "chest" | "legs" | "feet" | "hands";
+export const GEAR_SLOTS: readonly GearSlot[] = ["weapon", "shield", "head", "chest", "legs", "feet", "hands"];
+
+export interface GearRule {
+  id: string;
+  name: string;
+  slot: GearSlot;
+  twoHanded?: boolean;
+  might?: number;
+  health?: number;
+  block?: number;
+  speed?: number;
+  reach?: number;
+  cost: Record<string, number>;
+  /** Wear before it breaks (a weapon loses 1 per blow, the rest 1 per hit taken; a shield 2 for a blow it turns aside). */
+  durability: number;
+}
+
+const g = (id: string, name: string, slot: GearSlot, durability: number, cost: Record<string, number>, stats: Partial<GearRule> = {}): GearRule => ({ id, name, slot, durability, cost, ...stats });
+
+export const GEAR: readonly GearRule[] = [
+  g("bone_knife", "骨刀", "weapon", 120, { rat_fang: 4, rat_tail: 1 }, { might: 1 }),
+  g("short_sword", "短劍", "weapon", 160, { scrap_iron: 3, scrap_wood: 1, rat_pelt: 1 }, { might: 1.2 }),
+  g("claw_dagger", "利爪匕首", "weapon", 150, { sharp_claw: 2, rat_fang: 4, rat_pelt: 1 }, { might: 1.5 }),
+  g("long_sword", "長劍", "weapon", 200, { scrap_iron: 6, rat_pelt: 2, scrap_wood: 1 }, { might: 1.7 }),
+  g("crystal_blade", "晶刃", "weapon", 120, { scrap_iron: 5, crystal_shard: 2, rat_pelt: 1 }, { might: 2.5 }),
+  g("twin_blades", "雙刀", "weapon", 180, { scrap_iron: 5, rat_fang: 4, rat_pelt: 2 }, { might: 2.1, twoHanded: true }),
+  g("great_sword", "雙手劍", "weapon", 240, { scrap_iron: 9, rat_fang: 4, rat_pelt: 3 }, { might: 2.8, twoHanded: true }),
+  g("spear", "長槍", "weapon", 160, { scrap_wood: 5, scrap_iron: 3, rat_fang: 2 }, { might: 2, reach: 12, twoHanded: true }),
+  g("bow", "弓箭", "weapon", 140, { scrap_wood: 5, rat_tail: 3, rat_fang: 2 }, { might: 1.6, reach: 42, twoHanded: true }),
+  g("core_staff", "核心法杖", "weapon", 260, { slime_core: 2, slime_goo: 4, shiny_bead: 1 }, { might: 2.2, reach: 28 }),
+  g("night_dagger", "夜刃匕首", "weapon", 120, { bat_fang: 4, night_dust: 1, scrap_iron: 3 }, { might: 1.9, speed: 0.04 }),
+  g("wood_shield", "木盾", "shield", 18, { scrap_wood: 6, rat_pelt: 1 }, { block: 0.15 }),
+  g("goo_shield", "黏液盾", "shield", 24, { slime_goo: 6, elastic_gel: 2 }, { block: 0.25 }),
+  g("cloth_cap", "布帽", "head", 10, { scrap_rag: 3 }, { health: 0.4 }),
+  g("leather_cap", "皮帽", "head", 16, { rat_pelt: 2, scrap_rag: 1 }, { health: 0.7 }),
+  g("iron_helm", "鐵盔", "head", 30, { scrap_iron: 5, rat_pelt: 1 }, { health: 1.1 }),
+  g("cloth_armor", "布甲", "chest", 12, { scrap_rag: 6 }, { health: 0.9 }),
+  g("leather_armor", "皮甲", "chest", 20, { rat_pelt: 5, scrap_rag: 2 }, { health: 1.5 }),
+  g("iron_plate", "鐵甲", "chest", 36, { scrap_iron: 10, rat_pelt: 2 }, { health: 2.2, speed: -0.04 }),
+  g("gold_cloak", "金毛披風", "chest", 30, { golden_fur: 1, rat_pelt: 4, rat_tail: 2 }, { health: 2 }),
+  g("bat_cloak", "蝙蝠翼披風", "chest", 20, { bat_wing: 5, rat_pelt: 2, scrap_rag: 2 }, { health: 1.7, speed: 0.03 }),
+  g("cloth_pants", "布褲", "legs", 10, { scrap_rag: 4 }, { health: 0.4 }),
+  g("leather_pants", "皮褲", "legs", 16, { rat_pelt: 3, scrap_rag: 1 }, { health: 0.8 }),
+  g("cloth_shoes", "布鞋", "feet", 10, { scrap_rag: 3 }, { speed: 0.05 }),
+  g("leather_boots", "皮靴", "feet", 16, { rat_pelt: 3, rat_tail: 1 }, { health: 0.3, speed: 0.08 }),
+  g("frog_boots", "蛙皮靴", "feet", 20, { frog_skin: 3, frog_leg: 1 }, { health: 0.3, speed: 0.12 }),
+  g("pelt_wraps", "鼠皮護腕", "hands", 14, { rat_pelt: 3, rat_fang: 1 }, { health: 0.5 }),
+  g("iron_gauntlets", "鐵手甲", "hands", 26, { scrap_iron: 4, rat_pelt: 1 }, { might: 0.4, health: 0.4 }),
+];
+
+const BY_ID = new Map(GEAR.map((x) => [x.id, x]));
+export function gearRule(id: string): GearRule | undefined {
+  return BY_ID.get(id);
+}
+
+/** A piece as it exists: which, and how much wear it has left (in the rule's durability units). */
+export interface GearItem {
+  id: string;
+  left: number;
+}
+
+/** One number to tell which of two pieces for the same slot is better (a worn-out one, under a quarter, counts half). */
+export function gearPower(item: GearItem | undefined): number {
+  const rule = item && gearRule(item.id);
+  if (!rule || !item) return 0;
+  const power = (rule.might ?? 0) + (rule.health ?? 0) + (rule.block ?? 0) * 5 + (rule.speed ?? 0) * 6 + (rule.reach ?? 0) / 40;
+  return item.left / rule.durability < 0.25 ? power / 2 : power;
+}
+
+/** What mending costs: a third of what it was made from (rounded up, at least one of each). */
+export function repairCost(rule: GearRule): Record<string, number> {
+  return Object.fromEntries(Object.entries(rule.cost).map(([id, n]) => [id, Math.max(1, Math.ceil(n / 3))]));
+}
+
+export function canAfford(have: Record<string, number>, cost: Record<string, number>): boolean {
+  return Object.entries(cost).every(([id, n]) => (have[id] ?? 0) >= n);
+}
+
+export function spend(have: Record<string, number>, cost: Record<string, number>): void {
+  for (const [id, n] of Object.entries(cost)) {
+    have[id] = (have[id] ?? 0) - n;
+    if (have[id]! <= 0) delete have[id];
+  }
+}
+
+/** A resident as the workshop sees it. */
+export interface Wearer {
+  id: number;
+  breed: string;
+  gear: Partial<Record<GearSlot, GearItem>>;
+}
+
+/**
+ * Who gains most from `item`: whoever's piece in that slot is worst (nothing at all first); among equals the strong get
+ * weapons, the sturdy shields, the rest the average. Nobody who already has something at least as good; no shield for a
+ * two-handed weapon. Null when nobody needs it.
+ */
+export function neediest(race: string, wearers: readonly Wearer[], item: GearItem): Wearer | null {
+  const rule = gearRule(item.id);
+  if (!rule) return null;
+  const power = gearPower(item);
+  const stats = (w: Wearer) => BREED_STATS[race]?.[w.breed] ?? {};
+  const fit = (w: Wearer) => {
+    const might = stats(w).might ?? 1, health = stats(w).health ?? 3;
+    return rule.slot === "weapon" ? might : rule.slot === "shield" ? health : health * 0.5 + might * 0.5;
+  };
+  let best: Wearer | null = null;
+  for (const w of wearers) {
+    const now = gearPower(w.gear[rule.slot]);
+    if (now >= power) continue;
+    if (rule.slot === "shield" && gearRule(w.gear.weapon?.id ?? "")?.twoHanded) continue;
+    if (!best) { best = w; continue; }
+    const bestNow = gearPower(best.gear[rule.slot]);
+    if (now < bestNow || (now === bestNow && (fit(w) > fit(best) || (fit(w) === fit(best) && w.id < best.id)))) best = w;
+  }
+  return best;
+}
+
+/** Puts `item` on `wearer`; what it wore there goes back to `store` (a two-handed weapon also sends the shield back). */
+export function give(wearer: Wearer, item: GearItem, store: GearItem[]): void {
+  const rule = gearRule(item.id)!;
+  const old = wearer.gear[rule.slot];
+  if (old) store.push(old);
+  wearer.gear[rule.slot] = item;
+  if (rule.twoHanded && wearer.gear.shield) {
+    store.push(wearer.gear.shield);
+    delete wearer.gear.shield;
+  }
+}
+
+/** Hands the store on, best pieces first, each to whoever needs it most; what nobody needs stays. Changes both in place. */
+export function redistribute(race: string, wearers: Wearer[], store: GearItem[]): void {
+  for (let rounds = 0; rounds < 500; rounds++) {
+    const order = store.map((item, i) => ({ item, i })).sort((a, b) => gearPower(b.item) - gearPower(a.item));
+    const next = order.find(({ item }) => neediest(race, wearers, item));
+    if (!next) return;
+    store.splice(next.i, 1);
+    give(neediest(race, wearers, next.item)!, next.item, store);
+  }
+}
