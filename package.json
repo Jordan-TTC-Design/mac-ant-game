@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@12.6.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.19"
   },
   "scripts": {
     "db:up": "docker compose -f server/compose.dev.yml up -d --wait",
@@ -11,6 +11,8 @@
     "dev": "pnpm --filter @goblincamp/server dev",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "invite": "pnpm --filter @goblincamp/server invite"
+    "invite": "pnpm --filter @goblincamp/server invite",
+    "pwa": "pnpm --filter @goblincamp/pwa dev",
+    "pwa:build": "pnpm --filter @goblincamp/pwa build"
   }
 }

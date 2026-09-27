@@ -27,3 +27,6 @@ dist/
 node_modules/
 .env
 server/dist/
+
+# Playwright (browser tests) output
+.playwright-mcp/

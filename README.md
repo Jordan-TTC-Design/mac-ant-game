@@ -227,6 +227,7 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 - **專注模式時不會跳出來**（開會中不該被打斷），等離開專注模式才出現；全螢幕自動專注也一樣。專注與節能模式時，便利貼上的哥布林會睡覺。
 - 被視窗蓋住找不到時：「把便利貼叫到最上面」（⌃⌥M）暫時浮到最上面，切到別的 App 就回去；「全部集合到這個螢幕」把所有便利貼排到滑鼠所在的螢幕。
 - 存在 `notes.json`。每張有自己的 id、最後修改時間與刪除標記；位置只存在這台 Mac。實作在 `Notes.swift`。
+- **手機也能用**：`pwa/` 是手機網頁，登入同一個帳號就看得到、改得到，提醒時間到手機會收到通知（iPhone 要先加入主畫面）。
 - **登入帳號後會同步**（選單「帳號 → 登入或註冊…」，註冊要邀請碼）：改完一秒後送到伺服器，另一台 Mac 馬上收到；一台按「知道了」，其他台正在提醒的哥布林也會走掉。不登入一切照舊。伺服器在 `server/`（見 [server/README.md](server/README.md)），目前連 `http://localhost:8787`，用 `CAMP_SERVER_URL` 可以換。實作在 `Account.swift`（帳號、Keychain、API）、`Sync.swift`（同步與 WebSocket）、`AccountWindow.swift`（登入視窗、登入中的裝置）。
 
 ## Claude 通知（哥布林跳出來說話）
@@ -388,7 +389,9 @@ App 不會讀取鍵盤、也不會錄製螢幕；只用到滑鼠的位置和點�
 ```
 ├── README.md、PLAN.md、*.md       # 文件（整個專案共用）
 ├── docs/images/                # README 的封面與說明圖（點陣風）
-├── server/                     # 後端（帳號、便利貼同步、使者）；設計見 server/DESIGN.md
+├── server/                     # 後端（帳號、便利貼同步、推播、使者）；設計見 server/DESIGN.md
+├── pwa/                        # 手機網頁（Nuxt PWA）：看、寫便利貼，收提醒通知；見 pwa/README.md
+├── shared/                     # server 與 pwa 共用的資料格式
 └── mac/                        # Mac App（Swift）
     ├── Package.swift
     ├── build.sh                    # 編譯並組出 GoblinCamp.app（含角色、營地與 App 圖示）

@@ -9,7 +9,8 @@
     "typecheck": "tsc -p .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
-    "invite": "tsx --env-file-if-exists=.env src/cli/invite.ts"
+    "invite": "tsx --env-file-if-exists=.env src/cli/invite.ts",
+    "vapid": "web-push generate-vapid-keys"
   },
   "dependencies": {
     "@goblincamp/shared": "workspace:*",
@@ -19,10 +20,12 @@
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.9",
     "postgres": "^3.4.9",
+    "web-push": "^3.6.7",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.11",
     "tsx": "^4.23.15",

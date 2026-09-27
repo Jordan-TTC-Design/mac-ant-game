@@ -99,6 +99,8 @@ export const notes = pgTable(
     seq: bigint("seq", { mode: "number" }).notNull(),
     /** The number of the last change to each field, to tell a real conflict (both changed the words) from changes to different fields. */
     fieldSeqs: jsonb("field_seqs").$type<Record<string, number>>().notNull().default({}),
+    /** The reminder time a phone was last notified for (so each reminder is pushed once, and again after a snooze). */
+    pushedFor: timestamp("pushed_for", { withTimezone: true }),
   },
-  (t) => [index("notes_user_seq_idx").on(t.userId, t.seq)],
+  (t) => [index("notes_user_seq_idx").on(t.userId, t.seq), index("notes_remind_idx").on(t.remindAt)],
 );

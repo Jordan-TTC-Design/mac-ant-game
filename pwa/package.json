@@ -1,0 +1,27 @@
+{
+  "name": "@goblincamp/pwa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sprites": "node scripts/copy-sprites.mjs",
+    "dev": "node scripts/copy-sprites.mjs && nuxt dev --port 3000",
+    "build": "node scripts/copy-sprites.mjs && nuxt generate",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt typecheck",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@goblincamp/shared": "workspace:*",
+    "@vite-pwa/nuxt": "^1.1.1",
+    "idb-keyval": "^6.3.0",
+    "nuxt": "^4.5.2",
+    "vue": "^3.5.43",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.11"
+  }
+}

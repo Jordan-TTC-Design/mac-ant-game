@@ -6,6 +6,7 @@ import { invites } from "../src/db/schema.ts";
 import { RateLimiter } from "../src/lib/rate-limit.ts";
 import { hashSecret, newInviteCode, normalizeCode } from "../src/lib/tokens.ts";
 import { MemoryMailer } from "../src/mail/mailer.ts";
+import { MemoryPushSender } from "../src/push/sender.ts";
 
 // The test database from compose.dev.yml (`pnpm db:up`); never the development one.
 const url = process.env.TEST_DATABASE_URL ?? "postgres://goblin:goblin@localhost:5433/goblin_test";
@@ -24,10 +25,12 @@ export async function emptyTables(database: Database) {
 /** An app with its own clock, mailbox and rate limits, plus shortcuts for requests. */
 export function testApp(database: Database) {
   const mailer = new MemoryMailer();
+  const push = new MemoryPushSender();
   let clock = new Date("2026-10-01T09:00:00Z");
   const app = createApp({
     database,
     mailer,
+    push,
     config: { APP_URL, TRUST_PROXY: false },
     now: () => clock,
     limiter: new RateLimiter(() => clock.getTime()),
@@ -46,7 +49,9 @@ export function testApp(database: Database) {
   return {
     app,
     mailer,
+    push,
     call,
+    now: () => clock,
     /** Moves the clock forward. */
     advance(ms: number) {
       clock = new Date(clock.getTime() + ms);

@@ -78,3 +78,21 @@ export interface ChangesResponse {
 
 /** What the server says over the WebSocket (`/api/ws`). */
 export type ServerEvent = { type: "notes.changed"; seq: number } | { type: "hello"; userId: string };
+
+/** A phone's Web Push subscription, as the browser gives it (`PushSubscription.toJSON()`). */
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.url().max(1000),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }),
+});
+export type PushSubscriptionJSON = z.infer<typeof pushSubscriptionSchema>;
+
+/** What a reminder push carries to the phone's service worker. */
+export interface ReminderPush {
+  type: "reminder";
+  noteId: string;
+  /** 「咔噗・壯碩哥布林」-ish: who is reminding. */
+  title: string;
+  /** The first lines of the note. */
+  body: string;
+}

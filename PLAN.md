@@ -662,3 +662,13 @@ Characters/<id>/
 - **沒驗證**：真的用滑鼠在登入視窗打字登入（用程式登入）；「登入中的裝置」視窗的畫面與按鈕；忘記密碼按鈕；離線時的狀態文字與恢復；兩台同時改文字時 Mac 上出現衝突副本（伺服器測試有，Mac 端沒實際跑）。
 - 確認信、重設密碼信的連結指向手機網頁（階段 3 才有），在那之前只能在本機開發時用 API 完成。
 
+## 後端階段 3：手機網頁與提醒推播（2026-09-27）
+- 伺服器：`notes.pushed_for`（migration `0004_push`）；`/api/push/key`、`/api/push/subscribe`（只有手機）；每 15 秒的提醒迴圈 `pushDueReminders`（`FOR UPDATE SKIP LOCKED`，每個提醒時間推一次、延後會再推、一天前的不推、手機不在了就清掉訂閱）；`WebPushSender`（VAPID，`pnpm --filter @goblincamp/server vapid` 產生金鑰），沒金鑰時不推。`.env` 裡留空的金鑰當作沒設定。
+- `pwa/`：Nuxt 4.5（`ssr: false`）、`@vite-pwa/nuxt`（injectManifest，自己的 `service-worker/sw.ts`：離線快取、顯示推播、點通知打開那張）、`idb-keyval`（便利貼存在手機的 IndexedDB，離線也能看、能改）。頁面：列表、編輯（文字邊打邊存、提醒與目標時間的快捷鍵與自訂、顏色、完成、刪除）、登入／註冊（同 Mac 的兩個分頁）、設定（好友代碼、開啟通知、登入中的裝置、登出）、確認信箱、忘記密碼、重設密碼。哥布林用 Mac 的精靈圖（建置前複製），心情和 Mac 一樣；響鈴用點陣的鈴鐺（不用 emoji）。
+- 同步規則照搬 Mac（只送改過的欄位、伺服器處理衝突、WebSocket 一有變動就拉）。手機**不會**把 `remindFired` 設成 true（不然 Mac 的哥布林就不跳了）；提醒時間到時手機上顯示響鈴與「知道了」，按了就清掉提醒，Mac 那邊的哥布林也會走。別處按了「知道了」時，手機上那則通知會被收掉。
+- 版本上的決定：Nuxt 4 要 Node 22.19 以上（使用者電腦上 nvm 有 22.23.2，`.nvmrc` 的 22 會選到它；最上層 engines 改成 `>=22.19`）；PWA 用 TypeScript 5.9（`vue-tsc` 需要 TypeScript 的 JS API，7 沒有），伺服器維持 7。
+- 開發時 Nitro 的 proxy 不轉 WebSocket（握手拿到 200），所以開發時直接連 `ws://localhost:8787`（cookie 不分 port，會一起帶）。
+- 已驗證（本機伺服器＋Nuxt dev＋Playwright 的 Chromium，手機大小 390×844）：沒登入會被帶到登入頁；用表單註冊（邀請碼用小寫加空格輸入）→ 用信裡的連結開 `/verify-email` → 登入；Mac 實例（同帳號）寫的便利貼馬上出現在手機；提醒時間到兩邊都響，**在手機按「知道了」，Mac 上的哥布林走掉**；手機寫的便利貼（藍色、這週五 18:00）出現在 Mac 的存檔；設定頁、編輯頁、列表的畫面；忘記密碼 → 信裡的連結開 `/reset-password` → 設新密碼 → 手機被登出、Mac 實例也發現被登出 → 用新密碼登入，便利貼都回來。伺服器 45 個測試通過（新增 6 個推播）；`pnpm typecheck` 通過；`pnpm pwa:build` 產生靜態檔，service worker 預先快取 51 個檔案。
+- **沒驗證**：真的收到推播通知（Playwright 的瀏覽器卡在通知權限的詢問，也沒有推播服務；伺服器端的推播邏輯有測試，`WebPushSender` 沒有對真的推播服務送過）；iPhone／Android 實機、加入主畫面；離線時的畫面與恢復；在手機上刪除便利貼；多台同時改文字時手機上的衝突副本。
+- 修掉的：開啟通知失敗時頁面沒有任何提示（加了錯誤訊息）；上方的「← 便利貼」連結有底線。
+

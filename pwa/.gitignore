@@ -1,0 +1,4 @@
+public/sprites/
+.nuxt/
+.output/
+dist

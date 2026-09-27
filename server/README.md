@@ -72,3 +72,13 @@ shared/             server 與 pwa 共用的資料格式（zod）
 
 `push` 每張的結果：`applied`（照收）、`merged`（別台改了其他欄位，兩邊都留）、`conflict_copy`（兩邊都改了文字：伺服器的留著，這台的變成一張新的「（衝突副本）」，在 `copy`）、`delete_refused`（別台改過，刪除不算）、`rejected`（`reason`：`incomplete` 新便利貼欄位不齊、`id_taken` 別人的 id、`limit` 超過 500 張、`not_found`）。
 
+## API（階段 3：手機推播）
+
+| 方法 | 路徑 | 做什麼 |
+|---|---|---|
+| GET | `/api/push/key` | 推播用的公開金鑰（沒設定時是 `null`） |
+| POST | `/api/push/subscribe` | 手機（`kind: pwa` 的裝置）把瀏覽器給的訂閱交給伺服器 |
+| DELETE | `/api/push/subscribe` | 不要再推播到這支手機 |
+
+伺服器每 15 秒找一次到時間的提醒（`remind_at` 到了、還沒為這個時間推過 `pushed_for`、沒刪除、不超過一天前），推播到這個人所有訂閱了的手機；延後（改了時間）會再推一次。推播服務說這支手機不在了（404／410）就把訂閱清掉。金鑰：`pnpm --filter @goblincamp/server vapid` 產生一組，填進 `server/.env` 的 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`（沒填的話手機收不到提醒，其他照常）。
+

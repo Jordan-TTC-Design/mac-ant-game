@@ -6,6 +6,11 @@ const schema = z.object({
   /** Where the PWA lives; the links in the emails point there, and cookie requests must come from it. */
   APP_URL: z.url().default("http://localhost:3000"),
   /** Behind Caddy: take the visitor's address from X-Forwarded-For (never set this when the server faces the internet directly). */
+  /** Web Push (phones): make a pair with `pnpm --filter @goblincamp/server vapid`. Without them phones get no reminders. */
+  VAPID_PUBLIC_KEY: z.string().optional().transform((v) => v || undefined),
+  VAPID_PRIVATE_KEY: z.string().optional().transform((v) => v || undefined),
+  /** Who runs the server, for the push services (mailto: or https:). */
+  VAPID_SUBJECT: z.string().default("mailto:admin@goblincamp.invalid"),
   TRUST_PROXY: z
     .enum(["true", "false"])
     .default("false")
