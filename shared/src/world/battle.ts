@@ -52,6 +52,8 @@ export interface Resident {
 
 /** The camp-wide things that change how its residents fight. */
 export interface RaceTraits {
+  /** The race's character id (goblin, elf, undead): its numbers for holding land (camp/races.ts). Missing = goblin. */
+  id?: string;
   /** Extra reach of the whole race (the elves shoot: 34). 0 = they fight up close. */
   ranged: number;
 }

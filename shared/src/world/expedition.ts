@@ -9,7 +9,7 @@ import { lairFighters, simulateBattle, type BattleResult, type FightBoosts, type
 import { lootFor, type Lair } from "./contents.ts";
 import { XP } from "./leaderboard.ts";
 import { seeded } from "./random.ts";
-import { GARRISON_MIN } from "./territory.ts";
+import { garrisonMin } from "./territory.ts";
 
 export interface Party {
   player: string;
@@ -33,7 +33,7 @@ export interface ExpeditionOutcome {
    * the survivors may settle it, if enough are left), or nothing.
    */
   cell: "cleared" | "taken" | "held";
-  /** The attackers who may stay and settle the cell (at least GARRISON_MIN of the survivors), if it was won. */
+  /** The attackers who may stay and settle the cell (at least their race's garrison minimum survived), if it was won. */
   canSettle: boolean;
 }
 
@@ -56,6 +56,6 @@ export function resolveExpedition(options: { worldSeed: number; expeditionId: st
     loot,
     xp,
     cell: won ? (target.kind === "lair" ? "cleared" : "taken") : "held",
-    canSettle: won && battle.standing.attack.length >= GARRISON_MIN,
+    canSettle: won && battle.standing.attack.length >= garrisonMin(party.race.id ?? "goblin"),
   };
 }

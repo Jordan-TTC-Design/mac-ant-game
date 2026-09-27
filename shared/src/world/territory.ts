@@ -2,23 +2,34 @@
  * The rules of holding land in the big world (WORLD.md §3, §6): when a camp may open the big world, how cells are taken and
  * held, nests on held cells, towns, how long a party walks, and the protection a camp gets after losing.
  */
+import { raceRules } from "../camp/races.ts";
 import { cellDistance, type CellId } from "./grid.ts";
 
 // --- opening the big world ---------------------------------------------------------------------------------------
 
-/** A camp may open the big world once it has ever had this many residents (the camp's third and last look). */
-export const WORLD_UNLOCK_PEAK = 90;
+// Every number that depends on the race comes from the camp's race table (camp/races.ts, server/CAMP.md §11).
 
-export function canOpenWorld(peakResidents: number): boolean {
-  return peakResidents >= WORLD_UNLOCK_PEAK;
+/** A camp may open the big world once it has ever had its race's third look (goblins 150, elves 90, undead 120). */
+export function worldUnlockPeak(race: string): number {
+  return raceRules(race).stage3;
+}
+
+export function canOpenWorld(race: string, peakResidents: number): boolean {
+  return peakResidents >= worldUnlockPeak(race);
 }
 
 // --- holding cells -------------------------------------------------------------------------------------------------
 
-/** Residents that must live on a cell to hold it (more hold it better). */
-export const GARRISON_MIN = 5;
-/** Most residents one cell can house (the camp itself has its own, larger, limit). */
-export const CELL_CAPACITY = 30;
+/** Residents that must live on a cell to hold it (goblins 5, elves 3, undead 4; more hold it better). */
+export function garrisonMin(race: string): number {
+  return raceRules(race).cellMin;
+}
+
+/** Most residents one cell can house (goblins 50, elves 30, undead 40); a town cell twice that. */
+export function cellCapacity(race: string, town = false): number {
+  const r = raceRules(race);
+  return town ? r.townCap : r.cellCap;
+}
 
 /** The state of one cell the server keeps (a cell nobody touched is not stored: see contents.ts). */
 export interface CellState {
@@ -42,6 +53,7 @@ export type OccupyRefusal = "held" | "lair" | "too_few" | "too_many" | "not_open
  * cleared (and has not come back). A camp that has not opened the big world, or is shielded after a loss, cannot.
  */
 export function checkOccupy(options: {
+  race: string;
   cell: CellState | null;
   hasLair: boolean;
   lairBack: boolean;
@@ -53,14 +65,14 @@ export function checkOccupy(options: {
   if (player.shieldedSince) return "shielded";
   if (cell?.owner) return "held";
   if (options.hasLair && (!cell?.clearedAt || options.lairBack)) return "lair";
-  if (settlers < GARRISON_MIN) return "too_few";
-  if (settlers > CELL_CAPACITY) return "too_many";
+  if (settlers < garrisonMin(options.race)) return "too_few";
+  if (settlers > cellCapacity(options.race)) return "too_many";
   return null;
 }
 
 /** How many cells a camp could hold with this many residents to spare (every held cell needs its garrison). */
-export function maxCells(spareResidents: number): number {
-  return Math.max(0, Math.floor(spareResidents / GARRISON_MIN));
+export function maxCells(race: string, spareResidents: number): number {
+  return Math.max(0, Math.floor(spareResidents / garrisonMin(race)));
 }
 
 // --- nests on held cells ------------------------------------------------------------------------------------------
@@ -68,8 +80,11 @@ export function maxCells(spareResidents: number): number {
 /** What a nest costs (material ids the camp already collects) and how long it takes. */
 export const NEST_COST: Record<string, number> = { scrap_wood: 30, scrap_iron: 10, scrap_rag: 10 };
 export const NEST_BUILD_HOURS = 2;
-/** A cell with a finished nest raises a new resident this often, until it is full. */
-export const NEST_SPAWN_MINUTES = 30;
+/** A cell with a finished nest raises a new resident this often (goblins 15, elves 30, undead 22.5 minutes; a town as fast as the home camp). */
+export function nestBirthMinutes(race: string, town = false): number {
+  const r = raceRules(race);
+  return town ? r.townBirthMinutes : r.nestBirthMinutes;
+}
 
 export function canAfford(have: Record<string, number>, cost: Record<string, number>): boolean {
   return Object.entries(cost).every(([id, n]) => (have[id] ?? 0) >= n);
@@ -80,10 +95,14 @@ export function nestReady(nest: CellState["nest"], now: Date): boolean {
   return now.getTime() - new Date(nest.startedAt).getTime() >= NEST_BUILD_HOURS * 3_600_000;
 }
 
-/** New residents a finished nest has raised between two times (whole ones only), not past the cell's room. */
-export function nestBirths(since: Date, now: Date, garrison: number): number {
-  const births = Math.floor((now.getTime() - since.getTime()) / (NEST_SPAWN_MINUTES * 60_000));
-  return Math.max(0, Math.min(births, CELL_CAPACITY - garrison));
+/**
+ * How many new residents a finished nest has raised between two times (whole ones only), not past the cell's room.
+ * A quick count; the server raises the actual residents (who they are, when they die) with camp/population.ts `advance`,
+ * using a place with `nestBirthMinutes` and `cellCapacity`.
+ */
+export function nestBirths(race: string, since: Date, now: Date, garrison: number, town = false): number {
+  const births = Math.floor((now.getTime() - since.getTime()) / (nestBirthMinutes(race, town) * 60_000));
+  return Math.max(0, Math.min(births, cellCapacity(race, town) - garrison));
 }
 
 // --- towns ---------------------------------------------------------------------------------------------------------

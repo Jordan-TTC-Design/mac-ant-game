@@ -7,7 +7,7 @@ import { cellAt, cellCenter, cellDistance, cellsWithin, isCellId, metersBetween,
 import { rank, raceLevel, xpForLevel } from "./leaderboard.ts";
 import { seeded } from "./random.ts";
 import {
-  GARRISON_MIN, afterDefeat, canBuildTown, canOpenWorld, checkAttack, checkOccupy, maxCells, nestBirths, openWorld, travelMinutes,
+  afterDefeat, canBuildTown, canOpenWorld, cellCapacity, checkAttack, checkOccupy, garrisonMin, maxCells, nestBirths, openWorld, travelMinutes,
   type PlayerWorldState,
 } from "./territory.ts";
 
@@ -161,7 +161,7 @@ describe("expedition", () => {
     expect(out.won).toBe(true);
     expect(out.cell).toBe("cleared");
     expect(out.xp.attacker).toBe(20);
-    expect(out.canSettle).toBe(out.battle.standing.attack.length >= GARRISON_MIN);
+    expect(out.canSettle).toBe(out.battle.standing.attack.length >= garrisonMin("goblin"));
   });
 
   it("fails against a troll with a small party, and the cell stays held", () => {
@@ -187,13 +187,14 @@ describe("expedition", () => {
 describe("territory", () => {
   const open: PlayerWorldState = { open: true, shieldedSince: null, lastShieldEnded: null };
 
-  it("opens the big world at 90 residents", () => {
-    expect(canOpenWorld(89)).toBe(false);
-    expect(canOpenWorld(90)).toBe(true);
+  it("opens the big world at each race's third look (goblins 150, elves 90, undead 120)", () => {
+    expect([canOpenWorld("goblin", 149), canOpenWorld("goblin", 150)]).toEqual([false, true]);
+    expect([canOpenWorld("elf", 89), canOpenWorld("elf", 90)]).toEqual([false, true]);
+    expect([canOpenWorld("undead", 119), canOpenWorld("undead", 120)]).toEqual([false, true]);
   });
 
   it("settles only free, cleared cells with enough settlers", () => {
-    const base = { hasLair: false, lairBack: false, settlers: 5, player: open };
+    const base = { race: "goblin", hasLair: false, lairBack: false, settlers: 5, player: open };
     expect(checkOccupy({ ...base, cell: null })).toBeNull();
     expect(checkOccupy({ ...base, cell: null, settlers: 4 })).toBe("too_few");
     expect(checkOccupy({ ...base, cell: null, hasLair: true })).toBe("lair");
@@ -201,13 +202,23 @@ describe("territory", () => {
     expect(checkOccupy({ ...base, cell: taken })).toBe("held");
     expect(checkOccupy({ ...base, cell: { ...taken, owner: null, clearedAt: "2026-09-27T00:00:00Z" }, hasLair: true })).toBeNull();
     expect(checkOccupy({ ...base, cell: null, player: { ...open, open: false } })).toBe("not_open");
-    expect(maxCells(52)).toBe(10);
+    expect(maxCells("goblin", 52)).toBe(10);
+    // each race holds cells with its own numbers (server/CAMP.md §11)
+    expect([garrisonMin("goblin"), garrisonMin("elf"), garrisonMin("undead")]).toEqual([5, 3, 4]);
+    expect([cellCapacity("goblin"), cellCapacity("elf"), cellCapacity("undead")]).toEqual([50, 30, 40]);
+    expect([cellCapacity("goblin", true), cellCapacity("elf", true), cellCapacity("undead", true)]).toEqual([100, 60, 80]);
+    expect(checkOccupy({ ...base, race: "elf", cell: null, settlers: 3 })).toBeNull();
+    expect(checkOccupy({ ...base, cell: null, settlers: 51 })).toBe("too_many");
+    expect(maxCells("elf", 52)).toBe(17);
   });
 
   it("raises residents at a nest over time, up to the cell's room", () => {
     const t0 = new Date("2026-09-27T00:00:00Z");
-    expect(nestBirths(t0, new Date(t0.getTime() + 95 * 60_000), 10)).toBe(3);
-    expect(nestBirths(t0, new Date(t0.getTime() + 100 * 3_600_000), 25)).toBe(5);
+    // goblins: one every 15 minutes, up to 50 on a cell (100 in a town, one every 5 minutes)
+    expect(nestBirths("goblin", t0, new Date(t0.getTime() + 95 * 60_000), 10)).toBe(6);
+    expect(nestBirths("goblin", t0, new Date(t0.getTime() + 100 * 3_600_000), 45)).toBe(5);
+    expect(nestBirths("goblin", t0, new Date(t0.getTime() + 60 * 60_000), 10, true)).toBe(12);
+    expect(nestBirths("elf", t0, new Date(t0.getTime() + 95 * 60_000), 10)).toBe(3);
   });
 
   it("builds a town from four cells", () => {

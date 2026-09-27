@@ -150,7 +150,7 @@ camp_events (                                -- 發生過什麼：裝置拉這�
 
 | 階段 | 內容 | 做完可以 |
 |---|---|---|
-| A | 規則：`shared/src/camp/`（出生、老死、魔獸來襲的排程、指令檢查）＋測試；同一組測試資料的 Swift 版 | 規則在兩邊算得一樣 |
+| A ✅ | 規則：`shared/src/camp/`（出生、老死、魔獸來襲的排程）＋測試；同一組測試資料的 Swift 版（`mac/Sources/CampRules`）。指令檢查移到 B（只有伺服器用） | 規則在兩邊算得一樣（2026-09-27 完成） |
 | B | 伺服器：資料表、「推進到現在」、搬家、指令 API、事件、WebSocket 通知 | 用 API 就能養一個營地 |
 | C | Mac 改成照帳演戲（`CampLedger`）、登入才開始、離線待確認、選單設定鎖住 | 兩台 Mac 看同一個營地 |
 | D | 手機看營地：人口、品種、素材、戰報、會動的小營地 | 你說「最少要有」的那一步 |
@@ -218,3 +218,12 @@ camp_events (                                -- 發生過什麼：裝置拉這�
 
 - 一個營地一天大約 300 次出生、300 次老死（長滿之後）、十幾次魔獸來襲，再加領地的出生。都是公式算出來的，寫進事件表時一筆幾百 bytes。
 - 100 個人：平均每秒不到 1 筆寫入。還是很輕。
+
+## 12. 階段 A 做了什麼（2026-09-27）
+
+- `shared/src/camp/`：`races.ts`（第 11 節的表）、`population.ts`（出生與老死：固定的出生時段，滿了就跳過；誰在哪個時段出生只看營地種子、地方、時段編號）、`raids.ts`（魔獸來襲的時間與陣容，人口 10 以下不來、60 以上來比較強的；結果在 B 用大世界的戰鬥規則算）。新營地一開始有 2 隻（扛公主進來的那兩隻）。
+- 亂數用大世界同一套（`world/random.ts`：FNV 雜湊＋mulberry32）。Mac 的 Swift 版（`mac/Sources/CampRules`，不用 AppKit 的獨立 library）照同樣的順序做同樣的運算。
+- **兩邊一致的檢查**：`shared/src/camp/fixtures.json` 是用 TypeScript 算出來的一組例子（雜湊、亂數、三個種族的表、前幾隻居民、1／12／30／72／168 小時的人口、戰死後補回來、領地巢穴的居民）；`pnpm camp:check` 跑 TypeScript 的測試，再用 Swift 把整份重算一次比對（`mac/` 裡的 `swift run camp-rules-check`，376 項）。改了規則：`pnpm camp:fixtures` 重寫這份檔案，兩邊都要跟著改。
+- 大世界的常數改成照種族（`world/territory.ts`）：`worldUnlockPeak`、`garrisonMin`、`cellCapacity`、`nestBirthMinutes`，`checkOccupy`、`maxCells`、`nestBirths` 多一個種族參數；`RaceTraits` 多一個 `id`（出征打贏後夠不夠人留下來看種族）。
+- 已驗證：shared 42 個測試（新增 13 個：算一次和分段算結果一樣、各種族的出生速度、上限、老死、戰死後補回、一個月的量一下就算完、品種比例、營地階段、魔獸來襲的間隔與大小、fixtures.json 和規則一致）；Swift 重算 376 項全部相同；故意改兩個數字時 Swift 檢查抓到兩項不同並回傳失敗；App 用 `build.sh` 建置沒有警告；`pnpm typecheck` 通過；伺服器 47 個測試照樣通過。
+

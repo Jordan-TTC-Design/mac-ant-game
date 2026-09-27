@@ -13,6 +13,8 @@
     "typecheck": "pnpm -r typecheck",
     "invite": "pnpm --filter @goblincamp/server invite",
     "pwa": "pnpm --filter @goblincamp/pwa dev",
-    "pwa:build": "pnpm --filter @goblincamp/pwa build"
+    "pwa:build": "pnpm --filter @goblincamp/pwa build",
+    "camp:check": "pnpm --filter @goblincamp/shared test && cd mac && swift run camp-rules-check",
+    "camp:fixtures": "pnpm --filter @goblincamp/shared fixtures"
   }
 }
