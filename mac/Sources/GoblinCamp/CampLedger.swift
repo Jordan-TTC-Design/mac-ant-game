@@ -1,3 +1,4 @@
+import CampRules
 import Foundation
 
 /// The camp's books as the server keeps them (server/CAMP.md): fetched, kept on this Mac for when it is offline (camp.json),
@@ -75,6 +76,10 @@ final class CampLedger {
     private let debug = ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil
     /// The last books this Mac saw (from the server, or from camp.json while offline).
     private(set) var view: View?
+    /// Who lives at home now: the books, plus the births and deaths this Mac has worked out since (the shared rules, so the
+    /// server works out the same; raids and commands only come with the next books).
+    private(set) var residents: [Resident] = []
+    private var rules: (place: CampPlace, population: CampPopulation)?
 
     init(api: APIClient) {
         self.api = api
@@ -82,11 +87,71 @@ final class CampLedger {
         let base = env["CAMP_DATA_DIR"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GoblinCamp")
         cacheURL = base.appendingPathComponent("camp.json")
-        if let data = try? Data(contentsOf: cacheURL) { view = try? JSONDecoder().decode(View.self, from: data) }
+        if let data = try? Data(contentsOf: cacheURL), let saved = try? JSONDecoder().decode(View.self, from: data) { take(saved) }
+    }
+
+    /// Starts working births and deaths out from these books.
+    private func take(_ view: View) {
+        self.view = view
+        residents = view.residents.filter { $0.place == "home" }
+        let ms = { (text: String) -> Double? in ServerTime.parse(text).map { ($0.timeIntervalSince1970 * 1000).rounded() } }
+        let rule = Races.rules(view.race)
+        let place = CampPlace(race: view.race, key: "home", startedAt: ms(view.startedAt) ?? 0, birthMinutes: rule.homeBirthMinutes, cap: rule.homeCap)
+        let alive = residents.map { r in
+            CampResident(id: r.id, breed: r.breed, seed: UInt32(truncatingIfNeeded: Int64(r.seed)), bornAt: ms(r.bornAt) ?? 0, diesAt: r.diesAt.flatMap(ms))
+        }
+        rules = (place, CampPopulation(residents: alive, nextId: view.nextId, nextSlot: view.nextSlot, peak: view.peak))
+    }
+
+    /// Works births and deaths out up to `now` on this Mac (between books, and while offline). Returns whether anyone came or went.
+    @discardableResult
+    func advanceHere(to now: Date = Date()) -> Bool {
+        guard let view, var rules else { return false }
+        let step = Population.advance(rules.place, &rules.population, campSeed: Int(view.seed), to: (now.timeIntervalSince1970 * 1000).rounded())
+        self.rules = rules
+        guard !step.born.isEmpty || !step.died.isEmpty else { return false }
+        let gone = Set(step.died.map(\.id))
+        residents.removeAll { gone.contains($0.id) }
+        let iso = { (ms: Double) in ServerTime.format(Date(timeIntervalSince1970: ms / 1000)) }
+        for b in step.born where !gone.contains(b.id) {
+            residents.append(Resident(id: b.id, breed: b.breed, seed: Double(b.seed), legacySeed: nil, name: nil, parents: nil,
+                                      bornAt: iso(b.bornAt), diesAt: b.diesAt.map(iso), gear: nil, place: "home"))
+        }
+        if debug { NSLog("GoblinCamp: camp here: +\(step.born.count) −\(step.died.count) → \(residents.count)") }
+        return true
+    }
+
+    /// The residents as the camp takes them (`Colony.applyBooks`).
+    func bookResidents(now: Date = Date()) -> [BookResident] {
+        residents.map { r in
+            var share: Double?
+            if let dies = r.diesAt.flatMap(ServerTime.parse), let born = ServerTime.parse(r.bornAt), dies > born {
+                share = min(1, max(0, now.timeIntervalSince(born) / dies.timeIntervalSince(born)))
+            }
+            let gear = (r.gear ?? [:]).mapValues { GearItem(id: $0.id, left: $0.left) }
+            return BookResident(id: r.id, breed: r.breed, seed: r.legacySeed.flatMap { UInt64($0) } ?? UInt64(r.seed), name: r.name,
+                                parents: r.parents, lifeShare: share, gear: gear)
+        }
+    }
+
+    /// What the camp owns, as the books have it.
+    func bookStores() -> BookStores? {
+        guard let view else { return nil }
+        return BookStores(materials: view.materials, kills: view.kills, larder: view.larder,
+                          armory: view.armory.map { GearItem(id: $0.id, left: $0.left) }, peak: max(view.peak, residents.count), delivered: view.delivered)
+    }
+
+    /// `POST /api/camp/commands` (shared/src/camp/api.ts `campCommand`): the answer, and the books after it.
+    struct CommandAnswer: Decodable { let message: String; let resident: Int?; let camp: View }
+
+    func command<Body: Encodable>(_ body: Body) async throws -> CommandAnswer {
+        let answer: CommandAnswer = try await api.request("POST", "camp/commands", body: body)
+        _ = keep(answer.camp)
+        return answer
     }
 
     private func keep(_ view: View) -> View {
-        self.view = view
+        take(view)
         do {
             try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(view).write(to: cacheURL, options: .atomic)

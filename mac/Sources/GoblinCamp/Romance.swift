@@ -626,6 +626,14 @@ extension Colony {
         let roll = Double.random(in: 0..<1)
         let id = roll < 0.35 ? "half_gob" : roll < 0.65 ? "half_mix" : "half_hum" // it may take after either of them
         let index = breeds.firstIndex { $0.id == id } ?? breeds.firstIndex { $0.id == "golden" } ?? 0
+        if followsBooks { // the books decide who lives here: the server adds the child, and it walks out of the camp
+            romance.pregnancy = nil
+            romance.children += 1
+            outfitIndex = 0
+            romanceRuntime.glow = 10
+            onPrincessChild?(id, "\(princess) × \(romance.fatherName.isEmpty ? romance.partnerName : romance.fatherName)")
+            return
+        }
         let bond = Characters.current.rules.soulBond == true
         let born = bond ? (nest ?? queen.pos) : CGPoint(x: queen.pos.x + 12, y: queen.pos.y - 4) // (a soul-born comes out of the soul fire)
         var baby = makeAnt(at: born, breedIndex: index, age: 0)

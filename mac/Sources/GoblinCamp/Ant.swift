@@ -239,6 +239,8 @@ struct Ant {
     var parents = ""
     /// Girl or boy: settled by the seed (half of them each), shown as a little bow on the girls.
     var female: Bool { (seed >> 4) & 1 == 1 }
+    /// The camp follows the server's books: it does not die of age by itself (the books say when; server/CAMP.md).
+    var ageless = false
 
     init(at pos: CGPoint, id: Int, breedIndex: Int, traits: Traits, seed: UInt64, age: Double = 0, name: String? = nil) {
         self.id = id
@@ -335,7 +337,7 @@ struct Ant {
         catchShow = max(0, catchShow - dt)
         sick = max(0, sick - dt)
         age += ageDt
-        if age >= traits.lifespan, !isDying, !isCarryingPrincess {
+        if age >= traits.lifespan, !ageless, !isDying, !isCarryingPrincess {
             if isHidden { return .died } // it went quietly in the nest
             mode = .dying(remaining: Ant.dyingTime)
         }

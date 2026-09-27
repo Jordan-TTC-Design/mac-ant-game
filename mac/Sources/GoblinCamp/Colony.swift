@@ -42,6 +42,10 @@ final class Colony {
     private(set) var nest: CGPoint?
     var queen: Queen?
     var ants: [Ant] = []
+    /// See `followsBooks`.
+    fileprivate var booksDriven = false
+    /// The princess had a child while the camp follows the books: the server adds it (breed id, parents).
+    var onPrincessChild: ((String, String) -> Void)?
     private(set) var eggs: [Egg] = []
     private(set) var foods: [FoodSource] = []
     private(set) var pendingFood: FoodKind?
@@ -804,7 +808,10 @@ final class Colony {
         }
         ants[index].health -= 1
         hits.append((pos: ants[index].pos, age: 0))
-        if ants[index].health <= 0 {
+        if ants[index].health <= 0, followsBooks { // only the books say who dies: it faints and limps home
+            ants[index].health = 1
+            ants[index].mode = .returningToNest
+        } else if ants[index].health <= 0 {
             ants[index].mode = .dying(remaining: Ant.dyingTime)
             slain += 1
         } else if ants[index].isWounded {
@@ -1604,7 +1611,8 @@ final class Colony {
             }
         }
         let traits = Traits.make(for: breeds[index], seed: seed)
-        let ant = Ant(at: pos, id: id ?? nextAntID, breedIndex: index, traits: traits, seed: seed, age: age, name: name)
+        var ant = Ant(at: pos, id: id ?? nextAntID, breedIndex: index, traits: traits, seed: seed, age: age, name: name)
+        ant.ageless = followsBooks
         if id == nil { nextAntID += 1 }
         return ant
     }
@@ -1761,7 +1769,7 @@ final class Colony {
         eggs.removeAll { $0.age >= Egg.lifetime }
 
         // The clock only starts once the queen has crawled out.
-        if queen?.arrived == true, ants.count < settings.maxAnts {
+        if !followsBooks, queen?.arrived == true, ants.count < settings.maxAnts {
             spawnTimer += dt * (1 + boost(.honey) / 3) // honey: a quarter less waiting
             if spawnTimer >= settings.spawnInterval * (Characters.current.rules.spawnScale ?? 1) { // (elves come half as often)
                 spawnTimer = 0
@@ -1880,5 +1888,95 @@ final class Colony {
         if !gone.isEmpty, !armory.isEmpty { redistributeArmory() }
         deaths += gone.count
         if !gone.isEmpty { onAntsChanged?() }
+    }
+}
+
+// MARK: Following the server's books (server/CAMP.md §7, stage C2)
+
+/// One resident as the books have it.
+struct BookResident {
+    let id: Int
+    let breed: String
+    let seed: UInt64
+    let name: String?
+    let parents: String?
+    /// How far through its life it is (0…1; nil: it never ages, the undead).
+    let lifeShare: Double?
+    let gear: [String: GearItem]
+}
+
+/// What the camp owns, as the books have it.
+struct BookStores {
+    let materials: [String: Int]
+    let kills: [String: Int]
+    let larder: [String: Int]
+    let armory: [GearItem]
+    let peak: Int
+    let delivered: Int
+}
+
+extension Colony {
+    /// Whether the camp follows the server's books: no births or deaths of its own (see `applyBooks`).
+    var followsBooks: Bool {
+        get { booksDriven }
+        set {
+            booksDriven = newValue
+            for i in ants.indices { ants[i].ageless = newValue }
+        }
+    }
+
+    /// Brings the camp in line with the books: newcomers walk out of the camp, those the books no longer have die where
+    /// they stand, and everyone wears what the books say. What the camp owns is the books' too.
+    func applyBooks(_ residents: [BookResident], stores: BookStores) {
+        guard let nest else { return }
+        let wanted = Set(residents.map(\.id))
+        var changed = false
+        for i in ants.indices where !wanted.contains(ants[i].id) && !ants[i].isDying {
+            ants[i].ageless = false
+            if ants[i].isHidden { ants[i].age = ants[i].traits.lifespan } else { ants[i].mode = .dying(remaining: Ant.dyingTime) }
+            changed = true
+        }
+        let have = Set(ants.map(\.id))
+        let breeds = self.breeds
+        for r in residents where !have.contains(r.id) {
+            let index = breeds.firstIndex { $0.id == r.breed } ?? 0
+            let jitter = { CGFloat.random(in: -4...4) }
+            var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()), breedIndex: index, age: 0, seed: r.seed, id: r.id, name: r.name)
+            if let share = r.lifeShare { born.age = share * born.traits.lifespan }
+            born.parents = r.parents ?? ""
+            if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) }
+            ants.append(born)
+            nextAntID = max(nextAntID, r.id + 1)
+            changed = true
+        }
+        // what everyone wears
+        let byID = Dictionary(uniqueKeysWithValues: residents.map { ($0.id, $0) })
+        for i in ants.indices {
+            guard let r = byID[ants[i].id] else { continue }
+            for slot in GearSlot.allCases {
+                let want = r.gear[slot.rawValue]
+                let now = ants[i].item(in: slot)
+                if want?.id == now?.id, want?.left == now?.left { continue }
+                _ = ants[i].takeOff(slot)
+                if let want, want.gear != nil { _ = ants[i].equip(want) }
+                changed = true
+            }
+        }
+        materials = stores.materials
+        kills = stores.kills
+        larder = stores.larder
+        armory = stores.armory.filter { $0.gear != nil }
+        foodDelivered = stores.delivered
+        if stores.peak > peakAnts {
+            peakAnts = stores.peak
+            if let scene {
+                scene.growth = peakAnts
+                if scene.stage != sceneStage {
+                    sceneStage = scene.stage
+                    obstacles = scene.obstacles
+                }
+            }
+        }
+        if changed { onAntsChanged?() }
     }
 }

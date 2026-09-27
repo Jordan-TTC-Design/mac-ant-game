@@ -46,7 +46,7 @@ function asGear(saved: string | { id: string; left?: number | null }): GearItem 
 }
 
 /** The princess's children live longer than their race's plain residents (the Mac's manifests). */
-const HALF_BREED_LIFESPAN: Record<string, Record<string, number>> = {
+export const HALF_BREED_LIFESPAN: Record<string, Record<string, number>> = {
   goblin: { half_gob: 1.4, half_mix: 1.5, half_hum: 1.6 },
   elf: { half_gob: 2.8, half_mix: 3, half_hum: 3 },
   undead: { half_gob: 1, half_mix: 1, half_hum: 1 },

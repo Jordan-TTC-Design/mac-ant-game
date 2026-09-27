@@ -55,10 +55,15 @@ export const campCommand = z.discriminatedUnion("kind", [
   /** Puts a food (or, for the undead, a soul) down. */
   z.object({ kind: z.literal("food"), food: z.enum([...FOODS, ...SOULS]) }),
   z.object({ kind: z.literal("princess-name"), name: z.string().trim().min(1).max(8) }),
+  /** The princess had a child (her story runs on the Mac): it joins the camp. At most one every PRINCESS_CHILD_HOURS. */
+  z.object({ kind: z.literal("princess-child"), breed: z.enum(["half_gob", "half_mix", "half_hum"]), parents: z.string().max(80).default("") }),
   /** The princess's story as the Mac has it now (kept as it is; it does not count for the ranking). */
   z.object({ kind: z.literal("story"), romance: z.unknown() }),
 ]);
 export type CampCommand = z.infer<typeof campCommand>;
+
+/** The princess's children come at most this often (her story on the Mac takes longer than that anyway). */
+export const PRINCESS_CHILD_HOURS = 4;
 
 export interface CampResidentView {
   id: number;

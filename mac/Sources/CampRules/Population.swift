@@ -9,6 +9,9 @@ public struct CampResident: Equatable {
     public let bornAt: Double
     public let diesAt: Double?
     public var diedAt: Double?
+    public init(id: Int, breed: String, seed: UInt32, bornAt: Double, diesAt: Double?, diedAt: Double? = nil) {
+        self.id = id; self.breed = breed; self.seed = seed; self.bornAt = bornAt; self.diesAt = diesAt; self.diedAt = diedAt
+    }
 }
 
 public struct CampPlace: Equatable {
@@ -28,6 +31,9 @@ public struct CampPopulation: Equatable {
     public var nextSlot: Int
     public var peak: Int
     public var alive: [CampResident] { residents.filter { $0.diedAt == nil } }
+    public init(residents: [CampResident], nextId: Int, nextSlot: Int, peak: Int) {
+        self.residents = residents; self.nextId = nextId; self.nextSlot = nextSlot; self.peak = peak
+    }
 }
 
 public enum Population {

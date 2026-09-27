@@ -297,6 +297,17 @@ describe("commands", () => {
     expect((await cmd(me, { kind: "food", food: "meat" })).body.error).toBe("not_allowed");
   });
 
+  it("lets the princess's child join the camp, not too often", async () => {
+    const me = await campWith({});
+    const born = await cmd(me, { kind: "princess-child", breed: "half_hum", parents: "艾莉雅 × 咕嚕" });
+    expect(born.status).toBe(200);
+    const child = (born.body.camp as CampView).residents.find((r) => r.id === born.body.resident)!;
+    expect(child).toMatchObject({ breed: "half_hum", parents: "艾莉雅 × 咕嚕" });
+    expect((await cmd(me, { kind: "princess-child", breed: "half_gob" })).body.error).toBe("too_soon");
+    t.advance(5 * HOUR);
+    expect((await cmd(me, { kind: "princess-child", breed: "half_gob" })).status).toBe(200);
+  });
+
   it("names the princess and keeps her story", async () => {
     const me = await campWith({});
     expect((await cmd(me, { kind: "princess-name", name: "艾莉雅" })).body.camp.princessName).toBe("艾莉雅");

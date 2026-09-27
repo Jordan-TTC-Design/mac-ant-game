@@ -1,4 +1,5 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { randomInt } from "node:crypto";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   canAfford,
   FOOD_BOOST_MINUTES,
@@ -6,7 +7,10 @@ import {
   gearRule,
   give,
   neediest,
+  BASE_LIFESPAN_HOURS,
+  PRINCESS_CHILD_HOURS,
   placeableFoods,
+  raceRules,
   redistribute,
   repairCost,
   spend,
@@ -15,15 +19,15 @@ import {
   type Wearer,
 } from "@goblincamp/shared/camp";
 import type { Tx } from "../auth/session.ts";
-import { campResidents, camps } from "../db/schema.ts";
-import { addEvent } from "./service.ts";
+import { campEvents, campResidents, camps } from "../db/schema.ts";
+import { addEvent, HALF_BREED_LIFESPAN } from "./service.ts";
 
 type CampRow = typeof camps.$inferSelect;
 const MINUTE = 60_000;
 
 export type CommandResult =
-  | { ok: true; message: string }
-  | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big"; message: string };
+  | { ok: true; message: string; resident?: number }
+  | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big" | "too_soon"; message: string };
 
 const cost = (c: Record<string, number>) => Object.entries(c).map(([id, n]) => `${id} ×${n}`).join("、");
 
@@ -36,6 +40,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
   const store: GearItem[] = camp.armory.map((i) => ({ ...i }));
   const changes: Partial<CampRow> = {};
   let message = "";
+  let resident: number | undefined;
   let wearers: Wearer[] | null = null;
   let gearBefore = new Map<number, string>();
 
@@ -92,6 +97,35 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       changes.princessName = command.name;
       message = `公主的名字改成「${command.name}」了。`;
       break;
+    case "princess-child": {
+      // at most one every few hours (her story on the Mac takes longer than that anyway)
+      const recent = await tx
+        .select({ at: campEvents.at, data: campEvents.data })
+        .from(campEvents)
+        .where(and(eq(campEvents.userId, camp.userId), eq(campEvents.kind, "command")))
+        .orderBy(desc(campEvents.seq))
+        .limit(200);
+      const lastChild = recent.find((e) => (e.data as { command?: { kind?: string } }).command?.kind === "princess-child");
+      if (lastChild && now.getTime() - lastChild.at.getTime() < PRINCESS_CHILD_HOURS * 3_600_000) {
+        return { ok: false, code: "too_soon", message: "公主剛生過孩子，還太快了。" };
+      }
+      const rules = raceRules(camp.race);
+      const lifespan = HALF_BREED_LIFESPAN[camp.race]?.[command.breed] ?? 1;
+      const jitter = 0.9 + 0.2 * (randomInt(0, 1_000_000) / 1_000_000);
+      resident = camp.nextId;
+      await tx.insert(campResidents).values({
+        userId: camp.userId,
+        id: resident,
+        breed: command.breed,
+        seed: randomInt(0, 2 ** 32),
+        parents: command.parents || null,
+        bornAt: now,
+        diesAt: rules.ages ? new Date(now.getTime() + Math.floor(BASE_LIFESPAN_HOURS * 3_600_000 * lifespan * jitter)) : null,
+      });
+      changes.nextId = camp.nextId + 1;
+      message = "公主的孩子加入營地了。";
+      break;
+    }
     case "story": {
       if (JSON.stringify(command.romance ?? null).length > 20_000) return { ok: false, code: "too_big", message: "故事的資料太大了。" };
       changes.romance = command.romance ?? null;
@@ -110,6 +144,6 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
   const set: Partial<CampRow> = { ...changes, materials, armory: store, version: camp.version + 1 };
   await tx.update(camps).set(set).where(eq(camps.userId, camp.userId));
   Object.assign(camp, set);
-  await addEvent(tx, camp.userId, now, "command", { command, message });
-  return { ok: true, message };
+  await addEvent(tx, camp.userId, now, "command", { command, message, resident });
+  return { ok: true, message, resident };
 }

@@ -70,6 +70,8 @@ final class SyncEngine {
     var onStatus: (() -> Void)?
     /// Someone just signed in on this Mac (the camp starts from the account's books then).
     var onSignedIn: (() -> Void)?
+    /// The server says the camp's books changed (another device, a command, a raid worked out).
+    var onCampChanged: (() -> Void)?
     private var running = false
     private var again = false
     private var debounce: Timer?
@@ -285,6 +287,7 @@ final class SyncEngine {
                 switch result {
                 case .success(let message):
                     if case .string(let text) = message, text.contains("\"notes.changed\"") { self.syncNow() }
+                    if case .string(let text) = message, text.contains("\"camp.changed\"") { self.onCampChanged?() }
                     if case .string(let text) = message, text.contains("\"hello\""), self.debug { NSLog("GoblinCamp: sync: connected") }
                     self.receive(on: task)
                 case .failure:

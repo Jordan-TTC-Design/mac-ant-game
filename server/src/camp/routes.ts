@@ -82,7 +82,7 @@ export function campRoutes(deps: AppDeps) {
     if (!out) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
     if (!out.result.ok) return c.json({ error: out.result.code, message: out.result.message, camp: out.view }, 409);
     deps.hub.notify(userId, { type: "camp.changed", version: out.view.version });
-    return c.json({ message: out.result.message, camp: out.view });
+    return c.json({ message: out.result.message, resident: out.result.resident ?? null, camp: out.view });
   });
 
   return app;

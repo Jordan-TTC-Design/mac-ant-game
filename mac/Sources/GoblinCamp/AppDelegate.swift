@@ -49,6 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The camp has been set up from the books (so saving it now makes sense).
     private var campReady = false
     private var campStarting = false
+    private var booksTimer: Timer?
+    private var booksFetchedAt = Date.distantPast
+    private var booksFetching = false
     private var accountWindow: AccountWindow?
     private var devicesWindow: DevicesWindow?
     private var accountMenuItems: (status: NSMenuItem, syncState: NSMenuItem, friendCode: ClosureMenuItem, devices: ClosureMenuItem, signIn: ClosureMenuItem, signOut: ClosureMenuItem)!
@@ -320,6 +323,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let rep = NSBitmapImageRep(cgImage: cg)
                 if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-roster.png")) }
                 log("roster captured \(cg.width)x\(cg.height)")
+            }
+        }
+        if env["CAMP_TEST_BOOKS"] != nil { // following the books: fetch at CAMP_TEST_BOOKS_FETCH_AT, a princess's child at CAMP_TEST_PRINCESS_CHILD, a line every 5 s
+            if let t = Double(env["CAMP_TEST_BOOKS_FETCH_AT"] ?? "") { after(t) { log("fetching the books"); self.refreshBooks() } }
+            if let t = Double(env["CAMP_TEST_PRINCESS_CHILD"] ?? "") { after(t) { log("the princess has a child"); self.colony.onPrincessChild?("half_hum", "測試 × 咕嚕") } }
+            for k in 1...12 {
+                after(Double(k) * 5) {
+                    let dying = self.colony.ants.filter(\.isDying).map(\.id)
+                    log("t=\(k * 5)s: follows \(self.colony.followsBooks), camp \(self.colony.ants.count) \(self.colony.ants.map(\.id).sorted().suffix(4)), books \(self.ledger.residents.count), dying \(dying), ageless \(self.colony.ants.allSatisfy(\.ageless))")
+                }
             }
         }
         if let prefix = env["CAMP_TEST_ACCOUNT"] { // the sign-in window's two tabs, drawn into PNGs
@@ -1648,12 +1661,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let saved = ledger.savedState(nest: nest, local: local ?? oldSpot) else { return }
         colony.restore(nest: nest, saved: saved)
         campReady = true
+        followBooks()
         applyWalkable()
         syncWindows()
         updateCount()
         persist()
         redrawAll()
         if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: camp from the books: \(colony.ants.count) residents, race \(view.race)") }
+    }
+
+    /// From now on the camp follows the books (server/CAMP.md, stage C2): births and deaths are worked out here every ten
+    /// seconds with the shared rules; the server's books are fetched every three minutes and whenever it says they changed.
+    private func followBooks() {
+        colony.followsBooks = true
+        colony.onPrincessChild = { [weak self] breed, parents in self?.princessChild(breed: breed, parents: parents) }
+        sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks() } }
+        applyBooksToCamp()
+        booksTimer?.invalidate()
+        booksTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if Date().timeIntervalSince(self.booksFetchedAt) > 180 { self.refreshBooks() }
+            if self.ledger.advanceHere() { self.applyBooksToCamp() }
+        }
+    }
+
+    private func applyBooksToCamp() {
+        guard campReady, let stores = ledger.bookStores() else { return }
+        colony.applyBooks(ledger.bookResidents(), stores: stores)
+        updateCount()
+    }
+
+    /// Fetches the books (the server works raids and everything out first) and brings the camp in line.
+    private func refreshBooks() {
+        guard campReady, sync.user != nil, !booksFetching else { return }
+        booksFetching = true
+        Task { @MainActor in
+            defer { self.booksFetching = false }
+            do {
+                if try await self.ledger.fetch() != nil {
+                    self.booksFetchedAt = Date()
+                    self.applyBooksToCamp()
+                }
+            } catch {
+                self.booksFetchedAt = Date() // offline: try again in three minutes (births go on here meanwhile)
+            }
+        }
+    }
+
+    /// The princess had a child: the server adds it to the books, and it walks out of the camp.
+    private func princessChild(breed: String, parents: String) {
+        struct Body: Encodable { let kind = "princess-child"; let breed: String; let parents: String }
+        Task { @MainActor in
+            do {
+                let answer = try await self.ledger.command(Body(breed: breed, parents: parents))
+                self.applyBooksToCamp()
+                let name = self.colony.ants.first { $0.id == answer.resident }?.name ?? "孩子"
+                self.say("\(self.colony.princessName.isEmpty ? "公主" : self.colony.princessName)生下了\(name)！")
+            } catch {
+                self.say("公主的孩子還沒登記上：\((error as? APIError)?.message ?? error.localizedDescription)")
+            }
+        }
     }
 
     /// A camp was just placed on this Mac (a new one, or 開新世界): tell the server, which opens (or replaces) the account's camp.
@@ -1664,6 +1731,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { @MainActor in
             do {
                 let view = try await self.ledger.start(race: race, replace: replace)
+                self.followBooks()
                 if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: camp started on the server: \(view.race), \(view.residents.count) residents") }
             } catch {
                 self.say("營地還沒跟伺服器接上：\((error as? APIError)?.message ?? error.localizedDescription)")
