@@ -71,6 +71,29 @@ struct Outfit {
     let role: SpriteRole
 }
 
+/// How a race plays differently from the goblins (see RACES.md). Everything is optional: a character without rules plays like
+/// the goblins. Stats that belong to one breed (speed, lifespan…) stay in the breed's `stats`; these are the camp-wide ones.
+struct RaceRules: Decodable {
+    /// New ones take this many times as long to come (elves: 2).
+    var spawnScale: Double?
+    /// How much each food's boost does for them, by food id (elves: fruit 1.5, meat 0). Missing = 1.
+    var food: [String: Double]?
+    /// False: they never fell a tree; at a tree they gather what has fallen and pick berries instead.
+    var fellsTrees: Bool?
+    /// Extra reach (points) in a fight: they shoot from a distance and are seldom bitten back.
+    var ranged: Double?
+    /// Camp belongings they would not have lying about (skull, spears, bones-0, totem…).
+    var noDecor: [String]?
+    /// How their names sound ("goblin", "elf").
+    var names: String?
+    /// Name ideas for their princess.
+    var princessNames: [String]?
+    /// The camp look they start with (cave, mound, stump, tent).
+    var camp: String?
+
+    func foodScale(_ id: String) -> Double { food?[id] ?? 1 }
+}
+
 /// A playable look: a pixel-art character loaded from a folder (`manifest.json` plus one PNG sprite sheet per role).
 /// See PLAN.md for the format.
 final class Character {
@@ -92,9 +115,13 @@ final class Character {
     let outfits: [Outfit]
     /// Small picture for the menu bar. Characters without one use the emoji.
     let icon: NSImage?
+    /// For the race picker: one line on what they are like, and a few points on how they play.
+    let tagline: String
+    let features: [String]
+    let rules: RaceRules
 
     init(id: String, name: String, noun: String, emoji: String, nestName: String = "營地", defaultMaxCount: Int, breeds: [Breed], queen: SpriteRole?,
-         outfits: [Outfit] = [], icon: NSImage? = nil) {
+         outfits: [Outfit] = [], icon: NSImage? = nil, tagline: String = "", features: [String] = [], rules: RaceRules = RaceRules()) {
         self.id = id
         self.name = name
         self.noun = noun
@@ -105,6 +132,9 @@ final class Character {
         self.queen = queen
         self.outfits = outfits.isEmpty ? (queen.map { [Outfit(id: "default", name: "預設", role: $0)] } ?? []) : outfits
         self.icon = icon
+        self.tagline = tagline
+        self.features = features
+        self.rules = rules
     }
 
     /// The princess's sprites in outfit number `index`.
@@ -155,6 +185,9 @@ enum Characters {
         let worker: Role
         let queen: Role?
         let breeds: [BreedEntry]?
+        let tagline: String?
+        let features: [String]?
+        let rules: RaceRules?
     }
 
     private struct BreedEntry: Decodable {
@@ -213,7 +246,8 @@ enum Characters {
             }
             let icon = manifest.icon.flatMap { NSImage(contentsOf: folder.appendingPathComponent($0)) }
             return Character(id: manifest.id, name: manifest.name, noun: manifest.noun, emoji: manifest.emoji,
-                             nestName: manifest.nestName ?? "營地", defaultMaxCount: manifest.defaultMaxCount ?? 150, breeds: breeds, queen: queen ?? worker, outfits: outfits, icon: icon)
+                             nestName: manifest.nestName ?? "營地", defaultMaxCount: manifest.defaultMaxCount ?? 150, breeds: breeds, queen: queen ?? worker, outfits: outfits, icon: icon,
+                             tagline: manifest.tagline ?? "", features: manifest.features ?? [], rules: manifest.rules ?? RaceRules())
         } catch {
             NSLog("GoblinCamp: could not load character in \(folder.lastPathComponent): \(error)")
             return nil

@@ -498,6 +498,8 @@ struct AntWorld {
     var speedBoost = 1.0
     var workBoost = 1.0
     var fishBoost = 1.0
+    /// How far off this race fights from (archers), in points on top of what a weapon adds.
+    var rangedReach = 0.0
     /// Night time (goblins sleep more), and whether they may start something to pass the time (not while it rains, in a crowd, or at the campfire party).
     var night = false
     var activitiesOn = true

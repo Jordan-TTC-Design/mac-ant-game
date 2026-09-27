@@ -34,7 +34,9 @@ enum IntervalFormat {
 /// User-tunable options from the menu bar, persisted in UserDefaults.
 final class Settings {
     static let shared = Settings()
-    private let defaults = UserDefaults.standard
+    /// `CAMP_DEFAULTS=<suite name>` keeps a test run's settings in a preferences file of its own, so picking a race or moving a window
+    /// in a test never touches the player's real settings.
+    private let defaults: UserDefaults = ProcessInfo.processInfo.environment["CAMP_DEFAULTS"].flatMap { UserDefaults(suiteName: $0) } ?? .standard
 
     /// A number setting, or nil if unset. Values passed on the command line (`-maxAnts 200`) arrive as strings,
     /// which `double(forKey:)` converts, so this works for both stored and command-line values.

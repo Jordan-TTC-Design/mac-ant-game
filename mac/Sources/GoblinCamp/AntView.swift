@@ -890,10 +890,13 @@ final class AntView: NSView {
         let color = weapon?.color ?? .white
         let h = CGFloat(ant.swingHeading)
         let from = CGPoint(x: p.x, y: p.y + size * 0.3)
-        switch weapon?.look {
+        // an archer race shoots even with no bow
+        let look = weapon?.look ?? ((Characters.current.rules.ranged ?? 0) > 0 ? .bow : nil)
+        let reachAdd = CGFloat(ant.gearReach + (Characters.current.rules.ranged ?? 0))
+        switch look {
         case .bow?:
             guard progress > 0.3 else { return } // drawing the string first
-            let t = (progress - 0.3) / 0.7, d = max(20, CGFloat(ant.gearReach) + 30) * t
+            let t = (progress - 0.3) / 0.7, d = max(20, reachAdd + 30) * t
             NSColor(calibratedRed: 0.55, green: 0.38, blue: 0.2, alpha: 1).setFill()
             for k in 0..<4 { NSRect(x: from.x + cos(h) * (d - CGFloat(k) * 2.2) - 0.9, y: from.y + sin(h) * (d - CGFloat(k) * 2.2) - 0.9, width: 1.8, height: 1.8).fill() }
             NSColor.white.setFill()

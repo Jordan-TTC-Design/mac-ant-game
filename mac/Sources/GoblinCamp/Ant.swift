@@ -242,7 +242,7 @@ struct Ant {
 
     init(at pos: CGPoint, id: Int, breedIndex: Int, traits: Traits, seed: UInt64, age: Double = 0, name: String? = nil) {
         self.id = id
-        self.name = name ?? Names.goblin(seed: seed)
+        self.name = name ?? Names.resident(seed: seed)
         self.breedIndex = breedIndex
         self.traits = traits
         self.seed = seed
@@ -409,7 +409,7 @@ struct Ant {
             guard let target = world.creature(id) else { return giveUp() }
             let dx = target.pos.x - pos.x, dy = target.pos.y - pos.y, distance = hypot(dx, dy)
             heading = atan2(dy, dx)
-            let reach = target.radius + 6 + gearReach
+            let reach = target.radius + 6 + gearReach + world.rangedReach
             if distance > reach { // run it down
                 let step = min(effectiveSpeed * 1.3 * dt, distance - reach * 0.5)
                 pos.x += cos(heading) * step

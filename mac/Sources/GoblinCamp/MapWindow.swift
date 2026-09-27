@@ -35,7 +35,7 @@ final class MapWindow: NSObject, NSWindowDelegate {
         window = NSWindow(contentRect: frame, styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         view = AntView(frame: NSRect(origin: .zero, size: frame.size), colony: colony)
         super.init()
-        window.title = "哥布林營地"
+        window.title = "\(Characters.current.name)營地"
         window.contentMinSize = NSSize(width: 300, height: 200)
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false

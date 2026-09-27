@@ -476,6 +476,8 @@ final class TerrainScene {
         var plan: [(kind: String, unlock: Int)] = [("bones-0", 8), ("stump", 12), ("firewood", 16), ("tent", 22), ("skull", 30), ("spears", 38),
                                                    ("rack", 48), ("tent", 60), ("bones-1", 68), ("totem", 85)]
         if rng.chance(0.5) { plan.append(("tent", 105)) }
+        let banned = Set(Characters.current.rules.noDecor ?? []) // (elves keep no skulls or spears about)
+        plan.removeAll { banned.contains($0.kind) }
         // on both sides of the nest, going outward, but not on top of the fire ring
         var offsets: [CGFloat] = [-64, 132, -118, 178, -172, 226, -226, 274, -280, 322, -334]
         offsets = offsets.map { abs($0 - (pitU - u0)) < 30 ? $0 + ($0 < 0 ? -34 : 34) : $0 }
@@ -868,6 +870,8 @@ final class TerrainScene {
         var plan: [(kind: String, unlock: Int)] = [("bones-0", 8), ("stump", 12), ("firewood", 16), ("tent", 22), ("skull", 30), ("spears", 38),
                                                    ("rack", 48), ("tent", 60), ("bones-1", 68), ("totem", 85)]
         if rng.chance(0.5) { plan.append(("tent", 105)) }
+        let banned = Set(Characters.current.rules.noDecor ?? []) // (elves keep no skulls or spears about)
+        plan.removeAll { banned.contains($0.kind) }
         // slots round the nest, except the one on the right (the princess's side, and the fire ring)
         var slots: [Double] = []
         for k in 0..<12 {

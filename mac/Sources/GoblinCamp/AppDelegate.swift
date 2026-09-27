@@ -116,6 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Resume a saved colony if its nest is still on a screen; otherwise start at nest-picking.
         if settings.saveProgress, let saved = Persistence.load() {
+            // the camp's race first (its residents are made from that race's breeds); older saves are goblins
+            let race = saved.race ?? "goblin"
+            if Characters.all.contains(where: { $0.id == race }) { settings.characterID = race }
             let nest = CGPoint(x: saved.nestX, y: saved.nestY)
             if colony.walkable.contains(where: { $0.contains(nest) }) {
                 colony.restore(nest: nest, saved: saved)
@@ -124,8 +127,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if colony.nest != nil { applyWalkable() } // (the land is made round where the camp really is)
+        // the very first launch: pick a race before picking the spot (tests that drop the nest by themselves skip it)
+        if colony.nest == nil, colony.phase == .choosingNest, ProcessInfo.processInfo.environment["CAMP_AUTO_NEST"] == nil {
+            colony.cancelPicking()
+            DispatchQueue.main.async { [weak self] in self?.chooseRaceThenPick() }
+        }
         colony.onNewCamp = { [weak self] in
             guard let self else { return }
+            // the race picked for this world takes over only now, when the camp is really placed (Esc while picking changes nothing)
+            if let race = self.pendingRace {
+                self.pendingRace = nil
+                if race != self.settings.characterID {
+                    self.settings.characterID = race
+                    self.colony.princessName = "" // a new princess, of the new race's choosing
+                    if let camp = Characters.current.rules.camp { self.settings.campID = camp }
+                    self.characterChanged()
+                }
+            }
             // a new camp: the spots the old one had in the other ranges mean nothing now, and the land gets a new life to keep
             for mode in ["screen", "bottom", "right", "left", "window"] where mode != self.settings.rangeMode { self.settings.clearModeNest(mode) }
             self.settings.terrainSeed = UInt64.random(in: 1...UInt64.max) // a new world has new land too
@@ -909,6 +927,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        if let race = env["CAMP_TEST_RACE"] { // the first launch: picture the race picker, pick `race`, drop the camp mid-screen, picture it
+            let prefix = env["CAMP_SNAPSHOT"] ?? "/tmp/goblincamp-race"
+            after(2) {
+                log("picker captured: \(RacePicker.testCapture(to: prefix + "-picker.png"))")
+                RacePicker.testChoose(race)
+                after(0.5) {
+                    log("picked, phase \(self.colony.phase), pending \(String(describing: self.pendingRace))")
+                    let area = self.isWindowMode ? (self.mapWindow?.walkArea ?? .zero) : (NSScreen.main?.frame ?? .zero)
+                    self.colony.placeNest(at: CGPoint(x: area.midX, y: area.midY))
+                    log("race now \(Characters.current.id), residents \(self.colony.ants.map(\.name).prefix(4)), camp \(self.settings.campID), princess '\(self.colony.princessName)'")
+                }
+            }
+        }
         if let s = env["CAMP_TEST_FOODS"] { // every food the player can put down, in a ring round the camp; the boosts are logged, and a path saves pictures
             after(3) {
                 guard let nest = self.colony.nest else { return log("no nest") }
@@ -1131,14 +1162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if self.colony.phase == .editing { self.colony.endEditing() } else { self.colony.beginEditing() }
         }
-        characterMenuItem = choiceMenu(title: "角色",
-                                options: Characters.all.map { ($0.name, $0.id) },
-                                get: { Characters.current.id }, set: { [weak self] in
-                                    self?.settings.characterID = $0
-                                    self?.characterChanged()
-                                })
-        characterMenuItem.isHidden = Characters.all.count <= 1 // nothing to choose from with a single character
-        capMenuItem = choiceMenu(title: "哥布林數量上限",
+        // the race is chosen when a world is started, never in the middle of one (its residents are made of it)
+        characterMenuItem = NSMenuItem(title: "種族：\(Characters.current.name)（開新世界時可以換）", action: nil, keyEquivalent: "")
+        characterMenuItem.isEnabled = false
+        capMenuItem = choiceMenu(title: "\(Characters.current.noun)數量上限",
                                  options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
         let workshop = ClosureMenuItem(title: "工坊（做武器與裝備）…") { [weak self] in self?.showWorkshop() }
@@ -2598,8 +2625,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// A new world: everything starts over (the goblins, what they brought home, the camp's growth, the princess's story, the land itself).
     /// That cannot be undone, so it is asked first; picking the spot can still be cancelled with Esc, and then nothing has changed.
+    /// The race picked for the world about to be started (applied once its camp is placed).
+    private var pendingRace: String?
+
+    /// Shows the race picker; picking one goes on to picking the camp's spot.
+    private func chooseRaceThenPick() {
+        RacePicker.show(current: colony.nest == nil ? nil : Characters.current.id) { [weak self] race in
+            guard let self else { return }
+            self.pendingRace = race.id
+            self.colony.beginPicking()
+        }
+    }
+
     private func startNewWorld() {
-        guard colony.nest != nil else { colony.beginPicking(); return }
+        guard colony.nest != nil else { chooseRaceThenPick(); return }
         let alert = NSAlert()
         alert.messageText = "開新世界？"
         alert.informativeText = "會清掉所有的\(Characters.current.noun)、素材與擊殺紀錄、倉庫、營地的成長和公主的故事，連地形也會重新生成，然後讓你重新選一個營地位置。\n\n只是想把營地搬到別的地方的話，請用「編輯營地位置」。\n（選位置時按 Esc 可以取消，那樣什麼都不會變。）"
@@ -2607,7 +2646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.addButton(withTitle: "取消")
         alert.alertStyle = .warning
         guard alert.runInFront() == .alertFirstButtonReturn else { return }
-        colony.beginPicking()
+        chooseRaceThenPick()
     }
 
     private func showWarehouse() {
@@ -2756,12 +2795,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             sub.addItem(.separator())
         }
+        let race = Characters.current
         for kind in FoodKind.placeable {
             let wait = colony.cooldownLeft(kind)
-            let item = ClosureMenuItem(title: "\(kind.emoji) \(kind.label)　\(kind.effect)\(wait > 0 ? "（\(minutes(wait))後可以再放）" : "")") { [weak self] in
+            let scale = race.rules.foodScale(kind.rawValue)
+            // what this race makes of it: elves get more from fruit and nothing from meat
+            let note = scale <= 0 ? "（\(race.name)不吃）" : scale != 1 ? "（\(race.name) ×\(String(format: "%g", scale))）" : ""
+            let item = ClosureMenuItem(title: "\(kind.emoji) \(kind.label)　\(kind.effect)\(note)\(wait > 0 ? "（\(minutes(wait))後可以再放）" : "")") { [weak self] in
                 self?.colony.beginPlacingFood(kind)
             }
-            item.isEnabled = wait <= 0 && foodMenuItem.isEnabled
+            item.isEnabled = wait <= 0 && scale > 0 && foodMenuItem.isEnabled
             sub.addItem(item)
         }
         sub.addItem(.separator())
@@ -2968,6 +3011,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func characterChanged() {
+        characterMenuItem?.title = "種族：\(Characters.current.name)（開新世界時可以換）"
+        mapWindow?.window.title = "\(Characters.current.name)營地"
+        sceneKey = "" // the camp's belongings depend on the race
         applyStatusIcon()
         updateCount()
         redrawAll()

@@ -1,19 +1,56 @@
 {
-  "id": "goblin",
-  "name": "哥布林",
-  "noun": "哥布林",
-  "emoji": "👺",
+  "id": "elf",
+  "name": "精靈",
+  "noun": "精靈",
+  "emoji": "🧝",
   "icon": "icon.png",
   "nestName": "營地",
   "frame": 16,
-  "defaultMaxCount": 150,
-  "tagline": "量多、生得快、單隻弱，靠人海過日子的哥布林。",
+  "defaultMaxCount": 120,
+  "tagline": "生得慢、活得久、單隻強，和森林一起生活的弓手。",
   "features": [
-    "生得快，一天就老死一批，營地很熱鬧",
-    "砍樹、挖石、釣魚、種田、煮燉菜，什麼都做",
-    "10 種食物的加成照常",
-    "首領是人類公主；和金皮的孩子是混血哥布林"
+    "生得慢（間隔兩倍），但活得久（大約兩倍）、單隻強",
+    "遠遠射箭打獵物，很少被咬到",
+    "不砍樹：撿樹枝、採野莓、照顧樹",
+    "果實、野莓、蜂蜜、清水的加成 ×1.5；不吃肉，烤肉、烤魚沒有效果",
+    "首領是狐族公主；和銀月精靈的孩子有近戰的獸血精靈"
   ],
+  "rules": {
+    "spawnScale": 2.0,
+    "food": {
+      "fruit": 1.5,
+      "berries": 1.5,
+      "honey": 1.5,
+      "water": 1.5,
+      "meat": 0,
+      "fish": 0
+    },
+    "fellsTrees": false,
+    "ranged": 34,
+    "noDecor": [
+      "skull",
+      "spears",
+      "bones-0",
+      "bones-1",
+      "totem"
+    ],
+    "names": "elf",
+    "princessNames": [
+      "琥珀",
+      "紅葉",
+      "小楓",
+      "焰尾",
+      "緋音",
+      "朱鈴",
+      "狐月",
+      "秋露",
+      "楓鈴",
+      "赤瑚",
+      "橘音",
+      "茜"
+    ],
+    "camp": "stump"
+  },
   "worker": {
     "sheet": "worker.png",
     "pixelScale": 1.5,
@@ -41,90 +78,93 @@
   "breeds": [
     {
       "id": "common",
-      "name": "平民",
+      "name": "林民",
       "weight": 100,
       "boost": 0,
-      "blurb": "最普通的哥布林，什麼都會一點。",
-      "stats": {},
+      "blurb": "住在森林裡的精靈，會採集、會射箭，活得比哥布林久得多。",
+      "stats": {
+        "lifespan": 2.0,
+        "might": 1.3,
+        "health": 3.5
+      },
       "sheet": "worker.png"
     },
     {
       "id": "scout",
-      "name": "敏捷",
+      "name": "遊俠",
       "weight": 10,
       "boost": 1.0,
-      "blurb": "瘦小、腿快、眼尖，但一次只拿得動一份，也比較短命。",
+      "blurb": "披著綠斗篷的弓手，腳步輕、眼睛利，遠遠就看得到獵物。",
       "stats": {
-        "speed": 1.35,
-        "sense": 1.3,
+        "speed": 1.3,
+        "sense": 1.4,
         "rest": 0.8,
-        "lifespan": 0.8,
-        "might": 0.6,
-        "health": 2
+        "lifespan": 1.8,
+        "might": 1.2,
+        "health": 2.5
       },
       "sheet": "scout.png"
     },
     {
       "id": "brute",
-      "name": "壯碩",
+      "name": "樹衛",
       "weight": 8,
       "boost": 1.0,
-      "blurb": "身強體壯，走得慢，一次搬兩份，活得也久。",
+      "blurb": "穿著樹皮盔甲的守衛，走得慢，一次搬兩份，站在最前面。",
       "stats": {
         "speed": 0.8,
         "sense": 0.9,
         "carry": 2,
         "rest": 1.2,
-        "lifespan": 1.25,
-        "might": 1.6,
-        "health": 5
+        "lifespan": 2.5,
+        "might": 1.8,
+        "health": 6
       },
       "sheet": "brute.png"
     },
     {
       "id": "sage",
-      "name": "聰明",
+      "name": "德魯伊",
       "weight": 5,
       "boost": 1.5,
-      "blurb": "愛動腦筋，很會找食物，也很會叫同伴來幫忙。",
+      "blurb": "頂著小鹿角的德魯伊，懂得草藥，也很會叫同伴來幫忙。",
       "stats": {
         "speed": 0.95,
-        "sense": 1.25,
+        "sense": 1.3,
         "recruit": 3,
-        "lifespan": 1.15,
-        "might": 0.8
+        "lifespan": 2.3,
+        "might": 1.0
       },
       "sheet": "sage.png"
     },
     {
       "id": "golden",
-      "name": "金皮",
+      "name": "銀月精靈",
       "weight": 1,
       "boost": 3.0,
-      "blurb": "罕見的金皮哥布林，每一方面都好一點，壽命是兩倍。",
+      "blurb": "罕見的銀月精靈，銀髮上戴著月亮頭環，每一方面都好一點。",
       "stats": {
         "speed": 1.1,
-        "sense": 1.1,
+        "sense": 1.2,
         "recruit": 1,
         "rest": 0.9,
-        "lifespan": 2.0,
-        "might": 1.2,
-        "health": 4
+        "lifespan": 4.0,
+        "might": 1.5,
+        "health": 5
       },
       "sheet": "golden.png"
     },
     {
       "id": "half_gob",
-      "name": "混血・偏哥布林",
+      "name": "獸血・偏精靈",
       "weight": 0,
       "boost": 0,
-      "blurb": "公主與金皮的孩子，偏向哥布林：綠皮膚、一撮棕髮，還留著小獠牙。",
+      "blurb": "銀月精靈與狐族公主的孩子，偏向精靈：一撮紅髮，箭射得更準。",
       "stats": {
-        "speed": 1.0,
-        "sense": 1.1,
-        "rest": 1.0,
-        "lifespan": 1.4,
-        "might": 1.15,
+        "speed": 1.05,
+        "sense": 1.3,
+        "lifespan": 2.8,
+        "might": 1.4,
         "health": 4,
         "recruit": 1
       },
@@ -132,35 +172,33 @@
     },
     {
       "id": "half_mix",
-      "name": "混血・各半",
+      "name": "獸血・各半",
       "weight": 0,
       "boost": 0,
-      "blurb": "公主與金皮的孩子，人和哥布林各一半：淡黃綠的皮膚，尖尖的耳朵，沒有獠牙。",
+      "blurb": "銀月精靈與狐族公主的孩子，精靈與狐族各半：紅髮、一對小狐耳，什麼都好一點。",
       "stats": {
-        "speed": 1.05,
-        "sense": 1.15,
-        "rest": 0.95,
-        "lifespan": 1.5,
-        "might": 1.0,
-        "health": 3.5,
+        "speed": 1.1,
+        "sense": 1.25,
+        "lifespan": 3.0,
+        "might": 1.5,
+        "health": 4.5,
         "recruit": 1
       },
       "sheet": "half_mix.png"
     },
     {
       "id": "half_hum",
-      "name": "混血・偏人",
+      "name": "獸血・偏獸",
       "weight": 0,
       "boost": 0,
-      "blurb": "公主與金皮的孩子，偏向人類：膚色像人，一頭金棕色頭髮，只剩一點點尖耳朵。",
+      "blurb": "銀月精靈與狐族公主的孩子，偏向狐族：狐耳、狐尾、毛皮背心。力氣大又耐打，是近戰的精靈。",
       "stats": {
-        "speed": 1.0,
-        "sense": 1.2,
-        "rest": 0.9,
-        "lifespan": 1.6,
-        "might": 0.9,
-        "health": 3,
-        "recruit": 2
+        "speed": 1.05,
+        "sense": 1.1,
+        "carry": 2,
+        "lifespan": 3.0,
+        "might": 2.0,
+        "health": 7
       },
       "sheet": "half_hum.png"
     }
@@ -254,33 +292,13 @@
     },
     "outfits": [
       {
-        "id": "dress",
-        "name": "洋裝",
+        "id": "hide",
+        "name": "兩截式獸皮",
         "sheet": "queen.png"
       },
       {
-        "id": "gown",
-        "name": "長裙禮服",
-        "sheet": "queen_gown.png"
-      },
-      {
-        "id": "skirt",
-        "name": "短裙上衣",
-        "sheet": "queen_skirt.png"
-      },
-      {
-        "id": "sport",
-        "name": "運動裝",
-        "sheet": "queen_sport.png"
-      },
-      {
-        "id": "sunny",
-        "name": "草帽洋裝",
-        "sheet": "queen_sunny.png"
-      },
-      {
         "id": "winter",
-        "name": "冬季外套",
+        "name": "毛皮斗篷",
         "sheet": "queen_winter.png"
       },
       {

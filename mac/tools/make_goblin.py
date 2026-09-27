@@ -1029,6 +1029,11 @@ def main():
         "nestName": "營地",
         "frame": SIZE,
         "defaultMaxCount": 150,
+        "tagline": "量多、生得快、單隻弱，靠人海過日子的哥布林。",
+        "features": ["生得快，一天就老死一批，營地很熱鬧",
+                     "砍樹、挖石、釣魚、種田、煮燉菜，什麼都做",
+                     "10 種食物的加成照常",
+                     "首領是人類公主；和金皮的孩子是混血哥布林"],
         "worker": {"sheet": "worker.png", "pixelScale": 1.5, "walk": walk},
         "breeds": [{"id": i, "name": n, "weight": w, "boost": b, "blurb": blurb, "stats": stats, "sheet": sheet}
                    for i, n, w, b, blurb, stats, sheet, _ in BREEDS],

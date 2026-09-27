@@ -13,6 +13,14 @@ enum Sfx: String, CaseIterable {
 
 /// Who is talking: the princess, or a goblin of one breed. Each has its own voice, tone and things to say.
 struct Speaker {
+    /// What the bubble calls it for the race on screen: the goblins' own titles, or the other race's breed name (遊俠, 樹衛…).
+    var displayTitle: String {
+        let race = Characters.current
+        guard race.id != "goblin", !isPrincess else { return title }
+        if id == "common" { return race.noun }
+        return race.breeds.first { $0.id == id }?.name ?? race.noun
+    }
+
     let id: String
     let name: String
     /// What the bubble calls the speaker (a goblin's own name can go here later).
@@ -140,7 +148,7 @@ struct Message {
     var heading: Double { phase == .leaving ? 0 : .pi }
 
     /// The heading of the bubble: "咕嚕・壯碩哥布林" or "艾莉雅・公主".
-    var title: String { name.isEmpty ? speaker.title : "\(name)・\(speaker.isPrincess ? "公主" : speaker.title)" }
+    var title: String { name.isEmpty ? speaker.displayTitle : "\(name)・\(speaker.isPrincess ? "公主" : speaker.displayTitle)" }
 
     var accent: NSColor {
         kind == .permission ? NSColor(calibratedRed: 0.95, green: 0.55, blue: 0.1, alpha: 1)

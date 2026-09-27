@@ -783,7 +783,8 @@ final class Colony {
         } else if creatures[ci].kind.hostile {
             // monsters hit back on their own (see `strike`)
         } else if creatures[ci].kind.aggressive {
-            if Double.random(in: 0..<1) < 0.4 { hurt(ant: index) }
+            // it bites back, unless the blow came from a distance (an archer race)
+            if Double.random(in: 0..<1) < 0.4, (Characters.current.rules.ranged ?? 0) <= 0 { hurt(ant: index) }
         } else {
             let away = atan2(creatures[ci].pos.y - ants[index].pos.y, creatures[ci].pos.x - ants[index].pos.x)
             creatures[ci].state = .fleeing(remaining: 2.5, angle: away)
@@ -937,10 +938,12 @@ final class Colony {
     /// After putting a food down, the same kind cannot be put down again for this long.
     static let foodCooldown: Double = Double(ProcessInfo.processInfo.environment["CAMP_FOOD_COOLDOWN"] ?? "") ?? 1200
 
-    /// How strongly a boost is on: 1 while its food's time lasts, a third while only stew's does, else 0.
+    /// How strongly a boost is on: 1 while its food's time lasts, a third while only stew's does, else 0; times what that food does
+    /// for this race (elves: fruit 1.5, meat nothing).
     func boost(_ kind: FoodKind) -> Double {
-        if boosts[kind, default: 0] > 0 { return 1 }
-        return boosts[.stew, default: 0] > 0 ? 1.0 / 3 : 0
+        let scale = Characters.current.rules.foodScale(kind.rawValue)
+        if boosts[kind, default: 0] > 0 { return scale }
+        return boosts[.stew, default: 0] > 0 ? scale / 3 : 0
     }
 
     func boostLeft(_ kind: FoodKind) -> Double { boosts[kind, default: 0] }
@@ -1072,7 +1075,24 @@ final class Colony {
         let strong = ants[index].traits.might >= 1.3
         var items: [(id: String, count: Int)] = []
         var message = ""
-        if kind == 0 {
+        if kind == 0, Characters.current.rules.fellsTrees == false {
+            // a race that never fells a tree (the elves): what has fallen, and what grows on it
+            let roll = Double.random(in: 0..<1)
+            if roll < 0.45 {
+                items.append(("scrap_wood", Int.random(in: 1...2)))
+                message = "撿了掉下的樹枝"
+            } else if roll < 0.8, !foods.contains(where: { hypot($0.pos.x - foot.x, $0.pos.y - foot.y) < 40 }) {
+                var berries = FoodSource(id: nextFoodID, kind: .berries, pos: nearestWalkable(to: CGPoint(x: foot.x + 12, y: foot.y - 10)), amount: 4)
+                berries.capacityOverride = 4
+                berries.scouted = true
+                berries.reported = true
+                foods.append(berries)
+                nextFoodID += 1
+                message = "採了一籃野莓"
+            } else {
+                message = "照顧了這棵樹"
+            }
+        } else if kind == 0 {
             let trees = scene.resourceSpots().filter { $0.kind == .tree }.count
             let roll = Double.random(in: 0..<1)
             // the fewer trees are left, the less likely one falls (and never below six)
@@ -1474,7 +1494,7 @@ final class Colony {
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
                           materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: allLives["window"], terrains: allLives.isEmpty ? nil : allLives, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) },
                           romance: romance, boosts: boosts.isEmpty ? nil : Colony.names(boosts),
-                          foodCooldowns: foodCooldowns.isEmpty ? nil : Colony.names(foodCooldowns))
+                          foodCooldowns: foodCooldowns.isEmpty ? nil : Colony.names(foodCooldowns), race: Characters.current.id)
     }
 
     private func savedGear(of ant: Ant) -> [String: SavedGear]? {
@@ -1491,7 +1511,7 @@ final class Colony {
         if id == nil { // a birth: try for a name nobody living has yet (a restored goblin keeps its seed and so its name)
             let taken = Set(ants.map(\.name))
             var tries = 0
-            while taken.contains(Names.goblin(seed: seed)), tries < 40 {
+            while taken.contains(Names.resident(seed: seed)), tries < 40 {
                 seed = UInt64.random(in: 0...UInt64(UInt32.max))
                 tries += 1
             }
@@ -1613,7 +1633,7 @@ final class Colony {
     func rename(antID: Int, to text: String) {
         guard let i = ants.firstIndex(where: { $0.id == antID }) else { return }
         let name = Names.clean(text)
-        ants[i].name = name.isEmpty ? Names.goblin(seed: ants[i].seed) : name
+        ants[i].name = name.isEmpty ? Names.resident(seed: ants[i].seed) : name
         onAntsChanged?()
     }
 
@@ -1656,7 +1676,7 @@ final class Colony {
         // The clock only starts once the queen has crawled out.
         if queen?.arrived == true, ants.count < settings.maxAnts {
             spawnTimer += dt * (1 + boost(.honey) / 3) // honey: a quarter less waiting
-            if spawnTimer >= settings.spawnInterval {
+            if spawnTimer >= settings.spawnInterval * (Characters.current.rules.spawnScale ?? 1) { // (elves come half as often)
                 spawnTimer = 0
                 let jitter = { CGFloat.random(in: -4...4) }
                 var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()))
@@ -1743,6 +1763,7 @@ final class Colony {
         world.speedBoost = 1 + 0.15 * boost(.carrot)
         world.workBoost = 1 + 0.3 * boost(.bread)
         world.fishBoost = 1 + 0.3 * boost(.fish)
+        world.rangedReach = Characters.current.rules.ranged ?? 0
         healTimer -= dt
         if healTimer <= 0 {
             healTimer = 1.1

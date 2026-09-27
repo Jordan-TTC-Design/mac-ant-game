@@ -81,10 +81,41 @@ enum Names {
         }
     }
 
+    // Elves: soft, flowing names from the forest (艾菈瑟、琉恩、希兒薇、月語…).
+    private static let elfStarts = ["艾", "琉", "希", "瑟", "菈", "莉", "伊", "奧", "薇", "妮", "芙", "蘭", "緹", "雅", "塞", "洛", "菲", "露", "梅", "歐",
+                                    "瑪", "蕾", "茵", "黛", "卡", "蒂", "芮", "娜", "諾", "璃"]
+    private static let elfMiddles = ["菈", "瑟", "恩", "薇", "莉", "爾", "妮", "朵", "莎", "琳", "娜", "緹", "維", "蘭", "露", "伊", "希", "雅", "芙", "絲"]
+    private static let elfEnds = ["兒", "恩", "爾", "絲", "娜", "莉", "薇", "亞", "朵", "琳", "瑟", "音", "妮", "蕾", "雅"]
+    private static let elfNature = ["月", "星", "葉", "露", "霜", "風", "雲", "花", "蕨", "苔", "晨", "夜", "溪", "雪", "光", "影", "鈴", "羽", "蘚", "櫻"]
+    private static let elfNatureEnds = ["語", "歌", "影", "羽", "紋", "息", "芽", "鈴", "音", "眠", "紗", "痕", "瓣", "心"]
+
+    /// A resident's name, in the style of the race on screen.
+    static func resident(seed: UInt64) -> String {
+        switch Characters.current.rules.names {
+        case "elf": return elf(seed: seed)
+        default: return goblin(seed: seed)
+        }
+    }
+
+    static func elf(seed: UInt64) -> String {
+        var h = mix(seed ^ 0xE1F)
+        func pick(_ list: [String]) -> String {
+            let item = list[Int(h % UInt64(list.count))]
+            h = mix(h)
+            return item
+        }
+        switch Int(h % 100) {
+        case 0..<45: h = mix(h); return pick(elfStarts) + pick(elfMiddles) + pick(elfEnds)   // 艾菈兒
+        case 45..<75: h = mix(h); return pick(elfStarts) + pick(elfEnds)                     // 琉恩
+        default: h = mix(h); return pick(elfNature) + pick(elfNatureEnds)                    // 月語
+        }
+    }
+
     static let princessIdeas = ["艾莉雅", "小茉", "露米", "米娜", "莉娜", "蘇菲", "小晴", "梅兒", "希兒", "可可", "薇薇", "小雪", "安妮", "伊芙", "琪琪"]
 
     static func randomPrincess(except current: String = "") -> String {
-        princessIdeas.filter { $0 != current }.randomElement() ?? "公主"
+        let ideas = Characters.current.rules.princessNames ?? princessIdeas
+        return ideas.filter { $0 != current }.randomElement() ?? "公主"
     }
 
     /// A name typed by the player: trimmed, one line, not too long. Empty means "no name".

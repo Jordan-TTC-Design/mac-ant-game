@@ -66,6 +66,8 @@ struct SavedState: Codable {
     /// What the food brought home is still doing (seconds left, by food), and how long before each can be put down again.
     var boosts: [String: Double]?
     var foodCooldowns: [String: Double]?
+    /// Which race the camp is (a character id); older saves are goblins.
+    var race: String?
 }
 
 /// Colony progress in ~/Library/Application Support/GoblinCamp/state.json.
