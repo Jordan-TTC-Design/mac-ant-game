@@ -13,6 +13,7 @@
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>GoblinServerURL</key><string>https://world.blockstudio.cc</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

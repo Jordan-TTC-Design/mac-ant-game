@@ -34,3 +34,7 @@ server/dist/
 # Docker deployment: settings and database backups
 /.env
 backups/
+# every settings file with secrets (.env.production, .env.local…); the template is the only one in git
+.env.*
+!.env.template
+!.env.example

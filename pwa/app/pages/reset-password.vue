@@ -34,8 +34,8 @@ async function save() {
       <h1>設定新密碼</h1>
       <template v-if="!done">
         <p class="muted">設定之後，所有裝置都會登出，需要用新密碼重新登入。</p>
-        <div class="field"><label>新密碼</label><input v-model="password" type="password" autocomplete="new-password" placeholder="至少 10 個字" /></div>
-        <div class="field"><label>再輸入一次</label><input v-model="again" type="password" autocomplete="new-password" /></div>
+        <div class="field"><label>新密碼</label><PasswordField v-model="password" autocomplete="new-password" placeholder="至少 10 個字" /></div>
+        <div class="field"><label>再輸入一次</label><PasswordField v-model="again" autocomplete="new-password" /></div>
         <button class="btn primary" type="submit" :disabled="busy">設定</button>
       </template>
       <p class="status" :class="error ? 'error' : 'ok'">{{ status }}</p>

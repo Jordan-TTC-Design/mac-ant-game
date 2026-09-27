@@ -14,7 +14,8 @@ final class AccountWindow: NSObject, NSWindowDelegate {
     private var busy = false
 
     private let emailField = NSTextField()
-    private let passwordField = NSSecureTextField()
+    private let passwordField = PasswordBox()
+    private let passwordAgain = PasswordBox()
     private let nameField = NSTextField()
     private let inviteField = NSTextField()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
@@ -37,7 +38,7 @@ final class AccountWindow: NSObject, NSWindowDelegate {
         window.appearance = NSAppearance(named: .aqua) // always light, like the game's bubbles
         window.backgroundColor = .white
         window.delegate = self
-        for field in [emailField, nameField, inviteField] as [NSTextField] + [passwordField] {
+        for field in [emailField, nameField, inviteField] + passwordField.fields + passwordAgain.fields {
             field.font = .systemFont(ofSize: 13)
             field.bezelStyle = .roundedBezel
             field.target = self
@@ -45,6 +46,7 @@ final class AccountWindow: NSObject, NSWindowDelegate {
         }
         emailField.placeholderString = "you@example.com"
         passwordField.placeholderString = "至少 10 個字"
+        passwordAgain.placeholderString = "和上面一樣"
         nameField.placeholderString = "使者上會顯示這個名字"
         inviteField.placeholderString = "GOBLIN-XXXX-XXXX"
         if let email = sync.account.user?.email { emailField.stringValue = email } // (signing in again after the session ended)
@@ -59,7 +61,7 @@ final class AccountWindow: NSObject, NSWindowDelegate {
         build()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(emailField.stringValue.isEmpty ? emailField : passwordField)
+        window.makeFirstResponder(emailField.stringValue.isEmpty ? emailField : passwordField.field)
     }
 
     // MARK: Layout (top down, by hand, like the question bubbles)
@@ -112,13 +114,14 @@ final class AccountWindow: NSObject, NSWindowDelegate {
             placed.append((register, (w - tabsWidth) / 2 + login.frame.width + 6, y, register.frame.width, 26))
             y += 26 + 16
 
-            func row(_ title: String, _ field: NSTextField) {
+            func row(_ title: String, _ field: NSView) {
                 placed.append((label(title, size: 13, color: AccountWindow.grey), pad, y + 4, 60, 18))
                 put(field, x: pad + 64, height: 24, gap: 10)
             }
             row("信箱", emailField)
             row("密碼", passwordField)
             if tab == .register {
+                row("再一次", passwordAgain)
                 row("暱稱", nameField)
                 row("邀請碼", inviteField)
             }
@@ -177,6 +180,7 @@ final class AccountWindow: NSObject, NSWindowDelegate {
         let password = passwordField.stringValue
         if tab == .register {
             guard password.count >= 10 else { return setStatus("密碼至少要 10 個字。", error: true) }
+            guard password == passwordAgain.stringValue else { return setStatus("兩次輸入的密碼不一樣。", error: true) }
             let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, name.count <= 20 else { return setStatus("暱稱要 1～20 個字。", error: true) }
             let invite = inviteField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -185,6 +189,7 @@ final class AccountWindow: NSObject, NSWindowDelegate {
                 _ = try await sync.api.register(email: email, password: password, displayName: name, inviteCode: invite)
                 sentTo = email
                 passwordField.stringValue = ""
+                passwordAgain.stringValue = ""
                 build()
                 setStatus("", error: false)
             }
@@ -329,5 +334,68 @@ extension NSWindow {
         frame.size = size
         setFrame(frame, display: false)
         contentView = content
+    }
+}
+
+/// A password box with an eye beside it: pressed, the password shows (and the box keeps what was typed); again, it hides.
+final class PasswordBox: NSView {
+    private let secret = NSSecureTextField()
+    private let plain = NSTextField()
+    private let eye = NSButton()
+    private var shown = false
+
+    /// Both boxes, for the window to style and to answer Return.
+    var fields: [NSTextField] { [secret, plain] }
+    /// The one showing now.
+    var field: NSTextField { shown ? plain : secret }
+
+    var stringValue: String {
+        get { field.stringValue }
+        set { secret.stringValue = newValue; plain.stringValue = newValue }
+    }
+    var placeholderString: String? {
+        get { secret.placeholderString }
+        set { secret.placeholderString = newValue; plain.placeholderString = newValue }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        plain.isHidden = true
+        eye.isBordered = false
+        eye.imagePosition = .imageOnly
+        eye.target = self
+        eye.action = #selector(toggle)
+        eye.contentTintColor = NSColor(calibratedWhite: 0.45, alpha: 1)
+        eye.toolTip = "顯示密碼"
+        setEye()
+        for v in [secret, plain, eye] as [NSView] { addSubview(v) }
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        let eyeWidth: CGFloat = 28
+        secret.frame = NSRect(x: 0, y: 0, width: bounds.width - eyeWidth - 4, height: bounds.height)
+        plain.frame = secret.frame
+        eye.frame = NSRect(x: bounds.width - eyeWidth, y: 0, width: eyeWidth, height: bounds.height)
+    }
+
+    private func setEye() {
+        let name = shown ? "eye" : "eye.slash"
+        eye.image = NSImage(systemSymbolName: name, accessibilityDescription: shown ? "隱藏密碼" : "顯示密碼")
+        eye.toolTip = shown ? "隱藏密碼" : "顯示密碼"
+    }
+
+    @objc private func toggle() {
+        let text = field.stringValue
+        let wasFocused = window?.firstResponder === field.currentEditor() || window?.firstResponder === field
+        shown.toggle()
+        secret.stringValue = text
+        plain.stringValue = text
+        secret.isHidden = shown
+        plain.isHidden = !shown
+        setEye()
+        if wasFocused { window?.makeFirstResponder(field) }
     }
 }

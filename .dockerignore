@@ -17,3 +17,7 @@ mac/dist
 mac/Sources
 mac/tools
 *.log
+# every settings file with secrets (.env.production, .env.local…); the template is the only one in git
+.env.*
+!.env.template
+!.env.example

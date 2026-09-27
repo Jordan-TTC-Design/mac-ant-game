@@ -545,6 +545,26 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 - [QUEEN_BEHAVIORS.md](QUEEN_BEHAVIORS.md)：公主的 20 種動作、狀態機、如何新增動作
 - [ROMANCE.md](ROMANCE.md)：公主的感情線（追求、約會、結婚、懷孕、混血寶寶、吵架分手）與測試用變數
 
+## 部署伺服器（帳號、便利貼、營地、手機網頁）
+
+測站：**https://world.blockstudio.cc**（Mac App 預設連這裡，寫在 `mac/Resources/Info.plist` 的 `GoblinServerURL`；開發時用 `CAMP_SERVER_URL` 換）。
+
+照其他專案的方式：Docker Compose 加 Makefile。三份 compose 檔：`docker-compose.yml`（一般）、`docker-compose_prod.yml`（正式，多了記憶體上限）、`docker-compose_dev.yaml`（本機試跑，資料卷分開）。對外只開 `web` 一個 port，網域與 HTTPS 由主機的反向代理處理。
+
+第一次架站：
+
+```bash
+cp .env.template .env        # 填 APP_URL（https）、WEB_PORT、POSTGRES_PASSWORD（只用英數字）、VAPID_SUBJECT、Resend 的金鑰與寄件人
+make vapid                   # 產生手機推播金鑰，貼進 .env
+make deploy                  # 或 make deploy-prod
+make ps                      # 三個容器都要 healthy
+make invite n=5              # 邀請碼（只顯示這一次）
+```
+
+主機的反向代理把網域轉到 `127.0.0.1:WEB_PORT`，**要帶 `Upgrade`／`Connection` 標頭**（WebSocket），`X-Forwarded-For`、`X-Forwarded-Proto` 也帶上。更新：`git pull && make deploy`（資料庫 migration 在伺服器啟動時自動套用）。其他：`make logs`（沒設 Resend 時確認信印在這裡）、`make invites`、`make dump-db`／`make restore-db file=…`、`make shell-db`。
+
+**`.env` 和任何 `.env.*` 都不能進 git**（裡面有資料庫密碼、推播私鑰、Resend 金鑰）；`.gitignore` 已經排除，只有 `.env.template` 在 git 裡。
+
 ## 版本紀錄
 
 最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.8.1）。

@@ -6,6 +6,7 @@ const { user, refresh, login } = useAccount();
 const tab = ref<"login" | "register">("login");
 const email = ref("");
 const password = ref("");
+const passwordAgain = ref("");
 const displayName = ref("");
 const inviteCode = ref(String(route.query.invite ?? ""));
 const status = ref(route.query.expired ? "登入已經過期，請重新登入。" : "");
@@ -48,12 +49,14 @@ function submit() {
     });
   }
   if (password.value.length < 10) return say("密碼至少要 10 個字。", true);
+  if (password.value !== passwordAgain.value) return say("兩次輸入的密碼不一樣。", true);
   if (!displayName.value.trim()) return say("請填暱稱。", true);
   if (!inviteCode.value.trim()) return say("請填邀請碼。", true);
   return run("註冊中…", async () => {
     await api("POST", "auth/register", { email: mail, password: password.value, displayName: displayName.value.trim(), inviteCode: inviteCode.value.trim() });
     sentTo.value = mail;
     password.value = "";
+    passwordAgain.value = "";
     say("");
   });
 }
@@ -93,9 +96,10 @@ function resend() {
         <div class="field"><label>信箱</label><input v-model="email" type="email" autocomplete="email" placeholder="you@example.com" /></div>
         <div class="field">
           <label>密碼</label>
-          <input v-model="password" type="password" :autocomplete="tab === 'login' ? 'current-password' : 'new-password'" placeholder="至少 10 個字" />
+          <PasswordField v-model="password" :autocomplete="tab === 'login' ? 'current-password' : 'new-password'" placeholder="至少 10 個字" />
         </div>
         <template v-if="tab === 'register'">
+          <div class="field"><label>再輸入一次密碼</label><PasswordField v-model="passwordAgain" autocomplete="new-password" placeholder="和上面一樣" /></div>
           <div class="field"><label>暱稱</label><input v-model="displayName" maxlength="20" placeholder="使者上會顯示這個名字" /></div>
           <div class="field"><label>邀請碼</label><input v-model="inviteCode" autocapitalize="characters" placeholder="GOBLIN-XXXX-XXXX" /></div>
         </template>
