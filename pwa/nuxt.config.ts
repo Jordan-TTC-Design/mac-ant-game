@@ -23,6 +23,17 @@ export default defineNuxtConfig({
       link: [{ rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" }],
     },
   },
+  vite: {
+    build: {
+      rollupOptions: {
+        output: {
+          // the map's worker comes as .mjs, which a plain nginx (and the phone's cache of it) does not take for JavaScript:
+          // name it .js like the rest
+          assetFileNames: (asset) => (asset.names?.some((n) => n.endsWith(".mjs")) ? "_nuxt/[name].[hash].js" : "_nuxt/[name].[hash][extname]"),
+        },
+      },
+    },
+  },
   nitro: {
     devProxy: { "/api": { target: "http://localhost:8787/api" } },
   },

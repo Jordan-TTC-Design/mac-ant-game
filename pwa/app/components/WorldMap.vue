@@ -181,7 +181,11 @@ const PLACE_ORDER = ["station", "park", "sight", "park", "sight", "campus", "par
 async function placesNear(at: { lat: number; lng: number }): Promise<{ name: string; lat: number; lng: number; km: number }[]> {
   const m = map;
   if (!m) return [];
-  if (!m.loaded() || !m.areTilesLoaded()) await new Promise<void>((done) => m.once("idle", () => done()));
+  // (the map settles once its tiles are in; if they never come, give up after 10 s rather than wait for ever)
+  if (!m.loaded() || !m.areTilesLoaded()) await new Promise<void>((done) => {
+    m.once("idle", () => done());
+    setTimeout(done, 10_000);
+  });
   const mLng = 111.32 * Math.cos((at.lat * Math.PI) / 180);
   const kmBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => Math.hypot((a.lat - b.lat) * 110.574, (a.lng - b.lng) * mLng);
   type Place = { name: string; lat: number; lng: number; km: number };
