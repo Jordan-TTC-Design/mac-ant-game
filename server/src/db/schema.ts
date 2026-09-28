@@ -193,9 +193,11 @@ export const campEvents = pgTable(
 export const worldPlayers = pgTable("world_players", {
   userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   open: boolean("open").notNull().default(true),
-  /** Where the camp sits on the map (the first cell, picked when opening); expeditions from home start here. */
+  /** Where the camp stands on the map (picked when opening; everybody at home lives there); expeditions from home start here. */
   homeCell: text("home_cell").notNull(),
   openedAt: timestamp("opened_at", { withTimezone: true, precision: 3 }).notNull(),
+  /** When the camp last moved to another cell (it may once every HOME_MOVE_DAYS). */
+  homeMovedAt: timestamp("home_moved_at", { withTimezone: true, precision: 3 }),
   /** Turtling after a defeat (shared/src/world/territory.ts). */
   shieldedSince: timestamp("shielded_since", { withTimezone: true, precision: 3 }),
   lastShieldEnded: timestamp("last_shield_ended", { withTimezone: true, precision: 3 }),

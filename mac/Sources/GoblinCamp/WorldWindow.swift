@@ -3,7 +3,7 @@ import WebKit
 
 /// 大世界: the web page's map, parties and reports in a window of the Mac's own (server/WORLD.md §15). It opens signed in
 /// as this Mac's account (a one-time link from the server), so nobody types a password twice.
-final class WorldWindow: NSObject, WKNavigationDelegate {
+final class WorldWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let window: NSWindow
     private let web: WKWebView
     private let api: APIClient
@@ -21,6 +21,7 @@ final class WorldWindow: NSObject, WKNavigationDelegate {
         window.minSize = NSSize(width: 360, height: 560)
         window.setFrameAutosaveName("GoblinCampWorld")
         web.navigationDelegate = self
+        web.uiDelegate = self // (the page's 確定？ questions: without this they silently answer no)
         web.autoresizingMask = [.width, .height]
         web.setValue(false, forKey: "drawsBackground") // (the page's own green shows while it loads)
         let content = NSView(frame: web.frame)
@@ -55,6 +56,25 @@ final class WorldWindow: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { status.isHidden = true }
+
+    // MARK: The page's alert() and confirm(), as sheets on the window
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "好")
+        alert.beginSheetModal(for: window) { _ in completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        let lines = message.components(separatedBy: "\n\n")
+        alert.messageText = lines[0]
+        alert.informativeText = lines.dropFirst().joined(separator: "\n\n")
+        alert.addButton(withTitle: "確定")
+        alert.addButton(withTitle: "取消")
+        alert.beginSheetModal(for: window) { answer in completionHandler(answer == .alertFirstButtonReturn) }
+    }
 
     /// Tests: the page as it is now, into a PNG, and where it is.
     func snapshotForTesting(to path: String, done: @escaping (String) -> Void) {

@@ -11,6 +11,7 @@ import {
   expeditionReport,
   leaderboard,
   MAX_MAP_RADIUS,
+  moveHome,
   openWorldFor,
   recall,
   sendExpedition,
@@ -107,6 +108,8 @@ export function worldRoutes(deps: AppDeps) {
   cellAction("nest", (userId, cell) => (tx) => buildNest(tx, userId, cell, now()));
   cellAction("town", (userId, cell) => (tx) => buildTown(tx, userId, cell, now()));
   cellAction("recall", (userId, cell, body) => (tx) => recall(tx, userId, cell, (body as { count?: number }).count, now()));
+  /** The camp moves here (once every HOME_MOVE_DAYS). */
+  cellAction("home", (userId, cell) => (tx) => moveHome(tx, userId, cell, now()));
 
   app.get("/leaderboard", async (c) => respond(c, await run(c, () => db.transaction((tx) => leaderboard(tx)))));
 

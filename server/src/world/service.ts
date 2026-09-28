@@ -32,6 +32,7 @@ import {
   lootFor,
   lairFighters,
   materialName,
+  HOME_MOVE_DAYS,
   NEST_BUILD_HOURS,
   NEST_COST,
   nestBirthMinutes,
@@ -125,6 +126,26 @@ async function touchCell(tx: Tx, cell: string): Promise<CellRow> {
 
 const aliveAt = (tx: Tx, userId: string, place: string) =>
   tx.select().from(campResidents).where(and(eq(campResidents.userId, userId), eq(campResidents.place, place), isNull(campResidents.diedAt))).orderBy(campResidents.id);
+
+/** Where a camp stands on the map (null: it never opened the big world). */
+async function homeCellOf(tx: Tx, userId: string): Promise<string | null> {
+  const [row] = await tx.select({ cell: worldPlayers.homeCell }).from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  return row?.cell ?? null;
+}
+
+/** Who lives on a cell: those settled there, and on the camp's own cell everybody at home as well (the camp stands there). */
+async function dwellers(tx: Tx, userId: string, cell: string, homeCell: string | null): Promise<ResidentRow[]> {
+  const there = await aliveAt(tx, userId, cellPlace(cell));
+  return cell === homeCell ? [...(await aliveAt(tx, userId, "home")), ...there] : there;
+}
+
+const countAt = async (tx: Tx, userId: string, place: string) =>
+  (
+    (await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(campResidents)
+      .where(and(eq(campResidents.userId, userId), eq(campResidents.place, place), isNull(campResidents.diedAt)))) as [{ n: number }]
+  )[0].n;
 
 function nestState(cell: Pick<CellRow, "nestStartedAt">, now: Date): "none" | "building" | "ready" {
   if (!cell.nestStartedAt) return "none";
@@ -246,7 +267,9 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     const back = await lairReturns(tx, camp, cell, now, home?.cell ?? null, terrain);
     if (back.fought) changed = true;
     if (back.lost) continue;
-    const readyAt = cell.nestStartedAt ? new Date(cell.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
+    const isHome = cell.cell === home?.cell;
+    // (the camp's own cell raises no one of its own: the camp standing there does, at home)
+    const readyAt = cell.nestStartedAt && !isHome ? new Date(cell.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
     if (readyAt && readyAt <= now) {
       const rows = await aliveAt(tx, camp.userId, cellPlace(cell.cell));
       const place: Place = {
@@ -267,20 +290,17 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       }
       await tx.update(worldCells).set({ nextSlot: population.nextSlot, advancedTo: now }).where(eq(worldCells.cell, cell.cell));
     }
-    const [{ n }] = (await tx
-      .select({ n: sql<number>`count(*)::int` })
-      .from(campResidents)
-      .where(and(eq(campResidents.userId, camp.userId), eq(campResidents.place, cellPlace(cell.cell)), isNull(campResidents.diedAt)))) as [{ n: number }];
-    if (n === 0) {
+    const n = (await countAt(tx, camp.userId, cellPlace(cell.cell))) + (isHome ? await countAt(tx, camp.userId, "home") : 0);
+    if (n === 0 && !isHome) {
       await releaseCell(tx, cell.cell);
       changed = true;
       continue;
     }
-    // what the ground gave meanwhile (every YIELD_HOURS, by its terrain and how many work it)
+    // what the ground gave meanwhile (every YIELD_HOURS, by its terrain and how many work it, up to a cell's room)
     const since = cell.yieldedTo ?? cell.heldSince ?? now;
     const times = Math.floor((now.getTime() - since.getTime()) / (YIELD_HOURS * HOUR));
     if (times > 0) {
-      const got = cellYield(camp.race, terrain, n, times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town);
+      const got = cellYield(camp.race, terrain, Math.min(n, cellCapacity(camp.race, cell.town)), times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town);
       for (const [mat, k] of Object.entries(got)) {
         camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + k };
         yields[mat] = (yields[mat] ?? 0) + k;
@@ -413,26 +433,59 @@ export async function openWorldFor(tx: Tx, userId: string, input: { cell?: strin
   if (!canOpenWorld(camp.race, camp.peak)) {
     throw new WorldError(403, "too_small", `營地要曾經有過 ${worldUnlockPeak(camp.race)} 隻（第三階段）才能開啟大世界。`);
   }
-  if (!input.cell) throw new WorldError(400, "invalid_input", "第一次開啟要在地圖上選一格。");
-  const min = garrisonMin(camp.race);
-  const settlers = input.settlers ?? min * 2;
-  if (settlers < min || settlers > cellCapacity(camp.race)) throw new WorldError(400, "invalid_input", `一格要住 ${min}～${cellCapacity(camp.race)} 隻。`);
-  const cell = await lockCell(tx, input.cell);
-  if (cell?.owner) throw new WorldError(409, "held", "這一格已經有主人了，選別格。");
-  const home = await aliveAt(tx, userId, "home");
-  if (home.length - settlers < HOME_KEEP) throw new WorldError(409, "too_few", "營地裡的人不夠搬過去。");
-  const party = pickParty(camp.race, home, undefined, settlers, false);
-  await takeCell(tx, input.cell, userId, now);
-  // the lair that was there (if any) is driven off by settling on the camp's own spot; the camp's cell has its nest from
-  // the start (it is the camp: it raises residents without anybody building one)
+  if (!input.cell) throw new WorldError(400, "invalid_input", "第一次開啟要在地圖上選營地在哪一格。");
+  await standCampOn(tx, userId, input.cell, now);
+  await tx.insert(worldPlayers).values({ userId, open: true, homeCell: input.cell, openedAt: now, xpCountedTo: now });
+  await addEvent(tx, userId, now, "world", { opened: true, cell: input.cell });
+  await bumpVersion(tx, camp);
+}
+
+/**
+ * The camp stands on `cell` from now: nobody is sent, the whole camp is there (everybody at home lives on it and defends
+ * it). A lair there is driven off, and the cell counts as having its nest (the camp raises residents; see advanceWorld).
+ */
+async function standCampOn(tx: Tx, userId: string, cell: string, now: Date) {
+  const row = await lockCell(tx, cell);
+  if (row?.owner && row.owner !== userId) throw new WorldError(409, "held", "這一格已經有主人了，選別格。");
+  if (bossAt(WORLD_SEED, cell, now.getTime(), bossesOn())) throw new WorldError(409, "boss", "世界魔王正站在這一格，選別格。");
+  if (row?.owner !== userId) await takeCell(tx, cell, userId, now);
   await tx
     .update(worldCells)
-    .set({ clearedAt: now, nestStartedAt: new Date(now.getTime() - NEST_BUILD_HOURS * HOUR) })
-    .where(eq(worldCells.cell, input.cell));
-  await tx.update(campResidents).set({ place: cellPlace(input.cell) }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, party.map((r) => r.id))));
-  await tx.insert(worldPlayers).values({ userId, open: true, homeCell: input.cell, openedAt: now, xpCountedTo: now });
-  await addEvent(tx, userId, now, "world", { opened: true, cell: input.cell, settlers: party.length });
+    .set({ clearedAt: now, nestStartedAt: row?.nestStartedAt ?? new Date(now.getTime() - NEST_BUILD_HOURS * HOUR) })
+    .where(eq(worldCells.cell, cell));
+}
+
+/**
+ * The camp moves to another cell (once every HOME_MOVE_DAYS): onto a free one, or one of its own. Those settled on the old
+ * camp cell walk home with it and that cell is given up; parties on the road come home to the new one.
+ */
+export async function moveHome(tx: Tx, userId: string, cell: string, now: Date) {
+  const camp = await lockCamp(tx, userId);
+  if (!camp) throw new WorldError(404, "no_camp", "這個帳號還沒有營地。");
+  await advanceWorld(tx, camp, now);
+  const player = await lockPlayer(tx, userId);
+  if (!player) throw new WorldError(403, "not_open", "還沒開啟大世界。");
+  if (player.homeCell === cell) throw new WorldError(400, "invalid_input", "營地已經在這一格了。");
+  const next = homeMoveAt(player);
+  if (next && next > now) throw new WorldError(409, "too_soon", `營地 ${HOME_MOVE_DAYS} 天只能搬一次，${next.toISOString()} 之後才能再搬。`);
+  const old = player.homeCell;
+  await standCampOn(tx, userId, cell, now);
+  // the old spot: its settlers come home with the camp, and it is nobody's any more
+  const there = await aliveAt(tx, userId, cellPlace(old));
+  if (there.length) await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, there.map((r) => r.id))));
+  const oldRow = await lockCell(tx, old);
+  if (oldRow?.owner === userId) await releaseCell(tx, old);
+  // the new spot's own settlers live at home now too (it is the camp)
+  const settled = await aliveAt(tx, userId, cellPlace(cell));
+  if (settled.length) await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, settled.map((r) => r.id))));
+  await tx.update(worldPlayers).set({ homeCell: cell, homeMovedAt: now }).where(eq(worldPlayers.userId, userId));
+  await addEvent(tx, userId, now, "world", { movedHome: { from: old, to: cell } });
   await bumpVersion(tx, camp);
+}
+
+/** When the camp may move again (null: it may now). */
+function homeMoveAt(player: Pick<PlayerRow, "homeMovedAt">): Date | null {
+  return player.homeMovedAt ? new Date(player.homeMovedAt.getTime() + HOME_MOVE_DAYS * DAY) : null;
 }
 
 // --- sending a party ----------------------------------------------------------------------------------------------
@@ -495,8 +548,8 @@ export async function sendExpedition(
     })
     .returning();
   await tx.update(campResidents).set({ place: walkingPlace(row!.id) }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, party.map((r) => r.id))));
-  // a cell left with nobody is given up
-  if (place !== "home" && available.length === party.length) await releaseCell(tx, input.from);
+  // a cell left with nobody is given up (not the camp's own: the camp stands there)
+  if (place !== "home" && input.from !== player.homeCell && available.length === party.length) await releaseCell(tx, input.from);
   await addEvent(tx, userId, now, "expedition", { id: row!.id, setOut: true, to: input.to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
   await bumpVersion(tx, camp);
   return summary(row!);
@@ -575,10 +628,10 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   const outcome = report.outcome!;
   const involved = [camp.userId];
 
-  /** The survivors stay on the cell (up to its room) or walk home. */
+  /** The survivors stay on the cell (up to its room) or walk home (onto the camp's own cell: they are home). */
   const placeSurvivors = async (survivors: ResidentRow[], stay: boolean) => {
     let staying: ResidentRow[] = [];
-    if (stay) {
+    if (stay && exp.toCell !== player?.homeCell) {
       const there = cell?.owner === camp.userId ? (await aliveAt(tx, camp.userId, cellPlace(exp.toCell))).length : 0;
       staying = survivors.slice(0, Math.max(0, cap - there));
       if (staying.length) {
@@ -610,9 +663,11 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     } else {
       involved.push(defenderCamp.userId);
       await advanceWorld(tx, defenderCamp, now);
-      const defenders = await aliveAt(tx, defenderCamp.userId, cellPlace(exp.toCell));
+      // (a camp's own cell is defended by everybody at home as well)
+      const campCell = defenderPlayer?.homeCell === exp.toCell;
+      const defenders = await dwellers(tx, defenderCamp.userId, exp.toCell, defenderPlayer?.homeCell ?? null);
       report.defender = await ownerOf(tx, defenderCamp.userId);
-      outcome.against = `${report.defender.name}的領地`;
+      outcome.against = `${report.defender.name}的${campCell ? "營地" : "領地"}`;
       const result = resolveExpedition({
         worldSeed: WORLD_SEED,
         expeditionId: exp.id,
@@ -644,7 +699,12 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       outcome.won = result.won;
       outcome.xp = result.xp.attacker;
       const survivors = party.filter((r) => !fallenA.has(String(r.id)));
-      if (result.won) {
+      if (result.won && campCell) {
+        // a camp cannot be taken, only beaten: the attackers walk home and the beaten camp turtles
+        await placeSurvivors(survivors, false);
+        outcome.cell = "cleared";
+        await shield(tx, defenderCamp.userId, now);
+      } else if (result.won) {
         await releaseCell(tx, exp.toCell);
         const stayed = exp.settle && result.canSettle ? await placeSurvivors(survivors, true) : await placeSurvivors(survivors, false);
         outcome.cell = stayed ? "taken" : "cleared";
@@ -855,6 +915,7 @@ export async function recall(tx: Tx, userId: string, cell: string, count: number
   const { camp } = await ownCell(tx, userId, cell);
   await advanceWorld(tx, camp, now);
   await ownedRow(tx, userId, cell);
+  if ((await homeCellOf(tx, userId)) === cell) throw new WorldError(409, "camp_cell", "營地那一格不能放棄；要換地方請用「搬營地」。");
   const there = await aliveAt(tx, userId, cellPlace(cell));
   const all = count === undefined || there.length - count < garrisonMin(camp.race);
   const going = all ? there : pickParty(camp.race, there, undefined, count, false);
@@ -896,6 +957,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
     shielded: !!player?.shieldedSince,
     homeCell: player?.homeCell ?? null,
     home: player ? cellCenter(player.homeCell) : null,
+    homeMoveAt: player ? (homeMoveAt(player)?.toISOString() ?? null) : null,
     xp,
     level,
     nextLevelXp: xpForLevel(level + 1),
@@ -958,7 +1020,7 @@ async function bossesNear(tx: Tx, home: string, now: Date): Promise<WorldMe["bos
     .slice(0, 3);
 }
 
-/** How many live on each cell, and whose they are. */
+/** How many live on each cell (on a camp's own cell, everybody at home as well). */
 async function garrisons(tx: Tx, cells: string[]): Promise<Map<string, { n: number }>> {
   if (cells.length === 0) return new Map();
   const rows = await tx
@@ -966,7 +1028,18 @@ async function garrisons(tx: Tx, cells: string[]): Promise<Map<string, { n: numb
     .from(campResidents)
     .where(and(inArray(campResidents.place, cells.map(cellPlace)), isNull(campResidents.diedAt)))
     .groupBy(campResidents.place);
-  return new Map(rows.map((r) => [r.place.slice(5), { n: r.n }]));
+  const out = new Map(rows.map((r) => [r.place.slice(5), { n: r.n }]));
+  const camps = await tx.select({ userId: worldPlayers.userId, cell: worldPlayers.homeCell }).from(worldPlayers).where(inArray(worldPlayers.homeCell, cells));
+  if (camps.length) {
+    const home = await tx
+      .select({ userId: campResidents.userId, n: sql<number>`count(*)::int` })
+      .from(campResidents)
+      .where(and(inArray(campResidents.userId, camps.map((c) => c.userId)), eq(campResidents.place, "home"), isNull(campResidents.diedAt)))
+      .groupBy(campResidents.userId);
+    const byUser = new Map(home.map((h) => [h.userId, h.n]));
+    for (const c of camps) out.set(c.cell, { n: (out.get(c.cell)?.n ?? 0) + (byUser.get(c.userId) ?? 0) });
+  }
+  return out;
 }
 
 export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date): Promise<CellView[]> {

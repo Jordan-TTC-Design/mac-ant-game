@@ -15,13 +15,17 @@ const cell = z.string().refine(isCellId, "not a cell id");
 const residentIds = z.array(z.number().int().min(1)).min(1).max(60);
 
 /**
- * `POST /api/world/open`: open the big world. The first time, pick the camp's cell on the map and how many residents move
- * there to hold it; after a defeat (turtling), open again with no body to end the protection.
+ * `POST /api/world/open`: open the big world. The first time, pick where the camp stands on the map (the whole camp is
+ * there: nobody has to be sent); after a defeat (turtling), open again with no body to end the protection.
+ * (`settlers` is what older devices send; it is not used any more.)
  */
 export const openWorldInput = z.object({
   cell: cell.optional(),
   settlers: z.number().int().min(1).max(100).optional(),
 });
+
+/** How often the camp may move to another cell (`POST /api/world/cells/:cell/home`). */
+export const HOME_MOVE_DAYS = 7;
 
 /**
  * `POST /api/world/expeditions`: a party walks from home (or a held cell) to a cell. Onto a cell of your own they move in;
@@ -145,8 +149,11 @@ export interface WorldMe {
   unlockPeak: number;
   peak: number;
   shielded: boolean;
+  /** Where the camp stands: everybody at home lives and defends there. */
   homeCell: string | null;
   home: { lat: number; lng: number } | null;
+  /** When the camp may move again (null: now). */
+  homeMoveAt: string | null;
   xp: number;
   level: number;
   nextLevelXp: number;

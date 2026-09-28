@@ -69,7 +69,10 @@ export function useWorld() {
     close,
     refresh,
     moveTo: (center: { lat: number; lng: number }) => loadCells(center).catch(() => {}),
-    openWorld: (cell?: string, settlers?: number) => act(() => api("POST", "world/open", cell ? { cell, settlers } : {})),
+    /** The first time: where the camp stands (nobody is sent; the whole camp is there). */
+    openWorld: (cell?: string) => act(() => api("POST", "world/open", cell ? { cell } : {})),
+    /** The camp moves to another cell (once a week). */
+    moveHome: (cell: string) => act(() => api("POST", `world/cells/${cell}/home`, {})),
     /** A party: named residents, or a count (the server picks the strongest). */
     send: (to: string, party: number | number[], settle: boolean, from = "home") =>
       act(() => api<ExpeditionSummary>("POST", "world/expeditions", { from, to, settle, ...(Array.isArray(party) ? { residents: party } : { count: party }) })),

@@ -1,0 +1,1 @@
+ALTER TABLE "world_players" ADD COLUMN "home_moved_at" timestamp (3) with time zone;

@@ -85,6 +85,13 @@
       "when": 1790565031919,
       "tag": "0011_note_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790602731249,
+      "tag": "0012_home_move",
+      "breakpoints": true
     }
   ]
 }

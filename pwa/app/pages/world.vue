@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellCenter, FOES, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellCenter, FOES, HOME_MOVE_DAYS, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 
 // 大世界: the real map with the lairs and camps on it. Tapping a cell brings up a card from the bottom (what is there, and
@@ -71,7 +71,6 @@ const mine = computed(() => !!cell.value?.owner && cell.value.owner.id === myId.
 const myCell = computed(() => s.me?.cells.find((c) => c.cell === selected.value) ?? null);
 const message = ref("");
 const busy = ref(false);
-const settlers = ref(10);
 const spare = computed(() => Math.max(0, (s.me?.atHome ?? 0) - 2));
 function pick(c: string) {
   selected.value = c;
@@ -85,7 +84,33 @@ async function doIt(work: () => Promise<string | null>, done: string) {
   busy.value = false;
   message.value = problem ?? done;
 }
-const openHere = () => doIt(() => world.openWorld(selected.value!, settlers.value), "大世界開啟了！居民搬過去了。");
+/** A name for the cell picked, for the questions below: the nearest suggested place, or its ground. */
+const placeName = computed(() => {
+  const c = cell.value;
+  if (!c) return "";
+  const near = nearby.value?.find((p) => Math.hypot((p.lat - c.lat) * 110_574, (p.lng - c.lng) * 100_000) < 250);
+  return near?.name ?? TERRAIN_NAMES[c.terrain];
+});
+/** The camp's place is asked twice, in the card itself (the Mac's window shows no browser dialogs): tap, then 確定. */
+const asking = ref<"open" | "move" | null>(null);
+watch(selected, () => (asking.value = null));
+const openHere = () => {
+  asking.value = null;
+  void doIt(() => world.openWorld(selected.value!), "大世界開啟了！營地就在這一格。");
+};
+const isHome = computed(() => !!cell.value && cell.value.cell === s.me?.homeCell);
+/** When the camp may move again, as words (null: it may now). */
+const moveWait = computed(() => {
+  const at = s.me?.homeMoveAt ? Date.parse(s.me.homeMoveAt) : 0;
+  if (at <= now.value) return null;
+  const h = Math.ceil((at - now.value) / 3_600_000);
+  return h >= 24 ? `${Math.ceil(h / 24)} 天後` : `${h} 小時後`;
+});
+const canMoveHere = computed(() => !!s.me?.homeCell && !!cell.value && !isHome.value && !cell.value.boss && (!cell.value.owner || mine.value));
+const moveHere = () => {
+  asking.value = null;
+  void doIt(() => world.moveHome(selected.value!), "營地搬過來了！");
+};
 const openAgain = () => doIt(() => world.openWorld(), "重新開啟了大世界。");
 const nest = () => doIt(() => world.nest(selected.value!), "開始蓋繁殖巢了（2 小時）。");
 const town = () => doIt(() => world.town(selected.value!), "蓋了城鎮！");
@@ -162,8 +187,8 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
         <p class="muted">先看看附近有什麼：拖動地圖，點格子看看。</p>
       </section>
       <section v-else-if="!s.me.homeCell" class="panel intro">
-        <h2>選第一格領地</h2>
-        <p>地圖是真實世界：點一格，派居民搬過去住，那裡就是你在大世界的營地。<b>請選公園、地標這類公開的地方，不要選自己家。</b></p>
+        <h2>先選營地的位置</h2>
+        <p>地圖是真實世界：點一格，把你的營地放在那裡——整個營地都在那一格，不用派人。之後再從營地出發去打怪、佔地。<b>請選公園、地標這類公開的地方，不要選自己家。</b></p>
       </section>
       <section v-else-if="!s.me.open" class="panel intro">
         <h2>龜縮中</h2>
@@ -262,7 +287,8 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
         <p class="muted">{{ cell.boss.hp }} / {{ cell.boss.maxHp }} 血・{{ hoursLeft(cell.boss.endsAt) }}後離開。牠的傷會留著，大家一起打。</p>
       </template>
       <template v-else-if="mine">
-        <p>住了 <b>{{ cell.garrison }}</b> 隻・{{ cell.cell === s.me.homeCell ? "營地本身就會生居民" : { none: "還沒有繁殖巢（不會自己生居民）", building: "繁殖巢蓋到一半", ready: "有繁殖巢，會自己生居民" }[cell.nest] }}{{ cell.town ? "・城鎮" : "" }}</p>
+        <p v-if="isHome">營地就在這裡：在家的 <b>{{ cell.garrison }}</b> 隻都住這、守這，營地本身就會生居民{{ cell.town ? "・城鎮" : "" }}</p>
+        <p v-else>住了 <b>{{ cell.garrison }}</b> 隻・{{ { none: "還沒有繁殖巢（不會自己生居民）", building: "繁殖巢蓋到一半", ready: "有繁殖巢，會自己生居民" }[cell.nest] }}{{ cell.town ? "・城鎮" : "" }}</p>
         <p class="muted small">每 3 小時產出：{{ (TERRAIN_YIELD[cell.terrain] ?? []).map((y) => materialName(y.id)).join("、") }}{{ myCell ? `・下次 ${noteTime(myCell.nextYieldAt)}` : "" }}</p>
       </template>
       <p v-else-if="cell.owner" class="muted">住了 {{ cell.garrison }} 隻</p>
@@ -272,23 +298,36 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
       <!-- what can be done -->
       <div class="actions">
         <template v-if="!s.me.homeCell">
-          <template v-if="s.me.canOpen && !cell.owner">
-            <label class="row">搬過去 <input v-model.number="settlers" type="range" :min="s.me.rules.garrisonMin" :max="Math.min(s.me.rules.cellCapacity, spare)" /> <b>{{ settlers }}</b> 隻</label>
-            <button class="btn primary wide" :disabled="busy" @click="openHere">在這裡建立營地</button>
+          <template v-if="s.me.canOpen && !cell.owner && !cell.boss">
+            <p v-if="cell.lair" class="muted small wide">營地放下來，這裡的{{ cell.lair.name }}就會被趕走。</p>
+            <div v-if="asking === 'open'" class="ask wide">
+              <p>把營地放在「<b>{{ placeName }}</b>」這一格？整個營地都在這裡（在家的 {{ s.me.atHome }} 隻都住這、守這），之後 {{ HOME_MOVE_DAYS }} 天可以搬一次。</p>
+              <button class="btn primary" :disabled="busy" @click="openHere">確定</button>
+              <button class="btn" @click="asking = null">再想想</button>
+            </div>
+            <button v-else class="btn primary wide" :disabled="busy" @click="asking = 'open'">把營地放在這裡</button>
           </template>
         </template>
         <template v-else-if="mine">
-          <button class="btn primary" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
-          <button v-if="cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
+          <button v-if="!isHome" class="btn primary" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
+          <button v-if="!isHome && cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
           <button v-if="!cell.town && s.me.cells.length >= s.me.rules.townMinCells" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
-          <button v-if="cell.cell !== s.me.homeCell" class="btn" :disabled="busy" @click="recall">撤回</button>
+          <button v-if="!isHome" class="btn" :disabled="busy" @click="recall">撤回</button>
+          <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>
         </template>
         <template v-else>
           <button v-if="cell.boss || cell.lair || cell.owner" class="btn primary" :disabled="!canAct" @click="dispatch = 'attack'">{{ cell.boss ? "攻擊魔王" : "攻擊" }}</button>
           <button v-else class="btn primary" :disabled="!canAct" @click="dispatch = 'settle'">派人佔領</button>
+          <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>
         </template>
       </div>
-      <p v-if="mine && cell.nest === 'none'" class="muted small">佔領只是派人去住，那一格不會自己長人。蓋繁殖巢（{{ costList(s.me.rules.nestCost) }}，{{ s.me.rules.nestHours }} 小時蓋好）之後，這一格每 {{ s.me.rules.nestBirthMinutes }} 分鐘生一隻，不用一直從營地派人補。</p>
+      <div v-if="asking === 'move'" class="ask">
+        <p>把營地搬到「<b>{{ placeName }}</b>」？{{ HOME_MOVE_DAYS }} 天只能搬一次。{{ cell.lair ? `這裡的${cell.lair.name}會被趕走。` : "" }}原本那一格就不是你的了（住在那的會跟著回營地）。</p>
+        <button class="btn primary" :disabled="busy" @click="moveHere">確定搬過來</button>
+        <button class="btn" @click="asking = null">再想想</button>
+      </div>
+      <p v-if="canMoveHere && moveWait" class="muted small">營地 {{ HOME_MOVE_DAYS }} 天只能搬一次，{{ moveWait }}可以再搬。</p>
+      <p v-if="mine && !isHome && cell.nest === 'none'" class="muted small">佔領只是派人去住，那一格不會自己長人。蓋繁殖巢（{{ costList(s.me.rules.nestCost) }}，{{ s.me.rules.nestHours }} 小時蓋好）之後，這一格每 {{ s.me.rules.nestBirthMinutes }} 分鐘生一隻，不用一直從營地派人補。</p>
       <p v-if="message" class="status">{{ message }}</p>
     </aside>
 
@@ -353,6 +392,8 @@ p { margin: 6px 0; line-height: 1.55; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .actions .btn { flex: 1; min-height: 44px; }
 .actions .wide { flex-basis: 100%; }
+.ask { background: #f6efd4; border: 2px solid #1f1f1f; border-radius: 12px; padding: 10px 12px; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ask p { flex-basis: 100%; margin: 0; font-size: 14px; line-height: 1.5; }
 .row { display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 600; }
 .row input { flex: 1; min-width: 0; }
 </style>
