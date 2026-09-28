@@ -23,7 +23,7 @@ afterAll(async () => {
 const ids = { a: "aaaaaaaa-0000-4000-8000-000000000001", b: "aaaaaaaa-0000-4000-8000-000000000002" };
 
 function fields(over: Partial<NoteFields> = {}): NoteFields {
-  return { text: "買咖啡豆", color: "yellow", breed: "common", goblinName: "咔噗", dueAt: null, remindAt: null, remindFired: false, done: false, deleted: false, ...over };
+  return { text: "買咖啡豆", color: "yellow", breed: "common", goblinName: "咔噗", dueAt: null, remindAt: null, remindFired: false, done: false, deleted: false, kind: "todo", desk: true, ...over };
 }
 
 /** Signs up and logs in two Macs of the same person. */
@@ -50,6 +50,17 @@ describe("同步", () => {
     expect(pulled.body.notes).toHaveLength(1);
     expect(pulled.body.seq).toBe(made!.note!.seq);
     expect((await t.call("GET", `/notes/changes?since=${pulled.body.seq}`, undefined, two)).body.notes).toHaveLength(0);
+  });
+
+  it("keeps a memo as a memo off the desktop, and takes a note from a Mac that knows nothing of kinds as a todo", async () => {
+    const { one, two } = await twoMacs();
+    const [memo] = await push(one, { id: ids.a, baseSeq: 0, fields: fields({ text: "後台 https://example.com", kind: "memo", desk: false }) });
+    expect(memo!.note).toMatchObject({ kind: "memo", desk: false });
+    // (a Mac 0.9 sends every field it knows, and nothing else)
+    const { kind: _k, desk: _d, ...old } = fields({ text: "舊的 Mac 寫的" });
+    const [plain] = await push(two, { id: ids.b, baseSeq: 0, fields: old });
+    expect(plain!.status).toBe("applied");
+    expect(plain!.note).toMatchObject({ kind: "todo", desk: true });
   });
 
   it("keeps times exactly (any time zone in, UTC out)", async () => {

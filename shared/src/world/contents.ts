@@ -8,7 +8,7 @@ import type { CellId } from "./grid.ts";
 import { between, pickWeighted, seeded, type Random } from "./random.ts";
 
 /** What the real map (OpenStreetMap) says a cell mostly is. Unknown cells count as open land. */
-export type Terrain = "forest" | "park" | "water" | "urban" | "open";
+export type Terrain = "forest" | "park" | "water" | "urban" | "open" | "road";
 
 export type Faction = "monster" | "beast" | "barbarian" | "dark" | "town";
 
@@ -45,7 +45,15 @@ export interface LairKind {
   respawnHours: number;
   /** Levels it comes in. */
   levels: [number, number];
+  /** 1 新手, 2 中級, 3 高級: only tiers up to OPEN_TIERS turn up (the world opens up bit by bit, as in RO or MapleStory). */
+  tier: 1 | 2 | 3;
 }
+
+/**
+ * The tiers of lairs out in the world now. For a start (2026-09-28) only the beginners' ones: lots of different small
+ * monsters of low levels everywhere; the tougher ones (the dark crypts, trolls, golems, enemy towns…) come later.
+ */
+export const OPEN_TIERS = 1;
 
 export const FOES: Record<string, FoeTemplate> = {
   slime: { id: "slime", name: "史萊姆", hp: 18, attack: 3, range: 0, speed: 0.6, row: "front" },
@@ -68,6 +76,49 @@ export const FOES: Record<string, FoeTemplate> = {
   guard: { id: "guard", name: "城鎮守衛", hp: 40, attack: 8, range: 0, speed: 1.0, row: "front" },
   crossbow: { id: "crossbow", name: "弩手", hp: 24, attack: 9, range: 50, speed: 0.9, row: "back" },
   captain: { id: "captain", name: "守備隊長", hp: 80, attack: 12, range: 0, speed: 1.0, row: "front" },
+  // 2026-09-28: every kind of place has its own (forest spiders and old trees, water folk, the town's underside, bees in the open)
+  giant_spider: { id: "giant_spider", name: "巨蜘蛛", hp: 20, attack: 6, range: 0, speed: 1.3, row: "front" },
+  spider_queen: { id: "spider_queen", name: "蜘蛛女王", hp: 60, attack: 8, range: 25, speed: 0.9, row: "back" },
+  treant: { id: "treant", name: "樹精", hp: 120, attack: 10, range: 0, speed: 0.4, row: "front" },
+  mushroom_folk: { id: "mushroom_folk", name: "蘑菇人", hp: 24, attack: 4, range: 0, speed: 0.7, row: "front" },
+  spore_mother: { id: "spore_mother", name: "孢子母", hp: 30, attack: 2, range: 25, speed: 0.6, row: "back", heal: 7 },
+  kappa: { id: "kappa", name: "河童", hp: 30, attack: 7, range: 0, speed: 1.0, row: "front" },
+  water_snake: { id: "water_snake", name: "水蛇", hp: 16, attack: 6, range: 0, speed: 1.6, row: "front" },
+  naiad: { id: "naiad", name: "水妖", hp: 22, attack: 5, range: 35, speed: 1.0, row: "back", heal: 5 },
+  giant_crab: { id: "giant_crab", name: "巨蟹", hp: 55, attack: 7, range: 0, speed: 0.6, row: "front" },
+  rat_king: { id: "rat_king", name: "鼠王", hp: 45, attack: 8, range: 0, speed: 1.1, row: "front" },
+  bandit: { id: "bandit", name: "盜賊", hp: 26, attack: 7, range: 0, speed: 1.2, row: "front" },
+  knife_thrower: { id: "knife_thrower", name: "飛刀手", hp: 18, attack: 7, range: 35, speed: 1.1, row: "back" },
+  bandit_boss: { id: "bandit_boss", name: "盜賊頭目", hp: 70, attack: 11, range: 0, speed: 1.0, row: "front" },
+  gargoyle: { id: "gargoyle", name: "石像鬼", hp: 45, attack: 8, range: 0, speed: 1.1, row: "front", night: 1.4 },
+  killer_bee: { id: "killer_bee", name: "殺人蜂", hp: 7, attack: 4, range: 0, speed: 1.8, row: "front" },
+  queen_bee: { id: "queen_bee", name: "蜂后", hp: 40, attack: 5, range: 20, speed: 0.8, row: "back", heal: 4 },
+  stone_golem: { id: "stone_golem", name: "石像巨人", hp: 180, attack: 16, range: 0, speed: 0.5, row: "front" },
+  vampire_bat: { id: "vampire_bat", name: "吸血蝙蝠", hp: 20, attack: 7, range: 0, speed: 1.7, row: "front", night: 1.5 },
+  // 2026-09-28: the beginners' crowd (small, weak, many kinds), as a world starts in RO or MapleStory
+  rabbit: { id: "rabbit", name: "野兔", hp: 10, attack: 2, range: 0, speed: 1.4, row: "front" },
+  snail: { id: "snail", name: "蝸牛", hp: 14, attack: 2, range: 0, speed: 0.4, row: "front" },
+  caterpillar: { id: "caterpillar", name: "毛毛蟲", hp: 12, attack: 2, range: 0, speed: 0.5, row: "front" },
+  beetle: { id: "beetle", name: "甲蟲", hp: 16, attack: 3, range: 0, speed: 0.8, row: "front" },
+  crow: { id: "crow", name: "烏鴉", hp: 8, attack: 3, range: 0, speed: 1.6, row: "front" },
+  pigeon: { id: "pigeon", name: "野鴿", hp: 6, attack: 1, range: 0, speed: 1.5, row: "front" },
+  squirrel: { id: "squirrel", name: "松鼠", hp: 8, attack: 2, range: 0, speed: 1.7, row: "front" },
+  hedgehog: { id: "hedgehog", name: "刺蝟", hp: 14, attack: 3, range: 0, speed: 0.7, row: "front" },
+  goose: { id: "goose", name: "野鵝", hp: 14, attack: 3, range: 0, speed: 1.0, row: "front" },
+  fox: { id: "fox", name: "狐狸", hp: 14, attack: 4, range: 0, speed: 1.4, row: "front" },
+  // by the roads: people who rob travellers, and the orcs' patrols
+  robber: { id: "robber", name: "攔路強盜", hp: 16, attack: 4, range: 0, speed: 1.1, row: "front" },
+  orc_grunt: { id: "orc_grunt", name: "強獸人步兵", hp: 30, attack: 6, range: 0, speed: 0.9, row: "front" },
+  orc_archer: { id: "orc_archer", name: "強獸人弓手", hp: 20, attack: 5, range: 35, speed: 0.9, row: "back" },
+  orc_chief: { id: "orc_chief", name: "強獸人隊長", hp: 80, attack: 12, range: 0, speed: 1.0, row: "front" },
+  // the world's great monsters (bosses.ts): their wounds stay between fights, so it takes several full parties (one of 60
+  // does about 6000 in the BOSS_ROUNDS it gets)
+  ancient_dragon: { id: "ancient_dragon", name: "古龍", hp: 9000, attack: 26, range: 30, speed: 0.9, row: "front" },
+  lich_king: { id: "lich_king", name: "巫妖王", hp: 7000, attack: 20, range: 40, speed: 0.8, row: "back", heal: 60, night: 1.3 },
+  hill_giant: { id: "hill_giant", name: "山丘巨人", hp: 11000, attack: 28, range: 0, speed: 0.5, row: "front" },
+  hydra: { id: "hydra", name: "九頭蛇", hp: 8500, attack: 16, range: 0, speed: 1.2, row: "front" },
+  minotaur: { id: "minotaur", name: "牛頭人", hp: 7500, attack: 30, range: 0, speed: 1.0, row: "front" },
+  drake: { id: "drake", name: "小飛龍", hp: 60, attack: 10, range: 0, speed: 1.4, row: "front" },
 };
 
 const SCRAP = [
@@ -81,57 +132,192 @@ export const LAIRS: LairKind[] = [
     id: "slime_pit", name: "史萊姆坑", faction: "monster", group: [3, 6],
     members: [{ foe: "slime", weight: 5 }, { foe: "big_slime", weight: 1 }],
     terrain: { park: 3, forest: 2, open: 3, water: 2, urban: 1 },
-    loot: [...SCRAP, { id: "crystal_shard", min: 1, max: 1, chance: 0.05 }], respawnHours: 6, levels: [1, 3],
+    loot: [...SCRAP, { id: "crystal_shard", min: 1, max: 1, chance: 0.05 }], respawnHours: 6, levels: [1, 3], tier: 1,
   },
   {
     id: "wolf_den", name: "野狼窩", faction: "beast", group: [3, 5],
     members: [{ foe: "wolf", weight: 6 }, { foe: "alpha_wolf", weight: 1 }],
     terrain: { forest: 4, park: 3, open: 1 },
-    loot: [{ id: "scrap_rag", min: 2, max: 4, chance: 0.8 }], respawnHours: 8, levels: [1, 4],
+    loot: [{ id: "scrap_rag", min: 2, max: 4, chance: 0.8 }], respawnHours: 8, levels: [1, 3], tier: 1,
   },
   {
     id: "bear_cave", name: "洞穴熊", faction: "beast", group: [1, 1],
     members: [{ foe: "bear", weight: 1 }],
     terrain: { forest: 2, park: 1 },
-    loot: [{ id: "scrap_rag", min: 3, max: 5, chance: 1 }], respawnHours: 12, levels: [2, 5],
+    loot: [{ id: "scrap_rag", min: 3, max: 5, chance: 1 }], respawnHours: 12, levels: [2, 5], tier: 2,
   },
   {
     id: "boar_thicket", name: "野豬林", faction: "beast", group: [2, 4],
     members: [{ foe: "boar", weight: 1 }],
     terrain: { forest: 2, park: 2, open: 2 },
-    loot: [{ id: "scrap_rag", min: 1, max: 3, chance: 0.8 }], respawnHours: 6, levels: [1, 3],
+    loot: [{ id: "scrap_rag", min: 1, max: 3, chance: 0.8 }], respawnHours: 6, levels: [1, 3], tier: 1,
   },
   {
     id: "barbarian_camp", name: "野蠻人營地", faction: "barbarian", group: [4, 8],
     members: [{ foe: "barbarian", weight: 5 }, { foe: "barbarian_archer", weight: 3 }, { foe: "shaman", weight: 1 }],
     terrain: { open: 3, urban: 3, park: 1 },
-    loot: [...SCRAP, { id: "scrap_iron", min: 2, max: 5, chance: 0.8 }], respawnHours: 12, levels: [2, 6],
+    loot: [...SCRAP, { id: "scrap_iron", min: 2, max: 5, chance: 0.8 }], respawnHours: 12, levels: [2, 6], tier: 2,
   },
   {
     id: "crypt", name: "黑暗墓穴", faction: "dark", group: [3, 7],
     members: [{ foe: "skeleton", weight: 5 }, { foe: "wraith", weight: 2 }, { foe: "bone_knight", weight: 1 }],
     terrain: { urban: 2, open: 1, park: 1, forest: 1 },
     loot: [{ id: "scrap_iron", min: 1, max: 3, chance: 0.7 }, { id: "crystal_shard", min: 1, max: 1, chance: 0.15 }],
-    respawnHours: 12, levels: [3, 7],
+    respawnHours: 12, levels: [3, 7], tier: 3,
   },
   {
     id: "troll_bridge", name: "巨魔橋", faction: "monster", group: [1, 1],
     members: [{ foe: "troll", weight: 1 }],
     terrain: { water: 3 },
     loot: [{ id: "scrap_iron", min: 3, max: 6, chance: 1 }, { id: "crystal_shard", min: 1, max: 2, chance: 0.3 }],
-    respawnHours: 24, levels: [4, 8],
+    respawnHours: 24, levels: [4, 8], tier: 3,
   },
   {
     id: "enemy_town", name: "敵人城鎮", faction: "town", group: [8, 14],
     members: [{ foe: "guard", weight: 5 }, { foe: "crossbow", weight: 3 }, { foe: "captain", weight: 1 }],
     terrain: { urban: 1 },
     loot: [...SCRAP.map((s) => ({ ...s, min: s.min * 3, max: s.max * 3, chance: 1 })), { id: "crystal_shard", min: 1, max: 3, chance: 0.5 }],
-    respawnHours: 48, levels: [5, 10],
+    respawnHours: 48, levels: [5, 10], tier: 3,
+  },
+  // 2026-09-28: more lairs, so each kind of place has its own
+  {
+    id: "spider_nest", name: "蜘蛛巢", faction: "beast", group: [3, 6],
+    members: [{ foe: "giant_spider", weight: 6 }, { foe: "spider_queen", weight: 1 }],
+    terrain: { forest: 3, park: 1 },
+    loot: [...SCRAP], respawnHours: 8, levels: [1, 5], tier: 2,
+  },
+  {
+    id: "treant_grove", name: "古樹林", faction: "monster", group: [1, 2],
+    members: [{ foe: "treant", weight: 1 }],
+    terrain: { forest: 2 },
+    loot: [{ id: "scrap_wood", min: 4, max: 8, chance: 1 }], respawnHours: 16, levels: [3, 7], tier: 2,
+  },
+  {
+    id: "mushroom_ring", name: "蘑菇圈", faction: "monster", group: [3, 6],
+    members: [{ foe: "mushroom_folk", weight: 4 }, { foe: "spore_mother", weight: 1 }],
+    terrain: { forest: 2, park: 2 },
+    loot: [...SCRAP], respawnHours: 6, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "kappa_pond", name: "河童池", faction: "monster", group: [2, 5],
+    members: [{ foe: "kappa", weight: 3 }, { foe: "water_snake", weight: 3 }, { foe: "naiad", weight: 1 }],
+    terrain: { water: 3, park: 1 },
+    loot: [...SCRAP], respawnHours: 8, levels: [2, 6], tier: 2,
+  },
+  {
+    id: "crab_shore", name: "巨蟹灘", faction: "beast", group: [2, 4],
+    members: [{ foe: "giant_crab", weight: 1 }],
+    terrain: { water: 2 },
+    loot: [{ id: "scrap_iron", min: 1, max: 3, chance: 0.6 }], respawnHours: 8, levels: [2, 5], tier: 2,
+  },
+  {
+    id: "frog_marsh", name: "巨蛙沼澤", faction: "beast", group: [3, 6],
+    members: [{ foe: "frog", weight: 4 }, { foe: "water_snake", weight: 1 }],
+    terrain: { water: 2, park: 1 },
+    loot: [...SCRAP], respawnHours: 6, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "sewer_warren", name: "下水道鼠窩", faction: "beast", group: [4, 8],
+    members: [{ foe: "giant_rat", weight: 8 }, { foe: "rat_king", weight: 1 }],
+    terrain: { urban: 3 },
+    loot: [...SCRAP], respawnHours: 6, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "bandit_hideout", name: "盜賊窩", faction: "barbarian", group: [3, 7],
+    members: [{ foe: "bandit", weight: 4 }, { foe: "knife_thrower", weight: 2 }, { foe: "bandit_boss", weight: 1 }],
+    terrain: { urban: 2, open: 1 },
+    loot: [...SCRAP, { id: "scrap_iron", min: 1, max: 4, chance: 0.7 }], respawnHours: 12, levels: [2, 6], tier: 2,
+  },
+  {
+    id: "gargoyle_roost", name: "石像鬼塔", faction: "dark", group: [2, 4],
+    members: [{ foe: "gargoyle", weight: 1 }],
+    terrain: { urban: 1 },
+    loot: [{ id: "crystal_shard", min: 1, max: 1, chance: 0.35 }], respawnHours: 16, levels: [3, 7], tier: 3,
+  },
+  {
+    id: "bat_cave", name: "蝙蝠洞", faction: "dark", group: [4, 8],
+    members: [{ foe: "bat", weight: 5 }, { foe: "vampire_bat", weight: 2 }],
+    terrain: { forest: 1, urban: 1, open: 1 },
+    loot: [...SCRAP], respawnHours: 8, levels: [1, 5], tier: 2,
+  },
+  {
+    id: "bee_hive", name: "殺人蜂巢", faction: "beast", group: [5, 9],
+    members: [{ foe: "killer_bee", weight: 8 }, { foe: "queen_bee", weight: 1 }],
+    terrain: { open: 2, park: 2, forest: 1 },
+    loot: [{ id: "scrap_rag", min: 1, max: 2, chance: 0.5 }], respawnHours: 6, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "golem_ruins", name: "石像遺跡", faction: "monster", group: [1, 1],
+    members: [{ foe: "stone_golem", weight: 1 }],
+    terrain: { open: 1, urban: 1 },
+    loot: [{ id: "scrap_iron", min: 3, max: 6, chance: 1 }, { id: "crystal_shard", min: 1, max: 2, chance: 0.5 }], respawnHours: 24, levels: [5, 9], tier: 3,
+  },
+  // the beginners' lairs (2026-09-28)
+  {
+    id: "rabbit_warren", name: "野兔窩", faction: "beast", group: [3, 6],
+    members: [{ foe: "rabbit", weight: 1 }],
+    terrain: { park: 3, open: 3, forest: 1 },
+    loot: [{ id: "scrap_rag", min: 1, max: 2, chance: 0.5 }], respawnHours: 4, levels: [1, 2], tier: 1,
+  },
+  {
+    id: "snail_patch", name: "蝸牛草叢", faction: "beast", group: [3, 6],
+    members: [{ foe: "snail", weight: 3 }, { foe: "caterpillar", weight: 2 }],
+    terrain: { park: 2, forest: 2, water: 1 },
+    loot: [{ id: "scrap_rag", min: 1, max: 2, chance: 0.4 }], respawnHours: 4, levels: [1, 2], tier: 1,
+  },
+  {
+    id: "beetle_log", name: "甲蟲朽木", faction: "beast", group: [2, 5],
+    members: [{ foe: "beetle", weight: 3 }, { foe: "caterpillar", weight: 1 }],
+    terrain: { forest: 3, park: 1 },
+    loot: [{ id: "scrap_wood", min: 1, max: 3, chance: 0.8 }], respawnHours: 5, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "crow_roost", name: "烏鴉樹", faction: "beast", group: [3, 7],
+    members: [{ foe: "crow", weight: 2 }, { foe: "pigeon", weight: 3 }],
+    terrain: { urban: 3, park: 2, open: 1 },
+    loot: [{ id: "scrap_rag", min: 1, max: 2, chance: 0.5 }, { id: "scrap_iron", min: 1, max: 1, chance: 0.3 }], respawnHours: 4, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "squirrel_grove", name: "松鼠林", faction: "beast", group: [3, 6],
+    members: [{ foe: "squirrel", weight: 3 }, { foe: "hedgehog", weight: 1 }],
+    terrain: { park: 3, forest: 2 },
+    loot: [{ id: "scrap_wood", min: 1, max: 2, chance: 0.6 }], respawnHours: 4, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "goose_pond", name: "野鵝池", faction: "beast", group: [2, 5],
+    members: [{ foe: "goose", weight: 1 }],
+    terrain: { water: 3, park: 1 },
+    loot: [{ id: "scrap_rag", min: 1, max: 2, chance: 0.5 }], respawnHours: 5, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "fox_den", name: "狐狸洞", faction: "beast", group: [1, 3],
+    members: [{ foe: "fox", weight: 1 }],
+    terrain: { forest: 2, open: 1, park: 1 },
+    loot: [{ id: "scrap_rag", min: 1, max: 3, chance: 0.7 }], respawnHours: 6, levels: [1, 3], tier: 1,
+  },
+  // by the big roads (the real map's, OpenStreetMap)
+  {
+    id: "highway_robbers", name: "攔路強盜", faction: "barbarian", group: [2, 5],
+    members: [{ foe: "robber", weight: 4 }, { foe: "bandit", weight: 1 }],
+    terrain: { road: 3 },
+    loot: [{ id: "scrap_rag", min: 1, max: 3, chance: 0.7 }, { id: "stolen_coin", min: 1, max: 2, chance: 0.5 }], respawnHours: 5, levels: [1, 3], tier: 1,
+  },
+  {
+    id: "orc_patrol", name: "強獸人巡邏隊", faction: "barbarian", group: [3, 5],
+    members: [{ foe: "orc_grunt", weight: 3 }, { foe: "orc_archer", weight: 1 }],
+    terrain: { road: 2, open: 1 },
+    loot: [...SCRAP], respawnHours: 6, levels: [2, 3], tier: 1,
+  },
+  {
+    id: "orc_warband", name: "強獸人軍團", faction: "barbarian", group: [8, 14],
+    members: [{ foe: "orc_grunt", weight: 6 }, { foe: "orc_archer", weight: 3 }, { foe: "orc_chief", weight: 1 }],
+    terrain: { road: 1, open: 1 },
+    loot: [...SCRAP.map((x) => ({ ...x, min: x.min * 2, max: x.max * 2 }))], respawnHours: 12, levels: [3, 7], tier: 2,
   },
 ];
 
 /** How likely a free cell is to hold anything at all, by terrain. */
-const OCCUPIED: Record<Terrain, number> = { forest: 0.45, park: 0.4, water: 0.2, urban: 0.35, open: 0.3 };
+const OCCUPIED: Record<Terrain, number> = { forest: 0.45, park: 0.4, water: 0.2, urban: 0.35, open: 0.3, road: 0.4 };
 
 export interface Lair {
   cell: CellId;
@@ -147,7 +333,7 @@ export interface Lair {
 export function lairAt(worldSeed: number, cell: CellId, terrain: Terrain = "open"): Lair | null {
   const random = seeded(worldSeed, cell, "lair");
   if (random() >= OCCUPIED[terrain]) return null;
-  const candidates = LAIRS.filter((l) => (l.terrain[terrain] ?? 0) > 0);
+  const candidates = LAIRS.filter((l) => l.tier <= OPEN_TIERS && (l.terrain[terrain] ?? 0) > 0);
   if (candidates.length === 0) return null;
   const kind = pickWeighted(random, candidates, (l) => l.terrain[terrain] ?? 0);
   // low levels are common, high ones rare

@@ -22,6 +22,7 @@ COPY pwa pwa
 COPY mac/Resources/Characters mac/Resources/Characters
 COPY mac/Resources/Camps mac/Resources/Camps
 COPY mac/Resources/Animals mac/Resources/Animals
+COPY mac/Resources/World mac/Resources/World
 RUN pnpm --filter @goblincamp/pwa build
 
 # ---------- runtime ----------

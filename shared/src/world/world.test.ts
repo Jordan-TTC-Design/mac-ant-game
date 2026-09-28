@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { combatPower, lairFighters, residentFighter, simulateBattle, type Fighter, type Resident } from "./battle.ts";
-import { LAIRS, lairAt, lootFor, type Lair } from "./contents.ts";
-import { expeditionInput, expeditionReportSchema } from "./api.ts";
+import { BOSS_HOURS, BOSS_ROUNDS, bossAt, bossFighters, bossIn, bossKind, bossMaxHp, bossShares, bossWindow, regionOf } from "./bosses.ts";
+import { FOES, LAIRS, lairAt, lootFor, OPEN_TIERS, type Lair } from "./contents.ts";
+import { dropsOf, lairDrops, MATERIALS } from "./drops.ts";
+import { WORLD_SEED, expeditionInput } from "./api.ts";
+import { terrainAt } from "./terrain.ts";
 import { resolveExpedition } from "./expedition.ts";
-import { cellAt, cellCenter, cellDistance, cellsWithin, isCellId, metersBetween, neighbors } from "./grid.ts";
+import { CELL_METERS, cellAt, cellCenter, cellDistance, cellsWithin, isCellId, metersBetween, neighbors } from "./grid.ts";
 import { rank, raceLevel, xpForLevel } from "./leaderboard.ts";
 import { seeded } from "./random.ts";
 import {
-  afterDefeat, canBuildTown, canOpenWorld, cellCapacity, checkAttack, checkOccupy, garrisonMin, maxCells, nestBirths, openWorld, travelMinutes,
+  afterDefeat, canBuildTown, canOpenWorld, cellCapacity, cellYield, checkAttack, checkOccupy, garrisonMin, maxCells, nestBirths, openWorld, TERRAIN_YIELD, travelMinutes,
   type PlayerWorldState,
 } from "./territory.ts";
 
@@ -35,8 +38,8 @@ describe("grid", () => {
     for (const n of around) {
       expect(neighbors(n)).toContain(c);
       const d = cellDistance(c, n);
-      expect(d).toBeGreaterThan(250);
-      expect(d).toBeLessThan(420);
+      expect(d).toBeGreaterThan(CELL_METERS * 0.85);
+      expect(d).toBeLessThan(CELL_METERS * 1.25);
     }
   });
 
@@ -47,8 +50,9 @@ describe("grid", () => {
 
   it("lists the cells around a point", () => {
     const cells = cellsWithin(DAAN.middle, 1000);
-    expect(cells.length).toBeGreaterThan(25);
-    expect(cells.length).toBeLessThan(45);
+    // (about 90: the cells are 0.035 km², a third of the first 350 m ones)
+    expect(cells.length).toBeGreaterThan(75);
+    expect(cells.length).toBeLessThan(110);
     for (const c of cells) expect(metersBetween(DAAN.middle, cellCenter(c))).toBeLessThanOrEqual(1000);
     expect(cells).toContain(cellAt(DAAN.middle));
   });
@@ -66,16 +70,47 @@ describe("what lives in a cell", () => {
     const share = forest.length / cells.length;
     expect(share).toBeGreaterThan(0.3);
     expect(share).toBeLessThan(0.6);
-    const allowed = new Set(LAIRS.filter((l) => (l.terrain.forest ?? 0) > 0).map((l) => l.id));
+    const allowed = new Set(LAIRS.filter((l) => l.tier <= OPEN_TIERS && (l.terrain.forest ?? 0) > 0).map((l) => l.id));
     for (const l of forest) {
       expect(allowed.has(l.kind)).toBe(true);
       expect(l.foes.length).toBeGreaterThan(0);
     }
-    // water only ever has what lives by water
-    for (const c of cells.slice(0, 200)) {
+    // water only ever has what lives by water (and every one of those turns up)
+    const byWater = new Set(LAIRS.filter((l) => l.tier <= OPEN_TIERS && (l.terrain.water ?? 0) > 0).map((l) => l.id));
+    const seen = new Set<string>();
+    for (const c of cells) {
       const l = lairAt(1, c, "water");
-      if (l) expect(["slime_pit", "troll_bridge"]).toContain(l.kind);
+      if (!l) continue;
+      expect(byWater.has(l.kind)).toBe(true);
+      seen.add(l.kind);
     }
+    expect([...seen].sort()).toEqual([...byWater].sort());
+  });
+
+  it("gives every kind of place its own foes, and every foe something to drop", () => {
+    for (const t of ["forest", "park", "water", "urban", "open"] as const) {
+      const only = LAIRS.filter((l) => (l.terrain[t] ?? 0) > 0 && Object.keys(l.terrain).length <= 2);
+      expect(only.length, t).toBeGreaterThan(0);
+    }
+    for (const l of LAIRS) for (const m of l.members) {
+      expect(FOES[m.foe], m.foe).toBeDefined();
+      expect(dropsOf(m.foe).length, `${m.foe} drops`).toBeGreaterThan(0);
+    }
+  });
+
+  it("drops each beaten foe's own things, more at higher levels", () => {
+    const lair: Lair = { cell: cellAt(DAAN.east), kind: "spider_nest", name: "蜘蛛巢", faction: "beast", level: 1, foes: ["giant_spider", "giant_spider", "spider_queen"] };
+    const fallen = lair.foes.map((_, i) => `${lair.cell}#${i}`);
+    let low = 0, high = 0;
+    for (let i = 0; i < 300; i++) {
+      const a = lairDrops(lair, fallen, `x${i}`);
+      const b = lairDrops({ ...lair, level: 7 }, fallen, `x${i}`);
+      expect(Object.keys(a).every((id) => ["spider_silk", "venom_sac", "queen_silk"].includes(id))).toBe(true);
+      low += Object.values(a).reduce((n, k) => n + k, 0);
+      high += Object.values(b).reduce((n, k) => n + k, 0);
+    }
+    expect(high).toBeGreaterThan(low);
+    expect(lairDrops(lair, [], "x")).toEqual({}); // nobody beaten, nothing dropped
   });
 
   it("has some that live alone and some in groups, and mostly low levels", () => {
@@ -275,20 +310,81 @@ describe("leaderboard", () => {
 });
 
 describe("api shapes", () => {
-  it("accepts a proper expedition and rejects a bad cell", () => {
-    const from = cellAt(DAAN.middle), to = cellAt(DAAN.east);
-    expect(expeditionInput.safeParse({ from, to, party: party(3) }).success).toBe(true);
-    expect(expeditionInput.safeParse({ from: "nope", to, party: party(3) }).success).toBe(false);
+  it("accepts a proper expedition and rejects a bad cell or an empty party", () => {
+    const to = cellAt(DAAN.east);
+    expect(expeditionInput.safeParse({ to, count: 5 }).success).toBe(true);
+    expect(expeditionInput.safeParse({ from: cellAt(DAAN.middle), to, residents: [3, 4], settle: true }).success).toBe(true);
+    expect(expeditionInput.safeParse({ from: "nope", to, count: 3 }).success).toBe(false);
+    expect(expeditionInput.safeParse({ to }).success).toBe(false);
+  });
+});
+
+describe("terrain (the stand-in until OpenStreetMap)", () => {
+  it("is the same every time, and comes in patches of every kind", () => {
+    const cells = cellsWithin(DAAN.middle, 6000);
+    const counts: Record<string, number> = {};
+    for (const c of cells) counts[terrainAt(WORLD_SEED, c)] = (counts[terrainAt(WORLD_SEED, c)] ?? 0) + 1;
+    for (const t of ["forest", "park", "water", "urban", "open"]) expect(counts[t] ?? 0).toBeGreaterThan(cells.length * 0.03);
+    expect(terrainAt(WORLD_SEED, cells[10]!)).toBe(terrainAt(WORLD_SEED, cells[10]!));
+    // patches: most cells share their terrain with at least one neighbour
+    const alone = cells.filter((c) => !neighbors(c).some((n) => terrainAt(WORLD_SEED, n) === terrainAt(WORLD_SEED, c))).length;
+    expect(alone).toBeLessThan(cells.length * 0.15);
+  });
+});
+
+describe("the world's great monsters (世界魔王)", () => {
+  const T = Date.UTC(2026, 9, 1, 3);
+  it("turn up in about six regions of ten, the same everywhere for a window, and stay 12 hours", () => {
+    const regions = new Set(cellsWithin(DAAN.middle, 60_000).map(regionOf));
+    const seen = [...regions].map((r) => bossIn(WORLD_SEED, r, bossWindow(T)));
+    const share = seen.filter(Boolean).length / seen.length;
+    expect(share).toBeGreaterThan(0.4);
+    expect(share).toBeLessThan(0.8);
+    const one = seen.find(Boolean)!;
+    expect(regionOf(one.cell)).toBe(one.region);
+    expect(bossAt(WORLD_SEED, one.cell, one.startsAt + 3_600_000)).toEqual(one);
+    expect(one.endsAt - one.startsAt).toBe(BOSS_HOURS * 3_600_000);
+    // the next window is a new draw
+    const later = [...regions].map((r) => bossIn(WORLD_SEED, r, bossWindow(T) + 1)?.cell);
+    expect(later).not.toEqual(seen.map((s) => s?.cell));
   });
 
-  it("describes a real expedition's report", () => {
-    const lair = lairAt(9, cellAt(DAAN.east), "park") ?? { cell: cellAt(DAAN.east), kind: "slime_pit", name: "史萊姆坑", faction: "monster" as const, level: 1, foes: ["slime"] };
-    const out = resolveExpedition({ worldSeed: 9, expeditionId: "x", party: { player: "p", residents: party(8), race: { ranged: 0 } }, target: { kind: "lair", lair } });
-    const report = {
-      id: "x", from: cellAt(DAAN.middle), to: lair.cell, setOutAt: "2026-09-27T10:00:00+08:00", arriveAt: "2026-09-27T10:05:00+08:00",
-      attacker: "p", defender: null, lair: { kind: lair.kind, name: lair.name, level: lair.level }, won: out.won, cell: out.cell,
-      loot: out.loot, events: out.battle.events, fallen: out.battle.fallen,
-    };
-    expect(expeditionReportSchema.safeParse(report).success).toBe(true);
+  it("keep their wounds between fights, and are far too much for one party", () => {
+    const kind = bossKind("ancient_dragon")!;
+    const fresh = bossFighters(kind, bossMaxHp(kind.id));
+    const hurt = bossFighters(kind, 100);
+    expect(fresh[0]!.hp).toBe(9000);
+    expect(hurt[0]!.hp).toBe(100);
+    expect(hurt[0]!.maxHp).toBe(9000);
+    const attackers = party(30).map((r) => residentFighter(r, "attack", { ranged: 0 }));
+    const fight = simulateBattle(attackers, fresh, { seed: 5, maxRounds: BOSS_ROUNDS });
+    expect(fight.hpLeft.boss).toBeGreaterThan(0);
+    expect(fight.hpLeft.boss).toBeLessThan(9000);
+  });
+
+  it("share the spoils by damage: everyone who hurt it gets something, the most to the one who did most", () => {
+    const kind = bossKind("hill_giant")!;
+    const shares = bossShares(kind, { a: 700, b: 300, c: 20 }, "k");
+    expect(Object.keys(shares)).toEqual(["a", "b", "c"]);
+    for (const s of Object.values(shares)) expect(s.loot.giant_bone).toBeGreaterThan(0);
+    expect(shares.a!.xp).toBeGreaterThan(shares.b!.xp);
+    expect(shares.c!.xp).toBe(20);
+    expect(shares.a!.share + shares.b!.share + shares.c!.share).toBeCloseTo(1);
+  });
+});
+
+describe("what held cells yield", () => {
+  it("gives the ground's materials, more with more living there, nothing when too few hold it", () => {
+    const r = seeded(1, "y");
+    expect(cellYield("goblin", "forest", 4, 8, r)).toEqual({});
+    const few = cellYield("goblin", "forest", 5, 40, seeded(2, "y"));
+    const many = cellYield("goblin", "forest", 50, 40, seeded(2, "y"));
+    expect(few.scrap_wood).toBeGreaterThan(0);
+    expect(many.scrap_wood!).toBeGreaterThan(few.scrap_wood! * 1.6);
+    expect(Object.keys(cellYield("elf", "urban", 3, 20, seeded(3, "y")))).toContain("scrap_iron");
+    const town = cellYield("goblin", "park", 5, 20, seeded(4, "y"), true);
+    const plain = cellYield("goblin", "park", 5, 20, seeded(4, "y"));
+    expect(town.scrap_rag!).toBeGreaterThan(plain.scrap_rag!);
+    for (const t of Object.keys(TERRAIN_YIELD)) for (const y of TERRAIN_YIELD[t]!) expect(MATERIALS[y.id], y.id).toBeDefined();
   });
 });

@@ -1,6 +1,7 @@
 import { get, set } from "idb-keyval";
 import { NOTE_COLORS, type ChangesResponse, type Note, type NoteField, type NoteFields, type PushResult } from "@goblincamp/shared";
 import { ApiError, api } from "~/utils/api";
+import { residentName } from "~/utils/names";
 
 /**
  * The notes on this phone and keeping them the same as the server's — the same rules as the Mac (mac/Sources/GoblinCamp/Sync.swift):
@@ -21,10 +22,10 @@ interface Saved {
   meta: Record<string, Meta>;
 }
 
-const FIELDS: NoteField[] = ["text", "color", "breed", "goblinName", "dueAt", "remindAt", "remindFired", "done", "deleted"];
+const FIELDS: NoteField[] = ["text", "color", "breed", "goblinName", "dueAt", "remindAt", "remindFired", "done", "deleted", "kind", "desk"];
 const KEY = "gc-notes-v1";
+/** Plain residents mostly, now and then a rarer one (as on the Mac). */
 const BREEDS = ["common", "common", "common", "scout", "brute", "sage", "golden"];
-const NAMES = ["咔噗", "咕嚕", "嘰哩", "波可", "哈茲", "奇桃", "派豆", "嘟嘟", "拉茲", "莫莫"];
 
 export type SyncStatus = "idle" | "syncing" | "synced" | "offline" | "signed-out" | "problem";
 
@@ -176,7 +177,7 @@ function connect() {
   if (socket || !state.saved) return;
   // (in development Nitro's proxy does not carry WebSockets, so it goes straight to the server; the session cookie goes
   // along, since cookies do not care about the port)
-  const base = import.meta.dev ? "ws://localhost:8787" : location.origin.replace(/^http/, "ws");
+  const base = import.meta.dev ? `ws://${location.hostname}:8787` : location.origin.replace(/^http/, "ws");
   const ws = new WebSocket(`${base}/api/ws`);
   socket = ws;
   ws.onmessage = (event) => {
@@ -270,25 +271,30 @@ export function useNotes() {
     syncSoon();
   }
 
-  function create(text = ""): string {
-    const saved = state.saved!;
-    const id = crypto.randomUUID();
-    const count = Object.values(saved.notes).filter((n) => !n.deleted).length;
-    const now = new Date().toISOString();
-    saved.notes[id] = {
-      id,
-      text,
+  /** A new note not kept anywhere yet (a todo, or a memo: kept off the desktop, no times). */
+  function draft(kind: "todo" | "memo" = "todo"): NoteFields {
+    const count = Object.values(state.saved?.notes ?? {}).filter((n) => !n.deleted).length;
+    return {
+      kind,
+      desk: kind === "todo",
+      text: "",
       color: NOTE_COLORS[count % NOTE_COLORS.length]!,
       breed: BREEDS[Math.floor(Math.random() * BREEDS.length)]!,
-      goblinName: NAMES[Math.floor(Math.random() * NAMES.length)]!,
+      goblinName: residentName(useRace().race.value),
       dueAt: null,
       remindAt: null,
       remindFired: false,
       done: false,
       deleted: false,
-      createdAt: now,
-      updatedAt: now,
     };
+  }
+
+  /** Keeps a new note (and sends it). */
+  function create(fields: NoteFields): string {
+    const saved = state.saved!;
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    saved.notes[id] = { ...fields, id, createdAt: now, updatedAt: now };
     saved.meta[id] = { seq: 0, dirty: [...FIELDS] };
     persist();
     syncSoon();
@@ -315,5 +321,5 @@ export function useNotes() {
     return "idle";
   }
 
-  return { state: readonly(state), start, stop, list, note, change, create, remove, acknowledge, mood, syncNow };
+  return { state: readonly(state), start, stop, list, note, change, draft, create, remove, acknowledge, mood, syncNow };
 }

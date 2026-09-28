@@ -1,16 +1,19 @@
 /**
- * The big world's cells: the real map cut into hexagon-like cells of about 0.1 km² (about 350 m across), so colleagues who
- * all pick spots in one park (the east, the middle and the west of 大安森林公園) each get a cell of their own.
+ * The big world's cells: the real map cut into hexagon-like cells of about 0.035 km² (about 200 m across), so colleagues who
+ * all pick spots in one park each get a cell of their own. (2026-09-28: made smaller, so 大安森林公園 (26 ha) holds 7 or 8
+ * cells, where the first 350 m ones fitted about 3.)
  *
- * The grid is a "brick" layout, which works like hexagons: rows 300 m apart, cells 346 m wide, every other row shifted half a
+ * The grid is a "brick" layout, which works like hexagons: rows 174 m apart, cells 201 m wide, every other row shifted half a
  * cell, so each cell touches six others. A row's cells are measured in metres at that row's latitude, so a cell is the same size
  * anywhere on Earth. It needs no library; if the world later moves to H3 (see WORLD.md), only this file changes. Everything else
  * uses cells through `CellId` and the functions here.
  */
 
 /** Row spacing (north–south) and cell width (east–west), in metres. */
-export const ROW_METERS = 300;
-export const CELL_METERS = 346;
+export const ROW_METERS = 174;
+export const CELL_METERS = 201;
+/** The hexagon a cell is drawn as: from its middle to a corner (CELL_METERS = √3 × this, ROW_METERS = 1.5 × this). */
+export const HEX_RADIUS = CELL_METERS / Math.sqrt(3);
 const METERS_PER_DEGREE = 111_320;
 const ROW_DEGREES = ROW_METERS / METERS_PER_DEGREE;
 

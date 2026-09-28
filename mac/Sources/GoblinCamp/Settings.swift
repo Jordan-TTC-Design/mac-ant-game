@@ -263,6 +263,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "desktopsAll") }
     }
     /// Which desktops (1 = "桌面 1") show the goblins when `desktopsAll` is off. Desktop 1 by default.
+    /// Great monsters of the big world already told about (cell + when it leaves), so each is told once.
+    var toldBosses: [String] {
+        get { defaults.stringArray(forKey: "toldBosses") ?? [] }
+        set { defaults.set(newValue, forKey: "toldBosses") }
+    }
+
     var desktops: [Int] {
         get { (defaults.array(forKey: "desktops") as? [Int]) ?? [1] }
         set { defaults.set(newValue, forKey: "desktops") }

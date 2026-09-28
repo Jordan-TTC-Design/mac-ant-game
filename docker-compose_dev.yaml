@@ -33,6 +33,7 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT}
       RESEND_API_KEY: ${RESEND_API_KEY}
       MAIL_FROM: ${MAIL_FROM}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
     depends_on:
       postgres:
         condition: service_healthy

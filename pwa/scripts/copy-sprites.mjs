@@ -1,4 +1,4 @@
-// Copies the Mac app's art (every race's sprite sheets, the camp looks) and writes the names the phone shows
+// Copies the Mac app's art (every race's sprite sheets, the camp looks, the big world's foes) and writes the names the phone shows
 // (breeds, materials), so the phone shows the very same camp. public/sprites and public/camps are not in git.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const resources = join(here, "../../mac/Resources");
 const sprites = join(here, "../public/sprites");
+const worldArt = join(here, "../public/world");
 const camps = join(here, "../public/camps");
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
@@ -33,6 +34,10 @@ for (const id of readdirSync(join(resources, "Camps"))) {
   mkdirSync(join(camps, id), { recursive: true });
   for (const file of readdirSync(from)) copyFileSync(join(from, file), join(camps, id, file));
 }
+
+// the big world's foes (mac/tools/make_world_foes.py): one sheet and where each is in it
+mkdirSync(worldArt, { recursive: true });
+for (const file of ["foes.png", "foes.json"]) copyFileSync(join(resources, "World", file), join(worldArt, file));
 
 // what monsters leave (mac/Resources/Animals) and the odds and ends in mac/Sources/GoblinCamp/Materials.swift
 Object.assign(names.materials, { scrap_rag: "碎布", scrap_wood: "木片", scrap_iron: "廢鐵", crystal_shard: "碎晶" });

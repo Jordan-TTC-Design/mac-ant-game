@@ -31,7 +31,7 @@ export function testApp(database: Database) {
     database,
     mailer,
     push,
-    config: { APP_URL, TRUST_PROXY: false },
+    config: { APP_URL, TRUST_PROXY: false, ADMIN_EMAILS: "boss@example.com, Admin2@Example.com" },
     now: () => clock,
     limiter: new RateLimiter(() => clock.getTime()),
   });
@@ -73,7 +73,7 @@ export function testApp(database: Database) {
 
 export type TestApp = ReturnType<typeof testApp>;
 
-export const mac = (n = 1) => ({ id: `00000000-0000-4000-8000-00000000000${n}`, kind: "mac" as const, name: `Mac ${n}` });
+export const mac = (n = 1) => ({ id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`, kind: "mac" as const, name: `Mac ${n}` });
 export const phone = { id: "00000000-0000-4000-8000-0000000000aa", kind: "pwa" as const, name: "iPhone" };
 
 /** Registers, confirms the address and returns the password used. */

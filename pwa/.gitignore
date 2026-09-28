@@ -1,5 +1,6 @@
 public/sprites/
 public/camps/
+public/world/
 .nuxt/
 .output/
 dist

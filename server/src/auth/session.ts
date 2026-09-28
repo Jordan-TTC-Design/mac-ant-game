@@ -67,7 +67,7 @@ export function requireAuth(deps: AppDeps): MiddlewareHandler<AppEnv> {
       .select({ session: sessions, user: users })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
-      .where(and(eq(sessions.tokenHash, hashSecret(token)), isNull(sessions.revokedAt), gt(sessions.expiresAt, at), isNull(users.deletingAt)))
+      .where(and(eq(sessions.tokenHash, hashSecret(token)), isNull(sessions.revokedAt), gt(sessions.expiresAt, at), isNull(users.deletingAt), isNull(users.disabledAt)))
       .limit(1);
     if (!row) {
       if (cookie) clearSessionCookie(c);

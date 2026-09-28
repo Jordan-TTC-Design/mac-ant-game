@@ -43,6 +43,48 @@
       "when": 1790520593569,
       "tag": "0005_camps",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790538603853,
+      "tag": "0006_world",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790541674739,
+      "tag": "0007_bosses",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790542603354,
+      "tag": "0008_yields",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790562395553,
+      "tag": "0009_terrain",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790563981995,
+      "tag": "0010_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790565031919,
+      "tag": "0011_note_kinds",
+      "breakpoints": true
     }
   ]
 }

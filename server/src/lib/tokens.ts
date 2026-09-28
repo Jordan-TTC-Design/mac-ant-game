@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 import { CODE_ALPHABET } from "@goblincamp/shared";
 
 /** A secret for a session or an email link: 32 random bytes. The prefix makes a leaked one easy to recognise. */
-export function newToken(prefix: "gcs" | "gce"): string {
+export function newToken(prefix: "gcs" | "gce" | "gch"): string {
   return `${prefix}_${randomBytes(32).toString("base64url")}`;
 }
 

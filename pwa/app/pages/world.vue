@@ -1,0 +1,311 @@
+<script setup lang="ts">
+import { cellCenter, FOES, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { noteTime } from "~/utils/time";
+
+// 大世界: the real map with the lairs and camps on it. Tapping a cell brings up a card from the bottom (what is there, and
+// what can be done: attack, settle, send more, build, recall); an action that sends a party opens the dispatch dialog.
+const ok = await useSignedIn();
+const world = useWorld();
+const { race, noun, ensure } = useRace();
+void ensure();
+const s = world.state;
+const now = ref(Date.now());
+let clock: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  clock = setInterval(() => (now.value = Date.now()), 1000);
+  void world.open();
+});
+onUnmounted(() => {
+  clearInterval(clock);
+  world.close();
+});
+
+/** Places to start looking from (the map is the real world; pick somewhere public, not your home). */
+const PLACES = [
+  { name: "大安森林公園", lat: 25.0302, lng: 121.5357 },
+  { name: "台北 101", lat: 25.0336, lng: 121.5647 },
+  { name: "新竹公園", lat: 24.8016, lng: 120.9786 },
+  { name: "台中公園", lat: 24.1449, lng: 120.6844 },
+  { name: "高雄中央公園", lat: 22.6246, lng: 120.3016 },
+];
+const center = computed(() => s.center ?? s.me?.home ?? PLACES[0]!);
+const selected = ref<string | null>(null);
+const cell = computed<CellView | null>(() => s.cells.find((c) => c.cell === selected.value) ?? null);
+const myId = computed(() => s.cells.find((c) => c.cell === s.me?.homeCell)?.owner?.id ?? null);
+const mine = computed(() => !!cell.value?.owner && cell.value.owner.id === myId.value);
+const myCell = computed(() => s.me?.cells.find((c) => c.cell === selected.value) ?? null);
+const message = ref("");
+const busy = ref(false);
+const settlers = ref(10);
+const spare = computed(() => Math.max(0, (s.me?.atHome ?? 0) - 2));
+function pick(c: string) {
+  selected.value = c;
+  message.value = "";
+}
+
+async function doIt(work: () => Promise<string | null>, done: string) {
+  busy.value = true;
+  message.value = "";
+  const problem = await work();
+  busy.value = false;
+  message.value = problem ?? done;
+}
+const openHere = () => doIt(() => world.openWorld(selected.value!, settlers.value), "大世界開啟了！居民搬過去了。");
+const openAgain = () => doIt(() => world.openWorld(), "重新開啟了大世界。");
+const nest = () => doIt(() => world.nest(selected.value!), "開始蓋繁殖巢了（2 小時）。");
+const town = () => doIt(() => world.town(selected.value!), "蓋了城鎮！");
+const recall = () => {
+  if (!confirm("所有居民都走回營地，這一格就不是你的了。")) return;
+  void doIt(() => world.recall(selected.value!), "都回營地了。");
+};
+
+// the dispatch dialog
+const dispatch = ref<"attack" | "settle" | "move" | null>(null);
+async function sent(party: number[], settle: boolean, from: string) {
+  const to = selected.value!;
+  dispatch.value = null;
+  await doIt(() => world.send(to, party, settle, from), `出發了！${party.length} 隻上路。`);
+}
+
+/** My parties on the road, from where they set out (the camp's cell for "home") to where they are going. */
+const parties = computed(() =>
+  (s.me?.walking ?? []).flatMap((w) => {
+    const from = w.from === "home" ? s.me?.homeCell : w.from;
+    if (!from) return [];
+    return [{ id: w.id, from: cellCenter(from), to: cellCenter(w.to), setOutAt: w.setOutAt, arriveAt: w.arriveAt, race: race.value }];
+  }),
+);
+const goHome = () => s.me?.home && world.moveTo(s.me.home);
+
+async function goToBoss(b: { cell: string; lat: number; lng: number }) {
+  await world.moveTo({ lat: b.lat, lng: b.lng });
+  pick(b.cell);
+}
+const hoursLeft = (iso: string) => {
+  const m = Math.max(0, Math.round((Date.parse(iso) - now.value) / 60_000));
+  return m >= 60 ? `${Math.floor(m / 60)} 小時 ${m % 60} 分` : `${m} 分鐘`;
+};
+const minutesTo = computed(() => (s.me?.homeCell && selected.value ? travelMinutes(s.me.homeCell, selected.value) : null));
+const lootText = (loot: Record<string, number>) => Object.entries(loot).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
+const costList = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
+const left = (iso: string) => {
+  const sec = Math.max(0, Math.round((Date.parse(iso) - now.value) / 1000));
+  return sec === 0 ? "到了，結算中…" : `${Math.floor(sec / 60)} 分 ${String(sec % 60).padStart(2, "0")} 秒後到`;
+};
+const cellName = (id: string) => {
+  if (id === "home") return "營地";
+  const c = s.cells.find((x) => x.cell === id);
+  return c ? (c.owner ? `${c.owner.name}的領地` : c.lair ? c.lair.name : TERRAIN_NAMES[c.terrain]) : "遠方";
+};
+const title = computed(() => {
+  const c = cell.value;
+  if (!c) return "";
+  if (c.owner) return mine.value ? (c.cell === s.me?.homeCell ? "你的營地" : "你的領地") : `${c.owner.name}的領地`;
+  if (c.boss) return `世界魔王・${c.boss.name}`;
+  if (c.lair) return c.lair.name;
+  return TERRAIN_NAMES[c.terrain];
+});
+const canAct = computed(() => !!s.me?.open && spare.value > 0);
+</script>
+
+<template>
+  <main v-if="ok" class="page" :class="{ 'with-sheet': !!cell }">
+    <header class="topbar">
+      <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
+      <div style="flex: 1">
+        <h1>大世界</h1>
+        <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}</div>
+      </div>
+      <NuxtLink to="/leaderboard" class="icon-btn">排行</NuxtLink>
+    </header>
+
+    <div v-if="!s.me" class="panel">{{ s.problem || "讀取中…" }}</div>
+    <template v-else>
+      <section v-if="!s.me.homeCell && !s.me.canOpen" class="panel intro">
+        <h2>還不能開啟大世界</h2>
+        <p>營地要曾經有過 <b>{{ s.me.unlockPeak }}</b> 隻（第三階段）才能開啟；現在最多時是 {{ s.me.peak }} 隻。</p>
+        <p class="muted">先看看附近有什麼：拖動地圖，點格子看看。</p>
+      </section>
+      <section v-else-if="!s.me.homeCell" class="panel intro">
+        <h2>選第一格領地</h2>
+        <p>地圖是真實世界：點一格，派居民搬過去住，那裡就是你在大世界的營地。<b>請選公園、地標這類公開的地方，不要選自己家。</b></p>
+      </section>
+      <section v-else-if="!s.me.open" class="panel intro">
+        <h2>龜縮中</h2>
+        <p>上一場打輸了，營地和領地現在都不會被打，但也不能出征。準備好了就重新開啟。</p>
+        <button class="btn primary" :disabled="busy" @click="openAgain">重新開啟大世界</button>
+      </section>
+
+      <button v-if="s.me.bosses?.length" class="boss-banner" @click="goToBoss(s.me.bosses[0]!)">
+        <b>世界魔王：{{ s.me.bosses[0]!.name }}（{{ s.me.bosses[0]!.km }} 公里外）</b>
+        <span>剩 {{ Math.round((100 * s.me.bosses[0]!.hp) / s.me.bosses[0]!.maxHp) }}% 血・{{ hoursLeft(s.me.bosses[0]!.endsAt) }}後離開・點一下去看看</span>
+      </button>
+
+      <div v-if="!s.me.homeCell" class="places">
+        <button v-for="p in PLACES" :key="p.name" class="chip" @click="world.moveTo(p)">{{ p.name }}</button>
+      </div>
+
+      <WorldMap
+        :cells="s.cells"
+        :center="center"
+        :mine="myId"
+        :selected="selected"
+        :walking-to="s.me.walking.map((w) => w.to)"
+        :parties="parties"
+        :home="s.me.homeCell ? race : null"
+        @select="pick"
+        @pan="world.moveTo"
+        @home="goHome"
+      />
+      <p class="legend">真實世界的地圖（OpenStreetMap）。格子裡是那裡最強的怪物與等級，大馬路邊有強盜與強獸人；黃框是你的，紅框是別人的。點一格看看。</p>
+
+      <section v-if="s.me.walking.length" class="panel">
+        <h2>在路上</h2>
+        <p v-for="w in s.me.walking" :key="w.id" class="line">
+          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ w.kind === "move" ? "（搬家）" : "" }}<br />
+          <small>{{ left(w.arriveAt) }}</small>
+        </p>
+      </section>
+
+      <section v-if="s.me.happenings?.length" class="panel">
+        <h2>最近的事</h2>
+        <p v-for="(h, k) in s.me.happenings.slice(0, 5)" :key="k" class="line">
+          <template v-if="h.lairBack">
+            <span :class="h.lairBack.held ? 'won' : 'lost'">{{ h.lairBack.held ? "守住了" : "被搶回去了" }}</span>
+            {{ h.lairBack.name }}（{{ h.lairBack.level }} 級）回來搶領地{{ h.lairBack.fallen ? `，倒下 ${h.lairBack.fallen} 隻` : "" }}{{ h.lairBack.held && Object.keys(h.lairBack.loot).length ? `，撿到 ${lootText(h.lairBack.loot)}` : "" }}
+          </template>
+          <template v-else-if="h.bossReward">
+            <span class="won">世界魔王{{ h.bossReward.name }}倒下了</span>：出了 {{ Math.round(h.bossReward.share * 100) }}% 的力，分到 {{ lootText(h.bossReward.loot) }}，經驗 +{{ h.bossReward.xp }}
+          </template>
+          <template v-else-if="h.yields">領地送來了 {{ lootText(h.yields) }}</template>
+          <br /><small>{{ noteTime(h.at) }}</small>
+        </p>
+      </section>
+
+      <section v-if="s.me.recent.length" class="panel">
+        <h2>戰報</h2>
+        <NuxtLink v-for="r in s.me.recent.slice(0, 5)" :key="r.id" :to="`/expedition/${r.id}`" class="report">
+          <span :class="wentWell(r) ? 'won' : 'lost'">{{ outcomeText(r) }}</span>
+          <span class="grow">{{ r.outcome?.against }}</span>
+          <small>{{ noteTime(r.arriveAt) }}</small>
+        </NuxtLink>
+      </section>
+    </template>
+
+    <!-- the card of the cell picked -->
+    <aside v-if="cell && s.me" class="sheet">
+      <button class="x" aria-label="關閉" @click="selected = null">✕</button>
+      <div class="head">
+        <span class="badge">
+          <FoeIcon v-if="cell.boss" :id="cell.boss.kind" :size="48" />
+          <img v-else-if="cell.owner" :src="`/sprites/${cell.owner.race}/icon.png`" class="pixel face" alt="" />
+          <FoeIcon v-else-if="cell.lair" :id="cell.lair.kind === 'enemy_town' ? 'enemy_town' : leaderOf(cell.lair.foes)" :size="48" />
+          <span v-else class="ground" :class="cell.terrain" />
+        </span>
+        <div class="grow">
+          <h2>{{ title }}<small v-if="cell.lair"> {{ cell.lair.level }} 級</small></h2>
+          <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && !mine ? `・從營地走約 ${minutesTo} 分鐘` : "" }}</p>
+        </div>
+      </div>
+
+      <!-- what is there -->
+      <div v-if="cell.lair" class="foes">
+        <span v-for="(n, id) in cell.lair.foes" :key="id" class="foe"><FoeIcon :id="String(id)" :size="32" /><small>{{ FOES[String(id)]?.name ?? id }} ×{{ n }}</small></span>
+        <span class="power"><small>戰力</small><b>{{ cell.lair.power }}</b></span>
+      </div>
+      <template v-else-if="cell.boss">
+        <div class="hpbar"><i :style="{ width: `${(100 * cell.boss.hp) / cell.boss.maxHp}%` }" /></div>
+        <p class="muted">{{ cell.boss.hp }} / {{ cell.boss.maxHp }} 血・{{ hoursLeft(cell.boss.endsAt) }}後離開。牠的傷會留著，大家一起打。</p>
+      </template>
+      <template v-else-if="mine">
+        <p>住了 <b>{{ cell.garrison }}</b> 隻・{{ cell.cell === s.me.homeCell ? "營地本身就會生居民" : { none: "還沒有繁殖巢（不會自己生居民）", building: "繁殖巢蓋到一半", ready: "有繁殖巢，會自己生居民" }[cell.nest] }}{{ cell.town ? "・城鎮" : "" }}</p>
+        <p class="muted small">每 3 小時產出：{{ (TERRAIN_YIELD[cell.terrain] ?? []).map((y) => materialName(y.id)).join("、") }}{{ myCell ? `・下次 ${noteTime(myCell.nextYieldAt)}` : "" }}</p>
+      </template>
+      <p v-else-if="cell.owner" class="muted">住了 {{ cell.garrison }} 隻</p>
+      <p v-else-if="cell.lairBackAt" class="muted">巢穴清掉了，{{ noteTime(cell.lairBackAt) }} 會回來。現在可以直接住。</p>
+      <p v-else class="muted">什麼都沒有，可以直接住。</p>
+
+      <!-- what can be done -->
+      <div class="actions">
+        <template v-if="!s.me.homeCell">
+          <template v-if="s.me.canOpen && !cell.owner">
+            <label class="row">搬過去 <input v-model.number="settlers" type="range" :min="s.me.rules.garrisonMin" :max="Math.min(s.me.rules.cellCapacity, spare)" /> <b>{{ settlers }}</b> 隻</label>
+            <button class="btn primary wide" :disabled="busy" @click="openHere">在這裡建立營地</button>
+          </template>
+        </template>
+        <template v-else-if="mine">
+          <button class="btn primary" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
+          <button v-if="cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
+          <button v-if="!cell.town && s.me.cells.length >= s.me.rules.townMinCells" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
+          <button v-if="cell.cell !== s.me.homeCell" class="btn" :disabled="busy" @click="recall">撤回</button>
+        </template>
+        <template v-else>
+          <button v-if="cell.boss || cell.lair || cell.owner" class="btn primary" :disabled="!canAct" @click="dispatch = 'attack'">{{ cell.boss ? "攻擊魔王" : "攻擊" }}</button>
+          <button v-else class="btn primary" :disabled="!canAct" @click="dispatch = 'settle'">派人佔領</button>
+        </template>
+      </div>
+      <p v-if="mine && cell.nest === 'none'" class="muted small">佔領只是派人去住，那一格不會自己長人。蓋繁殖巢（{{ costList(s.me.rules.nestCost) }}，{{ s.me.rules.nestHours }} 小時蓋好）之後，這一格每 {{ s.me.rules.nestBirthMinutes }} 分鐘生一隻，不用一直從營地派人補。</p>
+      <p v-if="message" class="status">{{ message }}</p>
+    </aside>
+
+    <DispatchDialog v-if="dispatch && cell && s.me" :target="cell" :kind="dispatch" :me="s.me" :race="race" @close="dispatch = null" @sent="sent" />
+  </main>
+</template>
+
+<style scoped>
+section { margin-top: 14px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+p { margin: 6px 0; line-height: 1.55; }
+.muted { color: var(--muted); font-size: 14px; }
+.small { font-size: 12px; }
+.intro { margin: 0 0 12px; }
+.places { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip { border: 0; border-radius: 999px; padding: 7px 12px; background: rgba(255, 255, 255, 0.16); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
+.legend { color: #dfe9d8; font-size: 11px; line-height: 1.6; margin: 6px 2px 0; }
+.line small { color: var(--muted); }
+.report { display: flex; align-items: baseline; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); text-decoration: none; }
+.report:first-of-type { border-top: 0; }
+.grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report small { color: var(--muted); white-space: nowrap; }
+.won { color: var(--green); font-weight: 700; white-space: nowrap; }
+.lost { color: var(--red); font-weight: 700; white-space: nowrap; }
+.boss-banner { display: grid; gap: 2px; width: 100%; text-align: left; border: 3px solid #1f1f1f; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #ffd9d4; box-shadow: 3px 3px 0 #1f1f1f; cursor: pointer; }
+.boss-banner b { color: #b0261a; }
+.boss-banner span { font-size: 13px; color: #6b2a22; }
+.page.with-sheet { padding-bottom: 300px; }
+
+/* the cell's card, up from the bottom */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0 auto; max-width: 560px;
+  background: var(--card); border-radius: 18px 18px 0 0; border: 3px solid #1f1f1f; border-bottom: 0;
+  padding: 14px 16px calc(env(safe-area-inset-bottom) + 14px); box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.25); animation: rise 0.18s ease-out;
+}
+@keyframes rise { from { transform: translateY(40px); opacity: 0; } }
+.sheet .x { position: absolute; top: 10px; right: 10px; border: 0; background: #eee; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; }
+.head { display: flex; align-items: center; gap: 12px; padding-right: 34px; }
+.head h2 { margin: 0; font-size: 18px; }
+.head h2 small { font-size: 13px; color: var(--muted); font-weight: 600; }
+.head p { margin: 2px 0 0; font-size: 13px; }
+.badge { flex: none; width: 56px; height: 56px; border-radius: 12px; background: #f1eee2; display: grid; place-items: center; }
+.face { width: 44px; height: 44px; }
+.ground { width: 36px; height: 36px; border-radius: 8px; border: 2px solid rgba(0, 0, 0, 0.2); }
+.ground.forest { background: #3f7d3a; }
+.ground.park { background: #79b957; }
+.ground.water { background: #4a8ec2; }
+.ground.urban { background: #a89b88; }
+.ground.open { background: #cdbf8a; }
+.ground.road { background: #f1e6c6; }
+.foes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 10px 0 4px; }
+.foe { display: grid; justify-items: center; gap: 2px; }
+.foe small { font-size: 11px; color: var(--muted); }
+.power { margin-left: auto; display: grid; justify-items: end; }
+.power small { font-size: 11px; color: var(--muted); }
+.power b { font-size: 20px; }
+.hpbar { height: 12px; background: #e3ddd0; border-radius: 6px; overflow: hidden; margin: 10px 0 4px; }
+.hpbar i { display: block; height: 100%; background: #e0402f; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.actions .btn { flex: 1; min-height: 44px; }
+.actions .wide { flex-basis: 100%; }
+.row { display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 600; }
+.row input { flex: 1; min-width: 0; }
+</style>

@@ -22,6 +22,13 @@ export const noteFieldsSchema = z.object({
   done: z.boolean(),
   /** A deleted note stays as a mark (with its words gone) so every device learns it was deleted. */
   deleted: z.boolean(),
+  /**
+   * 待辦 (todo: reminders and a target time) or 備忘 (memo: something kept at hand, a link or a command; no times).
+   * Optional for devices from before it (Mac 0.9): a note without it is a todo.
+   */
+  kind: z.enum(["todo", "memo"]).default("todo"),
+  /** On the Mac's desktop (true) or kept in the notes wall only (false). Optional as `kind`. */
+  desk: z.boolean().default(true),
 });
 export type NoteFields = z.infer<typeof noteFieldsSchema>;
 export type NoteField = keyof NoteFields;
@@ -88,6 +95,16 @@ export const pushSubscriptionSchema = z.object({
 export type PushSubscriptionJSON = z.infer<typeof pushSubscriptionSchema>;
 
 /** What a reminder push carries to the phone's service worker. */
+/** A push about the big world (a party arrived, a cell was attacked, a great monster fell): tapping it opens `url`. */
+export interface WorldPush {
+  type: "world";
+  title: string;
+  body: string;
+  url: string;
+  /** A later push with the same tag replaces this one. */
+  tag: string;
+}
+
 export interface ReminderPush {
   type: "reminder";
   noteId: string;

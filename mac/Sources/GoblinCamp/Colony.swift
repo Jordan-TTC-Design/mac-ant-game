@@ -40,6 +40,26 @@ final class Colony {
     /// Set while picking a new spot for an existing colony, so Esc can put things back as they were.
     private var phaseBeforePicking: Phase?
     private(set) var nest: CGPoint?
+    private var graveCache: (nest: CGPoint, count: Int, spots: [CGPoint])?
+    /// Residents who walked off into the big world (their ids): when the books have them home again they walk back in.
+    private var awayIDs = Set<Int>()
+
+    /// The undead camp's graves, in a fan below the nest where there is ground: more as the camp grows (they sleep in them,
+    /// AntView draws them). None for the other races.
+    var graves: [CGPoint] {
+        guard Characters.current.id == "undead", let nest else { return [] }
+        let count = min(8, 3 + peakAnts / 30)
+        if let c = graveCache, c.nest == nest, c.count == count { return c.spots }
+        var spots: [CGPoint] = []
+        for k in 0..<count {
+            let angle = (205 + Double(k) * 130 / Double(max(1, count - 1))) * .pi / 180
+            let r = 58.0 + Double(k % 2) * 16
+            let p = CGPoint(x: nest.x + cos(angle) * r * 1.3, y: nest.y + sin(angle) * r * 0.75)
+            if walkable.contains(where: { $0.insetBy(dx: 8, dy: 8).contains(p) }) { spots.append(p) }
+        }
+        graveCache = (nest, count, spots)
+        return spots
+    }
     var queen: Queen?
     var ants: [Ant] = []
     /// See `followsBooks`.
@@ -467,9 +487,16 @@ final class Colony {
             finishFarming(plot: plot, action: action, by: index)
         case .carrierArrived:
             carriersArrived += 1
-        case .died:
+        case .died, .departed:
             break // removed by the caller once all events are handled
         }
+    }
+
+    /// The nearest point just past the edge of the ground a resident is on (where it walks off to).
+    private func edgePoint(from p: CGPoint) -> CGPoint {
+        guard let rect = walkable.first(where: { $0.contains(p) }) ?? walkable.first else { return p }
+        let options = [CGPoint(x: rect.minX + 2, y: p.y), CGPoint(x: rect.maxX - 2, y: p.y), CGPoint(x: p.x, y: rect.minY + 2), CGPoint(x: p.x, y: rect.maxY - 2)]
+        return options.min { hypot($0.x - p.x, $0.y - p.y) < hypot($1.x - p.x, $1.y - p.y) } ?? p
     }
 
     /// Everything a camp has earned is for that camp: a new camp starts with nothing: no materials or kills, an empty larder and armory, the
@@ -1276,7 +1303,8 @@ final class Colony {
         // a scuffle: the strong ones start it most; the clever and the golden do not take part (nobody fights a golden one)
         let scuffling = ants.filter { if case .activity(.scuffle, _) = $0.mode { return true } else { return false } }.count / 2
         if scuffling < max(1, ants.count / 60), Double.random(in: 0..<1) < 0.5 {
-            let fighters = idle.filter { ants[$0].traits.personality != .calm && ants[$0].traits.personality != .boss }
+            // (elves do not brawl)
+            let fighters = Characters.current.id == "elf" ? [] : idle.filter { ants[$0].traits.personality != .calm && ants[$0].traits.personality != .boss }
             let weights = fighters.map { ants[$0].traits.personality == .brute ? 4.0 : ants[$0].traits.personality == .lively ? 1.5 : 1.0 }
             if !fighters.isEmpty {
                 var roll = Double.random(in: 0..<weights.reduce(0, +))
@@ -1836,6 +1864,8 @@ final class Colony {
         world.night = Colony.isNight
         world.pit = peakAnts >= 5 && fire == nil ? scene?.firePit : nil
         world.tents = entranceCache
+        world.race = Characters.current.id
+        world.graves = graves
         let cooking = ants.contains { if case .activity(.cook, _) = $0.mode { return true } else { return false } }
         world.cookSlots = larderTotal >= 2 && !cooking ? 1 : 0
         resourceTimer -= dt
@@ -1911,11 +1941,14 @@ final class Colony {
         playSeconds += dt * Colony.wildScale * settings.pace
         // the dead leave the colony (highest index first so the others keep their places)
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)
-        for index in gone.sorted(by: >) {
+        // (those who walked off into the big world take what they wear with them, and are not dead)
+        let left = events.filter { if case .departed = $0.event { return true } else { return false } }.map(\.index)
+        for index in (gone + left).sorted(by: >) {
             if ants[index].id == selectedAntID { selectedAntID = nil }
-            returnGear(of: index) // old age or killed in a fight: what it wore comes back to the nest
+            if gone.contains(index) { returnGear(of: index) } // old age or killed in a fight: what it wore comes back to the nest
             ants.remove(at: index)
         }
+        if !left.isEmpty, gone.isEmpty { onAntsChanged?() }
         if !gone.isEmpty, !armory.isEmpty { redistributeArmory() }
         deaths += gone.count
         if !gone.isEmpty { onAntsChanged?() }
@@ -1970,11 +2003,18 @@ extension Colony {
 
     /// Brings the camp in line with the books: newcomers walk out of the camp, those the books no longer have die where
     /// they stand, and everyone wears what the books say. What the camp owns is the books' too.
-    func applyBooks(_ residents: [BookResident], stores: BookStores) {
+    func applyBooks(_ residents: [BookResident], stores: BookStores, away: Set<Int> = []) {
         guard let nest else { return }
         let wanted = Set(residents.map(\.id))
         var changed = false
-        for i in ants.indices where !wanted.contains(ants[i].id) && !ants[i].isDying && !doomed.contains(ants[i].id) {
+        for i in ants.indices where !wanted.contains(ants[i].id) && !ants[i].isDying && !ants[i].isDeparting && !doomed.contains(ants[i].id) {
+            if away.contains(ants[i].id) { // gone out into the big world: it walks off (out of the nest first if it was inside)
+                if ants[i].isHidden { ants[i].pos = nest }
+                ants[i].mode = .departing(target: edgePoint(from: ants[i].pos))
+                awayIDs.insert(ants[i].id)
+                changed = true
+                continue
+            }
             ants[i].ageless = false
             if ants[i].isHidden { ants[i].age = ants[i].traits.lifespan } else { ants[i].mode = .dying(remaining: Ant.dyingTime) }
             changed = true
@@ -1984,10 +2024,13 @@ extension Colony {
         for r in residents where !have.contains(r.id) {
             let index = breeds.firstIndex { $0.id == r.breed } ?? 0
             let jitter = { CGFloat.random(in: -4...4) }
-            var born = makeAnt(at: CGPoint(x: nest.x + jitter(), y: nest.y + jitter()), breedIndex: index, age: 0, seed: r.seed, id: r.id, name: r.name)
+            // back from the big world: it walks in from the edge; anyone else is new, born at the nest
+            let back = awayIDs.remove(r.id) != nil
+            let start = back ? edgePoint(from: CGPoint(x: nest.x + jitter() * 40, y: nest.y + jitter() * 20)) : CGPoint(x: nest.x + jitter(), y: nest.y + jitter())
+            var born = makeAnt(at: start, breedIndex: index, age: 0, seed: r.seed, id: r.id, name: r.name)
             if let share = r.lifeShare { born.age = share * born.traits.lifespan }
             born.parents = r.parents ?? ""
-            if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) }
+            if back { born.mode = .returningToNest } else if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) }
             ants.append(born)
             nextAntID = max(nextAntID, r.id + 1)
             changed = true

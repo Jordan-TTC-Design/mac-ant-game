@@ -33,6 +33,8 @@ export function toNote(row: Row): Note {
     remindFired: row.remindFired,
     done: row.done,
     deleted: row.deleted,
+    kind: row.kind as Note["kind"],
+    desk: row.desk,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     seq: row.seq,

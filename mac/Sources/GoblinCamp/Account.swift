@@ -27,6 +27,8 @@ struct APIError: Error, LocalizedError {
 final class AccountStore {
     private struct File: Codable {
         var deviceID = UUID().uuidString.lowercased()
+        /// The big-world window's own id (a browser of its own to the server: its own session). Made the first time it opens.
+        var webDeviceID: String?
         var user: AccountUser?
         /// Tests only (see above).
         var testToken: String?
@@ -54,6 +56,13 @@ final class AccountStore {
 
     /// This Mac's own id, made once and kept (the server knows the Mac by it).
     var deviceID: String { file.deviceID }
+    var webDeviceID: String {
+        if let id = file.webDeviceID { return id }
+        let id = UUID().uuidString.lowercased()
+        file.webDeviceID = id
+        save()
+        return id
+    }
     var deviceName: String { Host.current().localizedName ?? "Mac" }
     var user: AccountUser? { file.user }
 
@@ -195,6 +204,17 @@ final class APIClient {
     }
 
     func logout() async throws { try await raw("POST", "auth/logout") }
+
+    var serverHost: String? { store.serverURL.host }
+
+    /// A one-time link that opens the web page at `to` signed in as this account, for the big-world window.
+    func handoff(to: String) async throws -> URL {
+        struct Body: Encodable { let webDevice, to: String }
+        struct Answer: Decodable { let url: String }
+        let answer: Answer = try await request("POST", "auth/handoff", body: Body(webDevice: store.webDeviceID, to: to))
+        guard let url = URL(string: answer.url) else { throw APIError(status: 200, code: "bad_response", message: "伺服器給的網址看不懂。") }
+        return url
+    }
 
     func sessions() async throws -> [SessionInfo] {
         struct Body: Decodable { let sessions: [SessionInfo] }

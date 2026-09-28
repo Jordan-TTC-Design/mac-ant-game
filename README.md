@@ -176,6 +176,21 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 - **雞、羊、豬**會從螢幕邊走進來閒晃，哥布林走近才發現、回營地報信、成群圍捕；**打獵有風險**：豬會反擊，哥布林可能受傷、甚至犧牲。
 - 打倒的動物留下肉，大家一起搬回營地。
 
+### 大世界
+
+營地長到第三階段就能開啟大世界：用 OpenStreetMap 的真實地圖，切成約 200 公尺的六角格（大安森林公園大約 7～8 格），選一格派居民搬過去，然後出征打怪物巢穴、佔地、蓋繁殖巢與城鎮、和同事搶地盤。
+
+- **地形照真實地圖**：水邊、森林、公園、市區、空地、大路邊，每種有自己的怪物與掉落。
+- **新手區**：現在只開放低等怪物——兔子、蝸牛、甲蟲、烏鴉、松鼠、鵝、狐狸…；大路邊有人類強盜和強獸人巡邏隊。世界魔王先關著。
+- **自己選誰出征**：點地圖上的格子會出現卡片（攻擊／派人佔領／駐守／蓋繁殖巢），出人時可以一隻一隻勾，旁邊比戰力、看勝率。
+- **領地**每 3 小時照地形產出素材；營地那一格一開始就有繁殖巢。戰鬥由伺服器算，戰報可以重播；有排行榜。
+- 在 Mac 選單「營地 → 大世界…」或手機網頁玩；出征的居民會從營地走出去、走回來，結果由公主告訴你。
+- 設計與規則：[server/WORLD.md](server/WORLD.md)。
+
+### 各種族的日常
+
+精靈白天不打盹也不打鬧，會練射箭、冥想；死靈不煮飯不釣魚，愛挖地，晚上躺進墳墓睡。見 [LIFE.md](LIFE.md)。
+
 ### 其他
 
 - **角色可以換**：角色是資料夾裡的精靈圖加一個說明檔，也能放自己畫的角色（見下）。
@@ -226,6 +241,9 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 - **目標時間**：剩不到 1 小時，哥布林開始緊張（跺腳、頭上閃「!」）；過了時間就發抖、冒冷汗、頭上「!!」，時間變紅。標成完成後哥布林會開心地跳。
 - **提醒時間**：時間到，這隻哥布林從右上角跑出來提醒你，泡泡上有「知道了／10 分鐘後／明天」。沒人理的話，它回到便利貼上舉著鈴鐺一直搖，點一下便利貼就停。
 - **專注模式時不會跳出來**（開會中不該被打斷），等離開專注模式才出現；全螢幕自動專注也一樣。專注與節能模式時，便利貼上的哥布林會睡覺。
+- **待辦與備忘**：待辦就是上面這些（可以設時間）；**備忘**是不用時間的常用資料（網址、指令…），每一行可以單獨複製，網址可以直接打開。**密碼不要寫在便利貼裡**（伺服器看得到內容）。
+- **便利貼牆**（「便利貼 → 便利貼牆…」⌃⌥W）：所有便利貼排在一個視窗裡，可以搜尋、分「全部／待辦／備忘」。每張可以勾「放在桌面上」，不勾就只收在牆裡、桌面上沒有它；新增的備忘預設收在牆裡。「把桌面的便利貼全部收進牆」一次清空桌面。
+- **摺起來**：便利貼右上角的 ▾ 把它摺成一條（只剩第一行），再點一下展開；摺起來只記在這台 Mac。
 - 被視窗蓋住找不到時：「把便利貼叫到最上面」（⌃⌥M）暫時浮到最上面，切到別的 App 就回去；「全部集合到這個螢幕」把所有便利貼排到滑鼠所在的螢幕。
 - 存在 `notes.json`。每張有自己的 id、最後修改時間與刪除標記；位置只存在這台 Mac。實作在 `Notes.swift`。
 - **手機也能用**：`pwa/` 是手機網頁，登入同一個帳號就看得到、改得到，提醒時間到手機會收到通知（iPhone 要先加入主畫面）。
@@ -303,7 +321,7 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 暫停
 模式：全開／工作模式／節能模式／專注模式    （⌃⌥1～4）
 番茄鐘 ▸
-便利貼 ▸        新增便利貼（⌃⌥N）· 把便利貼叫到最上面（⌃⌥M）· 全部集合到這個螢幕
+便利貼 ▸        新增便利貼（⌃⌥N）· 新增備忘 · 便利貼牆…（⌃⌥W）· 把便利貼叫到最上面（⌃⌥M）· 全部集合到這個螢幕 · 把桌面的便利貼全部收進牆
 帳號 ▸          登入或註冊 · 同步狀態 · 好友代碼 · 登入中的裝置 · 登出
 Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 營地 ▸          放食物 · 工坊 · 編輯營地位置 · 開新世界 · 公主的名字 · 營地外觀
@@ -528,6 +546,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_TEST_ASKANSWER=allow／deny／look／dismiss／reply:文字` `CAMP_TEST_ASKAT=秒` | 模擬在問題泡泡上按下答案（配合 `mac/tools/goblin-ask.sh`）；`CAMP_TEST_ASKSHOT=路徑` 把泡泡畫成 PNG |
 | `CAMP_TEST_NOTES=路徑前綴` `CAMP_TEST_NOTES_FOCUS=1` | 建立每種狀態各一張便利貼並畫成 PNG、模擬寫字、4 秒後響一個提醒；加上 FOCUS 會在 2～8 秒進入專注模式，檢查提醒有等到離開才出現。便利貼會寫進 `CAMP_DATA_DIR`（有設時），不會碰到正式資料 |
 | `CAMP_TEST_ACCOUNT=路徑前綴` | 把登入視窗的兩個分頁畫成 PNG |
+| `CAMP_TEST_WALL=路徑前綴` | 建立兩張待辦（一張摺起來）、兩張備忘，打開便利貼牆，把牆與摺起來的那條畫成 PNG，再試「全部收進牆」與把一張放回桌面 |
 | `CAMP_TEST_LOGIN=信箱\|密碼` `CAMP_TEST_SYNC_NOTE=文字` `CAMP_TEST_NOTE_ACK_AT=秒` `CAMP_TEST_SIGNOUT=keep／remove` | 啟動後自動登入（要有本機伺服器）；可再寫一張 8 秒後提醒的便利貼、在指定秒數按「知道了」、6 秒時登出。兩個實例用不同的 `CAMP_DATA_DIR` 就是兩台 Mac。測試資料夾裡的登入憑證存在 `account.json`，不碰鑰匙圈 |
 | `CAMP_SERVER_URL=網址` | 連別的伺服器（預設 `http://localhost:8787`） |
 | `CAMP_TEST_CLICKMSG=秒` | 該時間點模擬點一下 Claude 通知的泡泡（通知需帶 `app`） |
@@ -544,6 +563,8 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 - [SCENARIOS.md](SCENARIOS.md)：工作與遊玩的各種使用情境、三種模式對照與待決定事項
 - [QUEEN_BEHAVIORS.md](QUEEN_BEHAVIORS.md)：公主的 20 種動作、狀態機、如何新增動作
 - [ROMANCE.md](ROMANCE.md)：公主的感情線（追求、約會、結婚、懷孕、混血寶寶、吵架分手）與測試用變數
+- [LIFE.md](LIFE.md)：日常活動、各種族的差別
+- [server/DESIGN.md](server/DESIGN.md)、[server/CAMP.md](server/CAMP.md)、[server/WORLD.md](server/WORLD.md)：伺服器、營地搬上伺服器、大世界與世界魔王
 
 ## 部署伺服器（帳號、便利貼、營地、手機網頁）
 
@@ -559,6 +580,7 @@ make vapid                   # 產生手機推播金鑰，貼進 .env
 make deploy                  # 或 make deploy-prod
 make ps                      # 三個容器都要 healthy
 make invite n=5              # 邀請碼（只顯示這一次）
+                             # （或在 .env 設 ADMIN_EMAILS=你的信箱，從手機網頁「設定 → 後台」產生）
 ```
 
 主機的反向代理把網域轉到 `127.0.0.1:WEB_PORT`，**要帶 `Upgrade`／`Connection` 標頭**（WebSocket），`X-Forwarded-For`、`X-Forwarded-Proto` 也帶上。更新：`git pull && make deploy`（資料庫 migration 在伺服器啟動時自動套用）。其他：`make logs`（沒設 Resend 時確認信印在這裡）、`make invites`、`make dump-db`／`make restore-db file=…`、`make shell-db`。
@@ -567,7 +589,15 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.9.0）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.10.0）。
+
+### v0.10.0
+
+- **大世界開放**：OpenStreetMap 真實地圖、約 200 公尺一格，新手區只有低等怪物（兔子、蝸牛、甲蟲、狐狸…），大路邊有強盜和強獸人；出征時自己勾要派誰。
+- **便利貼分成待辦與備忘**：備忘不用設時間，每一行可以單獨複製、網址直接打開（密碼請不要寫在便利貼）。
+- **便利貼牆**（⌃⌥W）：所有便利貼收在一個視窗，可以搜尋、分類，決定哪些要貼在桌面；一鍵把桌面全部收進牆。便利貼可以摺成一條。
+- **手機**：便利貼分「待辦／備忘」、可搜尋；營地的魔獸來襲紀錄改成摺疊的摘要；登入裝置清單可以一次登出其他裝置。
+- 舊紀錄會自動清除（事件與戰報 30 天、戰鬥過程 7 天）；後台要管理員才能進，可以停用、登出、刪除帳號。
 
 ### v0.9.0
 

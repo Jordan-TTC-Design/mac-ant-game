@@ -1,0 +1,364 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { CampView } from "@goblincamp/shared/camp";
+import { bossIn, bossWindow, cellAt, cellCenter, cellsWithin, neighbors, regionOf, WORLD_SEED, type CellView, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
+import type { Database } from "../src/db/client.ts";
+import { APP_URL, bearer, emptyTables, logIn, mac, openTestDatabase, phone, signUp, testApp, type TestApp } from "./helpers.ts";
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAAN = { lat: 25.0302, lng: 121.5357 };
+const XINYI = { lat: 25.0336, lng: 121.5647 }; // about 3 km east
+let database: Database;
+let t: TestApp;
+beforeAll(async () => {
+  database = await openTestDatabase();
+});
+beforeEach(async () => {
+  await emptyTables(database);
+  t = testApp(database);
+});
+afterAll(async () => {
+  await database?.close();
+});
+
+let macs = 0;
+async function account(email: string, race = "goblin") {
+  const password = await signUp(t, email);
+  const auth = bearer((await logIn(t, email, password, mac(++macs))).body.token);
+  await t.call("POST", "/camp/start", { race }, auth);
+  return auth;
+}
+const me = async (auth: Record<string, string>) => (await t.call("GET", "/world", undefined, auth)).body as WorldMe;
+const camp = async (auth: Record<string, string>) => (await t.call("GET", "/camp", undefined, auth)).body as CampView;
+const map = async (auth: Record<string, string>, at = DAAN, radius = 1200) =>
+  (await t.call("GET", `/world/cells?lat=${at.lat}&lng=${at.lng}&radius=${radius}`, undefined, auth)).body as CellView[];
+const home = (c: CampView) => c.residents.filter((r) => r.place === "home").length;
+
+/** Waits (on the test clock) until a camp has had its third look (goblins: 150). */
+async function grow(auth: Record<string, string>) {
+  t.advance(16 * HOUR);
+  const c = await camp(auth);
+  expect(c.peak).toBeGreaterThanOrEqual(150);
+}
+
+describe("opening the big world", () => {
+  it("waits for the camp's third look, then settles the first cell", async () => {
+    const a = await account("a@example.com");
+    const first = cellAt(DAAN);
+    let res = await t.call("POST", "/world/open", { cell: first, settlers: 10 }, a);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("too_small");
+    expect((await me(a)).canOpen).toBe(false);
+
+    await grow(a);
+    const before = home(await camp(a));
+    res = await t.call("POST", "/world/open", { cell: first, settlers: 10 }, a);
+    expect(res.status).toBe(201);
+    const w = res.body as WorldMe;
+    expect(w.open).toBe(true);
+    expect(w.homeCell).toBe(first);
+    // (the camp's own cell has its nest from the start: it raises residents like the camp)
+    expect(w.cells).toEqual([expect.objectContaining({ cell: first, nest: "ready" })]);
+    expect(w.cells[0]!.garrison).toBeGreaterThanOrEqual(10); // (10 moved in; its nest may have raised one already)
+    const after = await camp(a);
+    expect(after.residents.filter((r) => r.place === `cell:${first}`).length).toBeGreaterThanOrEqual(10);
+    expect(home(after)).toBeLessThanOrEqual(before - 10 + 1); // (a birth may have come meanwhile)
+    expect((await t.call("POST", "/world/open", {}, a)).status).toBe(409); // already open
+  });
+
+  it("yields what the ground gives every three hours to the camp's store", async () => {
+    const a = await account("a@example.com");
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN), settlers: 20 }, a);
+    const next = (await me(a)).cells[0]!.nextYieldAt;
+    expect(Date.parse(next) - t.now().getTime()).toBe(3 * HOUR);
+    t.advance(7 * HOUR);
+    await me(a);
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, a)).body.events as { kind: string; data: { yields?: Record<string, number> } }[];
+    const yields = events.find((e) => e.data.yields)?.data.yields;
+    expect(yields).toBeDefined();
+    expect(Object.values(yields!).reduce((x, y) => x + y, 0)).toBeGreaterThan(0);
+    // two yields were taken (7 hours), the next one is due at 9 hours after it was settled
+    expect(Date.parse((await me(a)).cells[0]!.nextYieldAt) - (t.now().getTime() - 7 * HOUR)).toBe(9 * HOUR);
+  });
+
+  it("shows the map: whose cells, lairs with their strength, terrain", async () => {
+    const a = await account("a@example.com");
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN), settlers: 8 }, a);
+    const cells = await map(a);
+    expect(cells.length).toBeGreaterThan(30);
+    const mine = cells.find((c) => c.cell === cellAt(DAAN))!;
+    expect(mine.owner?.race).toBe("goblin");
+    expect(mine.garrison).toBeGreaterThanOrEqual(8); // (its nest may have raised one meanwhile)
+    expect(mine.lair).toBeNull();
+    const lairs = cells.filter((c) => c.lair);
+    expect(lairs.length).toBeGreaterThan(5);
+    for (const c of lairs) {
+      expect(c.lair!.power).toBeGreaterThan(0);
+      expect(Object.values(c.lair!.foes).reduce((a, b) => a + b, 0)).toBe(c.lair!.count);
+    }
+    expect(new Set(cells.map((c) => c.terrain)).size).toBeGreaterThan(1);
+    expect((await t.call("GET", "/world/cells?lat=25&lng=121&radius=9000", undefined, a)).status).toBe(400);
+  });
+});
+
+describe("expeditions", () => {
+  async function ready() {
+    const a = await account("a@example.com");
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN), settlers: 8 }, a);
+    return a;
+  }
+  /** The weakest lair near home. */
+  async function weakLair(auth: Record<string, string>) {
+    const lairs = (await map(auth, DAAN, 1000)).filter((c) => c.lair && c.cell !== cellAt(DAAN));
+    return lairs.sort((x, y) => x.lair!.power - y.lair!.power)[0]!;
+  }
+
+  it("walk there, fight the lair, bring the loot home and clear it", async () => {
+    const a = await ready();
+    const target = await weakLair(a);
+    const materialsBefore = (await camp(a)).materials;
+    const res = await t.call("POST", "/world/expeditions", { to: target.cell, count: 25 }, a);
+    expect(res.status).toBe(201);
+    expect(res.body.kind).toBe("attack");
+    const minutes = (Date.parse(res.body.arriveAt) - Date.parse(res.body.setOutAt)) / MIN;
+    expect(minutes).toBeGreaterThanOrEqual(3);
+    expect(minutes).toBeLessThan(30);
+    // on the road: not at home
+    const walking = await camp(a);
+    expect(walking.residents.filter((r) => r.place === `exp:${res.body.id}`)).toHaveLength(25);
+    expect((await me(a)).walking).toHaveLength(1);
+
+    t.advance(minutes * MIN + 1000);
+    const w = await me(a);
+    expect(w.walking).toHaveLength(0);
+    const done = w.recent[0]!;
+    expect(done.outcome?.won).toBe(true);
+    expect(done.outcome?.cell).toBe("cleared");
+    expect(w.xp).toBeGreaterThan(0);
+    // the loot is in the books, the party is home, the lair is gone for a while
+    const after = await camp(a);
+    const gained = Object.values(done.outcome!.loot).reduce((x, y) => x + y, 0);
+    expect(Object.values(after.materials).reduce((x, y) => x + y, 0)).toBeGreaterThanOrEqual(Object.values(materialsBefore).reduce((x, y) => x + y, 0) + gained - 0);
+    expect(after.residents.some((r) => r.place.startsWith("exp:"))).toBe(false);
+    const cleared = (await map(a, DAAN, 1000)).find((c) => c.cell === target.cell)!;
+    expect(cleared.lair).toBeNull();
+    expect(cleared.lairBackAt).not.toBeNull();
+
+    // the report has the whole fight to play back
+    const report = (await t.call("GET", `/world/expeditions/${done.id}`, undefined, a)).body as ExpeditionReport;
+    expect(report.events.length).toBeGreaterThan(0);
+    expect(report.fighters.filter((f) => f.side === "attack")).toHaveLength(25);
+    expect(report.lair?.name).toBe(target.lair!.name);
+  });
+
+  it("settle a free cell, move more in, build a nest that raises residents, and give it up", async () => {
+    const a = await ready();
+    const target = await weakLair(a);
+    let res = await t.call("POST", "/world/expeditions", { to: target.cell, count: 30, settle: true }, a);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    let w = await me(a);
+    expect(w.recent[0]!.outcome?.cell).toBe("settled");
+    const held = w.cells.find((c) => c.cell === target.cell)!;
+    expect(held.garrison).toBeGreaterThanOrEqual(5);
+
+    // more move in from home (no fight: it is ours)
+    res = await t.call("POST", "/world/expeditions", { to: target.cell, count: 3 }, a);
+    expect(res.body.kind).toBe("move");
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    w = await me(a);
+    expect(w.cells.find((c) => c.cell === target.cell)!.garrison).toBe(held.garrison + 3);
+
+    // a nest: materials from the home raids pay for it; two hours to build, then a resident every 15 minutes
+    const c = await camp(a);
+    const enough = (c.materials.scrap_wood ?? 0) >= 30 && (c.materials.scrap_iron ?? 0) >= 10 && (c.materials.scrap_rag ?? 0) >= 10;
+    res = await t.call("POST", `/world/cells/${target.cell}/nest`, undefined, a);
+    if (!enough) {
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("cannot_afford");
+      return;
+    }
+    expect(res.status).toBe(200);
+    expect((await t.call("POST", `/world/cells/${target.cell}/nest`, undefined, a)).status).toBe(409);
+    const before = (await me(a)).cells.find((x) => x.cell === target.cell)!;
+    expect(before.nest).toBe("building");
+    t.advance(2 * HOUR + 61 * MIN);
+    const grown = (await me(a)).cells.find((x) => x.cell === target.cell)!;
+    expect(grown.nest).toBe("ready");
+    expect(grown.garrison).toBeGreaterThanOrEqual(before.garrison + 3);
+    const born = (await camp(a)).residents.filter((r) => r.place === `cell:${target.cell}`);
+    expect(born.length).toBe(grown.garrison);
+
+    // everyone walks home: the cell is free again
+    res = await t.call("POST", `/world/cells/${target.cell}/recall`, {}, a);
+    expect(res.status).toBe(200);
+    expect((res.body as WorldMe).cells.some((x) => x.cell === target.cell)).toBe(false);
+  });
+
+  it("tell the phone when they arrive (a push that opens the report)", async () => {
+    const password = await signUp(t, "p@example.com");
+    const onMac = bearer((await logIn(t, "p@example.com", password, mac(++macs))).body.token);
+    await t.call("POST", "/camp/start", { race: "goblin" }, onMac);
+    const cookie = (await logIn(t, "p@example.com", password, phone)).headers.get("set-cookie")!.split(";")[0]!;
+    expect((await t.call("POST", "/push/subscribe", { endpoint: "https://push.example/p", keys: { p256dh: "BPkey", auth: "authkey" } }, { cookie, origin: APP_URL })).status).toBe(204);
+    await grow(onMac);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN), settlers: 8 }, onMac);
+    const target = await weakLair(onMac);
+    const res = await t.call("POST", "/world/expeditions", { to: target.cell, count: 25 }, onMac);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    await me(onMac);
+    const push = t.push.sent.find((p) => (p.payload as { type: string }).type === "world")?.payload as { title: string; body: string; url: string };
+    expect(push.title).toBe("出征的隊伍到了");
+    expect(push.body).toContain(target.lair!.name);
+    expect(push.url).toBe(`/expedition/${res.body.id}`);
+  });
+
+  it("see the lair come back for a settled cell when its time is up: held, it is beaten again; lost, the cell is its again", async () => {
+    const a = await ready();
+    const target = await weakLair(a);
+    const res = await t.call("POST", "/world/expeditions", { to: target.cell, count: 12, settle: true }, a);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    expect((await me(a)).cells.map((c) => c.cell)).toContain(target.cell);
+    // a day later (every lair is back within 24 hours; the camp's own first cell is spared)
+    t.advance(25 * HOUR);
+    const w = await me(a);
+    const back = w.happenings.filter((h) => h.lairBack?.cell === target.cell);
+    expect(back.length).toBeGreaterThan(0);
+    const last = back[0]!.lairBack!;
+    expect(last.name).toBe(target.lair!.name);
+    if (last.held) {
+      expect(w.cells.map((c) => c.cell)).toContain(target.cell);
+      expect(last.killed).toBeGreaterThan(0);
+    } else {
+      expect(w.cells.map((c) => c.cell)).not.toContain(target.cell);
+      expect((await map(a, cellCenter(target.cell), 300)).find((c) => c.cell === target.cell)!.lair).not.toBeNull();
+    }
+    expect(w.happenings.some((h) => h.lairBack?.cell === cellAt(DAAN))).toBe(false);
+  });
+
+  it("refuse what cannot be: too big a party, leaving a cell unguarded, someone else's cell as a start", async () => {
+    const a = await ready();
+    const target = await weakLair(a);
+    expect((await t.call("POST", "/world/expeditions", { to: target.cell, count: 61 }, a)).status).toBe(400);
+    // the first cell has 8: sending 5 would leave 3, fewer than the 5 that hold it
+    const res = await t.call("POST", "/world/expeditions", { from: cellAt(DAAN), to: target.cell, count: 5 }, a);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("too_few");
+    expect((await t.call("POST", "/world/expeditions", { from: neighbors(cellAt(DAAN))[0], to: target.cell, count: 3 }, a)).status).toBe(403);
+    expect((await t.call("POST", "/world/expeditions", { to: target.cell, residents: [999_999] }, a)).status).toBe(409);
+  });
+});
+
+describe("camps against camps", () => {
+  it("fight over a cell; the loser turtles and cannot be attacked until it opens again", async () => {
+    const a = await account("a@example.com");
+    const b = await account("b@example.com");
+    await grow(a);
+    const aCell = cellAt(DAAN);
+    const bCell = cellAt(XINYI);
+    await t.call("POST", "/world/open", { cell: aCell, settlers: 5 }, a);
+    await t.call("POST", "/world/open", { cell: bCell, settlers: 5 }, b);
+
+    // b attacks a's cell (5 defenders) with its 40 strongest
+    let res = await t.call("POST", "/world/expeditions", { to: aCell, count: 40, settle: true }, b);
+    expect(res.status).toBe(201);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const wb = await me(b);
+    const fight = wb.recent[0]!;
+    expect(fight.outcome?.won).toBe(true);
+    expect(fight.outcome?.cell).toBe("taken");
+    expect(wb.cells.map((c) => c.cell)).toContain(aCell);
+    // a hears of it, lost its cell and its garrison, and turtles
+    const wa = await me(a);
+    expect(wa.cells).toHaveLength(0);
+    expect(wa.shielded).toBe(true);
+    expect(wa.open).toBe(false);
+    expect(wa.recent[0]!.defending).toBe(true);
+    expect((await camp(a)).residents.some((r) => r.place.startsWith("cell:"))).toBe(false);
+    // a turtling camp cannot send parties, and is not attacked
+    expect((await t.call("POST", "/world/expeditions", { to: bCell, count: 5 }, a)).status).toBe(403);
+
+    // a opens again, retakes nothing yet; the leaderboard has both
+    expect((await t.call("POST", "/world/open", {}, a)).status).toBe(201);
+    expect((await me(a)).shielded).toBe(false);
+    const board = (await t.call("GET", "/world/leaderboard", undefined, a)).body as { all: { name: string; rank: number; cells: number }[] };
+    expect(board.all).toHaveLength(2);
+    expect(board.all.find((e) => e.cells === 2)).toBeDefined();
+  });
+
+  it("a new world gives the cells up", async () => {
+    const a = await account("a@example.com");
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN), settlers: 5 }, a);
+    await t.call("POST", "/camp/new-world", { race: "elf" }, a);
+    const w = await me(a);
+    expect(w.open).toBe(false);
+    expect(w.cells).toHaveLength(0);
+    const cell = (await map(a, cellCenter(cellAt(DAAN)), 300)).find((c) => c.cell === cellAt(DAAN))!;
+    expect(cell.owner).toBeNull();
+  });
+});
+
+describe("the world's great monsters (世界魔王)", () => {
+  // (off for a start: this turns them on for these tests)
+  beforeAll(() => void (process.env.WORLD_BOSSES = "on"));
+  afterAll(() => void delete process.env.WORLD_BOSSES);
+  /** A boss standing near 大安 right now, and a free cell beside it for a camp. */
+  function bossNear(): { cell: string; name: string; beside: string } {
+    const now = t.now().getTime();
+    const regions = [...new Set(cellsWithin(DAAN, 20_000).map(regionOf))];
+    for (const r of regions) {
+      const b = bossIn(WORLD_SEED, r, bossWindow(now));
+      if (b) return { cell: b.cell, name: b.name, beside: neighbors(b.cell)[0]! };
+    }
+    throw new Error("no boss near");
+  }
+
+  it("keep their wounds between parties, and share the spoils with everyone who hurt them", async () => {
+    const a = await account("a@example.com");
+    const b = await account("b@example.com");
+    await grow(a);
+    const boss = bossNear();
+    await t.call("POST", "/world/open", { cell: boss.beside, settlers: 5 }, a);
+    await t.call("POST", "/world/open", { cell: neighbors(boss.cell)[3]!, settlers: 5 }, b);
+    const seen = (await map(a, cellCenter(boss.cell), 300)).find((c) => c.cell === boss.cell)!;
+    expect(seen.boss?.name).toBe(boss.name);
+    expect(seen.boss?.hp).toBe(seen.boss?.maxHp);
+    expect(seen.lair).toBeNull();
+
+    // a's party gets its onslaught in: it hurts it, and does not beat it
+    let res = await t.call("POST", "/world/expeditions", { to: boss.cell, count: 40 }, a);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const first = (await me(a)).recent[0]!;
+    expect(first.outcome?.cell).toBe("held");
+    expect(first.outcome?.damage).toBeGreaterThan(0);
+    const hurt = (await map(a, cellCenter(boss.cell), 300)).find((c) => c.cell === boss.cell)!.boss!;
+    expect(hurt.hp).toBe(hurt.maxHp - first.outcome!.damage!);
+    expect(hurt.fighters[0]?.damage).toBe(first.outcome!.damage);
+
+    // b finishes it off (worn down to almost nothing meanwhile)
+    await database.sql`update world_bosses set hp = 5`;
+    const xpA = (await me(a)).xp;
+    res = await t.call("POST", "/world/expeditions", { to: boss.cell, count: 20 }, b);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const last = (await me(b)).recent[0]!;
+    expect(last.outcome?.won).toBe(true);
+    expect(last.outcome?.cell).toBe("cleared");
+    const report = (await t.call("GET", `/world/expeditions/${last.id}`, undefined, b)).body as ExpeditionReport;
+    expect(report.boss?.defeated).toBe(true);
+    expect(report.fighters.find((f) => f.id === "boss")?.hp).toBe(5);
+    // both get their share (a did far more)
+    const wa = await me(a);
+    expect(wa.xp).toBeGreaterThan(xpA);
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, a)).body.events as { kind: string; data: { bossReward?: { loot: Record<string, number> } } }[];
+    const reward = events.find((e) => e.data.bossReward)?.data.bossReward;
+    expect(reward).toBeDefined();
+    const campA = await camp(a);
+    for (const [mat, n] of Object.entries(reward!.loot)) expect(campA.materials[mat] ?? 0).toBeGreaterThanOrEqual(n);
+    expect((await me(b)).xp).toBeGreaterThan(0);
+    // and it is gone from the map
+    expect((await map(a, cellCenter(boss.cell), 300)).find((c) => c.cell === boss.cell)!.boss).toBeNull();
+  });
+});

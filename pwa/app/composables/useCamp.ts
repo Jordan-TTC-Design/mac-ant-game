@@ -27,6 +27,7 @@ async function fetchNow() {
     try {
       const [view, { raids }] = await Promise.all([api<CampView>("GET", "camp"), api<{ raids: RaidReport[] }>("GET", "camp/raids?limit=10")]);
       state.saved = { userId, view, raids, fetchedAt: Date.now() };
+      useRace().set(view.race);
       state.status = "ok";
       void set(KEY, JSON.parse(JSON.stringify(state.saved)));
     } catch (e) {

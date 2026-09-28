@@ -557,6 +557,7 @@ final class AntView: NSView {
         }
 
         let character = Characters.current
+        drawGraves(scale: scale, onScreen: onScreen)
         if character.worker != nil {
             drawSpriteWorkers(character, scale: scale, onScreen: onScreen)
         } else {
@@ -616,6 +617,57 @@ final class AntView: NSView {
         ring.stroke()
     }
 
+    private func isDigging(_ activity: Ant.Activity?) -> Bool {
+        if case .dig? = activity { return true }
+        return false
+    }
+
+    /// The undead camp's graves: a small headstone on a mound of earth; one with somebody asleep in it has a soul-fire
+    /// drifting over it and a "z" now and then.
+    private func drawGraves(scale: CGFloat, onScreen: CGRect) {
+        let graves = colony.graves
+        guard !graves.isEmpty else { return }
+        let u = max(1, (1.5 * scale).rounded())
+        let sleepers = colony.ants.filter(\.inGrave).compactMap { ant -> CGPoint? in
+            if case .activity(.grave(let spot), _) = ant.mode { return spot }
+            return nil
+        }
+        let t = Date().timeIntervalSinceReferenceDate
+        func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) {
+            c.setFill()
+            NSRect(x: x, y: y, width: w * u, height: h * u).fill()
+        }
+        for (k, g) in graves.enumerated() {
+            let p = local(g)
+            guard onScreen.insetBy(dx: -30, dy: -30).contains(p) else { continue }
+            let x = p.x - 4 * u, y = p.y - 2 * u
+            // the mound
+            px(x - u, y, 10, 2, NSColor(calibratedRed: 0.36, green: 0.27, blue: 0.2, alpha: 1))
+            px(x, y + 2 * u, 8, 1, NSColor(calibratedRed: 0.44, green: 0.33, blue: 0.24, alpha: 1))
+            // the headstone behind it, rounded at the top, with a crack or a cross
+            let stone = NSColor(calibratedRed: 0.58, green: 0.6, blue: 0.64, alpha: 1)
+            px(x + u, y + 3 * u, 6, 6, stone)
+            px(x + 2 * u, y + 9 * u, 4, 1, stone)
+            px(x + u, y + 3 * u, 1, 6, NSColor(calibratedRed: 0.44, green: 0.46, blue: 0.5, alpha: 1))
+            let mark = NSColor(calibratedRed: 0.36, green: 0.38, blue: 0.42, alpha: 1)
+            if k % 2 == 0 { px(x + 3.5 * u, y + 4.5 * u, 1, 4, mark); px(x + 2.5 * u, y + 6.5 * u, 3, 1, mark) }
+            else { px(x + 3 * u, y + 5 * u, 1, 1, mark); px(x + 4 * u, y + 6 * u, 1, 1, mark); px(x + 3 * u, y + 7 * u, 1, 1, mark) }
+            guard sleepers.contains(where: { hypot($0.x - g.x, $0.y - g.y) < 4 }) else { continue }
+            // somebody is in there
+            let bob = CGFloat(sin(t * 2 + Double(k))) * 2 * u
+            let fire = NSColor(calibratedRed: 0.45, green: 0.95, blue: 0.85, alpha: 0.9)
+            NSColor(calibratedRed: 0.45, green: 0.95, blue: 0.85, alpha: 0.18).setFill() // its glow
+            NSBezierPath(ovalIn: NSRect(x: x + 0.5 * u, y: y + 10 * u + bob, width: 7 * u, height: 7 * u)).fill()
+            px(x + 2.5 * u, y + 11.5 * u + bob, 3, 3, fire)
+            px(x + 3 * u, y + 14.5 * u + bob, 2, 1, fire)
+            px(x + 3.5 * u, y + 15.5 * u + bob, 1, 1, fire.withAlphaComponent(0.6))
+            if Int(t + Double(k)) % 3 == 0 {
+                let z = NSAttributedString(string: "z", attributes: [.font: NSFont.boldSystemFont(ofSize: 6 * u), .foregroundColor: NSColor.white.withAlphaComponent(0.8)])
+                z.draw(at: CGPoint(x: x + 7 * u, y: y + 11 * u + bob))
+            }
+        }
+    }
+
     private func drawSpriteWorkers(_ character: Character, scale: CGFloat, onScreen: CGRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let lastBreed = character.breeds.count - 1
@@ -637,7 +689,7 @@ final class AntView: NSView {
             let size = CGFloat(role.frameSize) * pixel
             let activity = ant.activity
             if case .play? = activity { p.y += CGFloat(abs(sin(ant.activityClock * 7))) * 4 } // hops about
-            if ant.lying { continue } // (in bed beside the princess: drawn with the bed, over it)
+            if ant.lying || ant.inGrave { continue } // (in bed beside the princess: drawn with the bed; in a grave: the grave shows it)
             if activity == .sleep { // lying on its side, and turning over now and then; nothing else to draw
                 guard let lying = role.image(direction: .down, phase: 0) else { continue }
                 ctx.saveGState()
@@ -683,7 +735,7 @@ final class AntView: NSView {
             }
             if PerfGovernor.shared.showsDetail, !ant.isChild {
                 if !ant.gear.isEmpty || ant.swing > 0 { drawGear(ant, at: p, size: size, pixel: pixel) }
-                if ant.swing > 0 { drawSlash(ant, at: p, size: size, progress: swingProgress) }
+                if ant.swing > 0, !isDigging(activity) { drawSlash(ant, at: p, size: size, progress: swingProgress) } // (digging throws earth instead)
             }
             if activity != nil || ant.catchShow > 0 { drawActivity(ant, at: p, size: size, pixel: pixel) }
             if let kind = ant.carrying { // held up over the head, side by side if it carries more than one
@@ -851,6 +903,27 @@ final class AntView: NSView {
             spoon.line(to: CGPoint(x: c.x + stir, y: c.y + 10))
             spoon.lineWidth = 1.5
             spoon.stroke()
+        case .meditate?:
+            // sitting still; a few leaves and little lights drift slowly around it
+            for k in 0..<4 {
+                let a = t * 0.8 + Double(k) * .pi / 2
+                let q = CGPoint(x: p.x + CGFloat(cos(a)) * size * 0.55, y: p.y + size * 0.4 + CGFloat(sin(a * 1.3)) * size * 0.25)
+                if k % 2 == 0 { rect(q.x, q.y, 1.6, 1, NSColor(calibratedRed: 0.45, green: 0.78, blue: 0.35, alpha: 0.9)) }
+                else { drawSpeck(at: q, radius: 1.1, color: NSColor(calibratedRed: 1, green: 0.95, blue: 0.6, alpha: 0.5 + 0.4 * CGFloat(sin(t * 3 + Double(k))))) }
+            }
+        case .dig(let spot)?:
+            guard hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 6 else { break }
+            // a hole at its feet, and earth thrown up with each scoop
+            let hole = CGPoint(x: p.x, y: p.y - size * 0.18)
+            NSColor(calibratedRed: 0.22, green: 0.16, blue: 0.12, alpha: 0.85).setFill()
+            NSBezierPath(ovalIn: NSRect(x: hole.x - 5 * u, y: hole.y - 1.2 * u, width: 10 * u, height: 3 * u)).fill()
+            if ant.swing > 0 {
+                let k = CGFloat(1 - ant.swing / Ant.swingTime)
+                for i in 0..<3 {
+                    let dx = CGFloat(i - 1) * 4 * u * k, dy = sin(k * .pi) * 7 * u + CGFloat(i) * u
+                    rect(hole.x + dx, hole.y + dy, 1.4, 1.4, NSColor(calibratedRed: 0.42, green: 0.3, blue: 0.2, alpha: 1))
+                }
+            }
         case .read?:
             let book = CGPoint(x: p.x, y: p.y + size * 0.12)
             rect(book.x, book.y, 7, 4.5, NSColor(calibratedRed: 0.35, green: 0.3, blue: 0.62, alpha: 1))

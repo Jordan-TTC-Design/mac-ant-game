@@ -11,13 +11,15 @@ import type { Mailer } from "./mail/mailer.ts";
 import { campRoutes } from "./camp/routes.ts";
 import { noteRoutes } from "./notes/routes.ts";
 import { pushRoutes } from "./push/routes.ts";
+import { worldRoutes } from "./world/routes.ts";
+import { adminRoutes } from "./admin/routes.ts";
 import { NoPushSender, type PushSender } from "./push/sender.ts";
 import { Hub, type Socket } from "./realtime/hub.ts";
 
 export interface AppDeps {
   database: Database;
   mailer: Mailer;
-  config: Pick<Config, "APP_URL" | "TRUST_PROXY">;
+  config: Pick<Config, "APP_URL" | "TRUST_PROXY"> & Partial<Pick<Config, "ADMIN_EMAILS">>;
   hub: Hub;
   /** Web Push to phones (no keys set: nothing is pushed). */
   push: PushSender;
@@ -47,6 +49,8 @@ export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; 
   app.route("/notes", noteRoutes(deps));
   app.route("/camp", campRoutes(deps));
   app.route("/push", pushRoutes(deps));
+  app.route("/world", worldRoutes(deps));
+  app.route("/admin", adminRoutes(deps));
 
   // Signed-in devices keep this open and are told when something changed (then they fetch it).
   const appOrigin = new URL(deps.config.APP_URL).origin;

@@ -168,3 +168,37 @@ export function checkAttack(attackerId: string, attacker: PlayerWorldState, targ
   if (!target.open) return "target_closed";
   return null;
 }
+
+// --- what held cells yield ---------------------------------------------------------------------------------------
+
+/** Every this many hours a held cell yields what its ground gives (to the camp's store). */
+export const YIELD_HOURS = 3;
+
+/** What one yield of a cell gives, by its terrain: the plain materials a nest and a town are built from, now and then a find. */
+export const TERRAIN_YIELD: Record<string, { id: string; min: number; max: number; chance: number }[]> = {
+  forest: [{ id: "scrap_wood", min: 2, max: 4, chance: 1 }, { id: "amber", min: 1, max: 1, chance: 0.05 }],
+  park: [{ id: "scrap_rag", min: 1, max: 3, chance: 1 }, { id: "scrap_wood", min: 1, max: 2, chance: 0.6 }],
+  water: [{ id: "frog_skin", min: 1, max: 2, chance: 0.7 }, { id: "snake_scale", min: 1, max: 1, chance: 0.3 }, { id: "river_pearl", min: 1, max: 1, chance: 0.04 }],
+  urban: [{ id: "scrap_iron", min: 2, max: 3, chance: 1 }, { id: "crystal_shard", min: 1, max: 1, chance: 0.06 }],
+  open: [{ id: "scrap_rag", min: 1, max: 2, chance: 1 }, { id: "scrap_iron", min: 1, max: 2, chance: 0.5 }],
+  road: [{ id: "scrap_iron", min: 1, max: 2, chance: 1 }, { id: "stolen_coin", min: 1, max: 2, chance: 0.2 }],
+};
+
+/**
+ * What a held cell yields for `times` yields with `garrison` living there: nothing below the race's minimum (nobody to
+ * work it), then more the more live there, up to double at the cell's full room; a town twice that again.
+ */
+export function cellYield(race: string, terrain: string, garrison: number, times: number, random: () => number, town = false): Record<string, number> {
+  const min = garrisonMin(race);
+  if (garrison < min || times <= 0) return {};
+  const scale = Math.min(2, 1 + (garrison - min) / Math.max(1, cellCapacity(race) - min)) * (town ? 2 : 1);
+  const out: Record<string, number> = {};
+  for (let k = 0; k < times; k++) {
+    for (const y of TERRAIN_YIELD[terrain] ?? TERRAIN_YIELD.open!) {
+      if (random() >= y.chance) continue;
+      const n = Math.round((y.min + Math.floor(random() * (y.max - y.min + 1))) * scale);
+      if (n > 0) out[y.id] = (out[y.id] ?? 0) + n;
+    }
+  }
+  return out;
+}

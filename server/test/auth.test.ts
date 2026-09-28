@@ -263,3 +263,44 @@ describe("忘記密碼", () => {
     await logIn(t, "a@example.com", "a brand new password");
   });
 });
+
+describe("a Mac opening the web page signed in (handoff)", () => {
+  it("gives a one-time link that signs a browser in and goes to the page", async () => {
+    const password = await signUp(t, "h@example.com");
+    const onMac = bearer((await logIn(t, "h@example.com", password, mac(7))).body.token);
+    const webDevice = "0f0e0d0c-0b0a-4908-8706-050403020100";
+    const res = await t.call("POST", "/auth/handoff", { webDevice, to: "/world" }, onMac);
+    expect(res.status).toBe(200);
+    const url = new URL(res.body.url);
+    const open = await t.app.request(url.pathname + url.search);
+    expect(open.status).toBe(302);
+    expect(open.headers.get("location")).toBe(`${APP_URL}/world`);
+    const cookie = open.headers.get("set-cookie")!.split(";")[0]!;
+    const me = await t.call("GET", "/auth/me", undefined, { cookie });
+    expect(me.body.user.email).toBe("h@example.com");
+    // once only, and only with the device it was made for
+    const again = await t.app.request(url.pathname + url.search);
+    expect(again.headers.get("location")).toContain("/login");
+    const other = await t.call("POST", "/auth/handoff", { webDevice, to: "/world" }, onMac);
+    const wrong = new URL(other.body.url);
+    wrong.searchParams.set("device", "11111111-2222-4333-8444-555555555555");
+    expect((await t.app.request(wrong.pathname + wrong.search)).headers.get("location")).toContain("/login");
+    // not from a web page's cookie, and not to another site
+    expect((await t.call("POST", "/auth/handoff", { webDevice, to: "/world" }, { cookie, origin: APP_URL })).status).toBe(403);
+    expect((await t.call("POST", "/auth/handoff", { webDevice, to: "//evil.example" }, onMac)).status).toBe(400);
+  });
+});
+
+describe("signing out every other device", () => {
+  it("ends every sign-in but this one", async () => {
+    const password = await signUp(t, "o@example.com");
+    const one = bearer((await logIn(t, "o@example.com", password, mac(1))).body.token);
+    const two = bearer((await logIn(t, "o@example.com", password, mac(2))).body.token);
+    const three = bearer((await logIn(t, "o@example.com", password, mac(3))).body.token);
+    const res = await t.call("DELETE", "/auth/sessions", undefined, one);
+    expect(res.body.signedOut).toBe(2);
+    expect((await t.call("GET", "/auth/me", undefined, one)).status).toBe(200);
+    expect((await t.call("GET", "/auth/me", undefined, two)).status).toBe(401);
+    expect((await t.call("GET", "/auth/me", undefined, three)).status).toBe(401);
+  });
+});

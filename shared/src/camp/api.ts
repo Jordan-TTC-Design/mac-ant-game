@@ -112,7 +112,7 @@ export interface CampView {
 export interface CampEvent {
   seq: number;
   at: string;
-  kind: "started" | "migrated" | "population" | "raid" | "command";
+  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world";
   data: unknown;
 }
 

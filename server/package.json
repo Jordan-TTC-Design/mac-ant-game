@@ -10,15 +10,18 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
     "invite": "tsx --env-file-if-exists=.env src/cli/invite.ts",
+    "admin": "tsx --env-file-if-exists=.env src/cli/admin.ts",
     "vapid": "web-push generate-vapid-keys"
   },
   "dependencies": {
     "@goblincamp/shared": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "@hono/node-ws": "^1.3.1",
+    "@mapbox/vector-tile": "^3.0.0",
     "@node-rs/argon2": "^2.2.1",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.9",
+    "pbf": "^5.1.2",
     "postgres": "^3.4.9",
     "tsx": "^4.23.15",
     "web-push": "^3.6.7",

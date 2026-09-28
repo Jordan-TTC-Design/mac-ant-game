@@ -81,12 +81,52 @@ final class CampLedger {
         let winner: String
     }
 
-    /// One thing that happened in the camp (`GET /api/camp/events`); only raids are read so far.
+    /// A party in the big world (server/WORLD.md §15): setting out, arriving, or another camp's party at one of ours.
+    struct Expedition: Decodable {
+        let setOut: Bool?
+        let arrived: Bool?
+        let defended: Bool?
+        let won: Bool?
+        /// cleared, taken, settled, held, back
+        let cell: String?
+        let against: String?
+        let loot: [String: Int]?
+        let fallen: Int?
+        let killed: Int?
+        /// Who attacked (when `defended`).
+        let by: String?
+        /// Damage done to a great monster of the world.
+        let damage: Int?
+    }
+
+    /// A lair came back for one of the camp's cells in the big world.
+    struct LairBack: Decodable {
+        let name: String
+        let level: Int
+        let held: Bool
+        let fallen: Int
+        let loot: [String: Int]
+    }
+
+    /// The share of a great monster's spoils this camp got (it helped beat it).
+    struct BossReward: Decodable {
+        let name: String
+        let loot: [String: Int]
+        let xp: Int
+        let share: Double
+    }
+
+    /// One thing that happened in the camp (`GET /api/camp/events`); raids and the big world's parties are read.
     struct Event: Decodable {
         let seq: Int
         let at: String
         let kind: String
         let raid: Raid?
+        let expedition: Expedition?
+        let bossReward: BossReward?
+        /// What the held cells of the big world yielded (material → how many).
+        let yields: [String: Int]?
+        let lairBack: LairBack?
         private enum CodingKeys: String, CodingKey { case seq, at, kind, data }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -94,6 +134,12 @@ final class CampLedger {
             at = try c.decode(String.self, forKey: .at)
             kind = try c.decode(String.self, forKey: .kind)
             raid = kind == "raid" ? try? c.decode(Raid.self, forKey: .data) : nil
+            expedition = kind == "expedition" ? try? c.decode(Expedition.self, forKey: .data) : nil
+            struct World: Decodable { let bossReward: BossReward?; let yields: [String: Int]?; let lairBack: LairBack? }
+            let world = kind == "world" ? try? c.decode(World.self, forKey: .data) : nil
+            bossReward = world?.bossReward
+            yields = world?.yields
+            lairBack = world?.lairBack
         }
     }
 
@@ -150,6 +196,11 @@ final class CampLedger {
         }
         if debug { NSLog("GoblinCamp: camp here: +\(step.born.count) −\(step.died.count) → \(residents.count)") }
         return true
+    }
+
+    /// Residents alive but away from home (on a held cell of the big world, or on the road): the camp lets them walk off.
+    func awayIDs() -> Set<Int> {
+        Set((view?.residents ?? []).filter { $0.place != "home" }.map(\.id))
     }
 
     /// The residents as the camp takes them (`Colony.applyBooks`).

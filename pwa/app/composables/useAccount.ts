@@ -56,6 +56,7 @@ export function useAccount() {
     }
     user.value = null;
     localStorage.removeItem("gc-user");
+    useRace().forget();
   }
 
   return { user, refresh, login, logout };

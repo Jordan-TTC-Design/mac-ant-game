@@ -26,11 +26,11 @@ import {
 } from "@goblincamp/shared/camp";
 import { hashString, randomFrom } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
-import { campEvents, campResidents, camps } from "../db/schema.ts";
+import { campEvents, campResidents, camps, expeditions, worldCells, worldPlayers } from "../db/schema.ts";
 import { resolveRaid, type RaidOutcome } from "./raids.ts";
 
-type CampRow = typeof camps.$inferSelect;
-type ResidentRow = typeof campResidents.$inferSelect;
+export type CampRow = typeof camps.$inferSelect;
+export type ResidentRow = typeof campResidents.$inferSelect;
 
 const HOUR = 3_600_000;
 
@@ -58,7 +58,7 @@ function homePlace(camp: CampRow): Place {
   return { race: camp.race, key: "home", startedAt: camp.startedAt.getTime(), birthMinutes: rules.homeBirthMinutes, cap: rules.homeCap };
 }
 
-function toResident(row: ResidentRow): Resident {
+export function toResident(row: ResidentRow): Resident {
   return { id: row.id, breed: row.breed, seed: row.seed, bornAt: row.bornAt.getTime(), diesAt: row.diesAt?.getTime() ?? null, diedAt: row.diedAt?.getTime() ?? null };
 }
 
@@ -220,6 +220,10 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
 }
 
 async function clearCamp(tx: Tx, userId: string) {
+  // a new world starts outside the big world: its cells are given up and parties on the way are gone
+  await tx.update(worldCells).set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: null, updatedAt: new Date() }).where(eq(worldCells.owner, userId));
+  await tx.delete(expeditions).where(and(eq(expeditions.userId, userId), eq(expeditions.status, "walking")));
+  await tx.delete(worldPlayers).where(eq(worldPlayers.userId, userId));
   await tx.delete(campEvents).where(eq(campEvents.userId, userId));
   await tx.delete(campResidents).where(eq(campResidents.userId, userId));
   await tx.delete(camps).where(eq(camps.userId, userId));

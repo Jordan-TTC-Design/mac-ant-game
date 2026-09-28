@@ -2,13 +2,16 @@
 // One goblin from the Mac's own sprite sheets (16×16 frames: row 1 facing you, row 2 away, row 3 sideways), moving about
 // the way it does on a Mac note: idling, nervous near the target time, trembling when late, jumping with a bell when
 // a reminder rings, hopping when done.
-const props = withDefaults(defineProps<{ breed?: string; mood?: "idle" | "soon" | "late" | "ringing" | "done"; scale?: number }>(), {
+const props = withDefaults(defineProps<{ breed?: string; mood?: "idle" | "soon" | "late" | "ringing" | "done"; scale?: number; race?: string }>(), {
   breed: "common",
   mood: "idle",
   scale: 3,
 });
 
 const sheets: Record<string, string> = { common: "worker", scout: "scout", brute: "brute", sage: "sage", golden: "golden" };
+// each race has its own sheets (the account's race unless told otherwise)
+const account = useRace();
+const race = computed(() => props.race ?? account.race.value);
 const tick = ref(Math.floor(Math.random() * 100));
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => (timer = setInterval(() => tick.value++, 160)));
@@ -59,7 +62,7 @@ const size = computed(() => 16 * props.scale);
 const style = computed(() => ({
   width: `${size.value}px`,
   height: `${size.value}px`,
-  backgroundImage: `url(/sprites/${sheets[props.breed] ?? "worker"}.png)`,
+  backgroundImage: `url(/sprites/${race.value}/${sheets[props.breed] ?? "worker"}.png)`,
   backgroundSize: `${64 * props.scale}px ${48 * props.scale}px`,
   backgroundPosition: `-${frame.value.col * size.value}px -${frame.value.row * size.value}px`,
   transform: `translate(${frame.value.dx}px, ${-frame.value.dy}px) scaleX(${frame.value.flip ? -1 : 1})`,

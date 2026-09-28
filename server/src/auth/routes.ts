@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { z } from "zod";
+import { and, desc, eq, gt, isNull, ne } from "drizzle-orm";
 import {
   emailOnlyInput,
   loginInput,
@@ -19,6 +20,10 @@ import { hashSecret, newFriendCode, newToken, normalizeCode } from "../lib/token
 import type { Mail } from "../mail/mailer.ts";
 import { alreadyRegisteredMail, resetMail, verifyMail } from "../mail/templates.ts";
 import { clearSessionCookie, createSession, requireAuth, setSessionCookie, type Db } from "./session.ts";
+
+/** How long a Mac's link into the web page works. */
+const HANDOFF_MINUTES = 3;
+const handoffInput = z.object({ webDevice: z.uuid(), to: z.string().regex(/^\/[a-z0-9/_-]*$/i).max(80).default("/world") });
 
 const HOUR = 3_600_000;
 const VERIFY_HOURS = 24;
@@ -171,6 +176,7 @@ export function authRoutes(deps: AppDeps) {
     }
     if (!(await verifyPassword(user.passwordHash, password))) return apiError(c, 401, "invalid_credentials", "信箱或密碼不對。");
     if (!user.emailVerifiedAt) return apiError(c, 403, "email_not_verified", "請先到信箱點確認連結（找不到信可以重寄一次）。");
+    if (user.disabledAt) return apiError(c, 403, "forbidden", "這個帳號被管理員停用了，有問題請找管理員。");
 
     const at = now();
     const session = await db.transaction(async (tx) => {
@@ -192,6 +198,48 @@ export function authRoutes(deps: AppDeps) {
     if (device.kind === "pwa") setSessionCookie(c, session.token, session.expiresAt, deps.config.APP_URL);
     else result.token = session.token;
     return c.json(result);
+  });
+
+  /**
+   * A signed-in Mac opens the web page (the big world) already signed in: it asks for a one-time link (a few minutes), and
+   * opening it gives that browser a session of its own (`webDevice`: the Mac's id for its web window) and goes to `to`.
+   */
+  app.post("/handoff", auth, async (c) => {
+    const me = c.get("session");
+    if (me.viaCookie) return apiError(c, 403, "forbidden", "只有 App 可以這樣做。");
+    const body = await readJson(c, handoffInput);
+    if ("response" in body) return body.response;
+    const token = newToken("gch");
+    const at = now();
+    await db.insert(emailTokens).values({ userId: me.user.id, purpose: "handoff", tokenHash: hashSecret(`${token}|${body.data.webDevice}`), createdAt: at, expiresAt: new Date(at.getTime() + HANDOFF_MINUTES * 60_000) });
+    const url = new URL(`/api/auth/handoff/${token}`, deps.config.APP_URL);
+    url.searchParams.set("device", body.data.webDevice);
+    url.searchParams.set("to", body.data.to);
+    return c.json({ url: url.toString() });
+  });
+
+  app.get("/handoff/:token", async (c) => {
+    const token = c.req.param("token");
+    const device = c.req.query("device") ?? "";
+    const to = c.req.query("to") ?? "/";
+    const target = new URL(to.startsWith("/") && !to.startsWith("//") ? to : "/", deps.config.APP_URL).toString();
+    const at = now();
+    const [row] = await db
+      .update(emailTokens)
+      .set({ usedAt: at })
+      .where(and(eq(emailTokens.tokenHash, hashSecret(`${token}|${device}`)), eq(emailTokens.purpose, "handoff"), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, at)))
+      .returning({ userId: emailTokens.userId });
+    if (!row || !/^[0-9a-f-]{36}$/i.test(device)) return c.redirect(new URL("/login?expired=1", deps.config.APP_URL).toString());
+    const session = await db.transaction(async (tx) => {
+      await tx.update(sessions).set({ revokedAt: at }).where(and(eq(sessions.deviceId, device), isNull(sessions.revokedAt)));
+      await tx
+        .insert(devices)
+        .values({ id: device, userId: row.userId, kind: "pwa", name: "Mac 的大世界視窗", createdAt: at, lastSeenAt: at })
+        .onConflictDoUpdate({ target: devices.id, set: { userId: row.userId, lastSeenAt: at } });
+      return createSession(tx, row.userId, device, at);
+    });
+    setSessionCookie(c, session.token, session.expiresAt, deps.config.APP_URL);
+    return c.redirect(target);
   });
 
   app.post("/logout", auth, async (c) => {
@@ -224,6 +272,18 @@ export function authRoutes(deps: AppDeps) {
       current: session.id === me.id,
     }));
     return c.json({ sessions: list });
+  });
+
+  /** Signs out every other device of this account (this one stays signed in). */
+  app.delete("/sessions", auth, async (c) => {
+    const me = c.get("session");
+    const done = await db
+      .update(sessions)
+      .set({ revokedAt: now() })
+      .where(and(eq(sessions.userId, me.user.id), ne(sessions.id, me.id), isNull(sessions.revokedAt)))
+      .returning({ id: sessions.id });
+    for (const d of done) deps.hub.close(me.user.id, d.id);
+    return c.json({ signedOut: done.length });
   });
 
   app.delete("/sessions/:id", auth, async (c) => {

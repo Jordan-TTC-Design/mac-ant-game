@@ -1,0 +1,1 @@
+ALTER TABLE "world_cells" ADD COLUMN "yielded_to" timestamp (3) with time zone;

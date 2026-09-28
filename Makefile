@@ -11,14 +11,15 @@ DEV  := -f docker-compose_dev.yaml
 PROD := -f docker-compose_prod.yml
 BASE := -f docker-compose.yml
 
-# make invite n=3 days=14
+# make invite n=3 days=14　｜　make admin email=you@example.com
 n    ?= 1
+email ?=
 days ?= 14
 
 .PHONY: up up-dev up-prod down down-dev down-prod reset-dev \
         restart restart-dev restart-prod logs logs-dev logs-prod \
         deploy deploy-dev deploy-prod ps ps-dev ps-prod \
-        invite invite-dev invite-prod invites invites-prod vapid \
+        invite invite-dev invite-prod invites invites-prod admin admin-prod admins vapid \
         dump-db dump-db-dev dump-db-prod restore-db shell-server shell-server-dev shell-server-prod \
         shell-db shell-db-dev shell-db-prod check-env
 
@@ -102,6 +103,16 @@ invites:
 
 invites-prod:
 	docker compose $(PROD) exec server node --import tsx src/cli/invite.ts list
+
+# 把一個帳號設成管理員（後台）：帳號要先註冊好。make admin email=you@example.com；make admins 列出管理員
+admin:
+	docker compose $(BASE) exec server node --import tsx src/cli/admin.ts grant $(email)
+
+admin-prod:
+	docker compose $(PROD) exec server node --import tsx src/cli/admin.ts grant $(email)
+
+admins:
+	docker compose $(BASE) exec server node --import tsx src/cli/admin.ts list
 
 # 產生一組手機推播用的 VAPID 金鑰（貼進 .env，然後 make deploy）
 vapid:

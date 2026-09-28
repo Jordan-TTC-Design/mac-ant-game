@@ -17,6 +17,10 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   /** When the account asked to be deleted; everything goes 30 days later. */
   deletingAt: timestamp("deleting_at", { withTimezone: true }),
+  /** user, or admin (後台). The first admin comes from ADMIN_EMAILS or `make admin email=…`; the rest are made in 後台. */
+  role: text("role", { enum: ["user", "admin"] }).notNull().default("user"),
+  /** An admin stopped this account: it is signed out everywhere and cannot sign in until it is let back in. */
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
 });
 
 /** bytea: tokens and codes are kept only as SHA-256 hashes. */
@@ -55,7 +59,8 @@ export const emailTokens = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    purpose: text("purpose", { enum: ["verify", "reset"] }).notNull(),
+    /** verify / reset: links in mails; handoff: a Mac opening the web page signed in (a few minutes, once). */
+    purpose: text("purpose", { enum: ["verify", "reset", "handoff"] }).notNull(),
     tokenHash: bytea("token_hash").notNull().unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -94,6 +99,10 @@ export const notes = pgTable(
     remindFired: boolean("remind_fired").notNull().default(false),
     done: boolean("done").notNull().default(false),
     deleted: boolean("deleted").notNull().default(false),
+    /** todo or memo (shared/src/notes.ts). */
+    kind: text("kind").notNull().default("todo"),
+    /** On the Mac's desktop, or in the notes wall only. */
+    desk: boolean("desk").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
     /** The number of the last change. */
@@ -178,4 +187,114 @@ export const campEvents = pgTable(
     data: jsonb("data").notNull(),
   },
   (t) => [index("camp_events_user_seq_idx").on(t.userId, t.seq)],
+);
+
+/** A camp's standing in the big world (server/WORLD.md §15). A camp that never opened it has no row. */
+export const worldPlayers = pgTable("world_players", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  open: boolean("open").notNull().default(true),
+  /** Where the camp sits on the map (the first cell, picked when opening); expeditions from home start here. */
+  homeCell: text("home_cell").notNull(),
+  openedAt: timestamp("opened_at", { withTimezone: true, precision: 3 }).notNull(),
+  /** Turtling after a defeat (shared/src/world/territory.ts). */
+  shieldedSince: timestamp("shielded_since", { withTimezone: true, precision: 3 }),
+  lastShieldEnded: timestamp("last_shield_ended", { withTimezone: true, precision: 3 }),
+  xp: integer("xp").notNull().default(0),
+  /** Held cells earn experience by the day; days are counted from here. */
+  xpCountedTo: timestamp("xp_counted_to", { withTimezone: true, precision: 3 }).notNull(),
+});
+
+/** Cells someone changed: held, or a lair cleared. A cell nobody touched is worked out from the seed (contents.ts). */
+export const worldCells = pgTable(
+  "world_cells",
+  {
+    cell: text("cell").primaryKey(),
+    owner: uuid("owner").references(() => users.id, { onDelete: "set null" }),
+    heldSince: timestamp("held_since", { withTimezone: true, precision: 3 }),
+    /** A nest being built or built (it raises residents once NEST_BUILD_HOURS have passed). */
+    nestStartedAt: timestamp("nest_started_at", { withTimezone: true, precision: 3 }),
+    /** The nest's next birth slot (camp/population.ts). */
+    nextSlot: integer("next_slot").notNull().default(0),
+    advancedTo: timestamp("advanced_to", { withTimezone: true, precision: 3 }),
+    town: boolean("town").notNull().default(false),
+    /** What the ground yields has been taken up to here (shared/src/world/territory.ts cellYield). */
+    yieldedTo: timestamp("yielded_to", { withTimezone: true, precision: 3 }),
+    /** The lair that was here was beaten at this time (it comes back after its respawn hours). */
+    clearedAt: timestamp("cleared_at", { withTimezone: true, precision: 3 }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("world_cells_owner_idx").on(t.owner)],
+);
+
+/** A party on its way, and what happened when it got there. Its residents live at place `exp:<id>` while it walks. */
+export const expeditions = pgTable(
+  "expeditions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["attack", "move"] }).notNull(),
+    /** "home" or a cell id. */
+    fromPlace: text("from_place").notNull(),
+    toCell: text("to_cell").notNull(),
+    party: jsonb("party").$type<number[]>().notNull(),
+    settle: boolean("settle").notNull().default(false),
+    setOutAt: timestamp("set_out_at", { withTimezone: true, precision: 3 }).notNull(),
+    arriveAt: timestamp("arrive_at", { withTimezone: true, precision: 3 }).notNull(),
+    status: text("status", { enum: ["walking", "done"] }).notNull().default("walking"),
+    /** The player whose cell it met (when it was someone's). */
+    defender: uuid("defender").references(() => users.id, { onDelete: "set null" }),
+    /** The report (shared/src/world/api.ts ExpeditionReport, without the ids the row already has). */
+    result: jsonb("result"),
+  },
+  (t) => [index("expeditions_walking_idx").on(t.arriveAt).where(sql`status = 'walking'`), index("expeditions_user_idx").on(t.userId, t.setOutAt), index("expeditions_defender_idx").on(t.defender)],
+);
+
+/** A great monster of the world (shared/src/world/bosses.ts) that somebody has seen or fought: its wounds and who dealt them. */
+export const worldBosses = pgTable("world_bosses", {
+  /** `<region>@<window>`: one per region per 12 hours. */
+  key: text("key").primaryKey(),
+  kind: text("kind").notNull(),
+  cell: text("cell").notNull(),
+  hp: integer("hp").notNull(),
+  maxHp: integer("max_hp").notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true, precision: 3 }).notNull(),
+  /** Camp → damage dealt. */
+  damage: jsonb("damage").$type<Record<string, number>>().notNull().default({}),
+  defeatedAt: timestamp("defeated_at", { withTimezone: true, precision: 3 }),
+  defeatedBy: uuid("defeated_by").references(() => users.id, { onDelete: "set null" }),
+});
+
+/** Spoils waiting for a camp (a boss it helped beat); taken into its books the next time the camp is worked out. */
+export const worldRewards = pgTable(
+  "world_rewards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull(),
+    data: jsonb("data").$type<{ boss: string; name: string; loot: Record<string, number>; xp: number; share: number }>().notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true, precision: 3 }),
+  },
+  (t) => [index("world_rewards_open_idx").on(t.userId).where(sql`claimed_at is null`)],
+);
+
+/** What each cell of the big world really is (OpenStreetMap, world/osm.ts), worked out once. */
+export const worldTerrain = pgTable("world_terrain", {
+  cell: text("cell").primaryKey(),
+  terrain: text("terrain").notNull(),
+  source: text("source").notNull().default("osm"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** What admins did in 後台 (who, to whom, what). */
+export const adminLog = pgTable(
+  "admin_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    adminId: uuid("admin_id").references(() => users.id, { onDelete: "set null" }),
+    targetId: uuid("target_id").references(() => users.id, { onDelete: "set null" }),
+    action: text("action").notNull(),
+    detail: jsonb("detail"),
+  },
+  (t) => [index("admin_log_at_idx").on(t.at)],
 );

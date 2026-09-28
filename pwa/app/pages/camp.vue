@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { raceRules } from "@goblincamp/shared/camp";
+import { materialName as sharedMaterialName } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 
 const ok = await useSignedIn();
@@ -25,14 +26,14 @@ const race = computed(() => names.value.races[view.value?.race ?? "goblin"]);
 const rules = computed(() => raceRules(view.value?.race ?? "goblin"));
 const home = computed(() => view.value?.residents.filter((r) => r.place === "home") ?? []);
 const breedName = (breed: string) => race.value?.breeds[breed] ?? breed;
-const materialName = (id: string) => names.value.materials[id] ?? id;
+const materialName = (id: string) => names.value.materials[id] ?? sharedMaterialName(id);
 
 const statusLine = computed(() => {
   switch (camp.state.status) {
     case "loading": return "讀取中…";
     case "offline": return `離線中：這是 ${noteTime(new Date(camp.state.saved?.fetchedAt ?? 0).toISOString())} 的樣子`;
     case "problem": return `出了問題：${camp.state.problem}`;
-    default: return "只能看；營地在 Mac 上玩";
+    default: return "在 Mac 上玩，這裡只能看";
   }
 });
 
@@ -76,6 +77,8 @@ const armory = computed(() => {
 const worn = computed(() => home.value.filter((r) => r.gear && Object.keys(r.gear).length > 0).length);
 const boosts = computed(() => Object.entries(view.value?.boosts ?? {}).filter(([, until]) => Date.parse(until) > now.value));
 const kills = computed(() => sorted(view.value?.kills ?? {}).reduce((n, [, k]) => n + k, 0));
+const showAllRaids = ref(false);
+const openRaid = ref<number | null>(null);
 const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${monsterName(m.id)} ×${m.count}`).join("、");
 </script>
 
@@ -87,7 +90,7 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         <h1>{{ view ? `${race?.name ?? ""}${race?.nest ?? "營地"}` : "營地" }}</h1>
         <div class="sub">{{ statusLine }}</div>
       </div>
-      <button class="icon-btn" :disabled="camp.state.status === 'loading'" @click="camp.refresh()">重新整理</button>
+      <NuxtLink to="/world" class="icon-btn">大世界</NuxtLink>
     </header>
 
     <div v-if="!view && camp.state.status === 'none'" class="panel">這個帳號還沒有營地。在 Mac 上登入並選好種族，營地就會出現在這裡。</div>
@@ -97,10 +100,10 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
       <CampScene :race="view.race" :stage="view.stage" :residents="home" :sheets="race?.sheets ?? {}" :princess="true" />
 
       <section class="panel stats">
-        <div><b>{{ home.length }}</b><small>/ {{ rules.homeCap }} 人口</small></div>
-        <div><b>{{ view.stage }}</b><small>營地階段</small></div>
+        <div><b>{{ home.length }}</b><small>人口 / {{ rules.homeCap }}</small></div>
+        <div><b>{{ view.stage }}</b><small>階段</small></div>
         <div><b>{{ view.peak }}</b><small>最多時</small></div>
-        <div><b>{{ kills }}</b><small>打倒的魔獸</small></div>
+        <div><b>{{ kills }}</b><small>打倒魔獸</small></div>
         <p class="next">下一隻出生：{{ nextBirth }}<br /><small>每 {{ rules.homeBirthMinutes }} 分鐘生一隻，Mac 關著也會長大</small></p>
       </section>
 
@@ -124,18 +127,23 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
       </section>
 
       <section class="panel">
-        <h2>魔獸來襲</h2>
+        <h2>魔獸來襲 <small v-if="raids.length">最近 {{ raids.length }} 次・守住 {{ raids.filter((r) => r.winner === "camp").length }} 次</small></h2>
         <p v-if="raids.length === 0" class="muted">還沒有魔獸來過（營地滿十隻之後，大約每一個半小時來一次）。</p>
-        <article v-for="r in raids" :key="r.seq" class="raid">
+        <!-- one line each; tap for the whole of it -->
+        <article v-for="r in raids.slice(0, showAllRaids ? raids.length : 3)" :key="r.seq" class="raid" @click="openRaid = openRaid === r.seq ? null : r.seq">
           <header>
             <span :class="r.winner === 'camp' ? 'won' : 'lost'">{{ r.winner === "camp" ? "守住了" : "被突破了" }}</span>
+            <span class="gist">{{ r.monsters.reduce((n, m) => n + m.count, 0) }} 隻魔獸{{ r.fallen.length ? `・倒下 ${r.fallen.length}` : "" }}{{ Object.keys(r.loot).length ? `・撿到 ${Object.values(r.loot).reduce((a, b) => a + b, 0)} 個` : "" }}</span>
             <small>{{ noteTime(r.at) }}</small>
           </header>
-          <p>{{ monsters(r.monsters) }}，{{ r.defenders }} 隻出去迎戰。</p>
-          <p v-if="r.fallen.length" class="lost">陣亡：{{ r.fallen.map((f) => f.name || breedName(f.breed)).join("、") }}</p>
-          <p v-if="Object.keys(r.loot).length" class="muted">撿到：{{ sorted(r.loot).map(([id, n]) => `${materialName(id)} ×${n}`).join("、") }}</p>
-          <p v-if="r.broken.length" class="muted">打壞了：{{ r.broken.map((b) => gearName(b.gear)).join("、") }}</p>
+          <template v-if="openRaid === r.seq">
+            <p>{{ monsters(r.monsters) }}，{{ r.defenders }} 隻出去迎戰。</p>
+            <p v-if="r.fallen.length" class="lost">陣亡：{{ r.fallen.map((f) => f.name || breedName(f.breed)).join("、") }}</p>
+            <p v-if="Object.keys(r.loot).length" class="muted">撿到：{{ sorted(r.loot).map(([id, n]) => `${materialName(id)} ×${n}`).join("、") }}</p>
+            <p v-if="r.broken.length" class="muted">打壞了：{{ r.broken.map((b) => gearName(b.gear)).join("、") }}</p>
+          </template>
         </article>
+        <button v-if="raids.length > 3" class="more" @click="showAllRaids = !showAllRaids">{{ showAllRaids ? "收起" : `看更早的（${raids.length - 3} 次）` }}</button>
       </section>
 
       <section class="panel">
@@ -169,7 +177,8 @@ p { margin: 4px 0; line-height: 1.55; }
 .muted { color: var(--muted); font-size: 14px; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
 .stats b { display: block; font-size: 22px; }
-.stats small { font-size: 12px; color: var(--muted); }
+.stats small { font-size: 12px; color: var(--muted); white-space: nowrap; }
+@media (max-width: 350px) { .stats small { font-size: 11px; } .stats b { font-size: 19px; } }
 .stats .next { grid-column: 1 / -1; margin-top: 6px; font-weight: 600; }
 .stats .next small { font-weight: 400; }
 .breeds { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -180,7 +189,11 @@ p { margin: 4px 0; line-height: 1.55; }
 .queen { flex: none; width: 48px; height: 48px; background-size: 192px 672px; background-position: 0 0; }
 .raid { border-top: 1px solid var(--line); padding: 10px 0; }
 .raid:first-of-type { border-top: 0; padding-top: 0; }
-.raid header { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; }
+.raid { cursor: pointer; }
+.raid header { display: flex; gap: 8px; align-items: baseline; font-weight: 700; }
+.gist { flex: 1; min-width: 0; font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 6px; }
+.more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 8px 0 0; cursor: pointer; }
 .raid small { color: var(--muted); font-weight: 400; }
 .won { color: var(--green); }
 .lost { color: var(--red); }

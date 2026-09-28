@@ -22,9 +22,17 @@ struct StickyNote: Codable, Equatable {
     var createdAt = Date()
     var updatedAt = Date()
     var deleted = false
+    /// 待辦 ("todo": reminders and a target time) or 備忘 ("memo": something kept at hand, no times). nil: a note from before
+    /// there were kinds, which is a todo.
+    var kind: String?
+    /// On the desktop (true) or kept in the notes wall only (false). nil: on the desktop.
+    var desk: Bool?
+
+    var isMemo: Bool { kind == "memo" }
+    var onDesk: Bool { desk ?? true }
 
     /// The fields that sync (the names the server uses), and which of them differ from `old`.
-    static let syncedFields = ["text", "color", "breed", "goblinName", "dueAt", "remindAt", "remindFired", "done", "deleted"]
+    static let syncedFields = ["text", "color", "breed", "goblinName", "dueAt", "remindAt", "remindFired", "done", "deleted", "kind", "desk"]
     func changedFields(from old: StickyNote) -> Set<String> {
         var out = Set<String>()
         if text != old.text { out.insert("text") }
@@ -36,6 +44,8 @@ struct StickyNote: Codable, Equatable {
         if remindFired != old.remindFired { out.insert("remindFired") }
         if done != old.done { out.insert("done") }
         if deleted != old.deleted { out.insert("deleted") }
+        if (kind ?? "todo") != (old.kind ?? "todo") { out.insert("kind") }
+        if onDesk != old.onDesk { out.insert("desk") }
         return out
     }
 
@@ -50,6 +60,8 @@ struct StickyNote: Codable, Equatable {
         if !except.contains("remindFired") { remindFired = other.remindFired }
         if !except.contains("done") { done = other.done }
         if !except.contains("deleted") { deleted = other.deleted }
+        if !except.contains("kind") { kind = other.kind }
+        if !except.contains("desk") { desk = other.desk }
     }
 
     /// Whether the reminder should pop up now.
@@ -97,6 +109,8 @@ final class NoteStore {
         /// The account these numbers belong to, and the highest change number fetched from it.
         var syncUser: String?
         var lastSeq: Int? = 0
+        /// Notes folded into a strip on this Mac's desktop (kept per Mac, like where they sit).
+        var folded: [String]?
     }
 
     private(set) var notes: [StickyNote] = []
@@ -104,6 +118,7 @@ final class NoteStore {
     private(set) var meta: [String: SyncMeta] = [:]
     private(set) var syncUser: String?
     private(set) var lastSeq = 0
+    private(set) var folded: Set<String> = []
     /// Called after a note changed here (not for changes that came from the server), so they can be sent.
     var onLocalChange: (() -> Void)?
     private let url: URL
@@ -130,6 +145,7 @@ final class NoteStore {
         file.notes = file.notes.map { var n = $0; n.id = n.id.lowercased(); return n }
         syncUser = file.syncUser
         lastSeq = file.lastSeq ?? 0
+        folded = Set(file.folded ?? [])
         // a deletion only has to be kept until the server has it (or a month, when nobody signs in)
         let cutoff = Date().addingTimeInterval(-30 * 86400)
         notes = file.notes.filter { !$0.deleted || $0.updatedAt > cutoff || !(meta[$0.id]?.dirty.isEmpty ?? true) }
@@ -167,6 +183,11 @@ final class NoteStore {
             $0.text = "" // what was written goes; the tombstone only has to say that it was deleted
         }
         frames[id] = nil
+        save()
+    }
+
+    func setFolded(_ on: Bool, _ id: String) {
+        if on { folded.insert(id) } else { folded.remove(id) }
         save()
     }
 
@@ -277,7 +298,7 @@ final class NoteStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoder.encode(File(notes: notes, frames: frames, sync: meta, syncUser: syncUser, lastSeq: lastSeq)).write(to: url, options: .atomic)
+            try encoder.encode(File(notes: notes, frames: frames, sync: meta, syncUser: syncUser, lastSeq: lastSeq, folded: folded.isEmpty ? nil : folded.sorted())).write(to: url, options: .atomic)
         } catch {
             NSLog("GoblinCamp: saving notes failed: \(error)")
         }
@@ -379,6 +400,8 @@ final class NoteView: NSView {
     var mood: NoteGoblinMood = .idle
     /// Set by the controller; the view asks it for the menu and reports what the player did.
     weak var controller: NoteController?
+    /// Folded into a strip (the first line only); the controller sets it.
+    var folded = false { didSet { needsDisplay = true; window?.invalidateCursorRects(for: self) } }
     private var dragStart: (mouse: NSPoint, frame: NSRect, resizing: Bool)?
     private(set) var editor: NSTextView?
 
@@ -402,6 +425,8 @@ final class NoteView: NSView {
     private var paper: NotePaper { NotePaper.named(note.color) }
     private var sheet: NSRect { bounds.insetBy(dx: 4, dy: 4) } // room for the shadow
     private var menuButton: NSRect { NSRect(x: sheet.maxX - 26, y: sheet.maxY - 22, width: 22, height: 18) }
+    /// Fold into a strip, or open again (left of ⋯).
+    private var foldButton: NSRect { NSRect(x: sheet.maxX - 46, y: sheet.maxY - 22, width: 18, height: 18) }
     private var grip: NSRect { NSRect(x: sheet.maxX - 16, y: sheet.minY, width: 16, height: 16) }
     var textRect: NSRect {
         NSRect(x: sheet.minX + 10, y: sheet.minY + NoteView.footer, width: sheet.width - 20, height: sheet.height - NoteView.header - NoteView.footer)
@@ -411,6 +436,7 @@ final class NoteView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let paper = self.paper
+        if folded { return drawStrip(paper) }
         // a pixel shadow, the sheet with a darker edge, and a folded corner
         NSColor(calibratedWhite: 0, alpha: 0.18).setFill()
         NSRect(x: sheet.minX + 3, y: sheet.minY - 3, width: sheet.width, height: sheet.height).fill()
@@ -432,9 +458,52 @@ final class NoteView: NSView {
         paper.edge.setFill()
         for i in 0..<3 { NSRect(x: grip.maxX - 5 - CGFloat(i) * 4, y: grip.minY + 3, width: 2, height: 2 + CGFloat(i) * 4).fill() }
 
+        drawFoldArrow(open: true)
+        if note.isMemo { drawMemoMark() }
         if editor == nil { drawText() }
         drawTimes()
         drawGoblin()
+    }
+
+    /// The fold button: a small caret, up to fold, down to open.
+    private func drawFoldArrow(open: Bool) {
+        NSColor(calibratedWhite: 0, alpha: 0.35).setFill()
+        let c = NSPoint(x: foldButton.midX, y: foldButton.midY)
+        for i in 0..<4 { // pixel steps of a caret
+            let w = CGFloat(7 - i * 2)
+            let y = open ? c.y - 2 + CGFloat(i) * 1.5 : c.y + 2 - CGFloat(i) * 1.5
+            NSRect(x: c.x - w / 2, y: y, width: w, height: 1.5).fill()
+        }
+    }
+
+    /// A memo has a small pin instead of the tape's plain look (at a glance: kept at hand, no times).
+    private func drawMemoMark() {
+        let pin = NSPoint(x: sheet.minX + 14, y: sheet.maxY - 12)
+        NSColor(calibratedRed: 0.3, green: 0.5, blue: 0.9, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: pin.x - 4, y: pin.y - 4, width: 8, height: 8)).fill()
+        NSColor(calibratedWhite: 1, alpha: 0.7).setFill()
+        NSRect(x: pin.x - 2, y: pin.y + 0.5, width: 2, height: 2).fill()
+    }
+
+    /// Folded: a strip with the first line, the ⋯ and the caret to open it.
+    private func drawStrip(_ paper: NotePaper) {
+        NSColor(calibratedWhite: 0, alpha: 0.18).setFill()
+        NSRect(x: sheet.minX + 3, y: sheet.minY - 3, width: sheet.width, height: sheet.height).fill()
+        paper.edge.setFill()
+        sheet.fill()
+        paper.fill.setFill()
+        sheet.insetBy(dx: 2, dy: 2).fill()
+        let dots = NSColor(calibratedWhite: 0, alpha: 0.35)
+        dots.setFill()
+        for i in 0..<3 { NSRect(x: menuButton.midX - 7 + CGFloat(i) * 6, y: menuButton.midY - 1, width: 3, height: 3).fill() }
+        drawFoldArrow(open: false)
+        if note.isMemo { drawMemoMark() }
+        let first = note.text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? "（空白的便利貼）"
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        let left = sheet.minX + (note.isMemo ? 24 : 10)
+        NSAttributedString(string: first, attributes: [.font: NSFont.systemFont(ofSize: 12.5, weight: .semibold), .foregroundColor: NotePaper.ink, .paragraphStyle: style])
+            .draw(in: NSRect(x: left, y: sheet.midY - 8, width: foldButton.minX - 6 - left, height: 17))
     }
 
     private func drawText() {
@@ -592,15 +661,20 @@ final class NoteView: NSView {
     // MARK: Mouse
 
     override func resetCursorRects() {
-        addCursorRect(grip, cursor: .crosshair)
+        if !folded { addCursorRect(grip, cursor: .crosshair) }
         addCursorRect(menuButton, cursor: .pointingHand)
+        addCursorRect(foldButton, cursor: .pointingHand)
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if menuButton.contains(point) { return showMenu(event) }
-        if event.clickCount == 2 { return beginEditing() }
-        if let window { dragStart = (NSEvent.mouseLocation, window.frame, grip.contains(point)) }
+        if foldButton.contains(point) { controller?.toggleFold(note.id); return }
+        if event.clickCount == 2 {
+            if folded { controller?.toggleFold(note.id) } // (open it to write on it)
+            return beginEditing()
+        }
+        if let window { dragStart = (NSEvent.mouseLocation, window.frame, !folded && grip.contains(point)) }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -724,8 +798,11 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
     var count: Int { store.live.count }
     private var views: [NoteView] { windows.values.compactMap { $0.contentView as? NoteView } }
 
+    /// Called whenever the notes changed (here or from the server), for the notes wall.
+    var onChanged: (() -> Void)?
+
     func start() {
-        for note in store.live { open(note) }
+        for note in store.live where note.onDesk { open(note) }
         if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: notes: \(windows.count) opened") }
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 8, repeats: true) { [weak self] _ in self?.tick() }
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -738,19 +815,24 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
 
     /// A new note in the middle of the screen under the mouse, ready to write on.
     @discardableResult
-    func newNote(text: String = "", at origin: NSPoint? = nil, edit: Bool = true) -> StickyNote {
+    func newNote(text: String = "", at origin: NSPoint? = nil, edit: Bool = true, memo: Bool = false) -> StickyNote {
         var note = StickyNote()
         note.text = text
+        if memo { // a memo lives in the notes wall (no window on the desktop until it is put there)
+            note.kind = "memo"
+            note.desk = false
+        }
         note.color = NotePaper.all[store.live.count % NotePaper.all.count].id
         note.breed = NoteController.randomBreed()
-        note.goblinName = Names.goblin(seed: UInt64.random(in: 1...UInt64.max))
+        note.goblinName = Names.resident(seed: UInt64.random(in: 1...UInt64.max))
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
         let size = NoteView.defaultSize
         let spread = CGFloat(store.live.count % 6) * 24 // new notes step down a little so they do not land exactly on each other
         let o = origin ?? NSPoint(x: screen.visibleFrame.midX - size.width / 2 + spread, y: screen.visibleFrame.midY - size.height / 2 - spread)
         store.add(note, frame: NSRect(origin: o, size: size))
-        open(note)
+        if note.onDesk { open(note) }
         if edit { (windows[note.id]?.contentView as? NoteView)?.beginEditing() }
+        onChanged?()
         return note
     }
 
@@ -780,8 +862,11 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
         if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame.insetBy(dx: 30, dy: 30)) }), let main = NSScreen.screens.first {
             frame.origin = NSPoint(x: main.visibleFrame.midX - frame.width / 2, y: main.visibleFrame.midY - frame.height / 2)
         }
+        let folded = store.folded.contains(note.id)
+        if folded { frame = NoteController.strip(of: frame) }
         let window = NoteWindow(frame: frame)
         let view = NoteView(note: note, frame: NSRect(origin: .zero, size: frame.size))
+        view.folded = folded
         view.autoresizingMask = [.width, .height]
         view.controller = self
         view.mood = mood(of: note, now: Date())
@@ -797,6 +882,8 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
     func change(_ id: String, _ body: (inout StickyNote) -> Void) {
         store.update(id, body)
         if let note = store.note(id) { view(id)?.note = note }
+        placeWindow(id)
+        onChanged?()
     }
 
     func delete(_ id: String) {
@@ -804,7 +891,55 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
         windows[id]?.orderOut(nil)
         windows[id] = nil
         store.delete(id)
+        onChanged?()
     }
+
+    /// A note on the desktop has a window; one kept in the wall has none.
+    private func placeWindow(_ id: String) {
+        guard let note = store.note(id) else { return }
+        let wanted = note.onDesk && !note.deleted
+        if wanted, windows[id] == nil { open(note) }
+        if !wanted, let window = windows[id] {
+            (window.contentView as? NoteView)?.endEditing()
+            window.orderOut(nil)
+            windows[id] = nil
+        }
+    }
+
+    /// On the desktop, or kept in the wall only.
+    func setDesk(_ id: String, _ on: Bool) { change(id) { $0.desk = on } }
+
+    /// Every note on the desktop goes into the wall (a tidy desktop in one go).
+    func putAllInWall() {
+        for note in store.live where note.onDesk { change(note.id) { $0.desk = false } }
+    }
+
+    /// 待辦 or 備忘. A memo has no times.
+    func setKind(_ id: String, memo: Bool) {
+        change(id) {
+            $0.kind = memo ? "memo" : "todo"
+            if memo { $0.remindAt = nil; $0.dueAt = nil; $0.remindFired = false; $0.done = false }
+        }
+    }
+
+    // MARK: Folding (a strip on the desktop: the first line, to open again)
+
+    static let stripHeight: CGFloat = 34
+    /// The folded strip of a note's full frame: its top edge stays where it was.
+    static func strip(of full: NSRect) -> NSRect {
+        NSRect(x: full.minX, y: full.maxY - stripHeight, width: full.width, height: stripHeight)
+    }
+
+    func toggleFold(_ id: String) {
+        guard let window = windows[id], let view = view(id), let full = store.frame(for: id) else { return }
+        let fold = !store.folded.contains(id)
+        view.endEditing().map { text in change(id) { $0.text = text } }
+        store.setFolded(fold, id)
+        view.folded = fold
+        window.setFrame(fold ? NoteController.strip(of: full) : full, display: true, animate: true)
+    }
+
+    func isFolded(_ id: String) -> Bool { store.folded.contains(id) }
 
     // MARK: From the server (Sync.swift)
 
@@ -817,18 +952,20 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
             let id = remote.id
             switch store.applyRemote(remote, seq: seq) {
             case .added:
-                if let note = store.note(id), windows[id] == nil { open(note) }
+                if let note = store.note(id), windows[id] == nil, note.onDesk { open(note) }
             case .removed:
                 view(id)?.endEditing()
                 windows[id]?.orderOut(nil)
                 windows[id] = nil
             case .updated:
                 if let note = store.note(id) { view(id)?.note = note }
+                placeWindow(id)
             case .unchanged:
                 continue
             }
             if let note = store.note(id) { onRemoteChange?(note) }
         }
+        onChanged?()
     }
 
     /// The note's id was someone else's on the server; it now has its own.
@@ -848,7 +985,8 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
         }
         windows = [:]
         store.endSync(keep: keep)
-        for note in store.live { open(note) }
+        for note in store.live where note.onDesk { open(note) }
+        onChanged?()
     }
 
     /// 知道了: the reminder is over.
@@ -859,6 +997,14 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
     /// 再等一下: the reminder comes back at `date`.
     func snooze(_ id: String, until date: Date) {
         change(id) { $0.remindAt = date; $0.remindFired = false }
+    }
+
+    /// One note's window to the front, over the other windows until another app is used (the wall's 在桌面上找它).
+    func bringForward(_ id: String) {
+        guard let window = windows[id] else { return }
+        if isFolded(id) { toggleFold(id) }
+        setRaised(true)
+        window.orderFrontRegardless()
     }
 
     /// Every note to the screen under the mouse, fanned out (for when they got lost behind a screen that changed).
@@ -925,7 +1071,13 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
 
     // MARK: From the views
 
-    fileprivate func moved(_ view: NoteView, to frame: NSRect) { store.setFrame(frame, for: view.note.id) }
+    fileprivate func moved(_ view: NoteView, to frame: NSRect) {
+        // a folded strip moved: the note's full frame moves with it (its top edge follows the strip's)
+        if view.folded, let full = store.frame(for: view.note.id) {
+            return store.setFrame(NSRect(x: frame.minX, y: frame.maxY - full.height, width: full.width, height: full.height), for: view.note.id)
+        }
+        store.setFrame(frame, for: view.note.id)
+    }
 
     /// A plain click on a ringing note stops the bell.
     fileprivate func clicked(_ view: NoteView) {
@@ -951,16 +1103,24 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
         func add(_ m: NSMenu, _ title: String, _ action: @escaping () -> Void) { m.addItem(ClosureMenuItem(title: title, handler: action)) }
 
         if !note.goblinName.isEmpty {
-            let who = NSMenuItem(title: "住著：\(note.goblinName)（\(Characters.current.breeds[Characters.current.breedIndex(id: note.breed)].name)哥布林）", action: nil, keyEquivalent: "")
+            // 平民哥布林、林民精靈、樹皮精靈 (already says it), 骷髏 (the undead's breeds are names of their own)
+            let character = Characters.current
+            let breed = character.breeds[character.breedIndex(id: note.breed)].name
+            let kind = breed.contains(character.noun) || character.id == "undead" ? breed : breed + character.noun
+            let who = NSMenuItem(title: "住著：\(note.goblinName)（\(kind)）", action: nil, keyEquivalent: "")
             who.isEnabled = false
             menu.addItem(who)
             menu.addItem(.separator())
         }
         if note.ringing { _ = item("知道了（停止提醒）") { [weak self] in self?.acknowledge(id) } }
         _ = item("編輯文字") { [weak view] in view?.beginEditing() }
-        _ = item(note.done ? "標成還沒完成" : "標成完成") { [weak self] in self?.change(id) { $0.done.toggle() } }
+        _ = item("複製全部文字") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(note.text, forType: .string) }
+        _ = item(isFolded(id) ? "展開" : "摺起來") { [weak self] in self?.toggleFold(id) }
+        _ = item("收進便利貼牆（桌面上不顯示）") { [weak self] in self?.setDesk(id, false) }
+        _ = item(note.isMemo ? "改成待辦（可以設提醒）" : "改成備忘（不用時間）") { [weak self] in self?.setKind(id, memo: !note.isMemo) }
+        if !note.isMemo { _ = item(note.done ? "標成還沒完成" : "標成完成") { [weak self] in self?.change(id) { $0.done.toggle() } } }
         menu.addItem(.separator())
-        sub("提醒時間" + (note.remindAt.map { "：" + NoteTime.text($0) } ?? "")) { m in
+        if !note.isMemo { sub("提醒時間" + (note.remindAt.map { "：" + NoteTime.text($0) } ?? "")) { m in
             add(m, "30 分鐘後") { [weak self] in self?.snooze(id, until: Date().addingTimeInterval(1800)) }
             add(m, "1 小時後") { [weak self] in self?.snooze(id, until: Date().addingTimeInterval(3600)) }
             add(m, "今天下午 5 點") { [weak self] in self?.snooze(id, until: NoteTime.at(hour: 17)) }
@@ -980,7 +1140,7 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
                 m.addItem(.separator())
                 add(m, "取消目標時間") { [weak self] in self?.change(id) { $0.dueAt = nil } }
             }
-        }
+        } }
         sub("紙的顏色") { m in
             for paper in NotePaper.all {
                 let i = ClosureMenuItem(title: paper.name) { [weak self] in self?.change(id) { $0.color = paper.id } }
@@ -994,11 +1154,11 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
     }
 
     /// A date and time picker for the reminder or the target time.
-    private func pickTime(for id: String, reminder: Bool) {
+    func pickTime(for id: String, reminder: Bool) {
         guard let note = store.note(id) else { return }
         let alert = NSAlert()
         alert.messageText = reminder ? "什麼時候提醒你？" : "目標時間是什麼時候？"
-        alert.informativeText = reminder ? "時間到了，哥布林會從便利貼跳出來叫你（專注模式時會等你回來）。" : "越接近，便利貼上的哥布林會越緊張。"
+        alert.informativeText = reminder ? "時間到了，\(Characters.current.noun)會從便利貼跳出來叫你（專注模式時會等你回來）。" : "越接近，便利貼上的\(Characters.current.noun)會越緊張。"
         let picker = NSDatePicker(frame: NSRect(x: 0, y: 0, width: 220, height: 28))
         picker.datePickerStyle = .textFieldAndStepper
         picker.datePickerElements = [.yearMonthDay, .hourMinute]
@@ -1012,7 +1172,7 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
         if reminder { snooze(id, until: date) } else { change(id) { $0.dueAt = date } }
     }
 
-    private func confirmDelete(_ id: String) {
+    func confirmDelete(_ id: String) {
         guard let note = store.note(id) else { return }
         if !note.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let alert = NSAlert()
@@ -1046,7 +1206,7 @@ final class NoteController: NSObject, NSTextViewDelegate, NSWindowDelegate {
     }
 
     func windowDidResize(_ notification: Notification) {
-        guard let window = notification.object as? NoteWindow, let view = window.contentView as? NoteView else { return }
+        guard let window = notification.object as? NoteWindow, let view = window.contentView as? NoteView, !view.folded else { return }
         view.editor?.enclosingScrollView?.frame = view.textRect
     }
 }

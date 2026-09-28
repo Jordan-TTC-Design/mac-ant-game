@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-// The phone app's service worker: keeps the app itself for offline use, and shows the reminder pushes.
+// The phone app's service worker: keeps the app itself for offline use, and shows the pushes (reminders, big-world news).
 import { clientsClaim } from "workbox-core";
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from "workbox-precaching";
 import { NavigationRoute, registerRoute } from "workbox-routing";
@@ -24,12 +24,34 @@ interface ReminderPush {
   body: string;
 }
 
+/** Big-world news: a party arrived, a cell was attacked, a great monster fell (tapping opens `url`). */
+interface WorldPush {
+  type: "world";
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+}
+
 self.addEventListener("push", (event) => {
-  let data: ReminderPush | null = null;
+  let data: ReminderPush | WorldPush | null = null;
   try {
-    data = event.data?.json() as ReminderPush;
+    data = event.data?.json() as ReminderPush | WorldPush;
   } catch {
     // (not ours)
+  }
+  if (data?.type === "world") {
+    const world = data;
+    event.waitUntil(
+      self.registration.showNotification(world.title, {
+        body: world.body,
+        tag: world.tag,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: { url: world.url },
+      }),
+    );
+    return;
   }
   if (!data || data.type !== "reminder") return;
   event.waitUntil(
@@ -46,8 +68,8 @@ self.addEventListener("push", (event) => {
 // tapping the notification opens that note (in the app if it is open already)
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const noteId = (event.notification.data as { noteId?: string } | undefined)?.noteId;
-  const url = noteId ? `/note/${noteId}` : "/";
+  const data = event.notification.data as { noteId?: string; url?: string } | undefined;
+  const url = data?.url ?? (data?.noteId ? `/note/${data.noteId}` : "/");
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

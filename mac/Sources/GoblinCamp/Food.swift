@@ -603,6 +603,10 @@ struct AntWorld {
     /// Where each goblin keeping the princess company (her suitor, her partner, her guards) should stand, and what they look at.
     var attendTargets: [Int: CGPoint] = [:]
     var attendFace: CGPoint?
+    /// The race's character id (goblin, elf, undead): each passes its spare time its own way (Ant.pickActivity).
+    var race = "goblin"
+    /// The undead camp's graves (where they sleep).
+    var graves: [CGPoint] = []
     var crowded: Bool { crowd >= 1 }
 
     /// The way in nearest to `p`: the nest hole or a tent.

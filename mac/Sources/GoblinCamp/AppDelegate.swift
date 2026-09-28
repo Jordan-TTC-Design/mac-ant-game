@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let colony = Colony()
     /// The sticky notes on the desktop (each with a goblin of its own).
     private let notes = NoteController()
+    private lazy var noteWall = NoteWallWindow(notes: notes)
     /// The account and keeping the notes the same on every device (nothing happens until someone signs in).
     private lazy var sync = SyncEngine(notes: notes)
     /// The camp's books from the server (server/CAMP.md).
@@ -131,6 +132,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         notes.onReminder = { [weak self] note in self?.showNoteReminder(note) ?? false }
         notes.start()
         notes.onRemoteChange = { [weak self] note in self?.noteChangedElsewhere(note) }
+        notes.onChanged = { [weak self] in
+            guard let self, self.noteWall.isVisible else { return }
+            self.noteWall.reload()
+        }
         sync.start()
         setupMenuBar()
         rebuildOverlays()
@@ -387,6 +392,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(2.5) { self.accountWindow?.show(.register); after(0.5) { shot("register") } }
             after(3.5) { self.accountWindow?.window.orderOut(nil) }
         }
+        if env["CAMP_TEST_DEPART"] != nil { // every 3 s: how many are walking off into the big world, and how many died so far
+            for k in 1...40 { after(Double(k) * 3) { log("depart t=\(k * 3): residents \(self.colony.ants.count), walking off \(self.colony.ants.filter(\.isDeparting).count), walking home \(self.colony.ants.filter { if case .returningToNest = $0.mode { return true } else { return false } }.count), deaths \(self.colony.deaths)") } }
+        }
+        if let path = env["CAMP_TEST_WORLD"] { // (with CAMP_TEST_LOGIN) open the big-world window signed in, and draw the page at 15 s
+            after(6) { self.showWorld() }
+            after(15) { self.worldWindow?.snapshotForTesting(to: path) { url in log("world window at \(url)") } }
+        }
         if let login = env["CAMP_TEST_LOGIN"] { // sign in as "email|password", then (CAMP_TEST_SYNC_NOTE) write a note that reminds in 8 s
             let parts = login.split(separator: "|", maxSplits: 1).map(String.init)
             after(1) {
@@ -426,6 +438,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     log("pressing 知道了 (panel up: \(self.askPanel != nil))")
                     self.askPanel?.answer(.dismiss)
                 }
+            }
+        }
+        if let prefix = env["CAMP_TEST_WALL"] { // the notes wall with todos and memos, one note folded, drawn into PNGs
+            let area = NSScreen.screens[0].visibleFrame
+            let todo = notes.newNote(text: "交出設計稿\n記得附上尺寸", at: NSPoint(x: area.minX + 40, y: area.minY + 80), edit: false)
+            notes.change(todo.id) { $0.dueAt = Date().addingTimeInterval(3600); $0.color = "pink" }
+            let folded = notes.newNote(text: "週五前整理發票", at: NSPoint(x: area.minX + 280, y: area.minY + 80), edit: false)
+            notes.toggleFold(folded.id)
+            let memo = notes.newNote(text: "測試站 https://stage.example.com/login\nssh ubuntu@stage\nmake admin email=me@example.com", edit: false, memo: true)
+            notes.change(memo.id) { $0.color = "blue" }
+            notes.newNote(text: "常用指令\npnpm dev", edit: false, memo: true)
+            noteWall.show(select: memo.id)
+            after(2) {
+                for (name, view) in [("wall", self.noteWall.contentView), ("strip", self.notes.view(folded.id))] {
+                    guard let view, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { log("\(name): no view"); continue }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-\(name).png")) }
+                }
+                self.notes.putAllInWall()
+                log("after putting all in the wall: windows \(self.notes.store.live.filter { self.notes.view($0.id) != nil }.count), notes \(self.notes.count)")
+                self.notes.setDesk(memo.id, true)
+                log("memo on desk: \(self.notes.view(memo.id) != nil)")
             }
         }
         if let prefix = env["CAMP_TEST_NOTES"] { // one note in each mood, drawn into PNGs; one reminder that fires after 4 s
@@ -484,8 +518,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Updater.shared.check(manual: false, thenInstall: true)
             }
         }
-        if env["CAMP_TEST_MENU"] != nil { // print the menu the way it would look when opened
-            after(2) {
+        if env["CAMP_TEST_MENU"] != nil { // print the menu the way it would look when opened (CAMP_TEST_MENU=seconds to wait)
+            after(Double(env["CAMP_TEST_MENU"] ?? "") ?? 2) {
                 guard let menu = self.statusItem.menu else { return }
                 self.menuNeedsUpdate(menu)
                 func dump(_ menu: NSMenu, _ depth: Int) {
@@ -1240,6 +1274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                  options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
         let workshop = ClosureMenuItem(title: "工坊（做武器與裝備）…") { [weak self] in self?.showWorkshop() }
+        // the big world is the web page's map in a window (the Mac tells what happens there too)
+        let world = ClosureMenuItem(title: "大世界（地圖、出征、排行榜）…") { [weak self] in self?.showWorld() }
+        world.isHidden = !serverCamp
         let wildlife = choiceMenu(title: "野生動物與果樹",
                                   options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
                                   get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 })
@@ -1251,7 +1288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                           options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
                           get: { self.settings.monsters }, set: { self.settings.monsters = $0 })]
         menu.addItem(group("營地", [
-            foodMenu(), workshop,
+            foodMenu(), workshop, world, worldStatusItem,
             .separator(),
             editItem, pickItem,
             ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } },
@@ -1730,14 +1767,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.onBookCommand = { [weak self] command in self?.sendCommand(command) }
         ledger.loadPending()
         lastStory = try? JSONEncoder().encode(colony.romance)
-        sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks() } }
+        sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks(); self?.checkWorld() } }
         applyBooksToCamp()
         booksTimer?.invalidate()
         booksTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             guard let self else { return }
             if Date().timeIntervalSince(self.booksFetchedAt) > 180 { self.refreshBooks() }
             if Date().timeIntervalSince(self.storySentAt) > 300 { self.sendStoryIfChanged() }
+            // (every ten minutes; every minute while parties are on the road, so the menu can say when they get there)
+            if Date().timeIntervalSince(self.worldCheckedAt) > (self.worldWalking.isEmpty ? 600 : 60) { self.checkWorld() }
             if self.ledger.advanceHere() { self.applyBooksToCamp() }
+        }
+    }
+
+    private var worldCheckedAt = Date.distantPast
+    /// Under 「大世界」: parties on the road (from the last look at the big world), shown while there are any.
+    private let worldStatusItem: NSMenuItem = {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        item.isHidden = true
+        return item
+    }()
+    private var worldWalking: [Date] = []
+
+    /// Every ten minutes, for a camp in the big world: a great monster turning up near it is told once (the princess heard of it).
+    private func checkWorld() {
+        worldCheckedAt = Date()
+        guard sync.user != nil else { return }
+        struct Boss: Decodable { let cell: String; let name: String; let km: Double; let endsAt: String }
+        struct Walking: Decodable { let arriveAt: String }
+        struct World: Decodable { let open: Bool; let bosses: [Boss]?; let walking: [Walking]? }
+        Task { @MainActor in
+            guard let world = try? await self.sync.api.request("GET", "world", as: World.self) else { return }
+            self.worldWalking = (world.walking ?? []).compactMap { ServerTime.parse($0.arriveAt) }.sorted()
+            guard world.open else { return }
+            if ProcessInfo.processInfo.environment["CAMP_TEST_LOGIN"] != nil { NSLog("GoblinCamp test: world check: \(world.bosses?.count ?? 0) great monsters near, told before \(self.settings.toldBosses.count)") }
+            var told = Set(self.settings.toldBosses)
+            for boss in world.bosses ?? [] where !told.contains(boss.endsAt + boss.cell) {
+                told.insert(boss.endsAt + boss.cell) // (by when it leaves first, so the newest are the ones kept)
+                self.say("聽說 \(String(format: "%.1f", boss.km)) 公里外出現了世界魔王「\(boss.name)」！一隊打不死牠，大家一起上（選單的「大世界」看得到）。")
+            }
+            self.settings.toldBosses = Array(told.sorted().suffix(20))
         }
     }
 
@@ -1762,9 +1832,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         say("魔獸來過 \(older.count) 次" + (fell > 0 ? "，倒下 \(fell) 隻" : "，大家都沒事") + (top.isEmpty ? "。" : "，撿回 \(top)。"))
     }
 
+    /// Parties in the big world that got somewhere, and other camps' parties at our cells (the phone sends them; the server fights).
+    private func tellExpeditions(_ parties: [CampLedger.Expedition]) {
+        for e in parties {
+            let loot = (e.loot ?? [:]).sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
+            if e.defended == true {
+                say("\(e.by ?? "有人")來打我們的領地，" + (e.won == true ? "守住了！" : "領地被搶走了……") + ((e.fallen ?? 0) > 0 ? "倒下 \(e.fallen!) 隻。" : ""))
+            } else if e.arrived == true {
+                let what: String
+                switch e.cell {
+                case "cleared": what = "打贏了，清掉\(e.against ?? "巢穴")"
+                case "taken": what = "打贏了，搶下\(e.against ?? "一格")"
+                case "settled": what = (e.killed ?? 0) > 0 ? "打贏了，佔領了\(e.against ?? "那一格")" : "搬進領地了"
+                case "held" where e.damage != nil: what = "對\(e.against ?? "世界魔王")造成 \(e.damage!) 點傷害（牠的傷會留著，大家一起打）"
+                case "held": what = "沒打下\(e.against ?? "目標")"
+                default: what = "回來了"
+                }
+                say("出征的隊伍\(what)" + ((e.fallen ?? 0) > 0 ? "，倒下 \(e.fallen!) 隻" : "") + (loot.isEmpty ? "。" : "，撿到 \(loot)。"))
+            }
+        }
+    }
+
     private func applyBooksToCamp() {
         guard campReady, let stores = ledger.bookStores() else { return }
-        colony.applyBooks(ledger.bookResidents(), stores: stores)
+        colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
         updateCount()
     }
 
@@ -1780,6 +1871,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if try await self.ledger.fetch() != nil {
                     self.booksFetchedAt = Date()
                     self.playRaids(events.filter { $0.raid != nil })
+                    self.tellExpeditions(events.compactMap(\.expedition))
+                    for back in events.compactMap(\.lairBack) {
+                        self.say(back.held
+                            ? "\(back.name)（\(back.level) 級）回來搶領地，被我們打退了！" + (back.fallen > 0 ? "倒下 \(back.fallen) 隻。" : "")
+                            : "\(back.name)（\(back.level) 級）回來把領地搶回去了……守在那裡的都倒下了。")
+                    }
+                    var yields: [String: Int] = [:]
+                    for e in events { for (id, n) in e.yields ?? [:] { yields[id, default: 0] += n } }
+                    if !yields.isEmpty {
+                        let top = yields.sorted { $0.value > $1.value }.prefix(4).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
+                        self.say("大世界的領地送來了 \(top)。")
+                    }
+                    for reward in events.compactMap(\.bossReward) {
+                        let loot = reward.loot.sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
+                        self.say("大家一起打倒了世界魔王\(reward.name)！我們出了 \(Int((reward.share * 100).rounded()))% 的力，分到 \(loot)，經驗 +\(reward.xp)。")
+                    }
                     self.applyBooksToCamp()
                 }
             } catch {
@@ -1890,6 +1997,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add.keyEquivalent = "n"
         add.keyEquivalentModifierMask = [.control, .option]
         sub.addItem(add)
+        sub.addItem(ClosureMenuItem(title: "新增備忘（放在便利貼牆）") { [weak self] in
+            guard let self else { return }
+            let note = self.notes.newNote(edit: false, memo: true)
+            self.noteWall.show(select: note.id)
+        })
+        let wall = ClosureMenuItem(title: "便利貼牆…") { [weak self] in self?.noteWall.show() }
+        wall.keyEquivalent = "w"
+        wall.keyEquivalentModifierMask = [.control, .option]
+        wall.toolTip = "所有便利貼排在一個視窗裡：搜尋、分待辦／備忘，決定哪些要放在桌面"
+        sub.addItem(wall)
+        sub.addItem(.separator())
         let raise = ClosureMenuItem(title: "把便利貼叫到最上面") { [weak self] in
             guard let self else { return }
             self.notes.setRaised(!self.notes.raised)
@@ -1900,8 +2018,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         raise.stateProvider = { [weak self] in self?.notes.raised ?? false }
         sub.addItem(raise)
         sub.addItem(ClosureMenuItem(title: "全部集合到這個螢幕") { [weak self] in self?.notes.gather() })
+        sub.addItem(ClosureMenuItem(title: "把桌面的便利貼全部收進牆") { [weak self] in self?.notes.putAllInWall() })
         sub.addItem(.separator())
-        let tip = NSMenuItem(title: "雙擊寫字、拖曳移動、右下角調大小、右鍵設定時間", action: nil, keyEquivalent: "")
+        let tip = NSMenuItem(title: "雙擊寫字、拖曳移動、右上角摺起來、右鍵設定時間", action: nil, keyEquivalent: "")
         tip.isEnabled = false
         sub.addItem(tip)
         parent.submenu = sub
@@ -2933,6 +3052,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var actShotDone = false
     private var workshopWindow: WorkshopWindow?
+    private var worldWindow: WorldWindow?
+
+    /// The big world: the web page's map in a window of its own, signed in as this Mac's account.
+    private func showWorld() {
+        guard sync.user != nil else { return say("大世界要先登入。") }
+        if worldWindow == nil { worldWindow = WorldWindow(api: sync.api) }
+        worldWindow?.show()
+    }
 
     private func showWorkshop() {
         if workshopWindow == nil { workshopWindow = WorkshopWindow(colony: colony) }
@@ -3164,6 +3291,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pauseItem.isEnabled = colony.isSimulating
         let character = Characters.current
         let home = character.nestName
+        let walking = worldWalking.filter { $0 > Date().addingTimeInterval(-60) }
+        worldStatusItem.isHidden = walking.isEmpty
+        if let next = walking.first {
+            let minutes = max(0, Int((next.timeIntervalSinceNow / 60).rounded(.up)))
+            worldStatusItem.title = "　出征中 \(walking.count) 隊，" + (minutes == 0 ? "有一隊到了，結算中" : "最快 \(minutes) 分鐘後到")
+        }
         rosterItem.title = roster.isVisible ? "\(Characters.current.noun)名冊（開啟中，再按一次關閉）" : "\(Characters.current.noun)名冊…"
         rosterItem.isEnabled = colony.nest != nil && !isHiddenByUser
         var status: [String] = []
@@ -3322,6 +3455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !ok, ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: shortcut for key \(code) was not accepted") }
         }
         HotKeys.shared.register(keyCode: 45) { [weak self] in self?.notes.newNote() } // ⌃⌥N a new sticky note
+        HotKeys.shared.register(keyCode: 13) { [weak self] in self?.noteWall.show() } // ⌃⌥W the notes wall
         HotKeys.shared.register(keyCode: 46) { [weak self] in // ⌃⌥M the notes above the windows, and back
             guard let self else { return }
             self.notes.setRaised(!self.notes.raised)

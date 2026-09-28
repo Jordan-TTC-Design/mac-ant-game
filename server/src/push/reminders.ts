@@ -1,12 +1,17 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { PushSubscriptionJSON, ReminderPush } from "@goblincamp/shared";
 import type { AppDeps } from "../app.ts";
-import { devices } from "../db/schema.ts";
+import { camps, devices } from "../db/schema.ts";
 
 /** Reminders older than this when found (the server was down) are not pushed any more. */
 const STALE_HOURS = 24;
 
-const BREED_NAMES: Record<string, string> = { common: "哥布林", scout: "敏捷哥布林", brute: "壯碩哥布林", sage: "聰明哥布林", golden: "金皮哥布林" };
+/** Who is on the note, by the account's race (the Mac's character manifests; a note's breed is one of these five). */
+const BREED_NAMES: Record<string, Record<string, string>> = {
+  goblin: { common: "哥布林", scout: "敏捷哥布林", brute: "壯碩哥布林", sage: "聰明哥布林", golden: "金皮哥布林" },
+  elf: { common: "精靈", scout: "綠斗篷精靈", brute: "樹皮精靈", sage: "鹿角精靈", golden: "銀月精靈" },
+  undead: { common: "骷髏", scout: "幽影", brute: "巨骨", sage: "鬼火", golden: "黑曜骨" },
+};
 
 /**
  * Finds the reminders that are due and not pushed yet, and pushes each to its owner's phones. Each reminder time is
@@ -32,7 +37,9 @@ export async function pushDueReminders(deps: Pick<AppDeps, "database" | "push">,
       .select({ id: devices.id, subscription: devices.pushSubscription })
       .from(devices)
       .where(and(eq(devices.userId, note.user_id), eq(devices.kind, "pwa"), isNotNull(devices.pushSubscription)));
-    const who = BREED_NAMES[note.breed] ?? "哥布林";
+    const [camp] = await db.select({ race: camps.race }).from(camps).where(eq(camps.userId, note.user_id));
+    const names = BREED_NAMES[camp?.race ?? "goblin"] ?? BREED_NAMES.goblin!;
+    const who = names[note.breed] ?? names.common!;
     const payload: ReminderPush = {
       type: "reminder",
       noteId: note.id,

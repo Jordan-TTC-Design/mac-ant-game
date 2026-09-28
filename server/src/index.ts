@@ -6,6 +6,8 @@ import { runMigrations } from "./db/migrate.ts";
 import { ConsoleMailer, ResendMailer } from "./mail/mailer.ts";
 import { startReminderLoop } from "./push/reminders.ts";
 import { NoPushSender, WebPushSender } from "./push/sender.ts";
+import { startWorldLoop } from "./world/service.ts";
+import { startMaintenance } from "./maintenance.ts";
 
 const config = loadConfig();
 const database = createDatabase(config.DATABASE_URL);
@@ -20,6 +22,8 @@ const mailer = config.RESEND_API_KEY ? new ResendMailer(config.RESEND_API_KEY, c
 if (!config.RESEND_API_KEY) console.warn("No RESEND_API_KEY: mails are printed here instead of sent.");
 const app = createApp({ database, mailer, config, push });
 const stopReminders = startReminderLoop(app.deps);
+const stopWorld = startWorldLoop(app.deps);
+const stopMaintenance = startMaintenance(app.deps);
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`GoblinCamp server on http://localhost:${info.port}/api/health`);
 });
@@ -27,6 +31,8 @@ app.injectWebSocket(server);
 
 async function shutdown() {
   stopReminders();
+  stopWorld();
+  stopMaintenance();
   server.close();
   await database.close();
   process.exit(0);

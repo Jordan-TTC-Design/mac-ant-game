@@ -23,7 +23,18 @@ const pushText: Record<PushState, string> = {
   "no-key": "伺服器還沒設定推播，請跟管理的人說。",
 };
 
+const showAllSessions = ref(false);
+/** Every other device of this account is signed out (this phone stays). */
+async function endOthers() {
+  if (!confirm("其他所有裝置（包括 Mac）都會被登出，要再登入才能用。確定嗎？")) return;
+  await api("DELETE", "auth/sessions");
+  await loadSessions();
+}
+
+// the admin page's link shows only for admins (the server says who they are)
+const admin = ref(false);
 onMounted(async () => {
+  api("GET", "admin").then(() => (admin.value = true)).catch(() => {});
   installed.value = isInstalled();
   push.value = await pushState();
   await loadSessions();
@@ -84,11 +95,13 @@ async function signOut() {
       <h2>帳號</h2>
       <p><strong>{{ user?.displayName }}</strong>（{{ user?.email }}）</p>
       <p>好友代碼：<code>{{ user?.friendCode }}</code> <button class="btn small" @click="copyCode">{{ copied ? "複製了" : "複製" }}</button></p>
+      <p v-if="admin"><NuxtLink to="/admin" class="btn">後台（邀請碼、帳號、大世界）</NuxtLink></p>
     </section>
 
     <section class="panel">
       <h2>提醒通知</h2>
       <p class="muted">{{ pushText[push] }}</p>
+      <p class="muted small">開著的話，便利貼的提醒、大世界的出征結果、領地被攻擊、世界魔王被打倒都會通知你。</p>
       <p v-if="pushError" class="status error">{{ pushError }}</p>
       <button v-if="push === 'on' || push === 'off'" class="btn" :class="{ primary: push === 'off' }" :disabled="pushBusy" @click="togglePush">
         {{ push === "on" ? "關閉通知" : "開啟通知" }}
@@ -97,14 +110,16 @@ async function signOut() {
     </section>
 
     <section class="panel">
-      <h2>登入中的裝置</h2>
-      <div v-for="s in sessions" :key="s.id" class="device">
+      <h2>登入中的裝置 <small v-if="sessions.length">{{ sessions.length }} 台</small></h2>
+      <div v-for="s in sessions.slice(0, showAllSessions ? sessions.length : 3)" :key="s.id" class="device">
         <div>
           <div class="name">{{ s.device?.name ?? "不明的裝置" }}（{{ s.device?.kind === "pwa" ? "手機" : "Mac" }}）{{ s.current ? "・這台" : "" }}</div>
           <div class="muted small">上次使用：{{ noteTime(s.lastSeenAt) }}</div>
         </div>
         <button v-if="!s.current" class="btn small" @click="endSession(s.id)">登出</button>
       </div>
+      <button v-if="sessions.length > 3" class="more" @click="showAllSessions = !showAllSessions">{{ showAllSessions ? "收起" : `還有 ${sessions.length - 3} 台…` }}</button>
+      <button v-if="sessions.length > 1" class="btn wide-soft" @click="endOthers">登出其他所有裝置</button>
     </section>
 
     <button class="btn danger wide" @click="signOut">登出這支手機</button>
@@ -117,6 +132,9 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .btn.small { min-height: 30px; padding: 4px 10px; font-size: 13px; }
+h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 8px 0 0; cursor: pointer; }
+.wide-soft { width: 100%; margin-top: 10px; }
 .device { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
 .device:first-of-type { border-top: 0; }
 .name { font-weight: 600; }

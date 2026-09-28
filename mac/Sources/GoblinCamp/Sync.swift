@@ -12,6 +12,9 @@ struct ServerNote: Decodable {
     let remindFired: Bool
     let done: Bool
     let deleted: Bool
+    /// (a server from before kinds sends neither)
+    let kind: String?
+    let desk: Bool?
     let createdAt: String
     let updatedAt: String
     let seq: Int
@@ -19,7 +22,8 @@ struct ServerNote: Decodable {
     var sticky: StickyNote {
         StickyNote(id: id, text: text, color: color, breed: breed, goblinName: goblinName, dueAt: dueAt.flatMap(ServerTime.parse),
                    remindAt: remindAt.flatMap(ServerTime.parse), remindFired: remindFired, done: done,
-                   createdAt: ServerTime.parse(createdAt) ?? Date(), updatedAt: ServerTime.parse(updatedAt) ?? Date(), deleted: deleted)
+                   createdAt: ServerTime.parse(createdAt) ?? Date(), updatedAt: ServerTime.parse(updatedAt) ?? Date(), deleted: deleted,
+                   kind: kind, desk: desk)
     }
 }
 
@@ -210,6 +214,8 @@ final class SyncEngine {
         case "remindAt": return note.remindAt.map { .string(ServerTime.format($0)) } ?? .null
         case "remindFired": return .bool(note.remindFired)
         case "done": return .bool(note.done)
+        case "kind": return .string(note.kind ?? "todo")
+        case "desk": return .bool(note.onDesk)
         default: return .bool(note.deleted)
         }
     }

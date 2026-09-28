@@ -23,7 +23,7 @@ const subscription = (endpoint = "https://push.example/abc") => ({ endpoint, key
 const MIN = 60_000;
 
 function fields(over: Partial<NoteFields> = {}): NoteFields {
-  return { text: "打電話給廠商\n記得問報價", color: "yellow", breed: "brute", goblinName: "咕嚕", dueAt: null, remindAt: null, remindFired: false, done: false, deleted: false, ...over };
+  return { text: "打電話給廠商\n記得問報價", color: "yellow", breed: "brute", goblinName: "咕嚕", dueAt: null, remindAt: null, remindFired: false, done: false, deleted: false, kind: "todo", desk: true, ...over };
 }
 
 /** A person with a Mac and a phone that subscribed to pushes. */
@@ -59,6 +59,15 @@ describe("提醒推播", () => {
     t.advance(11 * MIN);
     expect(await run()).toBe(1);
     expect(t.push.sent).toHaveLength(2);
+  });
+
+  it("names who is on the note by the account's race", async () => {
+    const { onMac } = await setUp();
+    await t.call("POST", "/camp/start", { race: "elf" }, onMac);
+    await remindIn(onMac, 1);
+    t.advance(2 * MIN);
+    expect(await run()).toBe(1);
+    expect(t.push.sent[0]!.payload.title).toBe("咕嚕・樹皮精靈");
   });
 
   it("does not push a deleted note, an answered reminder, or one a day old", async () => {
