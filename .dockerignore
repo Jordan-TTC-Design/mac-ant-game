@@ -6,6 +6,7 @@ pwa/dist
 pwa/public/sprites
 pwa/public/camps
 pwa/public/world
+pwa/public/terrain
 server/.env
 .env
 .git

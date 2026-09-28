@@ -29,7 +29,15 @@ cp -R Resources/Animals "$APP/Contents/Resources/Animals"
 cp -R Resources/Scenery "$APP/Contents/Resources/Scenery"
 cp -R Resources/Terrain "$APP/Contents/Resources/Terrain"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-codesign --force --sign - "$APP"
+# The same certificate every build (tools/make_signing_cert.sh, once), so macOS keeps knowing it is the same app and
+# "永遠允許" for the sign-in in the Keychain lasts across updates; without it, ad hoc (asked again after every update).
+SIGN_ID="GoblinCamp Code Signing"
+if security find-certificate -c "$SIGN_ID" >/dev/null 2>&1; then
+    codesign --force --sign "$SIGN_ID" "$APP"
+else
+    codesign --force --sign - "$APP"
+    [ "${1:-}" = "--release" ] && echo "⚠️  沒有「${SIGN_ID}」憑證，用臨時簽名：大家更新後鑰匙圈會再問一次密碼（先跑 tools/make_signing_cert.sh）"
+fi
 # let macOS know this copy handles goblincamp:// links (Claude Code hooks use them)
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" >/dev/null 2>&1 || true
 echo "Built $PWD/$APP ($(lipo -archs "$APP/Contents/MacOS/GoblinCamp"))"

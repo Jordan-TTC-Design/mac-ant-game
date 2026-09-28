@@ -103,6 +103,8 @@ git tag v0.9.0 && git push origin v0.9.0
 gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.9.0
 ```
 
+**簽名**：`build.sh` 會用鑰匙圈裡的「GoblinCamp Code Signing」憑證簽 App（第一次先跑一次 `tools/make_signing_cert.sh` 建立，並照它說的備份）。每一版都用同一張憑證，macOS 才會認得是同一個 App，大家在鑰匙圈按過一次「永遠允許」之後，更新就不會再跳出要密碼的視窗。換電腦發版時要把這張憑證搬過去；沒有它的話 `build.sh` 會退回臨時簽名並提醒你。
+
 `build.sh --release` 跑完會把第 5 步那行（含版本號與檔名）印出來，照著貼就好。
 
 第 5 步需要 [GitHub CLI](https://cli.github.com)（`brew install gh`，第一次要 `gh auth login`，之後永久有效）。不想裝的話就到 Releases 頁面手動建立，把兩個檔案拖進**下面那塊 `Attach binaries` 虛線框**——不是上面寫說明的文字框，拖錯地方不算附件。（release 自動附的 `Source code (zip)` / `(tar.gz)` 是 GitHub 產生的原始碼壓縮檔，不是你要給使用者的 App。）
@@ -184,6 +186,7 @@ gh release create v0.9.0 dist/GoblinCamp-0.9.0.zip dist/version.json --title v0.
 - **新手區**：現在只開放低等怪物——兔子、蝸牛、甲蟲、烏鴉、松鼠、鵝、狐狸…；大路邊有人類強盜和強獸人巡邏隊。世界魔王先關著。
 - **自己選誰出征**：點地圖上的格子會出現卡片（攻擊／派人佔領／駐守／蓋繁殖巢），出人時可以一隻一隻勾，旁邊比戰力、看勝率。
 - **領地**每 3 小時照地形產出素材；營地那一格一開始就有繁殖巢。戰鬥由伺服器算，戰報可以重播；有排行榜。
+- **第一次開大世界**：手機上按「📍 找我附近的地方」，地圖移到你附近，推薦附近的車站、公園、景點當營地（位置只在手機上用，不會送到伺服器）；不想定位也可以挑預設的城市公園。
 - 在 Mac 選單「營地 → 大世界…」或手機網頁玩；出征的居民會從營地走出去、走回來，結果由公主告訴你。
 - 設計與規則：[server/WORLD.md](server/WORLD.md)。
 
@@ -589,7 +592,13 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.10.0）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.10.1）。
+
+### v0.10.1
+
+- **不會一直跳出鑰匙圈密碼視窗了**：登入憑證每次開 App 只讀一次；App 改用固定的憑證簽名，按一次「永遠允許」之後更新也不會再問（從 0.10.1 開始算，更新到這版時還會再問最後一次）。
+- **手機營地畫面**：用 Mac 同一套素材畫出草地、後面一整排樹、營火、帳篷、圖騰；精靈是古林、燈籠與蘑菇，死靈是墓地、墓碑與鬼火。
+- **大世界找附近的地方**：第一次開大世界時可以定位，推薦你附近的車站、公園與景點。
 
 ### v0.10.0
 

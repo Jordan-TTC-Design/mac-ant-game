@@ -7,8 +7,8 @@
     <key>CFBundleDisplayName</key><string>哥布林營地</string>
     <key>CFBundleExecutable</key><string>GoblinCamp</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.10.0</string>
-    <key>CFBundleVersion</key><string>11</string>
+    <key>CFBundleShortVersionString</key><string>0.10.1</string>
+    <key>CFBundleVersion</key><string>12</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>

@@ -66,18 +66,34 @@ final class AccountStore {
     var deviceName: String { Host.current().localizedName ?? "Mac" }
     var user: AccountUser? { file.user }
 
+    /// The token, read from the Keychain once per launch and kept: every read of an item another build made can make
+    /// macOS ask for the login password, and the app talks to the server every few seconds.
     var token: String? {
         if testMode { return file.testToken }
+        tokenLock.lock()
+        defer { tokenLock.unlock() }
+        if let cachedToken { return cachedToken }
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: AccountStore.keychainService,
                                     kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let value = status == errSecSuccess ? (result as? Data).flatMap { String(data: $0, encoding: .utf8) } : nil
+        if status != errSecSuccess && status != errSecItemNotFound { NSLog("GoblinCamp: the Keychain did not give the session (\(status))") }
+        cachedToken = .some(value) // (asked once: a "no" is not asked again until the next launch or sign-in)
+        return value
+    }
+    private var cachedToken: String??
+    private let tokenLock = NSLock()
+
+    private func setCachedToken(_ value: String?) {
+        tokenLock.lock()
+        cachedToken = .some(value)
+        tokenLock.unlock()
     }
 
     func signedIn(user: AccountUser, token: String) {
         file.user = user
-        if testMode { file.testToken = token } else { writeKeychain(token) }
+        if testMode { file.testToken = token } else { writeKeychain(token); setCachedToken(token) }
         save()
     }
 
@@ -85,6 +101,7 @@ final class AccountStore {
     func sessionEnded() {
         if testMode { file.testToken = nil } else {
             SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: AccountStore.keychainService] as CFDictionary)
+            setCachedToken(nil)
         }
         save()
     }
@@ -93,6 +110,7 @@ final class AccountStore {
         file.user = nil
         if testMode { file.testToken = nil } else {
             SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: AccountStore.keychainService] as CFDictionary)
+            setCachedToken(nil)
         }
         save()
     }

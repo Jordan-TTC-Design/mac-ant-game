@@ -1,6 +1,7 @@
 public/sprites/
 public/camps/
 public/world/
+public/terrain/
 .nuxt/
 .output/
 dist

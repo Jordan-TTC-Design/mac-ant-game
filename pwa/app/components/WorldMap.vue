@@ -165,6 +165,58 @@ function moveParties() {
   }
 }
 
+/** The kinds of places worth suggesting as somewhere to start (OpenMapTiles' poi classes), in groups. */
+const PLACE_GROUPS: Record<string, "park" | "sight" | "station" | "campus"> = {
+  park: "park", garden: "park", zoo: "sight", attraction: "sight", museum: "sight", stadium: "sight", castle: "sight", monument: "sight",
+  theatre: "sight", railway: "station", college: "campus",
+};
+/** How the five suggestions are made up: the nearest of each group in this order (a group with none is skipped). */
+const PLACE_ORDER = ["station", "park", "sight", "park", "sight", "campus", "park", "sight"] as const;
+
+/**
+ * Named places round a point, within 3 km: the nearest parks, sights, a station and a campus, up to five, read from the map's
+ * own tiles once they are there, so where the person is never leaves the phone. Two suggestions are never within 300 m of
+ * each other (not five corners of one campus).
+ */
+async function placesNear(at: { lat: number; lng: number }): Promise<{ name: string; lat: number; lng: number; km: number }[]> {
+  const m = map;
+  if (!m) return [];
+  if (!m.loaded() || !m.areTilesLoaded()) await new Promise<void>((done) => m.once("idle", () => done()));
+  const mLng = 111.32 * Math.cos((at.lat * Math.PI) / 180);
+  const kmBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => Math.hypot((a.lat - b.lat) * 110.574, (a.lng - b.lng) * mLng);
+  type Place = { name: string; lat: number; lng: number; km: number };
+  const groups: Record<string, Map<string, Place>> = { park: new Map(), sight: new Map(), station: new Map(), campus: new Map() };
+  for (const f of m.querySourceFeatures("osm", { sourceLayer: "poi" })) {
+    const group = PLACE_GROUPS[String(f.properties.class)];
+    let name = f.properties.name;
+    if (!group || typeof name !== "string" || !name.trim() || f.geometry.type !== "Point") continue;
+    if (group === "park" && name.length < 3) continue; // ("草地": a lawn, not a place)
+    if (group === "station") {
+      if (!["station", "subway"].includes(String(f.properties.subclass))) continue;
+      if (!/站|Station$/i.test(name)) name += "站"; // (stations are named bare: 中山 → 中山站)
+    }
+    const [lng, lat] = f.geometry.coordinates as [number, number];
+    const km = kmBetween({ lat, lng }, at);
+    if (km > 3) continue;
+    const had = groups[group]!.get(name);
+    if (!had || km < had.km) groups[group]!.set(name, { name, lat, lng, km });
+  }
+  const queues = Object.fromEntries(Object.entries(groups).map(([g, list]) => [g, [...list.values()].sort((a, b) => a.km - b.km)]));
+  const chosen: Place[] = [];
+  for (const group of PLACE_ORDER) {
+    const queue = queues[group]!;
+    while (queue.length) {
+      const p = queue.shift()!;
+      if (chosen.some((c) => c.name === p.name || kmBetween(c, p) < 0.3)) continue;
+      chosen.push(p);
+      break;
+    }
+    if (chosen.length === 5) break;
+  }
+  return chosen.sort((a, b) => a.km - b.km);
+}
+defineExpose({ placesNear });
+
 let ticking: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   const m = new MapLibre({

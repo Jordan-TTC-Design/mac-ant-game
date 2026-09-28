@@ -39,6 +39,18 @@ for (const id of readdirSync(join(resources, "Camps"))) {
 mkdirSync(worldArt, { recursive: true });
 for (const file of ["foes.png", "foes.json"]) copyFileSync(join(resources, "World", file), join(worldArt, file));
 
+// the ground, trees and odds and ends of the camp's scene (the Mac's Terrain pieces, by biome)
+const terrain = join(here, "../public/terrain");
+mkdirSync(terrain, { recursive: true });
+const pieces = {};
+for (const file of readdirSync(join(resources, "Terrain"))) {
+  if (!file.endsWith(".png")) continue;
+  copyFileSync(join(resources, "Terrain", file), join(terrain, file));
+  const png = readFileSync(join(resources, "Terrain", file));
+  pieces[file.replace(/\.png$/, "")] = [png.readUInt32BE(16), png.readUInt32BE(20)]; // (a PNG's width and height, from its header)
+}
+writeFileSync(join(terrain, "pieces.json"), JSON.stringify(pieces));
+
 // what monsters leave (mac/Resources/Animals) and the odds and ends in mac/Sources/GoblinCamp/Materials.swift
 Object.assign(names.materials, { scrap_rag: "碎布", scrap_wood: "木片", scrap_iron: "廢鐵", crystal_shard: "碎晶" });
 for (const id of readdirSync(join(resources, "Animals"))) {

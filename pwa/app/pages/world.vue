@@ -28,6 +28,41 @@ const PLACES = [
   { name: "台中公園", lat: 24.1449, lng: 120.6844 },
   { name: "高雄中央公園", lat: 22.6246, lng: 120.3016 },
 ];
+/** Where the phone is (asked only when the person taps 找我附近的地方): the map goes there and suggests the parks and landmarks round it. */
+const mapView = ref<{ placesNear: (at: { lat: number; lng: number }) => Promise<{ name: string; lat: number; lng: number; km: number }[]> }>();
+const nearby = ref<{ name: string; lat: number; lng: number; km: number }[] | null>(null);
+const locating = ref(false);
+const locateProblem = ref("");
+async function findNearby() {
+  if (!navigator.geolocation) {
+    locateProblem.value = "這支手機不能定位，從下面的地方挑一個吧。";
+    return;
+  }
+  locating.value = true;
+  locateProblem.value = "";
+  try {
+    const at = await new Promise<{ lat: number; lng: number }>((done, fail) =>
+      navigator.geolocation.getCurrentPosition((p) => done({ lat: p.coords.latitude, lng: p.coords.longitude }), fail, { enableHighAccuracy: false, timeout: 10_000, maximumAge: 600_000 }),
+    );
+    await world.moveTo(at);
+    await nextTick();
+    nearby.value = (await mapView.value?.placesNear(at)) ?? [];
+    if (!nearby.value.length) locateProblem.value = "附近 3 公里內找不到有名字的公園或地標，直接在地圖上點一格也可以。";
+  } catch {
+    locateProblem.value = "沒辦法知道你在哪（可能沒有允許定位），從下面的地方挑一個吧。";
+  } finally {
+    locating.value = false;
+  }
+}
+const distance = (km: number) => (km < 1 ? `${Math.round(km * 1000)} 公尺` : `${km.toFixed(1)} 公里`);
+// (if the phone already allowed it, look right away)
+onMounted(async () => {
+  try {
+    if ((await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted") void findNearby();
+  } catch {
+    // (no permissions API: wait for the tap)
+  }
+});
 const center = computed(() => s.center ?? s.me?.home ?? PLACES[0]!);
 const selected = ref<string | null>(null);
 const cell = computed<CellView | null>(() => s.cells.find((c) => c.cell === selected.value) ?? null);
@@ -142,10 +177,19 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
       </button>
 
       <div v-if="!s.me.homeCell" class="places">
-        <button v-for="p in PLACES" :key="p.name" class="chip" @click="world.moveTo(p)">{{ p.name }}</button>
+        <button class="chip here" :disabled="locating" @click="findNearby">{{ locating ? "找附近的地方中…" : "📍 找我附近的地方" }}</button>
+        <template v-if="nearby?.length">
+          <button v-for="p in nearby" :key="p.name" class="chip" @click="world.moveTo(p)">{{ p.name }}<small>{{ distance(p.km) }}</small></button>
+        </template>
+        <template v-else>
+          <button v-for="p in PLACES" :key="p.name" class="chip" @click="world.moveTo(p)">{{ p.name }}</button>
+        </template>
+        <p v-if="locateProblem" class="places-note">{{ locateProblem }}</p>
+        <p v-else-if="nearby?.length" class="places-note">挑一個公園或地標當營地吧——地圖是真的，別選你家。</p>
       </div>
 
       <WorldMap
+        ref="mapView"
         :cells="s.cells"
         :center="center"
         :mine="myId"
@@ -260,6 +304,9 @@ p { margin: 6px 0; line-height: 1.55; }
 .small { font-size: 12px; }
 .intro { margin: 0 0 12px; }
 .places { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.places .chip small { margin-left: 5px; opacity: 0.7; font-size: 11px; }
+.places .chip.here { background: #f3d36b; color: #1f1f1f; font-weight: 700; }
+.places-note { flex-basis: 100%; margin: 2px 2px 0; font-size: 12px; color: #d8e4d0; }
 .chip { border: 0; border-radius: 999px; padding: 7px 12px; background: rgba(255, 255, 255, 0.16); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
 .legend { color: #dfe9d8; font-size: 11px; line-height: 1.6; margin: 6px 2px 0; }
 .line small { color: var(--muted); }
