@@ -24,15 +24,8 @@ export default defineNuxtConfig({
     },
   },
   vite: {
-    build: {
-      rollupOptions: {
-        output: {
-          // the map's worker comes as .mjs, which a plain nginx (and the phone's cache of it) does not take for JavaScript:
-          // name it .js like the rest
-          assetFileNames: (asset) => (asset.names?.some((n) => n.endsWith(".mjs")) ? "_nuxt/[name].[hash].js" : "_nuxt/[name].[hash][extname]"),
-        },
-      },
-    },
+    // the map's worker (components/WorldMap.vue) is a module: bundled as one
+    worker: { format: "es" },
   },
   nitro: {
     devProxy: { "/api": { target: "http://localhost:8787/api" } },

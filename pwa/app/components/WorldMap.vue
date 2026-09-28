@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Map as MapLibre, Marker, setWorkerUrl, type GeoJSONSource } from "maplibre-gl";
-import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { FeatureCollection } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { cellAt, HEX_RADIUS, type CellView } from "@goblincamp/shared/world";
@@ -22,7 +22,8 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ select: [cell: string]; pan: [center: { lat: number; lng: number }]; home: [] }>();
 
-// (MapLibre does the tiles' work in a worker of its own, a separate file the bundler has to be told about)
+// (MapLibre does the tiles' work in a worker of its own, a separate file the bundler has to be told about: bundled whole,
+// since the file in the package imports a second one next to it that a plain copy would leave behind)
 setWorkerUrl(workerUrl);
 
 /** How coarse the map's pixels are: it is drawn at this share of the screen's resolution and scaled up. */
