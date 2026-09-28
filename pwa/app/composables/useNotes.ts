@@ -185,6 +185,12 @@ function connect() {
     if (text.includes('"notes.changed"')) void syncNow();
     // the camp page listens for this one (useCamp)
     if (text.includes('"camp.changed"')) window.dispatchEvent(new Event("gc:camp-changed"));
+    // friends, the pomodoro and Claude's questions listen for the rest (useLive)
+    try {
+      window.dispatchEvent(new CustomEvent("gc:server-event", { detail: JSON.parse(text) }));
+    } catch {
+      // (not JSON)
+    }
   };
   ws.onclose = async () => {
     if (socket !== ws) return;

@@ -105,6 +105,8 @@ export interface CampView {
   romance: unknown;
   kills: Record<string, number>;
   delivered: number;
+  /** 聖光模式 (server/CAMP.md §7): on since (null: off), and when it may be turned on again (null: now). */
+  sanctuary: { since: string | null; canTurnOnAt: string | null };
   /** Everyone alive (at home and, later, in the big world). */
   residents: CampResidentView[];
 }
@@ -129,3 +131,6 @@ export interface RaidReport {
   broken: { resident: number; gear: string }[];
   winner: "camp" | "monsters";
 }
+
+/** `POST /api/camp/sanctuary`: 聖光模式 on or off. */
+export const sanctuaryInput = z.object({ on: z.boolean() });

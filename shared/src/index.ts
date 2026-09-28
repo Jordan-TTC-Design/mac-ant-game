@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 export * from "./auth.ts";
+export * from "./claude.ts";
+export * from "./friends.ts";
 export * from "./notes.ts";
+export * from "./pomodoro.ts";
 
 /** Bumped when the API changes in a way older apps cannot follow. */
 export const API_VERSION = 1;

@@ -33,7 +33,14 @@ export interface Place {
   startedAt: number;
   birthMinutes: number;
   cap: number;
+  /** 聖光模式 (server/CAMP.md §7): every other birth slot passes by while it has SANCTUARY_FULL_BELOW or more. */
+  sanctuary?: boolean;
 }
+
+/** In 聖光模式 a camp below this many is born at full speed (so one that was beaten down can grow back). */
+export const SANCTUARY_FULL_BELOW = 120;
+/** After 聖光模式 is turned off, it may be turned on again this many hours later. */
+export const SANCTUARY_REST_HOURS = 12;
 
 export interface Population {
   residents: Resident[];
@@ -97,6 +104,10 @@ export function advance(place: Place, population: Population, campSeed: number, 
       continue;
     }
 
+    if (place.sanctuary && alive.length >= SANCTUARY_FULL_BELOW && population.nextSlot % 2 === 1) {
+      population.nextSlot++; // (half speed: this slot passes by)
+      continue;
+    }
     if (alive.length < place.cap) {
       const baby = residentFor(place, campSeed, population.nextSlot, population.nextId, slotAt);
       population.nextId++;

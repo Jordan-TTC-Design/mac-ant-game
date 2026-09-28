@@ -20,10 +20,15 @@ public struct CampPlace: Equatable {
     public let startedAt: Double
     public let birthMinutes: Double
     public let cap: Int
-    public init(race: String, key: String, startedAt: Double, birthMinutes: Double, cap: Int) {
-        self.race = race; self.key = key; self.startedAt = startedAt; self.birthMinutes = birthMinutes; self.cap = cap
+    /// 聖光模式: every other birth slot passes by while there are `sanctuaryFullBelow` or more (shared/src/camp/population.ts).
+    public let sanctuary: Bool
+    public init(race: String, key: String, startedAt: Double, birthMinutes: Double, cap: Int, sanctuary: Bool = false) {
+        self.race = race; self.key = key; self.startedAt = startedAt; self.birthMinutes = birthMinutes; self.cap = cap; self.sanctuary = sanctuary
     }
 }
+
+/// In 聖光模式 a camp below this many is born at full speed.
+public let sanctuaryFullBelow = 120
 
 public struct CampPopulation: Equatable {
     public var residents: [CampResident]
@@ -81,6 +86,10 @@ public enum Population {
                 continue
             }
 
+            if place.sanctuary && aliveCount >= sanctuaryFullBelow && population.nextSlot % 2 == 1 {
+                population.nextSlot += 1 // (half speed: this slot passes by)
+                continue
+            }
             if aliveCount < place.cap {
                 let baby = residentFor(place, campSeed: campSeed, slot: population.nextSlot, id: population.nextId, bornAt: slotAt)
                 population.nextId += 1

@@ -39,6 +39,8 @@ export const expeditionInput = z
     residents: residentIds.optional(),
     count: z.number().int().min(1).max(60).optional(),
     settle: z.boolean().default(false),
+    /** Food taken along (supplies.ts): rations let more go, the rest make the party stronger. */
+    supplies: z.record(z.string().max(40), z.number().int().min(0).max(60)).optional(),
   })
   .refine((v) => v.residents || v.count, "residents or count");
 export type ExpeditionInput = z.infer<typeof expeditionInput>;
@@ -99,6 +101,8 @@ export interface CellView {
   lair: LairView | null;
   /** A cleared lair comes back at this time. */
   lairBackAt: string | null;
+  /** A lair that beat a party off and is still hurt: foes standing of how many, the share of its hit points left, whole again at. */
+  lairWounds?: { standing: number; total: number; hpShare: number; healedAt: string } | null;
   /** A great monster standing here (a lair here is hidden while it is). */
   boss: BossView | null;
 }
@@ -160,6 +164,10 @@ export interface WorldMe {
   cells: { cell: string; garrison: number; nest: "none" | "building" | "ready"; town: boolean; terrain: Terrain; nextYieldAt: string }[];
   /** At home, free to go (not on an expedition). */
   atHome: number;
+  /** How many may go on one expedition now (by race and level), before rations. */
+  partyCap: number;
+  /** The food in the store for expeditions (supplies.ts), by id. */
+  food: Record<string, number>;
   walking: ExpeditionSummary[];
   recent: ExpeditionSummary[];
   /** What happened in the big world lately (a lair coming back for a cell, a great monster's spoils, what the cells gave), newest first. */

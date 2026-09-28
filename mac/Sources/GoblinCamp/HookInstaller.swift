@@ -88,7 +88,8 @@ enum HookInstaller {
         let plan: [(event: String, matcher: String?, command: String, timeout: Int?)]
         switch style {
         case .interactive:
-            plan = [("PermissionRequest", nil, "\(wrapper) ask permission", 70), ("Stop", nil, "\(wrapper) ask reply", 70),
+            // (a question may be passed to the phone and wait up to 10 minutes: AppDelegate.relayWait)
+            plan = [("PermissionRequest", nil, "\(wrapper) ask permission", askTimeout), ("Stop", nil, "\(wrapper) ask reply", askTimeout),
                     ("Notification", "idle_prompt|elicitation_dialog", "\(wrapper) notify permission", nil)]
         case .simple:
             plan = [("Notification", nil, "\(wrapper) notify permission", nil), ("Stop", nil, "\(wrapper) notify done", nil)]
@@ -102,6 +103,20 @@ enum HookInstaller {
         }
         root["hooks"] = hooks
         try write(root)
+    }
+
+    /// Claude Code's time limit for our question hooks (seconds): long enough for an answer from the phone.
+    static let askTimeout = 620
+
+    /// The time limit the installed question hook has (nil: none installed); older versions set 70.
+    static func installedAskTimeout() -> Int? {
+        guard let root = try? readSettings(), let hooks = root["hooks"] as? [String: Any] else { return nil }
+        for group in (hooks["PermissionRequest"] as? [[String: Any]]) ?? [] {
+            for hook in (group["hooks"] as? [[String: Any]]) ?? [] {
+                if let command = hook["command"] as? String, markers.contains(where: { command.contains($0) }) { return hook["timeout"] as? Int }
+            }
+        }
+        return nil
     }
 
     static func uninstall() throws {

@@ -82,6 +82,14 @@ enum Materials {
         DropSpec(id: "queen_silk", name: "女王絲", chance: 0.7, min: 1, max: 1, color: "#e0d0ff"), // 蜘蛛女王
         DropSpec(id: "ancient_bark", name: "古樹皮", chance: 1, min: 1, max: 1, color: "#6a5030"), // 樹精
         DropSpec(id: "amber", name: "琥珀", chance: 0.35, min: 1, max: 1, color: "#f0a020"), // 樹精
+        DropSpec(id: "ration_bread", name: "乾糧麵包", chance: 1, min: 1, max: 1, color: "#d9a55b"), // 出征的糧食（大世界）
+        DropSpec(id: "ration_fish", name: "魚乾", chance: 1, min: 1, max: 1, color: "#9fb6c4"), // 出征的糧食（大世界）
+        DropSpec(id: "ration_berry", name: "莓果乾", chance: 1, min: 1, max: 1, color: "#b0426a"), // 出征的糧食（大世界）
+        DropSpec(id: "ration_jerky", name: "肉乾", chance: 1, min: 1, max: 1, color: "#8c4a2f"), // 出征的糧食（大世界）
+        DropSpec(id: "food_meat", name: "烤肉", chance: 1, min: 1, max: 1, color: "#b5542f"), // 出征的糧食（大世界）
+        DropSpec(id: "food_cheese", name: "起司", chance: 1, min: 1, max: 1, color: "#f2cf52"), // 出征的糧食（大世界）
+        DropSpec(id: "food_carrot", name: "胡蘿蔔", chance: 1, min: 1, max: 1, color: "#ec8a2e"), // 出征的糧食（大世界）
+        DropSpec(id: "food_honey", name: "蜂蜜", chance: 1, min: 1, max: 1, color: "#e8b43c"), // 出征的糧食（大世界）
         DropSpec(id: "heartwood", name: "樹心", chance: 0.12, min: 1, max: 1, color: "#c89040"), // 樹精
         DropSpec(id: "mushroom_cap", name: "蘑菇傘", chance: 0.6, min: 1, max: 1, color: "#d85a4a"), // 蘑菇人
         DropSpec(id: "glow_spore", name: "螢光孢子", chance: 0.7, min: 1, max: 1, color: "#b0f070"), // 孢子母

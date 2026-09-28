@@ -24,9 +24,9 @@ interface ReminderPush {
   body: string;
 }
 
-/** Big-world news: a party arrived, a cell was attacked, a great monster fell (tapping opens `url`). */
+/** News with a page (tapping opens `url`): the big world, a message or friend ask, a pomodoro part, a question from Claude. */
 interface WorldPush {
-  type: "world";
+  type: "world" | "social" | "claude";
   title: string;
   body: string;
   url: string;
@@ -40,7 +40,8 @@ self.addEventListener("push", (event) => {
   } catch {
     // (not ours)
   }
-  if (data?.type === "world") {
+  // news with a page to open: the big world, friends and messages, the pomodoro, Claude's questions
+  if (data?.type === "world" || data?.type === "social" || data?.type === "claude") {
     const world = data;
     event.waitUntil(
       self.registration.showNotification(world.title, {

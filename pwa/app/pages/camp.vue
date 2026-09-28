@@ -2,6 +2,7 @@
 import { raceRules } from "@goblincamp/shared/camp";
 import { materialName as sharedMaterialName } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
+import { ApiError, api } from "~/utils/api";
 
 const ok = await useSignedIn();
 const { user } = useAccount();
@@ -77,6 +78,24 @@ const armory = computed(() => {
 const worn = computed(() => home.value.filter((r) => r.gear && Object.keys(r.gear).length > 0).length);
 const boosts = computed(() => Object.entries(view.value?.boosts ?? {}).filter(([, until]) => Date.parse(until) > now.value));
 const kills = computed(() => sorted(view.value?.kills ?? {}).reduce((n, [, k]) => n + k, 0));
+// 聖光模式 (server/CAMP.md §7)
+const sanctuaryBusy = ref(false);
+const sanctuaryProblem = ref("");
+const sanctuaryCanOn = computed(() => !!view.value?.sanctuary?.since || !view.value?.sanctuary?.canTurnOnAt || Date.parse(view.value.sanctuary.canTurnOnAt) <= now.value);
+async function toggleSanctuary() {
+  const on = !view.value?.sanctuary?.since;
+  if (on && !confirm("開啟聖光模式？\n\n不會有魔獸來襲，別人也打不了你；營地 120 隻以上時生得慢一半。關掉之後要 12 小時才能再開。")) return;
+  sanctuaryBusy.value = true;
+  sanctuaryProblem.value = "";
+  try {
+    await api("POST", "camp/sanctuary", { on });
+    await camp.refresh();
+  } catch (e) {
+    sanctuaryProblem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    sanctuaryBusy.value = false;
+  }
+}
 const showAllRaids = ref(false);
 const openRaid = ref<number | null>(null);
 const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${monsterName(m.id)} ×${m.count}`).join("、");
@@ -85,7 +104,7 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
 <template>
   <main v-if="ok" class="page">
     <header class="topbar">
-      <NuxtLink to="/" class="icon-btn">← 便利貼</NuxtLink>
+      <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
       <div style="flex: 1">
         <h1>{{ view ? `${race?.name ?? ""}${race?.nest ?? "營地"}` : "營地" }}</h1>
         <div class="sub">{{ statusLine }}</div>
@@ -116,6 +135,22 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
             <b>{{ b.count }}</b>
           </li>
         </ul>
+      </section>
+
+      <section class="panel sanctuary" :class="{ on: !!view.sanctuary?.since }">
+        <div class="row">
+          <div class="grow">
+            <h2>✨ 聖光模式 <small>{{ view.sanctuary?.since ? "開啟中" : "關閉" }}</small></h2>
+            <p class="muted small">
+              沒空玩的時候用：不會有魔獸來襲，大世界裡別人也打不了你（你也不能打別人，打怪可以）。代價是營地 120 隻以上時生得慢一半。關掉之後要 12 小時才能再開。
+            </p>
+          </div>
+          <button class="btn" :class="{ primary: !view.sanctuary?.since }" :disabled="sanctuaryBusy || !sanctuaryCanOn" @click="toggleSanctuary">
+            {{ view.sanctuary?.since ? "關掉" : "開啟" }}
+          </button>
+        </div>
+        <p v-if="!view.sanctuary?.since && !sanctuaryCanOn" class="muted small">{{ noteTime(view.sanctuary!.canTurnOnAt!) }} 之後才能再開。</p>
+        <p v-if="sanctuaryProblem" class="warn">{{ sanctuaryProblem }}</p>
       </section>
 
       <section class="panel princess">
@@ -170,6 +205,11 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
 </template>
 
 <style scoped>
+.sanctuary .row { display: flex; gap: 12px; align-items: flex-start; }
+.sanctuary .grow { flex: 1; min-width: 0; }
+.sanctuary h2 small { font-size: 12px; color: #888; margin-left: 6px; }
+.sanctuary.on { background: #fff8dc; border: 2px solid #e8c54a; }
+.sanctuary .warn { color: #b3412c; }
 section { margin-top: 14px; }
 h2 { font-size: 16px; margin: 0 0 10px; }
 h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); }

@@ -97,6 +97,14 @@ for raceCase in root["races"] as? [[String: Any]] ?? [] {
         expect("\(race) battle alive", number(battle["alive"]) == Double(b.population.alive.count))
         expect("\(race) battle nextSlot", number(battle["nextSlot"]) == Double(b.population.nextSlot))
     }
+    if let calm = raceCase["sanctuary"] as? [String: Any] {
+        var c = Population.startHome(race: race, campSeed: seed, startedAt: start)
+        let place = CampPlace(race: c.place.race, key: c.place.key, startedAt: c.place.startedAt, birthMinutes: c.place.birthMinutes, cap: c.place.cap, sanctuary: true)
+        Population.advance(place, &c.population, campSeed: seed, to: start + 30 * hour)
+        expect("\(race) sanctuary alive", number(calm["alive"]) == Double(c.population.alive.count))
+        expect("\(race) sanctuary nextId", number(calm["nextId"]) == Double(c.population.nextId))
+        expect("\(race) sanctuary nextSlot", number(calm["nextSlot"]) == Double(c.population.nextSlot))
+    }
     let r = Races.rules(race)
     let nest = CampPlace(race: race, key: "cell:38344:1015372", startedAt: start, birthMinutes: r.nestBirthMinutes, cap: r.cellCap)
     for (i, want) in (raceCase["nestResidents"] as? [Any] ?? []).enumerated() {

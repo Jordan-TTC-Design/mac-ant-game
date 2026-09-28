@@ -5,6 +5,13 @@ import AppKit
 /// It can be paused and a part can be skipped.
 final class Pomodoro {
     enum Phase { case focus, rest, longRest }
+    /// What a run is made of (minutes), as the server and the phone know it too (shared/src/pomodoro.ts).
+    struct Plan: Codable, Equatable {
+        var focusMinutes: Double
+        var restMinutes: Double
+        var rounds: Int
+        var longRestMinutes: Double
+    }
     enum Event { case started, focusDone, restBegan, longRestBegan, focusBegan, finished }
 
     private(set) var phase: Phase?
@@ -32,6 +39,8 @@ final class Pomodoro {
     /// Total length of the current phase, for the progress bar.
     private(set) var phaseLength = 1.0
     var onEvent: ((Event) -> Void)?
+    /// The run's plan (nil: none running).
+    private(set) var plan: Plan?
 
     static let walkSpeed = 170.0
 
@@ -48,6 +57,7 @@ final class Pomodoro {
         longRestSeconds = longRestMinutes * 60
         focusSeconds = focusMinutes * 60
         self.rounds = max(1, rounds)
+        plan = Plan(focusMinutes: focusMinutes, restMinutes: restMinutes, rounds: self.rounds, longRestMinutes: longRestMinutes)
         round = 1
         paused = false
         endedWithoutRest = false
@@ -73,6 +83,7 @@ final class Pomodoro {
     func stop() {
         guard phase != nil else { return }
         phase = nil
+        plan = nil
         paused = false
         leaving = true
         arriving = false
@@ -135,6 +146,52 @@ final class Pomodoro {
         }
     }
 
+    /// The parts of a run in order, the same as shared/src/pomodoro.ts (and this class's own `update`): focus, rest… and after
+    /// the last focus a long rest when there are several rounds and one is set, else the usual rest, else the end.
+    static func segments(_ plan: Plan) -> [(phase: Phase, round: Int, seconds: Double)] {
+        var out: [(phase: Phase, round: Int, seconds: Double)] = []
+        let rounds = max(1, plan.rounds)
+        for round in 1...rounds {
+            out.append((.focus, round, plan.focusMinutes * 60))
+            if round < rounds {
+                if plan.restMinutes > 0 { out.append((.rest, round, plan.restMinutes * 60)) }
+            } else if rounds > 1, plan.longRestMinutes > 0 {
+                out.append((.longRest, round, plan.longRestMinutes * 60))
+            } else if plan.restMinutes > 0 {
+                out.append((.rest, round, plan.restMinutes * 60))
+            }
+        }
+        return out
+    }
+
+    /// Takes on the run as another device left it (the server's): which part, how long it has left, paused or not. A change of
+    /// part shakes the clock and is said like one that came by itself.
+    func adopt(plan: Plan, index: Int, remaining: Double, paused: Bool) {
+        let segments = Pomodoro.segments(plan)
+        guard phase != nil, segments.indices.contains(index) else { return }
+        self.plan = plan
+        focusSeconds = plan.focusMinutes * 60
+        restSeconds = plan.restMinutes * 60
+        longRestSeconds = plan.longRestMinutes * 60
+        rounds = max(1, plan.rounds)
+        let part = segments[index]
+        let changed = phase != part.phase || round != part.round
+        phase = part.phase
+        round = part.round
+        phaseLength = max(1, part.seconds)
+        if paused {
+            self.paused = true
+            pausedRemaining = max(0, remaining)
+        } else {
+            self.paused = false
+            endsAt = Date().addingTimeInterval(max(0, remaining))
+        }
+        if changed {
+            shake = 3
+            onEvent?(part.phase == .focus ? .focusBegan : part.phase == .rest ? .restBegan : .longRestBegan)
+        }
+    }
+
     private func nextRound() {
         round += 1
         begin(.focus, seconds: focusSeconds)
@@ -145,6 +202,7 @@ final class Pomodoro {
     private func finish(withoutRest: Bool) {
         endedWithoutRest = withoutRest
         phase = nil
+        plan = nil
         paused = false
         leaving = true
         onEvent?(.finished)

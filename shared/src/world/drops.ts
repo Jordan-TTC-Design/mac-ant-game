@@ -15,6 +15,15 @@ export interface MaterialInfo {
 
 /** Every material there is. The camp's own (from its home raids and odd finds) first, then the big world's. */
 export const MATERIALS: Record<string, MaterialInfo> = {
+  // food for expeditions (supplies.ts): rations let more go, the rest make the party stronger
+  ration_bread: { name: "乾糧麵包", color: "#d9a55b" },
+  ration_fish: { name: "魚乾", color: "#9fb6c4" },
+  ration_berry: { name: "莓果乾", color: "#b0426a" },
+  ration_jerky: { name: "肉乾", color: "#8c4a2f" },
+  food_meat: { name: "烤肉", color: "#b5542f" },
+  food_cheese: { name: "起司", color: "#f2cf52" },
+  food_carrot: { name: "胡蘿蔔", color: "#ec8a2e" },
+  food_honey: { name: "蜂蜜", color: "#e8b43c" },
   // odds and ends (Materials.swift)
   scrap_rag: { name: "碎布", color: "#d8c8a8" },
   scrap_wood: { name: "木片", color: "#a8743c" },
@@ -153,18 +162,18 @@ export const FOE_DROPS: Record<string, DropRule[]> = {
   stone_golem: [d("golem_core", 0.6), d("gargoyle_stone", 1, 1, 3)],
   vampire_bat: [d("vampire_fang", 0.4), d("bat_wing", 0.6)],
   drake: [d("dragon_scale", 0.3)],
-  rabbit: [d("rabbit_fur", 0.6), d("rabbit_foot", 0.05)],
+  rabbit: [d("rabbit_fur", 0.6), d("rabbit_foot", 0.05), d("food_meat", 0.3)],
   snail: [d("snail_shell", 0.55), d("slime_goo", 0.3)],
   caterpillar: [d("silk_thread", 0.5)],
   beetle: [d("beetle_shell", 0.5), d("beetle_horn", 0.08)],
   crow: [d("black_feather", 0.6, 1, 2), d("shiny_trinket", 0.08)],
-  pigeon: [d("feather", 0.5)],
-  squirrel: [d("acorn", 0.7, 1, 3), d("squirrel_tail", 0.2)],
+  pigeon: [d("feather", 0.5), d("ration_bread", 0.15)],
+  squirrel: [d("acorn", 0.7, 1, 3), d("squirrel_tail", 0.2), d("ration_berry", 0.3)],
   hedgehog: [d("hedgehog_spine", 0.55, 1, 2)],
-  goose: [d("goose_feather", 0.6, 1, 2)],
-  fox: [d("fox_tail", 0.35), d("rabbit_fur", 0.2)],
-  robber: [d("stolen_coin", 0.5, 1, 2), d("leather_strap", 0.3)],
-  orc_grunt: [d("orc_tusk", 0.45), d("crude_blade", 0.3)],
+  goose: [d("goose_feather", 0.6, 1, 2), d("food_meat", 0.35)],
+  fox: [d("fox_tail", 0.35), d("rabbit_fur", 0.2), d("food_meat", 0.3)],
+  robber: [d("stolen_coin", 0.5, 1, 2), d("leather_strap", 0.3), d("ration_jerky", 0.4), d("food_cheese", 0.25)],
+  orc_grunt: [d("orc_tusk", 0.45), d("crude_blade", 0.3), d("ration_jerky", 0.4)],
   orc_archer: [d("feather", 0.5, 1, 2), d("orc_tusk", 0.25)],
   orc_chief: [d("war_banner", 0.5), d("orc_tusk", 1, 1, 2), d("crude_blade", 0.6)],
 };

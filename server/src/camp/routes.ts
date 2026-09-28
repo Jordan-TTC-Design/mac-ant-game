@@ -1,5 +1,8 @@
 import { Hono } from "hono";
-import { campCommand, migrateInput, startCampInput } from "@goblincamp/shared/camp";
+import { campCommand, migrateInput, sanctuaryInput, SANCTUARY_REST_HOURS, startCampInput } from "@goblincamp/shared/camp";
+import { eq } from "drizzle-orm";
+import { camps } from "../db/schema.ts";
+import { advanceWorld } from "../world/service.ts";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -75,6 +78,40 @@ export function campRoutes(deps: AppDeps) {
   });
 
   /** One thing the player does (craft, repair, food, the princess's name, her story), checked against the books. */
+  /**
+   * 聖光模式 on or off (server/CAMP.md §7): no raids, nobody may attack the camp or its cells (and it attacks nobody),
+   * births at half speed while it has 120 or more. Off at any time; on again SANCTUARY_REST_HOURS after it was turned off.
+   */
+  app.post("/sanctuary", async (c) => {
+    const body = await readJson(c, sanctuaryInput);
+    if ("response" in body) return body.response;
+    const userId = c.get("session").user.id;
+    const at = now();
+    const out = await db.transaction(async (tx) => {
+      const camp = await lockCamp(tx, userId);
+      if (!camp) return { problem: apiError(c, 404, "not_found", "這個帳號還沒有營地。") };
+      // (everything up to now under the old rules first)
+      await advanceWorld(tx, camp, at);
+      if (body.data.on && !camp.sanctuarySince) {
+        const until = camp.sanctuaryOffAt ? camp.sanctuaryOffAt.getTime() + SANCTUARY_REST_HOURS * 3_600_000 : 0;
+        if (until > at.getTime()) {
+          const hours = Math.ceil((until - at.getTime()) / 3_600_000);
+          return { problem: apiError(c, 409, "conflict", `聖光模式關掉後要 ${SANCTUARY_REST_HOURS} 小時才能再開（還要 ${hours} 小時）。`) };
+        }
+        camp.sanctuarySince = at;
+      } else if (!body.data.on && camp.sanctuarySince) {
+        camp.sanctuarySince = null;
+        camp.sanctuaryOffAt = at;
+      }
+      camp.version += 1;
+      await tx.update(camps).set({ sanctuarySince: camp.sanctuarySince, sanctuaryOffAt: camp.sanctuaryOffAt, version: camp.version }).where(eq(camps.userId, userId));
+      return { view: await campView(tx, camp) };
+    });
+    if ("problem" in out) return out.problem!;
+    deps.hub.notify(userId, { type: "camp.changed", version: out.view.version });
+    return c.json(out.view);
+  });
+
   app.post("/commands", async (c) => {
     const body = await readJson(c, campCommand);
     if ("response" in body) return body.response;

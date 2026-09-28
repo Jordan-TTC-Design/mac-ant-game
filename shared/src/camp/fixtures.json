@@ -317,6 +317,11 @@
         "alive": 83,
         "nextSlot": 85
       },
+      "sanctuary": {
+        "alive": 241,
+        "nextId": 242,
+        "nextSlot": 361
+      },
       "nestResidents": [
         {
           "id": 100,
@@ -494,6 +499,11 @@
         "alive": 41,
         "nextSlot": 43
       },
+      "sanctuary": {
+        "alive": 151,
+        "nextId": 152,
+        "nextSlot": 181
+      },
       "nestResidents": [
         {
           "id": 100,
@@ -663,6 +673,11 @@
         "bornAfter": 8,
         "alive": 55,
         "nextSlot": 57
+      },
+      "sanctuary": {
+        "alive": 181,
+        "nextId": 182,
+        "nextSlot": 241
       },
       "nestResidents": [
         {

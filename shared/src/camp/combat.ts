@@ -2,7 +2,7 @@
  * What the camp fights with and what monsters leave behind (the Mac's character manifests and mac/Resources/Animals,
  * mac/Sources/GoblinCamp/Materials.swift). Only the server fights (raids and the big world); the Mac plays the result.
  */
-import { ATTACK_PER_MIGHT, type Resident as Fighter } from "../world/battle.ts";
+import { GEAR_ATTACK_PER_MIGHT, GEAR_HP_PER_HEALTH, type Resident as Fighter } from "../world/battle.ts";
 import { gearRule, type GearItem, type GearSlot } from "./gear.ts";
 
 /** A breed's fighting stats, per race (might and health as multiples of a plain goblin; speed ×). Missing = 1 / 3 / 1. */
@@ -69,9 +69,10 @@ export function residentAsFighter(
     name,
     breed: resident.breed,
     might: stats.might ?? 1,
-    health: (stats.health ?? 3) + health,
+    health: stats.health ?? 3,
+    gearHp: health * GEAR_HP_PER_HEALTH,
     speed: (stats.speed ?? 1) * (1 + speed),
-    gearAttack: might * ATTACK_PER_MIGHT,
+    gearAttack: might * GEAR_ATTACK_PER_MIGHT,
     gearReach: reach,
     gearGuard: block,
   };

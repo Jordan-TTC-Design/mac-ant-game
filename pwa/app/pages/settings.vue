@@ -87,7 +87,7 @@ async function signOut() {
 <template>
   <main v-if="ok" class="page">
     <header class="topbar">
-      <NuxtLink to="/" class="icon-btn">← 便利貼</NuxtLink>
+      <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
       <h1>設定</h1>
     </header>
 

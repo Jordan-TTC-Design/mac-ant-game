@@ -26,11 +26,15 @@ button, input, textarea, select { font: inherit; color: inherit; }
 a { color: inherit; }
 .page { max-width: 560px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 96px); }
 .panel { background: var(--card); border-radius: 14px; padding: 20px; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); }
+/* cards one under another never touch */
+.panel + .panel, .panel + section, section + .panel { margin-top: 12px; }
 .pixel { image-rendering: pixelated; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px solid rgba(0, 0, 0, 0.18); border-radius: 9px; padding: 9px 16px; min-height: 40px;
   background: #ececec; font-weight: 600; cursor: pointer;
+  /* a button's words stay on one line: a row of buttons wraps to the next line instead of squeezing them */
+  white-space: nowrap;
 }
 .btn.primary { background: var(--green); color: #fff; }
 .btn.danger { background: var(--red); color: #fff; }
@@ -46,4 +50,4 @@ a { color: inherit; }
 .topbar { display: flex; align-items: center; gap: 10px; color: #fff; margin-bottom: 14px; }
 .topbar h1 { font-size: 20px; margin: 0; flex: 1; }
 .topbar .sub { font-size: 12px; opacity: 0.75; }
-.icon-btn { background: rgba(255, 255, 255, 0.14); color: #fff; border: 0; border-radius: 9px; padding: 8px 12px; font-weight: 600; text-decoration: none; cursor: pointer; }
+.icon-btn { white-space: nowrap; background: rgba(255, 255, 255, 0.14); color: #fff; border: 0; border-radius: 9px; padding: 8px 12px; font-weight: 600; text-decoration: none; cursor: pointer; }

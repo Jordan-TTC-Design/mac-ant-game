@@ -76,6 +76,10 @@ final class SyncEngine {
     var onSignedIn: (() -> Void)?
     /// The server says the camp's books changed (another device, a command, a raid worked out).
     var onCampChanged: (() -> Void)?
+    /// Anything else the server says over the WebSocket (`pomodoro.changed`, `claude.answer`…): its type and the whole event.
+    var onEvent: ((String, [String: Any]) -> Void)?
+    /// The WebSocket is up (it was down): what was missed meanwhile can be asked for.
+    var onConnected: (() -> Void)?
     private var running = false
     private var again = false
     private var debounce: Timer?
@@ -294,7 +298,14 @@ final class SyncEngine {
                 case .success(let message):
                     if case .string(let text) = message, text.contains("\"notes.changed\"") { self.syncNow() }
                     if case .string(let text) = message, text.contains("\"camp.changed\"") { self.onCampChanged?() }
-                    if case .string(let text) = message, text.contains("\"hello\""), self.debug { NSLog("GoblinCamp: sync: connected") }
+                    if case .string(let text) = message, text.contains("\"hello\"") {
+                        if self.debug { NSLog("GoblinCamp: sync: connected") }
+                        self.onConnected?()
+                    }
+                    if case .string(let text) = message, let data = text.data(using: .utf8),
+                       let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let type = event["type"] as? String {
+                        self.onEvent?(type, event)
+                    }
                     self.receive(on: task)
                 case .failure:
                     self.socketClosed()

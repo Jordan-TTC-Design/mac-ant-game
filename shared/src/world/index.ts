@@ -8,5 +8,6 @@ export * from "./expedition.ts";
 export * from "./grid.ts";
 export * from "./leaderboard.ts";
 export * from "./random.ts";
+export * from "./supplies.ts";
 export * from "./terrain.ts";
 export * from "./territory.ts";

@@ -176,12 +176,13 @@ export const YIELD_HOURS = 3;
 
 /** What one yield of a cell gives, by its terrain: the plain materials a nest and a town are built from, now and then a find. */
 export const TERRAIN_YIELD: Record<string, { id: string; min: number; max: number; chance: number }[]> = {
-  forest: [{ id: "scrap_wood", min: 2, max: 4, chance: 1 }, { id: "amber", min: 1, max: 1, chance: 0.05 }],
-  park: [{ id: "scrap_rag", min: 1, max: 3, chance: 1 }, { id: "scrap_wood", min: 1, max: 2, chance: 0.6 }],
-  water: [{ id: "frog_skin", min: 1, max: 2, chance: 0.7 }, { id: "snake_scale", min: 1, max: 1, chance: 0.3 }, { id: "river_pearl", min: 1, max: 1, chance: 0.04 }],
-  urban: [{ id: "scrap_iron", min: 2, max: 3, chance: 1 }, { id: "crystal_shard", min: 1, max: 1, chance: 0.06 }],
-  open: [{ id: "scrap_rag", min: 1, max: 2, chance: 1 }, { id: "scrap_iron", min: 1, max: 2, chance: 0.5 }],
-  road: [{ id: "scrap_iron", min: 1, max: 2, chance: 1 }, { id: "stolen_coin", min: 1, max: 2, chance: 0.2 }],
+  // (and food for expeditions, by the ground: supplies.ts)
+  forest: [{ id: "scrap_wood", min: 2, max: 4, chance: 1 }, { id: "amber", min: 1, max: 1, chance: 0.05 }, { id: "ration_berry", min: 1, max: 2, chance: 0.6 }],
+  park: [{ id: "scrap_rag", min: 1, max: 3, chance: 1 }, { id: "scrap_wood", min: 1, max: 2, chance: 0.6 }, { id: "ration_berry", min: 1, max: 1, chance: 0.5 }, { id: "food_honey", min: 1, max: 1, chance: 0.35 }],
+  water: [{ id: "frog_skin", min: 1, max: 2, chance: 0.7 }, { id: "snake_scale", min: 1, max: 1, chance: 0.3 }, { id: "river_pearl", min: 1, max: 1, chance: 0.04 }, { id: "ration_fish", min: 1, max: 2, chance: 0.7 }],
+  urban: [{ id: "scrap_iron", min: 2, max: 3, chance: 1 }, { id: "crystal_shard", min: 1, max: 1, chance: 0.06 }, { id: "ration_bread", min: 1, max: 1, chance: 0.5 }, { id: "food_cheese", min: 1, max: 1, chance: 0.2 }],
+  open: [{ id: "scrap_rag", min: 1, max: 2, chance: 1 }, { id: "scrap_iron", min: 1, max: 2, chance: 0.5 }, { id: "food_carrot", min: 1, max: 2, chance: 0.5 }],
+  road: [{ id: "scrap_iron", min: 1, max: 2, chance: 1 }, { id: "stolen_coin", min: 1, max: 2, chance: 0.2 }, { id: "ration_jerky", min: 1, max: 1, chance: 0.4 }],
 };
 
 /**

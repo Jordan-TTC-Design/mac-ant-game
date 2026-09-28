@@ -32,7 +32,16 @@ import {
   lootFor,
   lairFighters,
   materialName,
+  BREAD_HOURS,
+  BREAD_KEEP,
   HOME_MOVE_DAYS,
+  isFood,
+  lairWoundsView,
+  OPENING_FOOD,
+  partyCap,
+  planSupplies,
+  woundedLairFighters,
+  type FightBoosts,
   NEST_BUILD_HOURS,
   NEST_COST,
   nestBirthMinutes,
@@ -164,10 +173,11 @@ export function lairHere(cell: string, row: Pick<CellRow, "clearedAt" | "owner">
   return { lair, backAt: null };
 }
 
-export function lairView(lair: Lair): LairView {
+/** A lair as the map shows it: `standing` = its foes as they stand now (wounded), else fresh. */
+export function lairView(lair: Lair, standing?: ReturnType<typeof lairFighters>): LairView {
   const foes: Record<string, number> = {};
   for (const f of lair.foes) foes[f] = (foes[f] ?? 0) + 1;
-  return { kind: lair.kind, name: lair.name, faction: lair.faction, level: lair.level, count: lair.foes.length, foes, power: Math.round(combatPower(lairFighters(lair))) };
+  return { kind: lair.kind, name: lair.name, faction: lair.faction, level: lair.level, count: lair.foes.length, foes, power: Math.round(combatPower(standing ?? lairFighters(lair))) };
 }
 
 const bossKey = (b: BossSighting) => `${b.region}@${b.window}`;
@@ -214,6 +224,13 @@ function nightAt(cell: string, at: Date): boolean {
 }
 
 type Gear = Partial<Record<GearSlot, GearItem>> | null;
+
+/** The camp's own food boosts (put down on the Mac) with what the party carries: the stronger of each. */
+function withCarried(camp: FightBoosts, carried: FightBoosts | null | undefined): FightBoosts {
+  const out: FightBoosts = { ...camp };
+  for (const [k, v] of Object.entries(carried ?? {}) as [keyof FightBoosts, number][]) out[k] = Math.max(out[k] ?? 0, v);
+  return out;
+}
 const fighterOf = (race: string, r: ResidentRow, prefix = "") => {
   const f = residentAsFighter(race, { id: r.id, breed: r.breed, gear: r.gear as Gear }, r.name ?? "");
   return { ...f, id: `${prefix}${r.id}` };
@@ -327,6 +344,18 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     await tx.update(worldPlayers).set({ xp: player.xp }).where(eq(worldPlayers.userId, camp.userId));
   }
   if (player) {
+    // the camp bakes bread for expeditions, a loaf every BREAD_HOURS while it has fewer than BREAD_KEEP
+    const since = player.bakedTo ?? player.openedAt;
+    const loaves = Math.floor((now.getTime() - since.getTime()) / (BREAD_HOURS * HOUR));
+    if (loaves > 0) {
+      const have = camp.materials.ration_bread ?? 0;
+      const add = Math.max(0, Math.min(loaves, BREAD_KEEP - have));
+      if (add) {
+        camp.materials = { ...camp.materials, ration_bread: have + add };
+        changed = true;
+      }
+      await tx.update(worldPlayers).set({ bakedTo: new Date(since.getTime() + loaves * BREAD_HOURS * HOUR) }).where(eq(worldPlayers.userId, camp.userId));
+    }
     const days = Math.floor((now.getTime() - player.xpCountedTo.getTime()) / DAY);
     if (days > 0) {
       const cells = held.length;
@@ -346,7 +375,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
  * back. The camp's own first cell is spared (the camp stands there).
  */
 async function lairReturns(tx: Tx, camp: CampRow, cell: CellRow, now: Date, homeCell: string | null, terrain: Terrain): Promise<{ fought: boolean; lost: boolean }> {
-  if (cell.cell === homeCell || !cell.clearedAt) return { fought: false, lost: false };
+  // (the camp's own cell, and every cell of a camp in 聖光模式, are left alone)
+  if (cell.cell === homeCell || !cell.clearedAt || camp.sanctuarySince) return { fought: false, lost: false };
   const lair = lairAt(WORLD_SEED, cell.cell, terrain);
   if (!lair) return { fought: false, lost: false };
   const every = respawnHours(lair) * HOUR;
@@ -435,7 +465,9 @@ export async function openWorldFor(tx: Tx, userId: string, input: { cell?: strin
   }
   if (!input.cell) throw new WorldError(400, "invalid_input", "第一次開啟要在地圖上選營地在哪一格。");
   await standCampOn(tx, userId, input.cell, now);
-  await tx.insert(worldPlayers).values({ userId, open: true, homeCell: input.cell, openedAt: now, xpCountedTo: now });
+  await tx.insert(worldPlayers).values({ userId, open: true, homeCell: input.cell, openedAt: now, xpCountedTo: now, bakedTo: now });
+  // something to take along on the first expeditions
+  for (const [id, n] of Object.entries(OPENING_FOOD)) camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + n };
   await addEvent(tx, userId, now, "world", { opened: true, cell: input.cell });
   await bumpVersion(tx, camp);
 }
@@ -493,7 +525,7 @@ function homeMoveAt(player: Pick<PlayerRow, "homeMovedAt">): Date | null {
 export async function sendExpedition(
   tx: Tx,
   userId: string,
-  input: { from: string; to: string; residents?: number[]; count?: number; settle: boolean },
+  input: { from: string; to: string; residents?: number[]; count?: number; settle: boolean; supplies?: Record<string, number> },
   now: Date,
 ): Promise<ExpeditionSummary> {
   const camp = await lockCamp(tx, userId);
@@ -520,17 +552,29 @@ export async function sendExpedition(
   const moving = target?.owner === userId;
   const party = pickParty(camp.race, available, input.residents, input.count, !moving);
   if (party.length === 0) throw new WorldError(409, "too_few", "沒有人可以出發。");
+  // a fighting party is small (by race and level); rations let more go, some foods make it stronger (moving in is not limited)
+  let carried: FightBoosts | null = null;
+  if (!moving) {
+    const plan = planSupplies(camp.race, raceLevel(player.xp), party.length, input.supplies ?? {}, camp.materials);
+    if (plan.problem) throw new WorldError(409, "too_many", plan.problem);
+    for (const [id, n] of Object.entries(plan.spent)) camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) - n };
+    if (Object.keys(plan.boosts).length) carried = plan.boosts;
+  }
   const keep = input.from === "home" ? HOME_KEEP : garrisonMin(camp.race);
   if (available.length - party.length < keep) {
     throw new WorldError(409, "too_few", input.from === "home" ? `營地至少要留 ${HOME_KEEP} 隻。` : `這一格至少要留 ${keep} 隻守著（要整格放棄請用「撤回」）。`);
   }
   if (!moving && target?.owner) {
+    // 聖光模式 keeps a camp out of fights with other camps, both ways (server/CAMP.md §7)
+    if (camp.sanctuarySince) throw new WorldError(409, "sanctuary", "聖光模式中不能攻打其他玩家（打怪可以）。");
+    const [owner] = await tx.select({ since: camps.sanctuarySince }).from(camps).where(eq(camps.userId, target.owner));
+    if (owner?.since) throw new WorldError(409, "target_sanctuary", "對方在聖光模式，打不了。");
     const [defender] = await tx.select().from(worldPlayers).where(eq(worldPlayers.userId, target.owner));
     const refusal = checkAttack(userId, state(player), target.owner, state(defender));
     if (refusal === "target_shielded" || refusal === "target_closed") throw new WorldError(409, refusal, "對方正在龜縮，現在打不了。");
   }
 
-  const boosts = fightBoosts(camp.race, camp.boosts, now.getTime());
+  const boosts = withCarried(fightBoosts(camp.race, camp.boosts, now.getTime()), carried);
   const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
   const minutes = travelMinutes(fromCell, input.to, slowest);
   const [row] = await tx
@@ -542,6 +586,7 @@ export async function sendExpedition(
       toCell: input.to,
       party: party.map((r) => r.id),
       settle: input.settle,
+      boosts: carried,
       setOutAt: now,
       arriveAt: new Date(now.getTime() + minutes * MINUTE),
       defender: !moving && target?.owner ? target.owner : null,
@@ -656,10 +701,11 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     const defenderCamp = locked.get(cell.owner);
     const defenderPlayer = await lockPlayer(tx, cell.owner);
     const refusal = checkAttack(camp.userId, state(player), cell.owner, state(defenderPlayer));
-    if (!defenderCamp || refusal) {
+    const sanctuary = !!defenderCamp?.sanctuarySince || !!camp.sanctuarySince;
+    if (!defenderCamp || refusal || sanctuary) {
       await placeSurvivors(party, false);
       outcome.cell = "back";
-      outcome.against = refusal === "target_shielded" || refusal === "target_closed" ? "對方已經龜縮" : "去不了";
+      outcome.against = sanctuary ? "聖光模式，打不了" : refusal === "target_shielded" || refusal === "target_closed" ? "對方已經龜縮" : "去不了";
     } else {
       involved.push(defenderCamp.userId);
       await advanceWorld(tx, defenderCamp, now);
@@ -671,7 +717,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       const result = resolveExpedition({
         worldSeed: WORLD_SEED,
         expeditionId: exp.id,
-        party: { player: camp.userId, residents: party.map((r) => fighterOf(camp.race, r)), race: traitsOf(camp.race), boosts: fightBoosts(camp.race, camp.boosts, at.getTime()) },
+        party: { player: camp.userId, residents: party.map((r) => fighterOf(camp.race, r)), race: traitsOf(camp.race), boosts: withCarried(fightBoosts(camp.race, camp.boosts, at.getTime()), exp.boosts) },
         target: {
           kind: "player",
           cell: exp.toCell,
@@ -723,7 +769,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     const { sighting, row } = (await bossHere(tx, exp.toCell, at, true))!;
     const kind = bossKind(sighting.kind)!;
     const defenders = bossFighters(kind, row.hp);
-    const attackers = party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), fightBoosts(camp.race, camp.boosts, at.getTime())));
+    const attackers = party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), withCarried(fightBoosts(camp.race, camp.boosts, at.getTime()), exp.boosts)));
     const battle = simulateBattle(attackers, defenders, { seed: hashString(`${exp.id}|boss`), maxRounds: BOSS_ROUNDS, night: nightAt(exp.toCell, at) });
     const hpAfter = Math.max(0, Math.round(battle.hpLeft.boss ?? row.hp));
     const dealt = row.hp - hpAfter;
@@ -762,19 +808,20 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       outcome.cell = stayed ? "settled" : "back";
       outcome.against = "空地";
     } else {
-      report.lair = lairView(lair);
+      // (still hurt from an earlier wave: what is left of it, WORLD.md §19)
+      const foes = woundedLairFighters(lair, cell?.lairWounds, at.getTime());
+      report.lair = lairView(lair, foes);
       outcome.against = `${lair.name}（${lair.level} 級）`;
       const result = resolveExpedition({
         worldSeed: WORLD_SEED,
         expeditionId: exp.id,
-        party: { player: camp.userId, residents: party.map((r) => fighterOf(camp.race, r)), race: traitsOf(camp.race), boosts: fightBoosts(camp.race, camp.boosts, at.getTime()) },
-        target: { kind: "lair", lair },
+        party: { player: camp.userId, residents: party.map((r) => fighterOf(camp.race, r)), race: traitsOf(camp.race), boosts: withCarried(fightBoosts(camp.race, camp.boosts, at.getTime()), exp.boosts) },
+        target: { kind: "lair", lair, fighters: foes },
         night: nightAt(exp.toCell, at),
       });
-      const foes = lairFighters(lair);
       report.fighters = [
         ...party.map((r) => ({ id: String(r.id), name: r.name ?? "", side: "attack" as const, hp: hpOf(camp.race, r), race: camp.race, breed: r.breed })),
-        ...foes.map((f, i) => ({ id: f.id, name: f.name, side: "defend" as const, hp: f.maxHp, foe: lair.foes[i] })),
+        ...foes.map((f) => ({ id: f.id, name: f.name, side: "defend" as const, hp: f.hp, foe: lair.foes[Number(f.id.split("#")[1])] })),
       ];
       report.events = result.battle.events.slice(0, 1500);
       report.fallen = result.battle.fallen;
@@ -796,10 +843,24 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
           if (foe) camp.kills = { ...camp.kills, [foe]: (camp.kills[foe] ?? 0) + 1 };
         }
         await touchCell(tx, exp.toCell);
-        await tx.update(worldCells).set({ clearedAt: at, updatedAt: now }).where(eq(worldCells.cell, exp.toCell));
+        await tx.update(worldCells).set({ clearedAt: at, lairWounds: null, updatedAt: now }).where(eq(worldCells.cell, exp.toCell));
         const stayed = exp.settle && result.canSettle ? await placeSurvivors(survivors, true) : await placeSurvivors(survivors, false);
         outcome.cell = stayed ? "settled" : "cleared";
       } else {
+        // beaten off: the foes that fell still drop their things, and the lair keeps its wounds for a second wave
+        const loot = lairDrops(lair, result.battle.fallen.defend, exp.id);
+        outcome.loot = loot;
+        for (const [mat, n] of Object.entries(loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
+        for (const i of result.battle.fallen.defend.map((f) => Number(f.split("#")[1]))) {
+          const foe = lair.foes[i];
+          if (foe) camp.kills = { ...camp.kills, [foe]: (camp.kills[foe] ?? 0) + 1 };
+        }
+        const hp = lair.foes.map((_, i) => {
+          const id = `${exp.toCell}#${i}`;
+          return foes.some((f) => f.id === id) ? Math.max(0, Math.round(result.battle.hpLeft[id] ?? 0)) : 0;
+        });
+        await touchCell(tx, exp.toCell);
+        await tx.update(worldCells).set({ lairWounds: { hp, at: at.getTime() }, updatedAt: now }).where(eq(worldCells.cell, exp.toCell));
         await placeSurvivors(survivors, false);
         outcome.cell = "held";
       }
@@ -970,6 +1031,8 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
     })),
     atHome,
+    partyCap: partyCap(camp.race, level),
+    food: Object.fromEntries(Object.entries(camp.materials).filter(([id, n]) => isFood(id) && n > 0)),
     walking: walking.map((w) => summary(w, userId)),
     recent: recent.map((w) => summary(w, userId)),
     bosses: player ? await bossesNear(tx, player.homeCell, now) : [],
@@ -1042,6 +1105,18 @@ async function garrisons(tx: Tx, cells: string[]): Promise<Map<string, { n: numb
   return out;
 }
 
+/** A lair on the map with its wounds (gone once it is whole again). */
+function lairWith(lair: Lair | null, wounds: { hp: number[]; at: number } | null | undefined, now: Date): Pick<CellView, "lair" | "lairWounds"> {
+  if (!lair) return { lair: null, lairWounds: null };
+  if (!wounds) return { lair: lairView(lair), lairWounds: null };
+  const view = lairWoundsView(lair, wounds, now.getTime());
+  if (view.healedAt <= now.getTime()) return { lair: lairView(lair), lairWounds: null };
+  return {
+    lair: lairView(lair, woundedLairFighters(lair, wounds, now.getTime())),
+    lairWounds: { standing: view.standing, total: view.total, hpShare: Math.round(view.hpShare * 100) / 100, healedAt: new Date(view.healedAt).toISOString() },
+  };
+}
+
 export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date): Promise<CellView[]> {
   const ids = cellsWithin(point, Math.min(radius, MAX_MAP_RADIUS));
   const ground = await terrainsFor(tx, ids);
@@ -1075,7 +1150,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       garrison: counts.get(cell)?.n ?? 0,
       nest: row ? nestState(row, now) : "none",
       town: row?.town ?? false,
-      lair: lair ? lairView(lair) : null,
+      ...lairWith(lair, row?.lairWounds, now),
       lairBackAt: backAt?.toISOString() ?? null,
       boss,
     };

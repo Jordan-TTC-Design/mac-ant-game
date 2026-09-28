@@ -57,7 +57,7 @@ function add() {
   }
   notes.create({ ...draft, text: text.value });
   added = true;
-  navigateTo("/");
+  navigateTo("/notes");
 }
 
 function apply(fields: Partial<NoteFields>) {
@@ -95,14 +95,14 @@ function fromInput(event: Event): Date | null {
 function del() {
   if (text.value.trim() && !confirm("刪除這張便利貼？（每台裝置上都會刪掉）")) return;
   notes.remove(id);
-  navigateTo("/");
+  navigateTo("/notes");
 }
 </script>
 
 <template>
   <main v-if="ok" class="page">
     <header class="topbar">
-      <NuxtLink to="/" class="icon-btn">{{ isNew ? "取消" : "← 便利貼" }}</NuxtLink>
+      <NuxtLink to="/notes" class="icon-btn">{{ isNew ? "取消" : "← 便利貼" }}</NuxtLink>
       <h1 class="title">{{ isNew ? "新的便利貼" : "" }}</h1>
       <button v-if="!isNew" class="icon-btn" @click="del">刪除</button>
     </header>
@@ -171,7 +171,7 @@ function del() {
 
     <div v-if="n" class="actions">
       <button v-if="isNew" class="btn primary big" :disabled="!hasContent" @click="add">新增便利貼</button>
-      <button v-else class="btn primary big" @click="navigateTo('/')">完成</button>
+      <button v-else class="btn primary big" @click="navigateTo('/notes')">完成</button>
     </div>
   </main>
 </template>

@@ -40,11 +40,14 @@ final class CampLedger {
         let romance: RomanceState?
         let kills: [String: Int]
         let delivered: Int
+        /// 聖光模式 (server/CAMP.md §7); missing from older servers.
+        struct Sanctuary: Codable, Equatable { let since: String?; let canTurnOnAt: String? }
+        let sanctuary: Sanctuary?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, residents
+            case princessName, romance, kills, delivered, sanctuary, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -67,6 +70,7 @@ final class CampLedger {
             romance = try? c.decodeIfPresent(RomanceState.self, forKey: .romance) // (a story from another version: start hers afresh)
             kills = try c.decode([String: Int].self, forKey: .kills)
             delivered = try c.decode(Int.self, forKey: .delivered)
+            sanctuary = try? c.decodeIfPresent(Sanctuary.self, forKey: .sanctuary)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }
@@ -173,7 +177,8 @@ final class CampLedger {
         residents = view.residents.filter { $0.place == "home" }
         let ms = { (text: String) -> Double? in ServerTime.parse(text).map { ($0.timeIntervalSince1970 * 1000).rounded() } }
         let rule = Races.rules(view.race)
-        let place = CampPlace(race: view.race, key: "home", startedAt: ms(view.startedAt) ?? 0, birthMinutes: rule.homeBirthMinutes, cap: rule.homeCap)
+        let place = CampPlace(race: view.race, key: "home", startedAt: ms(view.startedAt) ?? 0, birthMinutes: rule.homeBirthMinutes, cap: rule.homeCap,
+                              sanctuary: view.sanctuary?.since != nil)
         let alive = residents.map { r in
             CampResident(id: r.id, breed: r.breed, seed: UInt32(truncatingIfNeeded: Int64(r.seed)), bornAt: ms(r.bornAt) ?? 0, diesAt: r.diesAt.flatMap(ms))
         }

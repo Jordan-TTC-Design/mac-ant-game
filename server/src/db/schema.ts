@@ -126,6 +126,10 @@ export const camps = pgTable("camps", {
   seed: bigint("seed", { mode: "number" }).notNull(),
   startedAt: timestamp("started_at", { withTimezone: true, precision: 3 }).notNull(),
   advancedTo: timestamp("advanced_to", { withTimezone: true, precision: 3 }).notNull(),
+  /** 聖光模式 on since then (null: off): no raids, nobody attacks it, births at half speed above 120 (server/CAMP.md §7). */
+  sanctuarySince: timestamp("sanctuary_since", { withTimezone: true, precision: 3 }),
+  /** When it was last turned off (it may be turned on again SANCTUARY_REST_HOURS later). */
+  sanctuaryOffAt: timestamp("sanctuary_off_at", { withTimezone: true, precision: 3 }),
   nextSlot: integer("next_slot").notNull(),
   nextId: integer("next_id").notNull(),
   peak: integer("peak").notNull(),
@@ -204,6 +208,8 @@ export const worldPlayers = pgTable("world_players", {
   xp: integer("xp").notNull().default(0),
   /** Held cells earn experience by the day; days are counted from here. */
   xpCountedTo: timestamp("xp_counted_to", { withTimezone: true, precision: 3 }).notNull(),
+  /** The camp bakes bread for expeditions every BREAD_HOURS; counted from here (null: from when it opened). */
+  bakedTo: timestamp("baked_to", { withTimezone: true, precision: 3 }),
 });
 
 /** Cells someone changed: held, or a lair cleared. A cell nobody touched is worked out from the seed (contents.ts). */
@@ -223,6 +229,8 @@ export const worldCells = pgTable(
     yieldedTo: timestamp("yielded_to", { withTimezone: true, precision: 3 }),
     /** The lair that was here was beaten at this time (it comes back after its respawn hours). */
     clearedAt: timestamp("cleared_at", { withTimezone: true, precision: 3 }),
+    /** A lair that beat a party off, still hurt (shared/src/world/battle.ts LairWounds). */
+    lairWounds: jsonb("lair_wounds").$type<{ hp: number[]; at: number }>(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("world_cells_owner_idx").on(t.owner)],
@@ -240,6 +248,8 @@ export const expeditions = pgTable(
     toCell: text("to_cell").notNull(),
     party: jsonb("party").$type<number[]>().notNull(),
     settle: boolean("settle").notNull().default(false),
+    /** The food boosts the party carries (shared/src/world/supplies.ts). */
+    boosts: jsonb("boosts").$type<{ meat?: number; cheese?: number; carrot?: number; honey?: number }>(),
     setOutAt: timestamp("set_out_at", { withTimezone: true, precision: 3 }).notNull(),
     arriveAt: timestamp("arrive_at", { withTimezone: true, precision: 3 }).notNull(),
     status: text("status", { enum: ["walking", "done"] }).notNull().default("walking"),
@@ -299,4 +309,72 @@ export const adminLog = pgTable(
     detail: jsonb("detail"),
   },
   (t) => [index("admin_log_at_idx").on(t.at)],
+);
+
+/**
+ * Friends (server/DESIGN.md §7): one row per pair, the smaller id first. An ask is a row with no `acceptedAt`; a yes fills
+ * it in; no, unfriending or blocking removes the row.
+ */
+export const friendships = pgTable(
+  "friendships",
+  {
+    userA: uuid("user_a").notNull().references(() => users.id, { onDelete: "cascade" }),
+    userB: uuid("user_b").notNull().references(() => users.id, { onDelete: "cascade" }),
+    askedBy: uuid("asked_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true, precision: 3 }),
+  },
+  (t) => [primaryKey({ columns: [t.userA, t.userB] }), index("friendships_b_idx").on(t.userB)],
+);
+
+/** Whom an account blocked: their asks and messages are dropped without them knowing. */
+export const blocks = pgTable(
+  "blocks",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    blockedId: uuid("blocked_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.blockedId] })],
+);
+
+/** Messages between friends (at most 200 characters; cleared after a while, maintenance.ts). */
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromUser: uuid("from_user").notNull().references(() => users.id, { onDelete: "cascade" }),
+    toUser: uuid("to_user").notNull().references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+    readAt: timestamp("read_at", { withTimezone: true, precision: 3 }),
+  },
+  (t) => [index("messages_pair_idx").on(t.fromUser, t.toUser, t.at), index("messages_unread_idx").on(t.toUser).where(sql`read_at is null`)],
+);
+
+/** The pomodoro an account's Mac and phone share (shared/src/pomodoro.ts); no row: none running. */
+export const pomodoros = pgTable("pomodoros", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  state: jsonb("state").$type<import("@goblincamp/shared").PomodoroState>().notNull(),
+  /** The last part the phones were told about (a push when a part begins). */
+  toldIndex: integer("told_index").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull(),
+});
+
+/** Claude Code's questions sent from a Mac to its person's phones (shared/src/claude.ts); kept a day at most. */
+export const claudeAsks = pgTable(
+  "claude_asks",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    id: text("id").notNull(),
+    deviceId: uuid("device_id").notNull(),
+    kind: text("kind", { enum: ["permission", "reply", "done"] }).notNull(),
+    project: text("project").notNull(),
+    text: text("text").notNull(),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+    /** Answers are taken until then (null: news, no answer). */
+    until: timestamp("until", { withTimezone: true, precision: 3 }),
+    answer: jsonb("answer").$type<{ action: "allow" | "deny" | "reply" | "dismiss"; text?: string; by: "mac" | "phone"; at: string }>(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.id] }), index("claude_asks_at_idx").on(t.at)],
 );

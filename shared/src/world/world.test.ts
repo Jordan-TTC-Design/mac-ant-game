@@ -175,7 +175,7 @@ describe("battle", () => {
     const crypt: Lair = { cell: "1:1", kind: "crypt", name: "", faction: "dark", level: 3, foes: ["skeleton", "skeleton", "wraith", "bone_knight"] };
     let dayWins = 0, nightWins = 0;
     for (let seed = 0; seed < 60; seed++) {
-      const a = fighters(party(8), "attack");
+      const a = fighters(party(24), "attack");
       if (simulateBattle(a, lairFighters(crypt), { seed }).winner === "attack") dayWins++;
       if (simulateBattle(a, lairFighters(crypt), { seed, night: true }).winner === "attack") nightWins++;
     }

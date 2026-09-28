@@ -44,8 +44,9 @@ export interface Resident {
   might: number;
   health: number;
   speed: number;
-  /** Extra attack and reach from what it wears (weapon), and a share of blows turned aside (shield). */
+  /** Extra attack and reach from what it wears (weapon), extra hit points (armour), and a share of blows turned aside (shield). */
   gearAttack?: number;
+  gearHp?: number;
   gearReach?: number;
   gearGuard?: number;
 }
@@ -63,10 +64,20 @@ export interface FightBoosts {
   meat?: number;
   cheese?: number;
   carrot?: number;
+  /** Hit points +20% (honey taken along). */
+  honey?: number;
 }
 
-export const HP_PER_HEALTH = 10;
-export const ATTACK_PER_MIGHT = 6;
+/**
+ * A resident's own numbers are small (a plain one is about a match for one wild rabbit, server/WORLD.md §19); what it wears
+ * counts in full on top (GEAR_…), so gear is the way to grow strong.
+ */
+export const HP_PER_HEALTH = 5;
+export const ATTACK_PER_MIGHT = 2.4;
+export const GEAR_HP_PER_HEALTH = 6;
+export const GEAR_ATTACK_PER_MIGHT = 3.5;
+/** The wild's foes are this much stronger (attack and hit points) than their listed numbers. */
+export const FOE_POWER = 1.6;
 export const LEAD_PER_LEADER = 0.1;
 export const LEAD_CAP = 0.3;
 export const HIT_CHANCE = 0.85;
@@ -86,8 +97,8 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
     name: r.name,
     side,
     row: healer || range > 0 ? "back" : "front",
-    hp: r.health * HP_PER_HEALTH,
-    maxHp: r.health * HP_PER_HEALTH,
+    hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0))),
+    maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0))),
     attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0)),
     range,
     speed: r.speed * (1 + 0.15 * (boosts.carrot ?? 0)),
@@ -100,8 +111,8 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
 
 /** A lair's foes as fighters (the defenders), made stronger by its level. */
 export function lairFighters(lair: Lair): Fighter[] {
-  const hpScale = 1 + 0.25 * (lair.level - 1);
-  const attackScale = 1 + 0.2 * (lair.level - 1);
+  const hpScale = (1 + 0.25 * (lair.level - 1)) * FOE_POWER;
+  const attackScale = (1 + 0.2 * (lair.level - 1)) * FOE_POWER;
   return lair.foes.map((id, i) => {
     const foe = FOES[id];
     if (!foe) throw new Error(`unknown foe ${id}`);
@@ -121,6 +132,45 @@ export function lairFighters(lair: Lair): Fighter[] {
       night: foe.night ?? 1,
     };
   });
+}
+
+/**
+ * A lair that beat a party off keeps its wounds for a while (server/WORLD.md §19), so a second wave sent soon after meets
+ * it weaker: each foe's hit points as the fight left them (0: down), and when.
+ */
+export interface LairWounds {
+  hp: number[];
+  at: number;
+}
+/** Hurt foes get back this share of their hit points every LAIR_HEAL_MINUTES; foes that went down come back after LAIR_BACK_MINUTES. */
+export const LAIR_HEAL_SHARE = 0.1;
+export const LAIR_HEAL_MINUTES = 10;
+export const LAIR_BACK_MINUTES = 30;
+
+/** A lair's foes as they stand at `now`, wounds and all (the ones still down are left out). */
+export function woundedLairFighters(lair: Lair, wounds: LairWounds | null | undefined, now: number): Fighter[] {
+  const fresh = lairFighters(lair);
+  if (!wounds) return fresh;
+  const minutes = Math.max(0, (now - wounds.at) / 60_000);
+  const healed = Math.floor(minutes / LAIR_HEAL_MINUTES) * LAIR_HEAL_SHARE;
+  return fresh.flatMap((f, i) => {
+    const left = wounds.hp[i] ?? f.maxHp;
+    if (left <= 0) return minutes >= LAIR_BACK_MINUTES ? [f] : [];
+    return [{ ...f, hp: Math.min(f.maxHp, Math.round(left + f.maxHp * healed)) }];
+  });
+}
+
+/** When a wounded lair is whole again (ms), and how it stands now: foes up, of how many, and the share of its hit points left. */
+export function lairWoundsView(lair: Lair, wounds: LairWounds, now: number): { healedAt: number; standing: number; total: number; hpShare: number } {
+  const fresh = lairFighters(lair);
+  let last = wounds.at + LAIR_BACK_MINUTES * 60_000 * (wounds.hp.some((h) => h <= 0) ? 1 : 0);
+  fresh.forEach((f, i) => {
+    const left = wounds.hp[i] ?? f.maxHp;
+    if (left > 0 && left < f.maxHp) last = Math.max(last, wounds.at + Math.ceil((f.maxHp - left) / (f.maxHp * LAIR_HEAL_SHARE)) * LAIR_HEAL_MINUTES * 60_000);
+  });
+  const now_ = woundedLairFighters(lair, wounds, now);
+  const max = fresh.reduce((s, f) => s + f.maxHp, 0);
+  return { healedAt: last, standing: now_.length, total: fresh.length, hpShare: now_.reduce((s, f) => s + f.hp, 0) / Math.max(1, max) };
 }
 
 export type BattleEventKind = "hit" | "miss" | "heal" | "down";
@@ -218,9 +268,30 @@ export function simulateBattle(attackers: Fighter[], defenders: Fighter[], optio
   };
 }
 
-/** How strong a group is, as one number (for the leaderboard and for "is this lair too much for us?"). */
+/**
+ * How strong a group is, as one number (for the leaderboard and for "is this lair too much for us?"): the square root of
+ * all its hitting times all its hit points, since a group's blows and its staying power grow together (twice as many is
+ * twice as strong; one alone is √(attack × hp)). Shooters count a little more (they are hit last).
+ */
 export function combatPower(fighters: Fighter[]): number {
+  if (fighters.length === 0) return 0;
   const lead = 1 + Math.min(LEAD_CAP, fighters.reduce((sum, f) => sum + f.lead, 0));
-  const sum = fighters.reduce((total, f) => total + (f.attack * lead + f.heal) * f.maxHp * (1 + f.guard) * (f.range > 0 ? 1.2 : 1), 0);
-  return Math.round(sum / 10);
+  const hitting = fighters.reduce((total, f) => total + (f.attack * lead + f.heal) * (f.range > 0 ? 1.1 : 1), 0);
+  const lasting = fighters.reduce((total, f) => total + f.hp * (1 + f.guard), 0);
+  return Math.round(Math.sqrt(hitting * lasting));
+}
+
+/**
+ * The chance a party wins, by fighting it out `runs` times with different luck (what the dispatch dialog shows), and how
+ * many of the party fall on average.
+ */
+export function estimateBattle(attackers: Fighter[], defenders: Fighter[], runs = 40, night = false): { win: number; fallen: number } {
+  if (attackers.length === 0) return { win: 0, fallen: 0 };
+  let wins = 0, fallen = 0;
+  for (let i = 0; i < runs; i++) {
+    const result = simulateBattle(attackers, defenders, { seed: 7919 * (i + 1), night });
+    if (result.winner === "attack") wins++;
+    fallen += result.fallen.attack.length;
+  }
+  return { win: wins / runs, fallen: fallen / runs };
 }

@@ -84,7 +84,18 @@ export interface ChangesResponse {
 }
 
 /** What the server says over the WebSocket (`/api/ws`). */
-export type ServerEvent = { type: "notes.changed"; seq: number } | { type: "camp.changed"; version: number } | { type: "hello"; userId: string };
+export type ServerEvent =
+  | { type: "notes.changed"; seq: number }
+  | { type: "camp.changed"; version: number }
+  | { type: "hello"; userId: string }
+  /** Friends or messages changed (a message came, an ask, a yes). */
+  | { type: "friends.changed"; from?: string }
+  /** The shared pomodoro changed (fetch it, unless this version is already here). */
+  | { type: "pomodoro.changed"; version: number }
+  /** A Claude question came, was answered or went away. */
+  | { type: "claude.changed" }
+  /** The answer to a question the Mac `device` is waiting on. */
+  | { type: "claude.answer"; id: string; device: string; action: "allow" | "deny" | "reply" | "dismiss"; text?: string };
 
 /** A phone's Web Push subscription, as the browser gives it (`PushSubscription.toJSON()`). */
 export const pushSubscriptionSchema = z.object({

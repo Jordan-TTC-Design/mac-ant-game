@@ -399,6 +399,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(6) { self.showWorld() }
             after(15) { self.worldWindow?.snapshotForTesting(to: path) { url in log("world window at \(url)") } }
         }
+        if env["CAMP_TEST_POMOSYNC"] != nil { // (with CAMP_TEST_LOGIN) start a pomodoro here at 5 s; log what it is every 3 s until 40 s
+            after(5) { self.startPomodoro(focus: 25, rest: 5, rounds: 4, longRest: 15); log("pomodoro started here") }
+            for t in stride(from: 8.0, through: 40.0, by: 3.0) {
+                after(t) {
+                    let p = self.colony.pomodoro
+                    log("t=\(Int(t)) pomodoro running \(p.isRunning) phase \(String(describing: p.phase)) round \(p.round) paused \(p.paused) left \(Int(p.remaining))")
+                }
+            }
+        }
+        if let id = env["CAMP_TEST_RELAY"] { // (with CAMP_TEST_LOGIN and CAMP_TEST_IDLE) a Claude question at 6 s, as the hook would send it
+            after(6) {
+                self.handleAsk([URLQueryItem(name: "id", value: id), URLQueryItem(name: "kind", value: "permission"), URLQueryItem(name: "project", value: "ant"),
+                                URLQueryItem(name: "text", value: "執行：pnpm test")])
+                log("asked: relayed \(self.relayedAsks[id] != nil)")
+            }
+        }
         if let login = env["CAMP_TEST_LOGIN"] { // sign in as "email|password", then (CAMP_TEST_SYNC_NOTE) write a note that reminds in 8 s
             let parts = login.split(separator: "|", maxSplits: 1).map(String.init)
             after(1) {
@@ -1287,8 +1303,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                choiceMenu(title: "魔獸來襲頻率",
                           options: [("關閉", 0), ("偶爾", 1), ("普通", 2), ("頻繁", 3)],
                           get: { self.settings.monsters }, set: { self.settings.monsters = $0 })]
+        // 聖光模式: no raids, nobody attacks, births at half speed (server/CAMP.md §7)
+        let sanctuary = ClosureMenuItem(title: "聖光模式（沒空玩時）") { [weak self] in DispatchQueue.main.async { self?.toggleSanctuary() } }
+        sanctuary.stateProvider = { [weak self] in self?.ledger.view?.sanctuary?.since != nil }
+        sanctuary.toolTip = "不會有魔獸來襲、別人也打不了你；但營地 120 隻以上時生得慢一半"
+        sanctuary.isHidden = !serverCamp
         menu.addItem(group("營地", [
-            foodMenu(), workshop, world, worldStatusItem,
+            foodMenu(), workshop, world, worldStatusItem, sanctuary,
             .separator(),
             editItem, pickItem,
             ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } },
@@ -1411,29 +1432,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         auto.stateProvider = { self.settings.pomodoroWorkMode }
         sub.addItem(auto)
         pomodoroStopItem = ClosureMenuItem(title: "停止番茄鐘") { [weak self] in
-            guard let pomodoro = self?.colony.pomodoro else { return }
-            if pomodoro.phase == .focus { Stats.shared.addFocus(seconds: pomodoro.phaseLength - pomodoro.remaining) }
-            pomodoro.stop()
-            GoblinVoice.shared.stop()
-            if self?.pomodoroChangedMode == true {
-                self?.pomodoroChangedMode = false
-                self?.setMode(nil, automatic: true)
-            }
+            self?.stopPomodoroLocally()
+            self?.sendPomodoro("stop")
         }
         sub.addItem(pomodoroStopItem)
         pomodoroPauseItem = ClosureMenuItem(title: "暫停") { [weak self] in
             guard let pomodoro = self?.colony.pomodoro else { return }
             if pomodoro.paused { pomodoro.resume() } else { pomodoro.pause() }
+            self?.sendPomodoro(pomodoro.paused ? "pause" : "resume")
             self?.redrawAll()
         }
         sub.insertItem(pomodoroPauseItem, at: sub.index(of: pomodoroStopItem))
-        pomodoroSkipItem = ClosureMenuItem(title: "跳過這一段") { [weak self] in self?.colony.pomodoro.skip() }
+        pomodoroSkipItem = ClosureMenuItem(title: "跳過這一段") { [weak self] in
+            self?.colony.pomodoro.skip()
+            self?.sendPomodoro("skip")
+        }
         sub.insertItem(pomodoroSkipItem, at: sub.index(of: pomodoroStopItem))
         parent.submenu = sub
         return parent
     }
 
     func startPomodoro(focus: Double, rest: Double, rounds: Int = 1, longRest: Double = 0) {
+        beginPomodoroLocally(focus: focus, rest: rest, rounds: rounds, longRest: longRest)
+        sendPomodoro("start", plan: colony.pomodoro.plan)
+    }
+
+    private func stopPomodoroLocally() {
+        let pomodoro = colony.pomodoro
+        guard pomodoro.isRunning else { return }
+        if pomodoro.phase == .focus { Stats.shared.addFocus(seconds: pomodoro.phaseLength - pomodoro.remaining) }
+        pomodoro.stop()
+        GoblinVoice.shared.stop()
+        if pomodoroChangedMode {
+            pomodoroChangedMode = false
+            setMode(nil, automatic: true)
+        }
+    }
+
+    // MARK: The pomodoro shared with the phone (server/DESIGN.md §14)
+
+    private struct PomodoroActionBody: Encodable { let action: String; let plan: Pomodoro.Plan? }
+    private struct RemotePomodoro: Decodable {
+        struct State: Decodable { let plan: Pomodoro.Plan; let index: Int; let endsAt: Double?; let pausedLeft: Double? }
+        let state: State?
+        let serverTime: Double
+    }
+
+    /// What was done here goes to the server, so the phone (and other Macs) do the same (signed in only).
+    private func sendPomodoro(_ action: String, plan: Pomodoro.Plan? = nil) {
+        guard sync.user != nil else { return }
+        let body = PomodoroActionBody(action: action, plan: plan)
+        Task { @MainActor in
+            do {
+                self.adoptPomodoro(try await self.sync.api.request("POST", "pomodoro", body: body, as: RemotePomodoro.self))
+            } catch {
+                if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: pomodoro \(action) not sent: \(error)") }
+            }
+        }
+    }
+
+    /// The run as the server has it now (another device may have started, paused or stopped it).
+    private func pullPomodoro() {
+        guard sync.user != nil else { return }
+        Task { @MainActor in
+            if let out = try? await self.sync.api.request("GET", "pomodoro", as: RemotePomodoro.self) { self.adoptPomodoro(out) }
+        }
+    }
+
+    /// Makes this Mac's pomodoro what the server says: started (the goblin walks in), moved to its part, paused, or stopped.
+    private func adoptPomodoro(_ out: RemotePomodoro) {
+        let pomodoro = colony.pomodoro
+        guard let s = out.state else {
+            if pomodoro.isRunning { stopPomodoroLocally() }
+            return
+        }
+        // on to now, by the server's clock (the same rules as shared/src/pomodoro.ts)
+        let segments = Pomodoro.segments(s.plan)
+        var index = s.index
+        var endsAt = s.endsAt
+        while let end = endsAt, out.serverTime >= end {
+            index += 1
+            guard segments.indices.contains(index) else {
+                if pomodoro.isRunning { stopPomodoroLocally() }
+                return
+            }
+            endsAt = end + segments[index].seconds * 1000
+        }
+        let paused = endsAt == nil
+        let remaining = paused ? (s.pausedLeft ?? 0) / 1000 : (endsAt! - out.serverTime) / 1000
+        if !pomodoro.isRunning {
+            beginPomodoroLocally(focus: s.plan.focusMinutes, rest: s.plan.restMinutes, rounds: s.plan.rounds, longRest: s.plan.longRestMinutes)
+        }
+        pomodoro.adopt(plan: s.plan, index: index, remaining: remaining, paused: paused)
+        redrawAll()
+    }
+
+    private func beginPomodoroLocally(focus: Double, rest: Double, rounds: Int, longRest: Double) {
         let screen = alertScreenFrame()
         var breedIndex = 0
         pomodoroSpeaker = Speakers.common
@@ -1768,6 +1862,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ledger.loadPending()
         lastStory = try? JSONEncoder().encode(colony.romance)
         sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks(); self?.checkWorld() } }
+        sync.onEvent = { [weak self] type, event in self?.serverEvent(type, event) }
+        sync.onConnected = { [weak self] in
+            self?.pullPomodoro()
+            self?.checkRelayed()
+        }
         applyBooksToCamp()
         booksTimer?.invalidate()
         booksTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
@@ -1860,6 +1959,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Fetches the books (the server works raids and everything out first) and brings the camp in line.
+    /// 聖光模式 on (after saying what it means) or off.
+    private func toggleSanctuary() {
+        let on = ledger.view?.sanctuary?.since != nil
+        if !on {
+            let ok = presentAlert("開啟聖光模式？", """
+                適合一陣子沒空玩的時候：
+                ・不會有魔獸來襲，大世界裡別人也打不了你的營地和領地，巢穴也不會回來搶地
+                ・你也不能攻打其他玩家（打怪可以）
+                ・代價：營地有 120 隻以上時，生得慢一半（被打到少於 120 隻就照常生）
+
+                隨時可以關掉；關掉之後要 12 小時才能再開。
+                """, buttons: ["開啟", "取消"])
+            guard ok else { return }
+        }
+        struct Body: Encodable { let on: Bool }
+        Task { @MainActor in
+            do {
+                try await self.sync.api.raw("POST", "camp/sanctuary", body: Body(on: !on))
+                self.refreshBooks()
+                self.say(on ? "聖光散去了，營地回到平常的日子。" : "營地被聖光包圍了，魔獸不會來了。")
+            } catch let error as APIError {
+                _ = self.presentAlert("聖光模式", error.message)
+            } catch {}
+        }
+    }
+
     private func refreshBooks() {
         guard campReady, sync.user != nil, !booksFetching else { return }
         booksFetching = true
@@ -2069,13 +2194,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handleAsk(_ items: [URLQueryItem]) {
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
         guard let id = value("id"), id.range(of: "^[A-Za-z0-9-]{8,64}$", options: .regularExpression) != nil else { return }
-        writeReply(id, ["ack": true], ack: true)
         let kind: NotifyKind = value("kind") == "permission" ? .permission : .done
-        Stats.shared.notification(kind)
         let project = String((value("project") ?? "").filter { !$0.isNewline }.prefix(28))
+        let detail = String((value("text") ?? "").filter { !$0.isNewline }.prefix(300))
+        // away from this Mac (or in focus mode): the question goes to the phone, and the hook waits for it longer
+        if relayToPhone(id: id, kind: kind, project: project, text: detail) {
+            Stats.shared.notification(kind)
+            return
+        }
+        writeReply(id, ["ack": true], ack: true)
+        Stats.shared.notification(kind)
         var app = value("app")
         if let bundle = app, bundle.range(of: "^[A-Za-z0-9.-]{1,80}$", options: .regularExpression) == nil { app = nil }
-        let context = String((value("text") ?? "").filter { !$0.isNewline }.prefix(90))
+        let context = String(detail.prefix(90))
         guard settings.notifyEnabled, settings.notifies(kind) else { return finishAsk(id, ["action": "none"]) }
         if !settings.askEnabled { // plain popup, no question
             notify(kind, project: project, appBundleID: app, count: false)
@@ -2095,6 +2226,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         message.remember = kind == .permission ? String((value("remember") ?? "").filter { !$0.isNewline }.prefix(60)) : ""
         colony.stage.enqueue(message)
         redrawAll()
+    }
+
+    // MARK: Claude's questions answered from the phone (server/DESIGN.md §15)
+
+    /// Questions passed to the phone and not answered yet: what they were, and when they give up.
+    private struct RelayedAsk { let kind: NotifyKind; let project: String; let text: String; let until: Date }
+    private var relayedAsks: [String: RelayedAsk] = [:]
+    private var relayTimer: Timer?
+    /// How long a question passed to the phone keeps Claude waiting (the hook's timeout is a little longer: HookInstaller).
+    static let relayWait: TimeInterval = 600
+    /// Away from the Mac: this long without a key or the mouse moving.
+    static let awayAfter: TimeInterval = 120
+
+    /// Seconds since the last key press, click or mouse move anywhere.
+    private var idleSeconds: TimeInterval {
+        if let test = ProcessInfo.processInfo.environment["CAMP_TEST_IDLE"].flatMap(Double.init) { return test } // (tests: as if away that long)
+        return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
+
+    /// Passes a question to the phone when that is on, the Mac is signed in and its player is away (or in focus mode).
+    /// Returns whether it did (the hook was told to wait longer).
+    private func relayToPhone(id: String, kind: NotifyKind, project: String, text: String) -> Bool {
+        guard settings.claudeRelay, sync.user != nil, settings.notifyEnabled, settings.askEnabled else { return false }
+        guard idleSeconds >= AppDelegate.awayAfter || isSilenced else { return false }
+        writeReply(id, ["ack": true, "wait": Int(AppDelegate.relayWait)], ack: true)
+        relayedAsks[id] = RelayedAsk(kind: kind, project: project, text: text, until: Date().addingTimeInterval(AppDelegate.relayWait))
+        struct Body: Encodable { let id: String; let kind: String; let project: String; let text: String; let waitSeconds: Int }
+        let body = Body(id: id, kind: kind == .permission ? "permission" : "reply", project: project, text: text, waitSeconds: Int(AppDelegate.relayWait))
+        Task { @MainActor in
+            do {
+                try await self.sync.api.raw("POST", "claude", body: body)
+            } catch {
+                // could not reach the server: ask here as usual instead
+                self.relayedAsks[id] = nil
+                self.finishAsk(id, ["action": "none"])
+            }
+        }
+        watchRelayed()
+        return true
+    }
+
+    /// While questions wait on the phone: back at the Mac (and not in focus mode), they are asked here again; out of time,
+    /// they end with no answer.
+    private func watchRelayed() {
+        guard relayTimer == nil else { return }
+        relayTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let back = self.idleSeconds < 3 && !self.isSilenced
+            for (id, ask) in self.relayedAsks {
+                if Date() > ask.until {
+                    self.relayedAsks[id] = nil
+                    self.finishAsk(id, ["action": "none"])
+                } else if back {
+                    self.relayedAsks[id] = nil
+                    self.closeOnPhone(id)
+                    self.askHere(id: id, kind: ask.kind, project: ask.project, text: ask.text)
+                }
+            }
+            if self.relayedAsks.isEmpty {
+                self.relayTimer?.invalidate()
+                self.relayTimer = nil
+            }
+        }
+    }
+
+    /// A relayed question asked on the Mac after all (its player came back): the goblin's bubble, as for any question.
+    private func askHere(id: String, kind: NotifyKind, project: String, text: String) {
+        guard !colony.stage.isFull else { return finishAsk(id, ["action": "none"]) }
+        let (speaker, breedIndex, name) = pickSpeaker()
+        pendingAsks.insert(id)
+        var message = Message(kind: kind, speaker: speaker, breedIndex: breedIndex, project: project, appBundleID: nil,
+                              screen: alertScreenFrame(), interaction: kind == .permission ? .decision : .reply, askID: id,
+                              context: String(text.prefix(90)), talkTime: settings.askWait)
+        message.name = name
+        colony.stage.enqueue(message)
+        redrawAll()
+    }
+
+    /// The phones stop showing a question (answered here, or no longer waiting).
+    private func closeOnPhone(_ id: String) {
+        struct Body: Encodable { let action = "dismiss" }
+        Task { @MainActor in try? await self.sync.api.raw("POST", "claude/\(id)/answer", body: Body()) }
+    }
+
+    /// Answers that came while the WebSocket was down.
+    private func checkRelayed() {
+        struct Asked: Decodable { struct Answer: Decodable { let action: String; let text: String?; let by: String }; let answer: Answer? }
+        for id in relayedAsks.keys {
+            Task { @MainActor in
+                guard let asked = try? await self.sync.api.request("GET", "claude/\(id)", as: Asked.self), let answer = asked.answer, answer.by == "phone" else { return }
+                var event: [String: Any] = ["id": id, "device": self.sync.account.deviceID, "action": answer.action]
+                if let text = answer.text { event["text"] = text }
+                self.serverEvent("claude.answer", event)
+            }
+        }
+    }
+
+    /// The server's other news: the pomodoro changed elsewhere, or the phone answered a question this Mac passed on.
+    private func serverEvent(_ type: String, _ event: [String: Any]) {
+        switch type {
+        case "pomodoro.changed":
+            pullPomodoro()
+        case "claude.answer":
+            guard let id = event["id"] as? String, event["device"] as? String == sync.account.deviceID, relayedAsks[id] != nil else { return }
+            relayedAsks[id] = nil
+            switch event["action"] as? String {
+            case "allow": finishAsk(id, ["action": "allow"]) // (this once only: never "remember" from afar)
+            case "deny": finishAsk(id, ["action": "deny"])
+            case "reply": finishAsk(id, ["action": "reply", "text": (event["text"] as? String) ?? ""])
+            default: finishAsk(id, ["action": "none"])
+            }
+        default:
+            break
+        }
     }
 
     /// The panel with buttons or a text field, over the goblin's bubble spot while it stands there talking.
@@ -2374,6 +2619,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async { self?.confirmDisconnect() }
         }
         sub.addItem(claudeRemoveItem)
+        sub.addItem(.separator())
+        let relay = ClosureMenuItem(title: "離開電腦時送到手機") { [weak self] in
+            DispatchQueue.main.async { self?.toggleClaudeRelay() }
+        }
+        relay.stateProvider = { [weak self] in self?.settings.claudeRelay ?? false }
+        relay.toolTip = "離開電腦 2 分鐘以上（或在專注模式），Claude 要你允許、或停下來問你時，改送到手機（要登入）"
+        sub.addItem(relay)
         claudeConnectItem.submenu = sub
         return claudeConnectItem
     }
@@ -2428,6 +2680,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             _ = presentAlert("連接失敗", error.localizedDescription)
         }
+    }
+
+    /// Claude's questions to the phone while away: on after saying what goes where, and with hooks that wait long enough.
+    private func toggleClaudeRelay() {
+        if settings.claudeRelay {
+            settings.claudeRelay = false
+            return
+        }
+        guard sync.user != nil else {
+            _ = presentAlert("要先登入", "送到手機要用同一個帳號：先在「帳號」登入，手機上也登入並開啟通知。")
+            return
+        }
+        guard HookInstaller.status() == .interactive else {
+            _ = presentAlert("要先連接（泡泡可回覆）", "在這個選單按「連接（泡泡可回覆，建議）」，Claude 的問題才會交給哥布林，也才能送到手機。")
+            return
+        }
+        let ok = presentAlert("離開電腦時送到手機？", """
+            離開電腦 2 分鐘以上（或在專注模式）時：
+            ・Claude 要你允許，手機會收到通知，可以按「允許這一次」或「拒絕」
+            ・Claude 停下來時，手機會看到它最後說的話，可以回它一句
+            ・最多等 10 分鐘；你一回到電腦前，就改回在電腦上問
+
+            會送到伺服器的：專案名稱、要執行的指令或檔名、Claude 最後一段話的開頭（最多 280 字）。一天後自動刪除。
+            從手機不能「永遠允許」，只能允許這一次。
+            """, buttons: ["開啟", "取消"])
+        guard ok else { return }
+        // older connections gave Claude 70 seconds: connect again (backing the settings up) so it waits long enough
+        if (HookInstaller.installedAskTimeout() ?? 0) < HookInstaller.askTimeout {
+            do {
+                try HookInstaller.install(.interactive)
+                _ = presentAlert("連接更新好了", "為了讓 Claude 可以等手機回覆，更新了連接（原本的設定有先備份）。請在 Claude Code 輸入 /hooks 確認，或重新開啟 Claude Code。")
+            } catch {
+                _ = presentAlert("更新連接失敗", error.localizedDescription)
+                return
+            }
+        }
+        settings.claudeRelay = true
     }
 
     private func confirmDisconnect() {

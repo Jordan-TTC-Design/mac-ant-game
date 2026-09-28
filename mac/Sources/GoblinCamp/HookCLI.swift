@@ -10,6 +10,8 @@ enum HookCLI {
         "WarpTerminal": "dev.warp.Warp-Stable", "ghostty": "com.mitchellh.ghostty", "WezTerm": "com.github.wez.wezterm",
     ]
     static let maxWait = 60.0
+    /// The longest the game may ask to wait (a question passed to the phone; its ack says how long).
+    static let longestWait = 900.0
 
     static func run(_ args: [String]) -> Never {
         // `CAMP_HOOK_TEST_ID`: tests write the answer files themselves, so no game is needed and no link is opened
@@ -63,6 +65,29 @@ enum HookCLI {
         }
     }
 
+    /// The end of what Claude last said in this conversation (its transcript), so a phone knows where things stand.
+    private static func lastSaid(_ event: [String: Any]) -> String {
+        if let text = event["last_assistant_message"] as? String, !text.isEmpty { return squash(text, limit: 280) }
+        guard let path = event["transcript_path"] as? String, let handle = FileHandle(forReadingAtPath: path) else { return "" }
+        defer { try? handle.close() }
+        // (only the last 256 KB: a long conversation's file is big)
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: size > 262_144 ? size - 262_144 : 0)
+        guard let data = try? handle.readToEnd(), let text = String(data: data, encoding: .utf8) else { return "" }
+        for line in text.split(separator: "\n").reversed() {
+            guard let entry = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], entry["type"] as? String == "assistant",
+                  let message = entry["message"] as? [String: Any] else { continue }
+            let words: String
+            if let content = message["content"] as? [[String: Any]] {
+                words = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: " ")
+            } else {
+                words = (message["content"] as? String) ?? ""
+            }
+            if !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return squash(words, limit: 280) }
+        }
+        return ""
+    }
+
     /// What Claude Code itself would offer as "don't ask again" (its `permission_suggestions`), kept to the kinds we can describe
     /// in one line, and limited to this conversation (`session`) so nothing is written to anyone's settings files.
     private static func rememberable(_ event: [String: Any]) -> (updates: [[String: Any]], text: String) {
@@ -103,13 +128,16 @@ enum HookCLI {
         let remembered = kind == "permission" ? rememberable(event) : (updates: [], text: "")
         if testID == nil {
             open("goblincamp://ask", ["kind": kind == "permission" ? "permission" : "reply", "id": id, "project": project, "app": app,
-                                      "text": kind == "permission" ? summary(event) : "", "remember": remembered.text, "wait": String(Int(maxWait))])
+                                      "text": kind == "permission" ? summary(event) : lastSaid(event), "remember": remembered.text, "wait": String(Int(maxWait))])
         }
         // the game must confirm quickly, otherwise do not hold Claude Code up
         var deadline = Date().addingTimeInterval(4)
         while Date() < deadline, !FileManager.default.fileExists(atPath: ack.path) { Thread.sleep(forTimeInterval: 0.1) }
         guard FileManager.default.fileExists(atPath: ack.path) else { exit(0) }
-        deadline = Date().addingTimeInterval(maxWait)
+        // (a question passed to the phone: the game says to wait longer)
+        let acked = (try? Data(contentsOf: ack)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        let wait = min(longestWait, max(maxWait, (acked?["wait"] as? Double) ?? maxWait))
+        deadline = Date().addingTimeInterval(wait)
         while Date() < deadline, !FileManager.default.fileExists(atPath: answer.path) { Thread.sleep(forTimeInterval: 0.2) }
         let reply = (try? Data(contentsOf: answer)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
         try? FileManager.default.removeItem(at: ack)

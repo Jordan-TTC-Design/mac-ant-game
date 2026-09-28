@@ -8,6 +8,7 @@ import { startReminderLoop } from "./push/reminders.ts";
 import { NoPushSender, WebPushSender } from "./push/sender.ts";
 import { startWorldLoop } from "./world/service.ts";
 import { startMaintenance } from "./maintenance.ts";
+import { startPomodoroLoop } from "./pomodoro/routes.ts";
 
 const config = loadConfig();
 const database = createDatabase(config.DATABASE_URL);
@@ -24,6 +25,7 @@ const app = createApp({ database, mailer, config, push });
 const stopReminders = startReminderLoop(app.deps);
 const stopWorld = startWorldLoop(app.deps);
 const stopMaintenance = startMaintenance(app.deps);
+const stopPomodoro = startPomodoroLoop(app.deps);
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`GoblinCamp server on http://localhost:${info.port}/api/health`);
 });
@@ -33,6 +35,7 @@ async function shutdown() {
   stopReminders();
   stopWorld();
   stopMaintenance();
+  stopPomodoro();
   server.close();
   await database.close();
   process.exit(0);

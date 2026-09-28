@@ -10,5 +10,6 @@ export async function useSignedIn(): Promise<boolean> {
     user.value = null;
     void navigateTo("/login?expired=1");
   });
+  useLive().start();
   return true;
 }

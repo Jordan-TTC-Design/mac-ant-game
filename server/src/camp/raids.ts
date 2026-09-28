@@ -3,6 +3,13 @@ import { FOES, hashString, randomFrom, residentFighter, simulateBattle, type Bat
 
 /** How many residents go out to meet each monster (the rest keep on with their day). */
 export const DEFENDERS_PER_MONSTER = 1.5;
+/**
+ * Raiding monsters' attack and hit points × this (residents are plain and small: shared/src/world/battle.ts). Set so a raid
+ * usually costs nobody, now and then one or two, and rarely wins (server/CAMP.md §4).
+ */
+export const RAID_POWER = 0.7;
+/** What a raid level adds (attack; hit points 1.25 × this). */
+export const RAID_LEVEL_STEP = 0.05;
 
 /** A replay longer than this is cut (the fight is still decided in full). */
 const MAX_EVENTS = 1500;
@@ -35,8 +42,9 @@ export function raidLevel(residents: number): number {
 }
 
 function monsterFighters(plan: RaidPlan, level: number): { fighters: Fighter[]; kinds: string[] } {
-  const hpScale = 1 + 0.25 * (level - 1);
-  const attackScale = 1 + 0.2 * (level - 1);
+  // (a level adds less than a lair's: a big camp meets more monsters, not much tougher ones)
+  const hpScale = (1 + RAID_LEVEL_STEP * 1.25 * (level - 1)) * RAID_POWER;
+  const attackScale = (1 + RAID_LEVEL_STEP * (level - 1)) * RAID_POWER;
   const fighters: Fighter[] = [];
   const kinds: string[] = [];
   for (const { id, count } of plan.monsters) {

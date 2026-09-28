@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { cellCenter, FOES, HOME_MOVE_DAYS, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
+import { api } from "~/utils/api";
 
 // 大世界: the real map with the lairs and camps on it. Tapping a cell brings up a card from the bottom (what is there, and
 // what can be done: attack, settle, send more, build, recall); an action that sends a party opens the dispatch dialog.
@@ -58,7 +59,9 @@ const distance = (km: number) => (km < 1 ? `${Math.round(km * 1000)} 公尺` : `
 // (if the phone already allowed it, look right away)
 onMounted(async () => {
   try {
-    if ((await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted") void findNearby();
+    // (only while there is no camp yet: after that the map starts at the camp)
+    if (!world.state.me) await world.refresh();
+    if (!world.state.me?.homeCell && (await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted") void findNearby();
   } catch {
     // (no permissions API: wait for the tap)
   }
@@ -98,6 +101,20 @@ const openHere = () => {
   asking.value = null;
   void doIt(() => world.openWorld(selected.value!), "大世界開啟了！營地就在這一格。");
 };
+// someone else's cell: ask them to be friends (or go and write to them)
+const live = useLive();
+const isFriend = computed(() => !!cell.value?.owner && !!live.state.friends?.friends.some((f) => f.id === cell.value!.owner!.id));
+const askedFriend = computed(() => !!cell.value?.owner && !!live.state.friends?.outgoing.some((f) => f.id === cell.value!.owner!.id));
+const addFriend = () =>
+  doIt(async () => {
+    try {
+      const out = await api<{ status: string }>("POST", "friends/asks", { userId: cell.value!.owner!.id });
+      await live.loadFriends();
+      return out.status === "friends" ? "成為好友了！" : `送出好友邀請了，等${cell.value?.owner?.name}答應。`;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }, "");
 const isHome = computed(() => !!cell.value && cell.value.cell === s.me?.homeCell);
 /** When the camp may move again, as words (null: it may now). */
 const moveWait = computed(() => {
@@ -121,10 +138,10 @@ const recall = () => {
 
 // the dispatch dialog
 const dispatch = ref<"attack" | "settle" | "move" | null>(null);
-async function sent(party: number[], settle: boolean, from: string) {
+async function sent(party: number[], settle: boolean, from: string, supplies: Record<string, number>) {
   const to = selected.value!;
   dispatch.value = null;
-  await doIt(() => world.send(to, party, settle, from), `出發了！${party.length} 隻上路。`);
+  await doIt(() => world.send(to, party, settle, from, supplies), `出發了！${party.length} 隻上路。`);
 }
 
 /** My parties on the road, from where they set out (the camp's cell for "home") to where they are going. */
@@ -282,6 +299,9 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
         <span v-for="(n, id) in cell.lair.foes" :key="id" class="foe"><FoeIcon :id="String(id)" :size="32" /><small>{{ FOES[String(id)]?.name ?? id }} ×{{ n }}</small></span>
         <span class="power"><small>戰力</small><b>{{ cell.lair.power }}</b></span>
       </div>
+      <p v-if="cell.lair && cell.lairWounds" class="wounds">
+        受傷中：剩 {{ cell.lairWounds.standing }}/{{ cell.lairWounds.total }} 隻、{{ Math.round(cell.lairWounds.hpShare * 100) }}% 血，{{ noteTime(cell.lairWounds.healedAt) }}恢復——趁現在派第二波！
+      </p>
       <template v-else-if="cell.boss">
         <div class="hpbar"><i :style="{ width: `${(100 * cell.boss.hp) / cell.boss.maxHp}%` }" /></div>
         <p class="muted">{{ cell.boss.hp }} / {{ cell.boss.maxHp }} 血・{{ hoursLeft(cell.boss.endsAt) }}後離開。牠的傷會留著，大家一起打。</p>
@@ -318,6 +338,8 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
         <template v-else>
           <button v-if="cell.boss || cell.lair || cell.owner" class="btn primary" :disabled="!canAct" @click="dispatch = 'attack'">{{ cell.boss ? "攻擊魔王" : "攻擊" }}</button>
           <button v-else class="btn primary" :disabled="!canAct" @click="dispatch = 'settle'">派人佔領</button>
+          <NuxtLink v-if="cell.owner && isFriend" :to="`/friends/${cell.owner.id}`" class="btn">傳訊息</NuxtLink>
+          <button v-else-if="cell.owner" class="btn" :disabled="busy || askedFriend" @click="addFriend">{{ askedFriend ? "等對方答應好友" : "加好友" }}</button>
           <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>
         </template>
       </div>
@@ -390,8 +412,9 @@ p { margin: 6px 0; line-height: 1.55; }
 .hpbar { height: 12px; background: #e3ddd0; border-radius: 6px; overflow: hidden; margin: 10px 0 4px; }
 .hpbar i { display: block; height: 100%; background: #e0402f; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.actions .btn { flex: 1; min-height: 44px; }
+.actions .btn { flex: 1 1 auto; min-height: 44px; }
 .actions .wide { flex-basis: 100%; }
+.wounds { margin: 6px 0 0; font-size: 13px; font-weight: 700; color: #b3412c; }
 .ask { background: #f6efd4; border: 2px solid #1f1f1f; border-radius: 12px; padding: 10px 12px; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ask p { flex-basis: 100%; margin: 0; font-size: 14px; line-height: 1.5; }
 .row { display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 600; }

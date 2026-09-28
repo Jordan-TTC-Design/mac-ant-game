@@ -1,37 +1,48 @@
 <script setup lang="ts">
+import { pomodoroPartName } from "@goblincamp/shared";
+import { noteTime } from "~/utils/time";
+
+// 首頁: the phone app's big parts, each a card with how it stands now, one tap into it.
 const ok = await useSignedIn();
-const notes = useNotes();
 const { user } = useAccount();
-// the residents on the notes follow the account's race
-const { race, ensure } = useRace();
+const notes = useNotes();
+const live = useLive();
+const camp = useCamp();
+const { race, noun, ensure } = useRace();
 void ensure();
-
-const syncLine = computed(() => {
-  switch (notes.state.status) {
-    case "syncing": return "同步中…";
-    case "offline": return "離線中：改動先存在手機，連上後會同步";
-    case "problem": return `同步出了問題：${notes.state.problem}`;
-    case "synced": return "已同步";
-    default: return "";
-  }
+const now = ref(Date.now());
+let clock: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  clock = setInterval(() => (now.value = Date.now()), 1000);
+  live.refresh();
 });
-
-// two kinds (待辦 with times, 備忘 kept at hand), and a search over the words
-const tab = useState<"todo" | "memo">("notes-tab", () => "todo");
-const query = ref("");
-const kindOf = (n: { kind?: string }) => (n.kind === "memo" ? "memo" : "todo");
-const counts = computed(() => ({
-  todo: notes.list.value.filter((n) => kindOf(n) === "todo" && !n.done).length,
-  memo: notes.list.value.filter((n) => kindOf(n) === "memo").length,
-}));
-const shown = computed(() => {
-  const q = query.value.trim().toLowerCase();
-  return notes.list.value.filter((n) => kindOf(n) === tab.value && (!q || n.text.toLowerCase().includes(q) || n.goblinName.includes(q)));
+onUnmounted(() => {
+  clearInterval(clock);
+  camp.close();
 });
+if (ok && user.value) void camp.open(user.value.id);
 
-function add() {
-  navigateTo(`/note/new?kind=${tab.value}`);
-}
+const todo = computed(() => notes.list.value.filter((n) => n.kind !== "memo" && !n.done));
+const nextReminder = computed(() =>
+  todo.value
+    .filter((n) => n.remindAt && Date.parse(n.remindAt) > now.value)
+    .sort((a, b) => Date.parse(a.remindAt!) - Date.parse(b.remindAt!))[0],
+);
+const run = computed(() => live.pomodoroNow(now.value));
+const clockText = computed(() => {
+  const s = Math.ceil((run.value?.left ?? 0) / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+});
+const view = computed(() => camp.state.saved?.view ?? null);
+const atHome = computed(() => view.value?.residents.filter((r) => r.place === "home").length ?? 0);
+const lastRaid = computed(() => camp.state.saved?.raids[0] ?? null);
+const friends = computed(() => live.state.friends);
+const unread = computed(() => friends.value?.friends.reduce((n, f) => n + f.unread, 0) ?? 0);
+const waiting = computed(() => live.state.claude?.waiting ?? []);
+const hello = computed(() => {
+  const h = new Date(now.value).getHours();
+  return h < 5 ? "夜深了" : h < 11 ? "早安" : h < 14 ? "午安" : h < 18 ? "下午好" : "晚安";
+});
 </script>
 
 <template>
@@ -39,38 +50,87 @@ function add() {
     <header class="topbar">
       <img :src="`/sprites/${race}/icon.png`" class="pixel" width="36" height="36" alt="" />
       <div style="flex: 1">
-        <h1>便利貼</h1>
-        <div class="sub">{{ user?.displayName }}・{{ syncLine }}</div>
+        <h1>{{ hello }}，{{ user?.displayName }}</h1>
+        <div class="sub">哥布林營地</div>
       </div>
-      <NuxtLink to="/camp" class="icon-btn">營地</NuxtLink>
       <NuxtLink to="/settings" class="icon-btn">設定</NuxtLink>
     </header>
 
-    <div class="tabs">
-      <button :class="{ on: tab === 'todo' }" @click="tab = 'todo'">待辦 <small v-if="counts.todo">{{ counts.todo }}</small></button>
-      <button :class="{ on: tab === 'memo' }" @click="tab = 'memo'">備忘 <small v-if="counts.memo">{{ counts.memo }}</small></button>
+    <!-- Claude waiting for an answer comes first -->
+    <NuxtLink v-if="waiting.length" to="/claude" class="card claude-wait">
+      <span class="icon">🤖</span>
+      <span class="grow">
+        <b>Claude 在等你（{{ waiting.length }}）</b>
+        <small>{{ waiting[0]!.project }}：{{ waiting[0]!.text || (waiting[0]!.kind === "permission" ? "要你允許" : "停下來了") }}</small>
+      </span>
+      <span class="go">回答 ›</span>
+    </NuxtLink>
+
+    <div class="grid">
+      <NuxtLink to="/notes" class="card">
+        <span class="icon">📝</span>
+        <b>便利貼</b>
+        <small>{{ todo.length ? `${todo.length} 件待辦` : "沒有待辦" }}</small>
+        <small v-if="nextReminder" class="accent">下個提醒 {{ noteTime(nextReminder.remindAt!) }}</small>
+      </NuxtLink>
+
+      <NuxtLink to="/pomodoro" class="card" :class="{ running: run }">
+        <span class="icon">🍅</span>
+        <b>番茄鐘</b>
+        <template v-if="run">
+          <small>{{ pomodoroPartName(run.part, run.state.plan.rounds) }}{{ run.paused ? "・暫停" : "" }}</small>
+          <span class="big">{{ clockText }}</span>
+        </template>
+        <small v-else>開始專注・和 Mac 同步</small>
+      </NuxtLink>
+
+      <NuxtLink to="/camp" class="card">
+        <span class="icon">🛖</span>
+        <b>營地</b>
+        <small>{{ view ? `在家 ${atHome} 隻${noun}` : "讀取中…" }}</small>
+        <small v-if="lastRaid">魔獸來襲 {{ noteTime(lastRaid.at) }}・{{ lastRaid.winner === "camp" ? "守住了" : "被打敗了" }}</small>
+      </NuxtLink>
+
+      <NuxtLink to="/world" class="card">
+        <span class="icon">🗺️</span>
+        <b>大世界</b>
+        <small>真實地圖・出征・佔地</small>
+      </NuxtLink>
+
+      <NuxtLink to="/friends" class="card">
+        <span class="icon">💬</span>
+        <b>好友</b>
+        <small v-if="unread" class="accent">{{ unread }} 則新訊息</small>
+        <small v-else-if="friends?.incoming.length" class="accent">{{ friends.incoming.length }} 人想加你好友</small>
+        <small v-else>{{ friends ? `${friends.friends.length} 位好友` : "…" }}</small>
+      </NuxtLink>
+
+      <NuxtLink to="/claude" class="card">
+        <span class="icon">🤖</span>
+        <b>Claude</b>
+        <small>{{ waiting.length ? `${waiting.length} 個在等你` : "離開電腦時在這裡回答" }}</small>
+      </NuxtLink>
     </div>
-    <input v-if="notes.list.value.length > 4" v-model="query" class="search" type="search" placeholder="搜尋便利貼…" />
 
-    <p v-if="shown.length === 0" class="empty">
-      {{ query ? "找不到。" : tab === "todo" ? "沒有待辦。按右下角的「＋」寫一張，可以設提醒，會同步到你的 Mac。" : "沒有備忘。常用的網址、指令、帳號名稱之類的放這裡：不用設時間，網址點了就開，每一行都能複製。" }}
-    </p>
-    <NoteCard v-for="n in shown" :id="n.id" :key="n.id" />
-
-    <button class="fab" aria-label="新增便利貼" @click="add">＋</button>
+    <NuxtLink to="/leaderboard" class="wide-link">🏆 排行榜 ›</NuxtLink>
   </main>
 </template>
 
 <style scoped>
-.icon-btn { text-decoration: none; }
-.tabs { display: flex; gap: 6px; margin-bottom: 10px; }
-.tabs button { flex: 1; border: 0; border-radius: 10px; padding: 9px 0; background: rgba(255, 255, 255, 0.14); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
-.tabs button.on { background: var(--paper-yellow); color: var(--ink); }
-.tabs small { font-size: 12px; opacity: 0.7; }
-.search { width: 100%; border: 0; border-radius: 10px; padding: 10px 12px; font-size: 16px; margin-bottom: 12px; background: #fffdf6; }
-.empty { color: #e8f0e0; text-align: center; margin-top: 40px; line-height: 1.7; }
-.fab {
-  position: fixed; right: 20px; bottom: calc(env(safe-area-inset-bottom) + 20px); width: 60px; height: 60px; border-radius: 16px;
-  background: var(--paper-yellow); border: 3px solid #1f1f1f; font-size: 32px; font-weight: 900; box-shadow: 4px 4px 0 #1f1f1f; cursor: pointer;
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.card {
+  display: grid; align-content: start; gap: 3px; min-height: 108px; padding: 12px; border-radius: 16px; background: #fffdf6; color: var(--ink);
+  text-decoration: none; border: 3px solid #1f1f1f; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
 }
+.card .icon { font-size: 26px; line-height: 1.1; }
+.card b { font-size: 16px; }
+.card small { color: #666; font-size: 12px; line-height: 1.4; }
+.card .accent { color: #c0392b; font-weight: 700; }
+.card.running { background: #fde7df; }
+.big { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
+.claude-wait { display: flex; align-items: center; gap: 10px; min-height: 0; margin-bottom: 10px; background: #ffe9b8; border-color: #b36b00; }
+.claude-wait .grow { flex: 1; min-width: 0; display: grid; }
+.claude-wait small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.go { font-weight: 800; color: #8a4b00; }
+.wide-link { display: block; margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; text-decoration: none; font-weight: 700; text-align: center; }
 </style>

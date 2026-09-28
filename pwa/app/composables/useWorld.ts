@@ -23,12 +23,16 @@ async function loadCells(center = state.center) {
   state.center = center;
   state.cells = await api<CellView[]>("GET", `world/cells?lat=${center.lat.toFixed(6)}&lng=${center.lng.toFixed(6)}&radius=1800`);
 }
+/** The next refresh puts the map back on the camp (opening the page starts there, not where it was dragged last time). */
+let backHome = true;
 async function refresh() {
   state.loading = true;
   try {
     await loadMe();
     // (no camp in the world yet: start looking from 大安森林公園)
-    if (!state.center) state.center = state.me?.home ?? { lat: 25.0302, lng: 121.5357 };
+    if (backHome && state.me?.home) state.center = state.me.home;
+    else if (!state.center) state.center = state.me?.home ?? { lat: 25.0302, lng: 121.5357 };
+    backHome = false;
     await loadCells();
     state.problem = "";
   } catch (e) {
@@ -52,6 +56,7 @@ async function act(work: () => Promise<unknown>): Promise<string | null> {
 
 export function useWorld() {
   function open() {
+    backHome = true;
     window.addEventListener("gc:camp-changed", onChanged);
     clearInterval(timer);
     timer = setInterval(() => {
@@ -74,8 +79,16 @@ export function useWorld() {
     /** The camp moves to another cell (once a week). */
     moveHome: (cell: string) => act(() => api("POST", `world/cells/${cell}/home`, {})),
     /** A party: named residents, or a count (the server picks the strongest). */
-    send: (to: string, party: number | number[], settle: boolean, from = "home") =>
-      act(() => api<ExpeditionSummary>("POST", "world/expeditions", { from, to, settle, ...(Array.isArray(party) ? { residents: party } : { count: party }) })),
+    send: (to: string, party: number | number[], settle: boolean, from = "home", supplies: Record<string, number> = {}) =>
+      act(() =>
+        api<ExpeditionSummary>("POST", "world/expeditions", {
+          from,
+          to,
+          settle,
+          ...(Array.isArray(party) ? { residents: party } : { count: party }),
+          ...(Object.values(supplies).some((n) => n > 0) ? { supplies } : {}),
+        }),
+      ),
     nest: (cell: string) => act(() => api("POST", `world/cells/${cell}/nest`)),
     town: (cell: string) => act(() => api("POST", `world/cells/${cell}/town`)),
     recall: (cell: string) => act(() => api("POST", `world/cells/${cell}/recall`, {})),

@@ -201,6 +201,12 @@ final class Settings {
     }
 
     /// Popups can be answered right there (allow/deny, or a typed reply that goes back to Claude Code).
+    /// Claude Code's questions go to the phone while the player is away from this Mac (server/DESIGN.md §15). Off at first.
+    var claudeRelay: Bool {
+        get { defaults.object(forKey: "claudeRelay") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "claudeRelay") }
+    }
+
     var askEnabled: Bool {
         get { defaults.object(forKey: "askEnabled") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "askEnabled") }

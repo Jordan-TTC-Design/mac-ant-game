@@ -9,6 +9,7 @@ import {
   gearRule,
   planRaid,
   raidTime,
+  SANCTUARY_REST_HOURS,
   redistribute,
   type GearItem,
   type GearSlot,
@@ -55,7 +56,7 @@ export const HALF_BREED_LIFESPAN: Record<string, Record<string, number>> = {
 
 function homePlace(camp: CampRow): Place {
   const rules = raceRules(camp.race);
-  return { race: camp.race, key: "home", startedAt: camp.startedAt.getTime(), birthMinutes: rules.homeBirthMinutes, cap: rules.homeCap };
+  return { race: camp.race, key: "home", startedAt: camp.startedAt.getTime(), birthMinutes: rules.homeBirthMinutes, cap: rules.homeCap, sanctuary: !!camp.sanctuarySince };
 }
 
 export function toResident(row: ResidentRow): Resident {
@@ -118,7 +119,8 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     moveTo(t);
     settleGear();
     const alive = aliveAt(population);
-    const plan = planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length);
+    // (聖光模式: no monster comes; the raid's time passes by)
+    const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length);
     if (plan) {
       const outcome = resolveRaid(camp.race, camp.seed, plan, alive.map((r) => ({ ...r, gear: wearers.get(r.id)?.gear })), fightBoosts(camp.race, camp.boosts, t));
       // wear, and what broke (about a third of what it was made from can be picked out of the wreck)
@@ -204,6 +206,10 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     romance: camp.romance ?? null,
     kills: camp.kills,
     delivered: camp.delivered,
+    sanctuary: {
+      since: camp.sanctuarySince?.toISOString() ?? null,
+      canTurnOnAt: camp.sanctuaryOffAt ? new Date(camp.sanctuaryOffAt.getTime() + SANCTUARY_REST_HOURS * 3_600_000).toISOString() : null,
+    },
     residents: rows.map((r) => ({
       id: r.id,
       breed: r.breed,

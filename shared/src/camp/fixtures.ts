@@ -39,6 +39,10 @@ export function buildFixtures() {
     advance(battle.place, battle.population, FIXTURE_SEED, FIXTURE_START + 6 * HOUR);
     const fallen = fall(battle.population, [3, 4, 5], FIXTURE_START + 6 * HOUR).map((r) => r.id);
     const after = advance(battle.place, battle.population, FIXTURE_SEED, FIXTURE_START + 7 * HOUR);
+    // 聖光模式: every other slot passes by once the camp has 120
+    const calm = startHome(race, FIXTURE_SEED, FIXTURE_START);
+    const calmPlace: Place = { ...calm.place, sanctuary: true };
+    advance(calmPlace, calm.population, FIXTURE_SEED, FIXTURE_START + 30 * HOUR);
     const nest: Place = { race, key: "cell:38344:1015372", startedAt: FIXTURE_START, birthMinutes: raceRules(race).nestBirthMinutes, cap: raceRules(race).cellCap };
     return {
       race,
@@ -47,6 +51,7 @@ export function buildFixtures() {
       ),
       checkpoints,
       battle: { fallen, bornAfter: after.born.length, alive: aliveAt(battle.population).length, nextSlot: battle.population.nextSlot },
+      sanctuary: { alive: aliveAt(calm.population).length, nextId: calm.population.nextId, nextSlot: calm.population.nextSlot },
       nestResidents: [0, 1, 2].map((slot) => residentFor(nest, FIXTURE_SEED, slot, 100 + slot, FIXTURE_START + slot * nest.birthMinutes * 60_000)),
     };
   });
