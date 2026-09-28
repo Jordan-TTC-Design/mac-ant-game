@@ -11,7 +11,8 @@
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
     "invite": "tsx --env-file-if-exists=.env src/cli/invite.ts",
     "admin": "tsx --env-file-if-exists=.env src/cli/admin.ts",
-    "vapid": "web-push generate-vapid-keys"
+    "vapid": "web-push generate-vapid-keys",
+    "balance:raids": "tsx scripts/balance-raids.ts"
   },
   "dependencies": {
     "@goblincamp/shared": "workspace:*",

@@ -66,7 +66,7 @@ export function claudeRoutes(deps: AppDeps) {
     const where = ask.project ? `「${ask.project}」` : "";
     const push: ClaudePush =
       ask.kind === "permission"
-        ? { type: "claude", title: `Claude 在等你允許${where}`, body: ask.text || "要做一件事，要你點頭", url: "/claude", tag: `claude-${ask.id}` }
+        ? { type: "claude", title: `Claude 在等你允許${where}`, body: ask.text || "要做一件事，要你點頭", url: "/claude", tag: `claude-${ask.id}`, ask: { id: ask.id, kind: "permission" } }
         : ask.kind === "reply"
           ? { type: "claude", title: `Claude 停下來了${where}`, body: ask.text || "要不要跟它說什麼？", url: "/claude", tag: `claude-${ask.id}` }
           : { type: "claude", title: `Claude 做完了${where}`, body: ask.text || "回電腦看看吧", url: "/claude", tag: `claude-${ask.id}` };

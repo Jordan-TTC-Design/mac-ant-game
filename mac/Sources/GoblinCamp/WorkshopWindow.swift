@@ -92,7 +92,8 @@ final class WorkshopWindow: NSObject {
 
     /// One recipe: name and effect, a line about it, what it costs (green = have enough), and the button. Returns its height.
     private func addRow(for gear: Gear, to holder: NSView, y: CGFloat, margin: CGFloat, inner: CGFloat) -> CGFloat {
-        let affordable = colony.canAfford(gear)
+        let unopened = Gears.unopened.contains(gear.id)
+        let affordable = !unopened && colony.canAfford(gear)
         let textWidth = inner - 110
         func field(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor, at top: CGFloat) -> NSTextField {
             let f = NSTextField(wrappingLabelWithString: text)
@@ -122,7 +123,8 @@ final class WorkshopWindow: NSObject {
         holder.addSubview(costLabel)
         top += 16
 
-        let button = ClosureButton(title: affordable ? "製作" : "材料不足") { [weak self] in self?.make(gear) }
+        let button = ClosureButton(title: unopened ? "未開放" : affordable ? "製作" : "材料不足") { [weak self] in self?.make(gear) }
+        if unopened { button.toolTip = "材料只在大世界還沒開放的地方（或世界魔王）才有" }
         button.isEnabled = affordable
         button.bezelStyle = .rounded
         button.frame = NSRect(x: margin + inner - 96, y: y + (top - y) / 2 - 14, width: 96, height: 28)

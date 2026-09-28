@@ -39,6 +39,22 @@ const lastRaid = computed(() => camp.state.saved?.raids[0] ?? null);
 const friends = computed(() => live.state.friends);
 const unread = computed(() => friends.value?.friends.reduce((n, f) => n + f.unread, 0) ?? 0);
 const waiting = computed(() => live.state.claude?.waiting ?? []);
+const answering = ref(false);
+const answerProblem = ref("");
+async function answer(action: "allow" | "deny") {
+  const q = waiting.value[0];
+  if (!q) return;
+  answering.value = true;
+  answerProblem.value = "";
+  try {
+    await live.answerClaude(q.id, action);
+  } catch (e) {
+    answerProblem.value = e instanceof Error ? e.message : String(e);
+    await live.loadClaude();
+  } finally {
+    answering.value = false;
+  }
+}
 const hello = computed(() => {
   const h = new Date(now.value).getHours();
   return h < 5 ? "夜深了" : h < 11 ? "早安" : h < 14 ? "午安" : h < 18 ? "下午好" : "晚安";
@@ -56,15 +72,23 @@ const hello = computed(() => {
       <NuxtLink to="/settings" class="icon-btn">設定</NuxtLink>
     </header>
 
-    <!-- Claude waiting for an answer comes first -->
-    <NuxtLink v-if="waiting.length" to="/claude" class="card claude-wait">
-      <span class="icon">🤖</span>
-      <span class="grow">
-        <b>Claude 在等你（{{ waiting.length }}）</b>
-        <small>{{ waiting[0]!.project }}：{{ waiting[0]!.text || (waiting[0]!.kind === "permission" ? "要你允許" : "停下來了") }}</small>
-      </span>
-      <span class="go">回答 ›</span>
-    </NuxtLink>
+    <!-- Claude waiting for an answer comes first: a yes or no right here for a permission -->
+    <div v-if="waiting.length" class="card claude-wait">
+      <NuxtLink to="/claude" class="wait-head">
+        <span class="icon">🤖</span>
+        <span class="grow">
+          <b>Claude 在等你（{{ waiting.length }}）</b>
+          <small>{{ waiting[0]!.project }}：{{ waiting[0]!.text || (waiting[0]!.kind === "permission" ? "要你允許" : "停下來了") }}</small>
+        </span>
+        <span class="go">›</span>
+      </NuxtLink>
+      <div v-if="waiting[0]!.kind === 'permission'" class="wait-buttons">
+        <button class="btn primary" :disabled="answering" @click="answer('allow')">允許這一次</button>
+        <button class="btn danger" :disabled="answering" @click="answer('deny')">拒絕</button>
+      </div>
+      <NuxtLink v-else to="/claude" class="btn wait-reply">回它一句 ›</NuxtLink>
+      <small v-if="answerProblem" class="accent">{{ answerProblem }}</small>
+    </div>
 
     <div class="grid">
       <NuxtLink to="/notes" class="card">
@@ -128,9 +152,13 @@ const hello = computed(() => {
 .card .accent { color: #c0392b; font-weight: 700; }
 .card.running { background: #fde7df; }
 .big { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
-.claude-wait { display: flex; align-items: center; gap: 10px; min-height: 0; margin-bottom: 10px; background: #ffe9b8; border-color: #b36b00; }
+.claude-wait { min-height: 0; margin-bottom: 10px; background: #ffe9b8; border-color: #b36b00; gap: 8px; }
+.wait-head { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
 .claude-wait .grow { flex: 1; min-width: 0; display: grid; }
-.claude-wait small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.claude-wait .grow small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wait-buttons { display: flex; gap: 8px; }
+.wait-buttons .btn { flex: 1; }
+.wait-reply { text-decoration: none; }
 .go { font-weight: 800; color: #8a4b00; }
 .wide-link { display: block; margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; text-decoration: none; font-weight: 700; text-align: center; }
 </style>

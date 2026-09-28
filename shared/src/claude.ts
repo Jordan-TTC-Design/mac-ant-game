@@ -55,4 +55,6 @@ export interface ClaudePush {
   body: string;
   url: string;
   tag: string;
+  /** A question the notification's own buttons can answer (允許這一次 / 拒絕), where the phone shows them. */
+  ask?: { id: string; kind: "permission" | "reply" };
 }

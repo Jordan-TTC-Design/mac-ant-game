@@ -271,13 +271,15 @@ export function simulateBattle(attackers: Fighter[], defenders: Fighter[], optio
 /**
  * How strong a group is, as one number (for the leaderboard and for "is this lair too much for us?"): the square root of
  * all its hitting times all its hit points, since a group's blows and its staying power grow together (twice as many is
- * twice as strong; one alone is √(attack × hp)). Shooters count a little more (they are hit last).
+ * twice as strong; one alone is √(attack × hp)). Shooters count a little more (they are hit last), the quick ones too
+ * (+30% of how much quicker than 1 they are), and a shield's share of blows turned aside as the hit points it saves.
  */
 export function combatPower(fighters: Fighter[]): number {
   if (fighters.length === 0) return 0;
   const lead = 1 + Math.min(LEAD_CAP, fighters.reduce((sum, f) => sum + f.lead, 0));
-  const hitting = fighters.reduce((total, f) => total + (f.attack * lead + f.heal) * (f.range > 0 ? 1.1 : 1), 0);
-  const lasting = fighters.reduce((total, f) => total + f.hp * (1 + f.guard), 0);
+  // (quicker ones strike first and more often before they fall; a share of blows turned aside makes hit points last longer)
+  const hitting = fighters.reduce((total, f) => total + (f.attack * lead + f.heal) * (f.range > 0 ? 1.1 : 1) * (1 + 0.3 * (f.speed - 1)), 0);
+  const lasting = fighters.reduce((total, f) => total + f.hp / (1 - Math.min(0.6, f.guard)), 0);
   return Math.round(Math.sqrt(hitting * lasting));
 }
 

@@ -27,6 +27,8 @@ interface ReminderPush {
 /** News with a page (tapping opens `url`): the big world, a message or friend ask, a pomodoro part, a question from Claude. */
 interface WorldPush {
   type: "world" | "social" | "claude";
+  /** Claude's question: the notification gets 允許這一次 / 拒絕 (where the phone shows buttons on notifications). */
+  ask?: { id: string; kind: string };
   title: string;
   body: string;
   url: string;
@@ -49,7 +51,10 @@ self.addEventListener("push", (event) => {
         tag: world.tag,
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
-        data: { url: world.url },
+        data: { url: world.url, ask: world.ask },
+        ...(world.ask?.kind === "permission"
+          ? { actions: [{ action: "allow", title: "允許這一次" }, { action: "deny", title: "拒絕" }], requireInteraction: true }
+          : {}),
       }),
     );
     return;
@@ -69,7 +74,28 @@ self.addEventListener("push", (event) => {
 // tapping the notification opens that note (in the app if it is open already)
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const data = event.notification.data as { noteId?: string; url?: string } | undefined;
+  const data = event.notification.data as { noteId?: string; url?: string; ask?: { id: string } } | undefined;
+  // a button on Claude's question: answer it right here (the session cookie goes along), no need to open the app
+  if (data?.ask && (event.action === "allow" || event.action === "deny")) {
+    const action = event.action;
+    event.waitUntil(
+      fetch(`/api/claude/${encodeURIComponent(data.ask.id)}/answer`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      })
+        .then((res) =>
+          self.registration.showNotification(res.ok ? (action === "allow" ? "已允許" : "已拒絕") : "沒送到", {
+            body: res.ok ? "已經告訴電腦上的 Claude 了。" : "這個問題可能已經回答過、或電腦已經不等了。",
+            tag: `claude-${data.ask!.id}`,
+            icon: "/icons/icon-192.png",
+          }),
+        )
+        .catch(() => undefined),
+    );
+    return;
+  }
   const url = data?.url ?? (data?.noteId ? `/note/${data.noteId}` : "/");
   event.waitUntil(
     (async () => {

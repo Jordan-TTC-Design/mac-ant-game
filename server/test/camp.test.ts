@@ -108,9 +108,11 @@ describe("a new camp", () => {
     await t.call("POST", "/camp/start", { race: "elf" }, elf);
     const undead = await account("b@example.com");
     await t.call("POST", "/camp/start", { race: "undead" }, undead);
+    const [elfFrom, undeadFrom] = [(await view(elf)).nextId, (await view(undead)).nextId];
     t.advance(2 * HOUR);
-    expect((await view(elf)).residents).toHaveLength(2 + 12);
-    expect((await view(undead)).residents).toHaveLength(2 + 16);
+    // births counted by the ids given out (a raid may have taken someone meanwhile)
+    expect((await view(elf)).nextId - elfFrom).toBe(12);
+    expect((await view(undead)).nextId - undeadFrom).toBe(16);
   });
 
   it("keeps each account's camp to itself", async () => {
@@ -288,12 +290,12 @@ describe("commands", () => {
     const me = await account();
     await t.call("POST", "/camp/migrate", {
       race: "goblin",
-      save: { goblins: [{ id: 1, breed: "common", age: 100, seed: "1", gear: { weapon: { id: "long_sword", left: 30 } } }], materials: { scrap_iron: 2, rat_pelt: 1, scrap_wood: 1 } },
+      save: { goblins: [{ id: 1, breed: "common", age: 100, seed: "1", gear: { weapon: { id: "long_sword", left: 30 } } }], materials: { scrap_iron: 2, rat_pelt: 1, scrap_wood: 1, crude_blade: 1 } },
     }, me);
     const res = await cmd(me, { kind: "repair", resident: 1, slot: "weapon" });
     expect(res.status).toBe(200);
     expect(res.body.camp.residents[0].gear.weapon).toEqual({ id: "long_sword", left: 200 });
-    expect(res.body.camp.materials).toEqual({}); // 6 iron → 2, 2 pelts → 1, 1 wood → 1
+    expect(res.body.camp.materials).toEqual({}); // 6 iron → 2, 2 pelts → 1, 1 wood → 1, 1 crude blade → 1
     expect((await cmd(me, { kind: "repair", resident: 1, slot: "shield" })).body.error).toBe("not_found");
   });
 

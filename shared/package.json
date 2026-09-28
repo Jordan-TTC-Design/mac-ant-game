@@ -10,7 +10,9 @@
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p .",
-    "fixtures": "node --experimental-strip-types scripts/write-camp-fixtures.ts"
+    "fixtures": "node --experimental-strip-types scripts/write-camp-fixtures.ts",
+    "balance:gear": "../server/node_modules/.bin/tsx scripts/balance/gear.ts",
+    "balance:lairs": "../server/node_modules/.bin/tsx scripts/balance/lairs.ts"
   },
   "dependencies": {
     "zod": "^4.6.5"
