@@ -595,7 +595,13 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.10.2）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.10.3）。
+
+### v0.10.3
+
+- **裝備分級**：強的武器與鐵甲要用大世界新手區打到的材料（已經做好的不受影響）；新手區的裝備比營地裝好；新增 7 件用新手區材料做的裝備（獠牙戰斧、蜂針細劍、銅錢甲、獨角仙盔、松鼠尾帽、珍珠貝盾、兔腳靴）。工坊裡還做不出來的裝備標「未開放」。
+- 戰力數字算進速度和格擋（鞋子、盾看得出用處）。
+- 手機首頁與通知可以直接允許或拒絕 Claude 的請求。
 
 ### v0.10.2
 
