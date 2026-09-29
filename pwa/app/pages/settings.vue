@@ -3,6 +3,7 @@ import type { SessionInfo } from "@goblincamp/shared";
 import { api } from "~/utils/api";
 import { disablePush, enablePush, isInstalled, pushState, type PushState } from "~/utils/push";
 import { noteTime } from "~/utils/time";
+import { measureViewport, type ViewportSizes } from "~/utils/viewport";
 
 const ok = await useSignedIn();
 const { user, logout } = useAccount();
@@ -22,6 +23,10 @@ const pushText: Record<PushState, string> = {
   "needs-install": "iPhone 要先把這個網頁「加入主畫面」，從主畫面打開才能收到通知（iOS 16.4 以上）。",
   "no-key": "伺服器還沒設定推播，請跟管理的人說。",
 };
+
+// the screen's sizes as the phone reports them (for when something sits in the wrong place: a screenshot of this helps)
+const sizes = ref<ViewportSizes | null>(null);
+const measure = () => (sizes.value = measureViewport());
 
 const showAllSessions = ref(false);
 /** Every other device of this account is signed out (this phone stays). */
@@ -124,6 +129,13 @@ async function signOut() {
     </section>
 
     <button class="btn danger wide" @click="signOut">登出這支手機</button>
+
+    <details class="sizes" @toggle="measure">
+      <summary>畫面尺寸（除錯用）</summary>
+      <p v-if="sizes" class="muted small">
+        主畫面 App：{{ sizes.standalone ? "是" : "否" }}・螢幕 {{ sizes.screen }}・網頁 {{ sizes.inner }}／{{ sizes.client }}・可見 {{ sizes.visual ?? "—" }}・安全區 上 {{ sizes.safeTop }} 下 {{ sizes.safeBottom }}・補 {{ sizes.gap }}
+      </p>
+    </details>
   </main>
 </template>
 
@@ -141,4 +153,6 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .name { font-weight: 600; }
 code { background: #f0efe8; padding: 2px 6px; border-radius: 6px; }
 .wide { width: 100%; }
+.sizes { margin-top: 18px; color: rgba(255, 255, 255, 0.7); font-size: 13px; }
+.sizes .muted { color: rgba(255, 255, 255, 0.7); }
 </style>

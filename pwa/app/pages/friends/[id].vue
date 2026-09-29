@@ -116,7 +116,7 @@ const showTime = (k: number) => {
 .bubble.mine { align-self: flex-end; background: var(--paper-yellow); border-radius: 14px 14px 4px 14px; }
 .bubble small { display: block; text-align: right; font-size: 10px; color: #777; margin-top: 2px; }
 .write {
-  position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 62px); z-index: 15; padding: 8px 12px;
+  position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 62px - var(--vp-gap, 0px)); z-index: 15; padding: 8px 12px;
   background: rgba(24, 38, 22, 0.96);
 }
 .line { display: flex; gap: 8px; max-width: 560px; margin: 0 auto; }

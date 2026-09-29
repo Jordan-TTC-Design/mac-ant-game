@@ -215,7 +215,7 @@ h2 small { font-weight: 600; color: #444; margin-left: 6px; }
 .swatch { width: 40px; height: 40px; border-radius: 8px; border: 2px solid rgba(0, 0, 0, 0.25); cursor: pointer; }
 .swatch.on { border: 3px solid #1f1f1f; }
 .actions {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
+  position: fixed; left: 0; right: 0; bottom: calc(0px - var(--vp-gap, 0px)); z-index: 10; padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
   background: linear-gradient(rgba(34, 55, 31, 0), var(--bg-deep) 40%); display: flex; justify-content: center;
 }
 .big { width: 100%; max-width: 528px; min-height: 52px; font-size: 17px; border: 3px solid #1f1f1f; box-shadow: 3px 3px 0 #1f1f1f; }
