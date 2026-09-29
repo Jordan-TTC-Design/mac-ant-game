@@ -146,6 +146,7 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
       <nav class="world-links">
         <NuxtLink to="/world" class="icon-btn" aria-label="大世界" title="大世界">🗺️</NuxtLink>
         <NuxtLink to="/territory" class="icon-btn" aria-label="領地列表" title="領地列表">🏰</NuxtLink>
+        <NuxtLink to="/quests" class="icon-btn" aria-label="任務" title="任務">📜</NuxtLink>
       </nav>
     </header>
 

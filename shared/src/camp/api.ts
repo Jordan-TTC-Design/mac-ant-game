@@ -79,6 +79,8 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("site-upgrade"), site: z.number().int().min(1) }),
   /** Takes a site down (not the farm): the plot is free at once, half of what it cost comes back. */
   z.object({ requestId, kind: z.literal("site-demolish"), site: z.number().int().min(1) }),
+  /** Takes a finished 任務's reward (camp/quests.ts). */
+  z.object({ requestId, kind: z.literal("quest-claim"), quest: z.string().max(40) }),
   /** Raises the farm a level (the same as site-upgrade on the farm). */
   z.object({ requestId, kind: z.literal("farm-upgrade") }),
 ]);
@@ -194,3 +196,18 @@ export interface RaidReport {
 
 /** `POST /api/camp/sanctuary`: 聖光模式 on or off. */
 export const sanctuaryInput = z.object({ on: z.boolean() });
+
+/** One 任務 as the phone shows it (`GET /api/camp/quests`). */
+export interface QuestView {
+  id: string;
+  chapter: string;
+  title: string;
+  text: string;
+  have: number;
+  need: number;
+  done: boolean;
+  claimed: boolean;
+  reward: { materials?: Record<string, number>; gear?: string[]; residents?: number };
+  /** The 道具 whose recipe it opens. */
+  unlocks?: string;
+}

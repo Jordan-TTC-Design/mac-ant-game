@@ -130,6 +130,9 @@ export const GEAR: readonly GearRule[] = [
   g("minotaur_helm", "牛角盔", "head", 40, { minotaur_horn: 2, scrap_iron: 3 }, { health: 1.8, might: 0.4 }),
 ];
 
+/** The middle gear: made of what the 初期魔王 leave (a quest asks for one). */
+export const MIDDLE_GEAR: readonly string[] = ["dire_fang_blade", "echo_bow", "tusk_maul", "royal_gel_shield", "crown_helm", "dire_pelt_armor", "thick_hide_greaves", "bat_lord_boots", "toad_gloves", "commander_bracer"];
+
 const BY_ID = new Map(GEAR.map((x) => [x.id, x]));
 export function gearRule(id: string): GearRule | undefined {
   return BY_ID.get(id);

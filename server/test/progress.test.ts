@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { CampView } from "@goblincamp/shared/camp";
+import { QUESTS, type CampView, type QuestView } from "@goblincamp/shared/camp";
 import { cellAt, type CellView, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
@@ -60,5 +60,60 @@ describe("道具", () => {
     const res = await t.call("POST", "/world/expeditions", { to: lair.cell, count: 5, supplies: { item_tonic: 1 } }, me);
     expect(res.status).toBe(201);
     expect((await camp(me)).materials.item_tonic).toBe(2);
+  });
+});
+
+describe("任務", () => {
+  const quests = async (auth: Record<string, string>) => (await t.call("GET", "/camp/quests", undefined, auth)).body.quests as QuestView[];
+
+  it("shows each chain's first, and the next once the one before was claimed", async () => {
+    const me = await campWith({}, 6);
+    const list = await quests(me);
+    const ids = list.map((q) => q.id);
+    expect(ids).toContain("site_1");
+    expect(ids).toContain("pop_60");
+    expect(ids).not.toContain("lumber_2");
+    expect(ids).not.toContain("pop_120");
+    expect(QUESTS).toHaveLength(30);
+    expect(list.find((q) => q.id === "pop_60")).toEqual(expect.objectContaining({ have: 6, need: 60, done: false, claimed: false }));
+  });
+
+  it("pays a finished one once: new residents, and the next of its chain shows", async () => {
+    const me = await campWith({}, 60);
+    expect((await cmd(me, { kind: "quest-claim", quest: "site_1" })).body.error).toBe("not_allowed"); // (not done)
+    const before = (await camp(me)).residents.length;
+    const res = await cmd(me, { kind: "quest-claim", quest: "pop_60" });
+    expect(res.status).toBe(200);
+    expect((res.body.camp as CampView).residents.length).toBe(before + 3);
+    expect((res.body.camp as CampView).questsDone).toEqual(["pop_60"]);
+    expect((await cmd(me, { kind: "quest-claim", quest: "pop_60" })).body.error).toBe("not_allowed"); // (once)
+    const list = await quests(me);
+    expect(list.find((q) => q.id === "pop_60")!.claimed).toBe(true);
+    expect(list.map((q) => q.id)).toContain("pop_120");
+    expect((await cmd(me, { kind: "quest-claim", quest: "pop_120" })).body.error).toBe("not_allowed");
+  });
+
+  it("gives gear into the store, handed out as usual", async () => {
+    const me = await campWith({ rat_fang: 4, rat_tail: 1 }, 6);
+    await cmd(me, { kind: "craft", gear: "bone_knife" });
+    const res = await cmd(me, { kind: "quest-claim", quest: "armed_1" });
+    expect(res.status).toBe(200);
+    const c = res.body.camp as CampView;
+    const clubs = c.residents.filter((r) => r.gear?.weapon?.id === "wood_club").length + c.armory.filter((g) => g.id === "wood_club").length;
+    expect(clubs).toBe(2);
+  });
+
+  it("opens a 道具's recipe", async () => {
+    const me = await campWith({ sticky_tongue: 2, slime_goo: 2 }, 6);
+    expect((await cmd(me, { kind: "craft", gear: "item_sticky" })).status).toBe(409);
+    await database.sql`update camps set kills = '{"giant_rat": 80, "slime": 30}'::jsonb`;
+    expect((await quests(me)).find((q) => q.id === "raids_20")!.done).toBe(true);
+    expect((await cmd(me, { kind: "quest-claim", quest: "raids_20" })).status).toBe(200);
+    const next = (await quests(me)).find((q) => q.id === "raids_100")!;
+    expect(next).toEqual(expect.objectContaining({ done: true, unlocks: "item_sticky" }));
+    expect((await cmd(me, { kind: "quest-claim", quest: "raids_100" })).status).toBe(200);
+    const made = await cmd(me, { kind: "craft", gear: "item_sticky" });
+    expect(made.status).toBe(200);
+    expect((made.body.camp as CampView).materials.item_sticky).toBe(1);
   });
 });

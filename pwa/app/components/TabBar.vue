@@ -14,7 +14,7 @@ const TABS = [
 const on = (to: string) =>
   to === "/"
     ? route.path === "/"
-    : route.path === to || route.path.startsWith(`${to}/`) || (to === "/camp" && (["/workshop", "/roster"].includes(route.path) || route.path.startsWith("/territory")));
+    : route.path === to || route.path.startsWith(`${to}/`) || (to === "/camp" && (["/workshop", "/roster"].includes(route.path) || route.path.startsWith("/territory") || route.path === "/quests"));
 </script>
 
 <template>

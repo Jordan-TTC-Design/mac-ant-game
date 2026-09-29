@@ -7,6 +7,7 @@ import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
 import { runCommand } from "./commands.ts";
+import { questList } from "./quests.ts";
 import { advanceCamp, campView, eventsSince, lockCamp, migrateCamp, recentRaids, startCamp } from "./service.ts";
 
 /** 營地：the account's one camp, kept by the server (server/CAMP.md). */
@@ -28,6 +29,19 @@ export function campRoutes(deps: AppDeps) {
     if (!result) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
     if (result.changed) deps.hub.notify(userId, { type: "camp.changed", version: result.view.version });
     return c.json(result.view);
+  });
+
+  /** 任務: where each stands, and which rewards were taken (camp/quests.ts). */
+  app.get("/quests", async (c) => {
+    const userId = c.get("session").user.id;
+    const quests = await db.transaction(async (tx) => {
+      const camp = await lockCamp(tx, userId);
+      if (!camp) return null;
+      await advanceWorld(tx, camp, now());
+      return questList(tx, camp);
+    });
+    if (!quests) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
+    return c.json({ quests });
   });
 
   app.get("/events", async (c) => {

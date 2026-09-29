@@ -19,6 +19,9 @@ import {
   PRINCESS_CHILD_HOURS,
   placeableFoods,
   raceRules,
+  questRule,
+  questShown,
+  residentFor,
   redistribute,
   repairCost,
   spend,
@@ -30,6 +33,7 @@ import { itemRule, materialName } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps } from "../db/schema.ts";
 import { addEvent, campRaceLevel, HALF_BREED_LIFESPAN, refundFor } from "./service.ts";
+import { questMetrics } from "./quests.ts";
 
 type CampRow = typeof camps.$inferSelect;
 const MINUTE = 60_000;
@@ -259,6 +263,34 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       for (const [id, n] of Object.entries(back)) materials[id] = (materials[id] ?? 0) + n;
       changes.sites = camp.sites.filter((x) => x.id !== target.id);
       message = `拆掉了${siteName(camp.race, target.kind)}` + (Object.keys(back).length ? `，拿回 ${cost(back)}。` : "。");
+      break;
+    }
+    case "quest-claim": {
+      const quest = questRule(command.quest);
+      if (!quest) return { ok: false, code: "not_found", message: "沒有這個任務。" };
+      const claimed = camp.quests ?? {};
+      if (quest.id in claimed) return { ok: false, code: "not_allowed", message: "這個任務的獎勵已經領過了。" };
+      if (!questShown(quest, claimed)) return { ok: false, code: "not_allowed", message: "這個任務還沒開放（先完成前一個）。" };
+      const [have, need] = quest.goal(await questMetrics(tx, camp));
+      if (have < need) return { ok: false, code: "not_allowed", message: `還沒完成「${quest.title}」（${have}/${need}）。` };
+      const r = quest.reward;
+      for (const [id, k] of Object.entries(r.materials ?? {})) materials[id] = (materials[id] ?? 0) + k;
+      if (r.gear?.length) {
+        for (const id of r.gear) store.push({ id, left: gearRule(id)!.durability });
+        redistribute(camp.race, await loadWearers(), store, camp.autoGear);
+      }
+      if (r.residents) {
+        // born at home now, as the race's births are (their own random numbers: "quest:<id>")
+        const rules = raceRules(camp.race);
+        const place = { race: camp.race, key: `quest:${quest.id}`, startedAt: camp.startedAt.getTime(), birthMinutes: rules.homeBirthMinutes, cap: rules.homeCap };
+        const born = Array.from({ length: r.residents }, (_, k) => residentFor(place, camp.seed, k, camp.nextId + k, now.getTime()));
+        await tx.insert(campResidents).values(
+          born.map((b) => ({ userId: camp.userId, id: b.id, breed: b.breed, seed: b.seed, bornAt: new Date(b.bornAt), diesAt: b.diesAt === null ? null : new Date(b.diesAt) })),
+        );
+        changes.nextId = camp.nextId + born.length;
+      }
+      changes.quests = { ...claimed, [quest.id]: now.toISOString() };
+      message = `完成「${quest.title}」，領到獎勵了！`;
       break;
     }
     case "story": {
