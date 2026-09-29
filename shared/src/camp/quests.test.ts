@@ -4,9 +4,9 @@ import { gearRule } from "./gear.ts";
 import { QUESTS, questRule, questShown } from "./quests.ts";
 
 describe("任務", () => {
-  it("are thirty early ones, each with a reward that exists and a chain that holds together", () => {
-    expect(QUESTS).toHaveLength(30);
-    expect(new Set(QUESTS.map((q) => q.id)).size).toBe(30);
+  it("are eighty (thirty early ones, fifty harder), each with a reward that exists and a chain that holds together", () => {
+    expect(QUESTS).toHaveLength(80);
+    expect(new Set(QUESTS.map((q) => q.id)).size).toBe(80);
     for (const q of QUESTS) {
       const r = q.reward;
       expect(Object.keys(r.materials ?? {}).length + (r.gear?.length ?? 0) + (r.residents ?? 0), q.id).toBeGreaterThan(0);
