@@ -229,6 +229,15 @@ export function fedYield(got: Record<string, number>, fed: number): Record<strin
   return Object.fromEntries(Object.entries(got).map(([id, n]) => [id, Math.floor(n * k)]).filter(([, n]) => (n as number) > 0));
 }
 
+// --- friends guarding ---------------------------------------------------------------------------------------------
+
+/**
+ * Friends may send residents to guard each other's cells (server/WORLD.md §20): they live there as guests (place
+ * `guard:<cell>`), fight beside the holder's when a lair comes back or another camp attacks, and walk home when either
+ * side says so or the cell is lost. At most GUESTS_MAX guests on a cell, from all friends together.
+ */
+export const GUESTS_MAX = 20;
+
 // --- what a cell gets ---------------------------------------------------------------------------------------------
 
 /** What a held cell gets from what is on it. */

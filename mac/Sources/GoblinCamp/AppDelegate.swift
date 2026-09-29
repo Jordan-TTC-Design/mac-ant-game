@@ -2004,6 +2004,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 case "settled": what = (e.killed ?? 0) > 0 ? "打贏了，佔領了\(e.against ?? "那一格")" : "搬進領地了"
                 case "held" where e.damage != nil: what = "對\(e.against ?? "世界魔王")造成 \(e.damage!) 點傷害（牠的傷會留著，大家一起打）"
                 case "held": what = "沒打下\(e.against ?? "目標")"
+                case "guarding": what = "到了\(e.against ?? "好友的領地")，留下來幫忙守"
                 default: what = "回來了"
                 }
                 say("出征的隊伍\(what)" + ((e.fallen ?? 0) > 0 ? "，倒下 \(e.fallen!) 隻" : "") + (loot.isEmpty ? "。" : "，撿到 \(loot)。"))

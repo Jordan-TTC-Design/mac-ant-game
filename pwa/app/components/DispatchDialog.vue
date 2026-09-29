@@ -14,6 +14,7 @@ import {
   RATIONS_PER_EXTRA,
   residentFighter,
   travelMinutes,
+  GUESTS_MAX,
   WORLD_SEED,
   type CellView,
   type Fighter,
@@ -26,7 +27,7 @@ import { api } from "~/utils/api";
 const props = defineProps<{
   target: CellView;
   /** attack: a lair, a great monster or another camp's cell; settle: move onto a free cell; move: more to a cell of ours. */
-  kind: "attack" | "settle" | "move";
+  kind: "attack" | "settle" | "move" | "guard";
   me: WorldMe;
   race: string;
 }>();
@@ -51,7 +52,7 @@ const place = computed(() => (from.value === "home" ? "home" : `cell:${from.valu
 const keep = computed(() => (from.value === "home" ? 2 : min.value));
 
 // food taken along (a fighting party only): rations let more go, boost foods make everyone stronger
-const capped = computed(() => props.kind !== "move");
+const capped = computed(() => props.kind !== "move" && props.kind !== "guard");
 const supplies = reactive<Record<string, number>>({});
 const store = computed(() => props.me.food ?? {});
 const rationsHeld = computed(() => Object.keys(RATIONS).reduce((n, id) => n + (store.value[id] ?? 0), 0));
@@ -86,12 +87,19 @@ const available = computed(() =>
     .sort((a, b) => b.power - a.power || a.r.id - b.r.id),
 );
 const most = computed(() =>
-  Math.max(0, Math.min(60, available.value.length - keep.value, capped.value ? cap.value + extra.value : props.me.rules.cellCapacity)),
+  Math.max(
+    0,
+    Math.min(
+      60,
+      available.value.length - keep.value,
+      capped.value ? cap.value + extra.value : props.kind === "guard" ? GUESTS_MAX - (props.target.guests ?? 0) : props.me.rules.cellCapacity,
+    ),
+  ),
 );
 
 // the party: picked one by one (ticks); starts as the best 10 for the job (the strongest to fight, plain ones to settle)
 const picked = ref(new Set<number>());
-const order = computed(() => (props.kind === "attack" ? available.value : [...available.value].reverse()));
+const order = computed(() => (props.kind === "attack" || props.kind === "guard" ? available.value : [...available.value].reverse()));
 function pickTop(n: number) {
   picked.value = new Set(order.value.slice(0, Math.min(n, most.value)).map((a) => a.r.id));
 }
@@ -147,9 +155,9 @@ const minutes = computed(() => {
   const slowest = Math.min(...party.value.map((a) => fighter(a.r).speed));
   return Math.max(1, Math.round(travelMinutes(start, props.target.cell, slowest) * (fromCell.value?.travel ?? 1)));
 });
-const settle = ref(props.kind !== "move");
-const title = computed(() => ({ attack: props.target.boss ? "出征打世界魔王" : "出征", settle: "派人去佔領", move: "派人去駐守" })[props.kind]);
-const go = computed(() => ({ attack: "出發攻擊", settle: "出發佔領", move: "出發" })[props.kind]);
+const settle = ref(props.kind !== "move" && props.kind !== "guard");
+const title = computed(() => ({ attack: props.target.boss ? "出征打世界魔王" : "出征", settle: "派人去佔領", move: "派人去駐守", guard: `派兵幫${props.target.owner?.name ?? "好友"}守` })[props.kind]);
+const go = computed(() => ({ attack: "出發攻擊", settle: "出發佔領", move: "出發", guard: "出發幫守" })[props.kind]);
 const ok = computed(() => party.value.length > 0 && (props.kind !== "settle" || party.value.length >= min.value));
 
 const breedName = (b: string) => names.value.races[props.race]?.breeds[b] ?? b;
@@ -225,7 +233,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
             <small class="muted">最多 {{ most }}（{{ from === "home" ? "營地至少留 2 隻" : `那一格至少留 ${min} 隻` }}）</small>
           </div>
           <div class="quick">
-            <button class="chip" @click="pickTop(capped ? most : 10)">{{ kind === "attack" ? `最強 ${capped ? most : 10} 隻` : `一般的 ${capped ? most : 10} 隻` }}</button>
+            <button class="chip" @click="pickTop(capped ? most : 10)">{{ kind === "attack" || kind === "guard" ? `最強 ${capped ? most : 10} 隻` : `一般的 ${capped ? most : 10} 隻` }}</button>
             <button class="chip" @click="pickTop(most)">全部</button>
             <button class="chip" @click="picked = new Set()">清空</button>
           </div>
@@ -240,6 +248,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
 
           <label v-if="kind === 'attack' && !target.boss" class="check"><input v-model="settle" type="checkbox" /> 打贏就留下來佔領（活下來的至少 {{ min }} 隻）</label>
           <p v-if="kind === 'settle' && party.length < min" class="warn">至少要 {{ min }} 隻才守得住一格。</p>
+          <p v-if="kind === 'guard'" class="muted small">牠們會住在那裡，巢穴回來搶、有人來打時一起守；戰死的裝備會回你的倉庫。你或對方隨時可以叫牠們回來。一格最多 {{ GUESTS_MAX }} 隻好友的居民（現在有 {{ target.guests ?? 0 }} 隻）。</p>
         </template>
       </div>
 

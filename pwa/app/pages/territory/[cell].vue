@@ -110,7 +110,7 @@ function happening(h: CellHappening): string {
   switch (h.kind) {
     case "yield": return `${h.hungry ? "乾糧不夠，產出減半：" : "產出了 "}${lootText(h.loot) || "（沒有）"}`;
     case "lairBack": {
-      const help = h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : "";
+      const help = `${h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : ""}${h.guests ? `，好友 ${h.guests} 隻一起守` : ""}`;
       return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}${help}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}${help}）`;
     }
     case "attacked": return h.held ? `${h.by}來打，守住了（倒下 ${h.fallen}）` : `${h.by}來打，被搶走了（倒下 ${h.fallen}）`;
@@ -120,6 +120,7 @@ function happening(h: CellHappening): string {
     case "recalled": return `${h.residents} 隻走回營地`;
     case "built": return h.residents === 1 ? `開始蓋${h.name}` : `${h.name}開始升到 ${h.residents} 級`;
     case "demolished": return `拆掉了${h.name}`;
+    case "guests": return `${h.by}派了 ${h.residents} 隻來幫忙守`;
   }
 }
 </script>
@@ -176,6 +177,13 @@ function happening(h: CellHappening): string {
           </p>
         </template>
         <p class="muted small">第 {{ d.upkeep.freeCells + 1 }} 格起，每格每 3 小時吃 1 份乾糧（麵包、魚乾、莓果乾、肉乾都可以）；沒得吃不會死，只是那次產出減半。</p>
+      </section>
+
+      <section v-if="d.guests.length" class="panel">
+        <h2>好友幫守</h2>
+        <p v-for="g in d.guests" :key="g.owner">🤝 {{ g.name }} 派了 <b>{{ g.count }}</b> 隻</p>
+        <p class="muted small">有人來打或巢穴回來搶時，牠們會一起守。</p>
+        <button class="btn" :disabled="busy" @click="act('unguard', {})">請牠們回去</button>
       </section>
 
       <section class="panel">

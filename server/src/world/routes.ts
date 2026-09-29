@@ -7,6 +7,7 @@ import {
   buildNest,
   buildOnCell,
   demolishOnCell,
+  unguard,
   buildTown,
   cellDetail,
   cellsAround,
@@ -119,6 +120,16 @@ export function worldRoutes(deps: AppDeps) {
   cellAction("nest", (userId, cell) => (tx) => buildNest(tx, userId, cell, now()));
   cellAction("town", (userId, cell) => (tx) => buildTown(tx, userId, cell, now()));
   cellAction("build", (userId, cell, body) => (tx) => buildOnCell(tx, userId, cell, (body as { kind: string }).kind, now()));
+  /** Guests walk home: your own from a friend's cell; or, for its holder, every friend's from it. */
+  app.post("/cells/:cell/unguard", async (c) => {
+    const cell = c.req.param("cell");
+    if (!isCellId(cell)) return apiError(c, 404, "not_found", "沒有這一格。");
+    const userId = c.get("session").user.id;
+    const out = await run(c, () => db.transaction((tx) => unguard(tx, userId, cell, now())));
+    if (out instanceof Response) return out;
+    for (const u of out) await notifyCamp(deps, u);
+    return c.json(await db.transaction((tx) => worldMe(tx, userId, now())));
+  });
   cellAction("demolish", (userId, cell) => (tx) => demolishOnCell(tx, userId, cell, now()));
   cellAction("recall", (userId, cell, body) => (tx) => recall(tx, userId, cell, (body as { count?: number }).count, now()));
   /** The camp moves here (once every HOME_MOVE_DAYS). */

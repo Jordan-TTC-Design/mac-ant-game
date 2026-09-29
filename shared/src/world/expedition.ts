@@ -21,7 +21,8 @@ export interface Party {
 export type Target =
   /** `fighters`: the lair as it stands now (wounded from an earlier fight: woundedLairFighters); fresh if left out. */
   | { kind: "lair"; lair: Lair; fighters?: Fighter[] }
-  | { kind: "player"; cell: string; defender: Party };
+  /** `allies`: friends' residents guarding the cell (holdings.ts), fighting beside the holder's. */
+  | { kind: "player"; cell: string; defender: Party; allies?: Fighter[] };
 
 export interface ExpeditionOutcome {
   battle: BattleResult;
@@ -42,7 +43,9 @@ export function resolveExpedition(options: { worldSeed: number; expeditionId: st
   const { party, target } = options;
   const attackers = party.residents.map((r) => residentFighter(r, "attack", party.race, party.boosts));
   const defenders: Fighter[] =
-    target.kind === "lair" ? (target.fighters ?? lairFighters(target.lair)) : target.defender.residents.map((r) => residentFighter(r, "defend", target.defender.race, target.defender.boosts));
+    target.kind === "lair"
+      ? (target.fighters ?? lairFighters(target.lair))
+      : [...target.defender.residents.map((r) => residentFighter(r, "defend", target.defender.race, target.defender.boosts)), ...(target.allies ?? [])];
   const seed = seeded(options.worldSeed, options.expeditionId, "battle")() * 2 ** 32;
   const battle = simulateBattle(attackers, defenders, { seed: Math.floor(seed), night: options.night });
   const won = battle.winner === "attack";

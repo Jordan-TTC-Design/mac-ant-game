@@ -40,6 +40,8 @@ export const expeditionInput = z
     residents: residentIds.optional(),
     count: z.number().int().min(1).max(60).optional(),
     settle: z.boolean().default(false),
+    /** To a friend's cell: stay there as guests and help guard it (holdings.ts GUESTS_MAX). */
+    guard: z.boolean().default(false),
     /** Food taken along (supplies.ts): rations let more go, the rest make the party stronger. */
     supplies: z.record(z.string().max(40), z.number().int().min(0).max(60)).optional(),
   })
@@ -101,6 +103,8 @@ export interface CellView {
   town: boolean;
   /** A real place standing in it (holdings.ts). */
   landmark?: Landmark | null;
+  /** Friends' residents guarding it. */
+  guests?: number;
   /** What its holder built on it. */
   building?: { kind: string; level: number; busy: boolean } | null;
   lair: LairView | null;
@@ -114,7 +118,7 @@ export interface CellView {
 
 export interface ExpeditionSummary {
   id: string;
-  kind: "attack" | "move";
+  kind: "attack" | "move" | "guard";
   from: string;
   to: string;
   party: number;
@@ -124,8 +128,8 @@ export interface ExpeditionSummary {
   /** Filled in when it arrived. */
   outcome: null | {
     won: boolean;
-    /** cleared: a lair beaten; taken: a player's cell won; settled: moved in; held: the defenders held; back: nothing to do there. */
-    cell: "cleared" | "taken" | "settled" | "held" | "back";
+    /** cleared: a lair beaten; taken: a player's cell won; settled: moved in; held: the defenders held; guarding: staying on a friend's cell; back: nothing to do there. */
+    cell: "cleared" | "taken" | "settled" | "held" | "guarding" | "back";
     against: string;
     loot: Record<string, number>;
     xp: number;
@@ -183,6 +187,8 @@ export interface WorldMe {
   }[];
   /** At home, free to go (not on an expedition). */
   atHome: number;
+  /** Where this camp's residents guard friends' cells. */
+  guarding: { cell: string; holder: string; count: number }[];
   /** Holding many cells eats rations (holdings.ts): how many cells pay, how many rations every yield, how many are in the store. */
   upkeep: { paying: number; perYield: number; rations: number; freeCells: number };
   /** How many may go on one expedition now (by race and level), before rations. */
@@ -207,13 +213,15 @@ export interface WorldMe {
 export interface CellHappening {
   at: string;
   /** yield: the ground gave; lairBack: the lair came back for it; attacked: another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home. */
-  kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished";
+  kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests";
   loot?: Record<string, number>;
   held?: boolean;
   /** A yield eaten short: there were not rations enough to keep it. */
   hungry?: boolean;
   /** Came from the held cells next to it to help defend it. */
   helped?: number;
+  /** Friends guarding it who fought. */
+  guests?: number;
   fallen?: number;
   killed?: number;
   by?: string;
@@ -259,6 +267,8 @@ export interface CellDetail {
   /** Held cells next to it (they add to its yield, and send help when it is fought over), and how many are joined to it. */
   neighbours: number;
   region: number;
+  /** Friends' residents guarding it, by friend. */
+  guests: { owner: string; name: string; count: number }[];
   /** Whether it eats rations (beyond the free cells), and how the store stands against all that do. */
   upkeep: { pays: boolean; paying: number; rations: number; freeCells: number; perYield: number };
   history: CellHappening[];

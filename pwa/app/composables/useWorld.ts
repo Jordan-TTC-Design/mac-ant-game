@@ -79,12 +79,13 @@ export function useWorld() {
     /** The camp moves to another cell (once a week). */
     moveHome: (cell: string) => act(() => api("POST", `world/cells/${cell}/home`, {})),
     /** A party: named residents, or a count (the server picks the strongest). */
-    send: (to: string, party: number | number[], settle: boolean, from = "home", supplies: Record<string, number> = {}) =>
+    send: (to: string, party: number | number[], settle: boolean, from = "home", supplies: Record<string, number> = {}, guard = false) =>
       act(() =>
         api<ExpeditionSummary>("POST", "world/expeditions", {
           from,
           to,
           settle,
+          ...(guard ? { guard: true } : {}),
           ...(Array.isArray(party) ? { residents: party } : { count: party }),
           ...(Object.values(supplies).some((n) => n > 0) ? { supplies } : {}),
         }),
@@ -92,5 +93,7 @@ export function useWorld() {
     nest: (cell: string) => act(() => api("POST", `world/cells/${cell}/nest`)),
     town: (cell: string) => act(() => api("POST", `world/cells/${cell}/town`)),
     recall: (cell: string) => act(() => api("POST", `world/cells/${cell}/recall`, {})),
+    /** Guests walk home: your own from a friend's cell, or (the holder) every friend's from yours. */
+    unguard: (cell: string) => act(() => api("POST", `world/cells/${cell}/unguard`, {})),
   };
 }

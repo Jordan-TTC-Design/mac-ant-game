@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, landmarkRule, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { api } from "~/utils/api";
 
@@ -144,12 +144,16 @@ const recall = () => {
 };
 
 // the dispatch dialog
-const dispatch = ref<"attack" | "settle" | "move" | null>(null);
+const dispatch = ref<"attack" | "settle" | "move" | "guard" | null>(null);
 async function sent(party: number[], settle: boolean, from: string, supplies: Record<string, number>) {
   const to = selected.value!;
+  const guard = dispatch.value === "guard";
   dispatch.value = null;
-  await doIt(() => world.send(to, party, settle, from, supplies), `出發了！${party.length} 隻上路。`);
+  await doIt(() => world.send(to, party, settle, from, supplies, guard), `出發了！${party.length} 隻上路。`);
 }
+/** My residents guarding the cell picked (a friend's). */
+const myGuests = computed(() => s.me?.guarding.find((g) => g.cell === selected.value)?.count ?? 0);
+const unguard = () => doIt(() => world.unguard(selected.value!), "幫守的居民回家了。");
 
 /** My parties on the road, from where they set out (the camp's cell for "home") to where they are going. */
 const parties = computed(() =>
@@ -255,7 +259,7 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
       <section v-if="s.me.walking.length" class="panel">
         <h2>在路上</h2>
         <p v-for="w in s.me.walking" :key="w.id" class="line">
-          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ w.kind === "move" ? "（搬家）" : "" }}<br />
+          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ w.kind === "move" ? "（搬家）" : w.kind === "guard" ? "（幫守）" : "" }}<br />
           <small>{{ left(w.arriveAt) }}</small>
         </p>
       </section>
@@ -317,10 +321,11 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
       <template v-else-if="mine">
         <p v-if="isHome">營地就在這裡：在家的 <b>{{ cell.garrison }}</b> 隻都住這、守這，營地本身就會生居民{{ cell.town ? "・城鎮" : "" }}</p>
         <p v-else>住了 <b>{{ cell.garrison }}</b> 隻・{{ { none: "還沒有繁殖巢（不會自己生居民）", building: "繁殖巢蓋到一半", ready: "有繁殖巢，會自己生居民" }[cell.nest] }}{{ cell.town ? "・城鎮" : "" }}</p>
+        <p v-if="cell.guests" class="small">🤝 好友幫守 {{ cell.guests }} 隻</p>
         <p v-if="cell.building" class="small">🏗️ {{ cellBuildingName(cell.building.kind, race) }} {{ cell.building.level }} 級{{ cell.building.busy ? "（蓋到一半）" : "" }}</p>
         <p class="muted small">每 3 小時產出：{{ (TERRAIN_YIELD[cell.terrain] ?? []).map((y) => materialName(y.id)).join("、") }}{{ myCell ? `・下次 ${noteTime(myCell.nextYieldAt)}` : "" }}</p>
       </template>
-      <p v-else-if="cell.owner" class="muted">住了 {{ cell.garrison }} 隻{{ cell.building ? `・${cellBuildingName(cell.building.kind, cell.owner.race)} ${cell.building.level} 級` : "" }}</p>
+      <p v-else-if="cell.owner" class="muted">住了 {{ cell.garrison }} 隻{{ cell.guests ? `・好友幫守 ${cell.guests} 隻` : "" }}{{ cell.building ? `・${cellBuildingName(cell.building.kind, cell.owner.race)} ${cell.building.level} 級` : "" }}</p>
       <p v-else-if="cell.lairBackAt" class="muted">巢穴清掉了，{{ noteTime(cell.lairBackAt) }} 會回來。現在可以直接住。</p>
       <p v-else class="muted">什麼都沒有，可以直接住。</p>
 
@@ -347,7 +352,9 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
           <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>
         </template>
         <template v-else>
-          <button v-if="cell.boss || cell.lair || cell.owner" class="btn primary" :disabled="!canAct" @click="dispatch = 'attack'">{{ cell.boss ? "攻擊魔王" : "攻擊" }}</button>
+          <button v-if="cell.owner && isFriend" class="btn primary" :disabled="!canAct || (cell.guests ?? 0) >= GUESTS_MAX" @click="dispatch = 'guard'">派兵幫守</button>
+          <button v-if="myGuests" class="btn" :disabled="busy" @click="unguard">叫幫守的 {{ myGuests }} 隻回來</button>
+          <button v-if="(cell.boss || cell.lair || cell.owner) && !myGuests" class="btn" :class="{ primary: !(cell.owner && isFriend) }" :disabled="!canAct" @click="dispatch = 'attack'">{{ cell.boss ? "攻擊魔王" : "攻擊" }}</button>
           <button v-else class="btn primary" :disabled="!canAct" @click="dispatch = 'settle'">派人佔領</button>
           <NuxtLink v-if="cell.owner && isFriend" :to="`/friends/${cell.owner.id}`" class="btn">傳訊息</NuxtLink>
           <button v-else-if="cell.owner" class="btn" :disabled="busy || askedFriend" @click="addFriend">{{ askedFriend ? "等對方答應好友" : "加好友" }}</button>

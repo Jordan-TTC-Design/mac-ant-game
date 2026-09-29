@@ -280,3 +280,86 @@ describe("keeping many cells", () => {
     expect((await detail(a, cells[3]!)).body.history.find((h) => h.kind === "yield")?.hungry).toBeUndefined();
   });
 });
+
+describe("friends guarding each other's cells", () => {
+  async function friends(x: Record<string, string>, y: Record<string, string>) {
+    const code = async (auth: Record<string, string>) => (await t.call("GET", "/auth/me", undefined, auth)).body.user.friendCode as string;
+    await t.call("POST", "/friends/asks", { code: await code(y) }, x);
+    await t.call("POST", "/friends/asks", { code: await code(x) }, y);
+  }
+  /** Opens the big world for a camp made earlier (so it has grown with the others) a few cells from `from`. */
+  async function nearby(auth: Record<string, string>, email: string, from: string) {
+    let cell = from;
+    for (let i = 0; i < 3; i++) cell = neighbors(cell)[3]!;
+    const at = t.now().toISOString();
+    await database.sql`insert into world_cells (cell, cleared_at) values (${cell}, ${at}::timestamptz) on conflict (cell) do update set cleared_at = ${at}::timestamptz`;
+    expect((await t.call("POST", "/world/open", { cell }, auth)).status).toBe(201);
+    await database.sql`update world_players set xp = 18050 where user_id = (select id from users where email = ${email})`;
+    return auth;
+  }
+  const arrive = async (res: { body: { arriveAt: string } }) => t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+
+  it("only friends may send guests; they stay, show on the map and the cell's page, and walk home when told", async () => {
+    const early = await account("b@example.com");
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const cell = await settle(a, 15, [], (c) => !neighbors(home).includes(c.cell));
+    const b = await nearby(early, "b@example.com", home);
+    expect((await t.call("POST", "/world/expeditions", { to: cell, count: 5, guard: true }, b)).body.error).toBe("not_friend");
+    await friends(a, b);
+    expect((await t.call("POST", "/world/expeditions", { to: cell, count: 25, guard: true }, b)).body.error).toBe("too_many");
+    const res = await t.call("POST", "/world/expeditions", { to: cell, count: 8, guard: true }, b);
+    expect(res.status).toBe(201);
+    expect(res.body.kind).toBe("guard");
+    await arrive(res);
+    expect((await me(b)).recent[0]!.outcome?.cell).toBe("guarding");
+    expect((await me(b)).guarding).toEqual([{ cell, holder: "咕嚕", count: 8 }]);
+    expect((await map(a)).find((c) => c.cell === cell)!.guests).toBe(8);
+    const d = (await detail(a, cell)).body;
+    expect(d.guests).toEqual([expect.objectContaining({ count: 8 })]);
+    expect(d.history.some((h) => h.kind === "guests")).toBe(true);
+    // a guest cannot turn on the cell it guards
+    expect((await t.call("POST", "/world/expeditions", { to: cell, count: 5 }, b)).body.error).toBe("guarding");
+
+    // the holder sends them home
+    expect((await t.call("POST", `/world/cells/${cell}/unguard`, {}, a)).status).toBe(200);
+    expect((await me(b)).guarding).toEqual([]);
+    expect((await camp(b)).residents.filter((r) => r.place.startsWith("guard:"))).toHaveLength(0);
+    expect((await t.call("POST", `/world/cells/${cell}/unguard`, {}, b)).body.error).toBe("none");
+  });
+
+  it("fight beside the holder when another camp attacks; the fallen are buried in their own camp, their gear comes home", async () => {
+    const c = await account("c@example.com"); // (they grow while a does)
+    const early = await account("b@example.com");
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const cell = await settle(a, 6, [], (c) => !neighbors(home).includes(c.cell));
+    const garrison = (await detail(a, cell)).body.garrison;
+    const b = await nearby(early, "b@example.com", home);
+    await friends(a, b);
+    await arrive(await t.call("POST", "/world/expeditions", { to: cell, count: 10, guard: true }, b));
+    expect((await me(b)).guarding).toEqual([expect.objectContaining({ cell, count: 10 })]);
+    // someone strong attacks
+    let far = home;
+    for (let i = 0; i < 3; i++) far = neighbors(far)[0]!;
+    const at = t.now().toISOString();
+    await database.sql`insert into world_cells (cell, cleared_at) values (${far}, ${at}::timestamptz) on conflict (cell) do update set cleared_at = ${at}::timestamptz`;
+    await t.call("POST", "/world/open", { cell: far }, c);
+    await database.sql`update world_players set xp = 18050 where user_id = (select id from users where email = 'c@example.com')`;
+    const res = await t.call("POST", "/world/expeditions", { to: cell, count: 25 }, c);
+    expect(res.status).toBe(201);
+    await arrive(res);
+    const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, c)).body as ExpeditionReport;
+    const defending = report.fighters.filter((f) => f.side === "defend");
+    expect(defending.filter((f) => f.id.startsWith("g"))).toHaveLength(10);
+    expect(defending).toHaveLength(garrison + 10);
+    const fellGuests = report.fallen.defend.filter((id) => id.startsWith("g")).length;
+    const bCamp = await camp(b);
+    expect(bCamp.residents.filter((r) => r.place.startsWith("guard:")).length + fellGuests).toBeLessThanOrEqual(10);
+    if (report.outcome!.won) expect(bCamp.residents.filter((r) => r.place.startsWith("guard:"))).toHaveLength(0); // (the cell is lost: survivors went home)
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, b)).body.events as { data: { guardFell?: { fallen: number } } }[];
+    expect(events.filter((e) => e.data.guardFell).reduce((n, e) => n + e.data.guardFell!.fallen, 0)).toBe(fellGuests);
+    const left = await database.sql`select count(*)::int as n from camp_residents where place like 'fell:%' and gear is not null`;
+    expect(left[0]!.n).toBe(0); // (their gear came home when b's camp was worked out)
+  });
+});
