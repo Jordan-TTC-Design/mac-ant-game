@@ -145,6 +145,7 @@ const hello = computed(() => {
     </div>
 
     <NuxtLink to="/leaderboard" class="wide-link">🏆 排行榜 ›</NuxtLink>
+    <NuxtLink to="/feedback" class="wide-link">📣 回報問題・建議 ›</NuxtLink>
   </main>
 </template>
 

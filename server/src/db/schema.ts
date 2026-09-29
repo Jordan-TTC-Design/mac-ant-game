@@ -384,3 +384,50 @@ export const claudeAsks = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.id] }), index("claude_asks_at_idx").on(t.at)],
 );
+
+/**
+ * 回報 (shared/src/feedback.ts): a bug, an idea or a balance note someone sent. Everyone signed in sees them all. When the
+ * account is deleted its reports stay (the author becomes nobody), since others may be following them.
+ */
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    kind: text("kind", { enum: ["bug", "idea", "balance"] }).notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    device: text("device"),
+    status: text("status", { enum: ["open", "accepted", "working", "next", "done", "declined"] }).notNull().default("open"),
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull(),
+    /** Last time anything happened to it (a reply, a status): the list is ordered by it. */
+    updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull(),
+  },
+  (t) => [index("feedback_updated_idx").on(t.updatedAt), index("feedback_user_idx").on(t.userId)],
+);
+
+/** The thread under a report: replies, and each status an admin set (`status` filled in, `body` maybe empty). */
+export const feedbackReplies = pgTable(
+  "feedback_replies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    feedbackId: uuid("feedback_id").notNull().references(() => feedback.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    admin: boolean("admin").notNull(),
+    body: text("body").notNull().default(""),
+    status: text("status", { enum: ["open", "accepted", "working", "next", "done", "declined"] }),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+  },
+  (t) => [index("feedback_replies_feedback_idx").on(t.feedbackId, t.at)],
+);
+
+/** 我也遇到 / 我也想要: one per account and report (the author does not vote on their own), so the busiest ones stand out. */
+export const feedbackVotes = pgTable(
+  "feedback_votes",
+  {
+    feedbackId: uuid("feedback_id").notNull().references(() => feedback.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.feedbackId, t.userId] })],
+);

@@ -14,6 +14,7 @@ import { pushRoutes } from "./push/routes.ts";
 import { worldRoutes } from "./world/routes.ts";
 import { adminRoutes } from "./admin/routes.ts";
 import { claudeRoutes } from "./claude/routes.ts";
+import { feedbackRoutes } from "./feedback/routes.ts";
 import { friendRoutes } from "./friends/routes.ts";
 import { pomodoroRoutes } from "./pomodoro/routes.ts";
 import { NoPushSender, type PushSender } from "./push/sender.ts";
@@ -57,6 +58,7 @@ export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; 
   app.route("/friends", friendRoutes(deps));
   app.route("/pomodoro", pomodoroRoutes(deps));
   app.route("/claude", claudeRoutes(deps));
+  app.route("/feedback", feedbackRoutes(deps));
 
   // Signed-in devices keep this open and are told when something changed (then they fetch it).
   const appOrigin = new URL(deps.config.APP_URL).origin;

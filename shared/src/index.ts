@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export * from "./auth.ts";
 export * from "./claude.ts";
+export * from "./feedback.ts";
 export * from "./friends.ts";
 export * from "./notes.ts";
 export * from "./pomodoro.ts";

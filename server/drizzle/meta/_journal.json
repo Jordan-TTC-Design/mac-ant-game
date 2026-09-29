@@ -134,6 +134,20 @@
       "when": 1790656589541,
       "tag": "0018_auto_gear",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790657081883,
+      "tag": "0019_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790657440646,
+      "tag": "0020_feedback_votes",
+      "breakpoints": true
     }
   ]
 }
