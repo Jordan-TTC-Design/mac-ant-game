@@ -66,6 +66,8 @@ export interface FightBoosts {
   carrot?: number;
   /** Hit points +20% (honey taken along). */
   honey?: number;
+  /** Hit points +this share: defending a cell with a watchtower or near a temple (holdings.ts). */
+  fort?: number;
 }
 
 /**
@@ -97,8 +99,8 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
     name: r.name,
     side,
     row: healer || range > 0 ? "back" : "front",
-    hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0))),
-    maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0))),
+    hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0))),
+    maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0))),
     attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0)),
     range,
     speed: r.speed * (1 + 0.15 * (boosts.carrot ?? 0)),

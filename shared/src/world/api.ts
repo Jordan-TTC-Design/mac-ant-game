@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { BattleEvent } from "./battle.ts";
 import type { Terrain } from "./contents.ts";
 import { isCellId } from "./grid.ts";
+import type { CellBonus } from "./holdings.ts";
 
 /** The one world everybody shares. */
 export const WORLD_SEED = 20_260_927;
@@ -98,6 +99,8 @@ export interface CellView {
   garrison: number;
   nest: "none" | "building" | "ready";
   town: boolean;
+  /** What its holder built on it. */
+  building?: { kind: string; level: number; busy: boolean } | null;
   lair: LairView | null;
   /** A cleared lair comes back at this time. */
   lairBackAt: string | null;
@@ -161,7 +164,17 @@ export interface WorldMe {
   xp: number;
   level: number;
   nextLevelXp: number;
-  cells: { cell: string; garrison: number; nest: "none" | "building" | "ready"; town: boolean; terrain: Terrain; nextYieldAt: string }[];
+  cells: {
+    cell: string;
+    garrison: number;
+    nest: "none" | "building" | "ready";
+    town: boolean;
+    terrain: Terrain;
+    nextYieldAt: string;
+    /** Parties setting out from it may be this many bigger, and walk this share of the time (its building). */
+    party: number;
+    travel: number;
+  }[];
   /** At home, free to go (not on an expedition). */
   atHome: number;
   /** How many may go on one expedition now (by race and level), before rations. */
@@ -186,7 +199,7 @@ export interface WorldMe {
 export interface CellHappening {
   at: string;
   /** yield: the ground gave; lairBack: the lair came back for it; attacked: another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home. */
-  kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled";
+  kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished";
   loot?: Record<string, number>;
   held?: boolean;
   fallen?: number;
@@ -219,5 +232,16 @@ export interface CellDetail {
   nextYieldAt: string;
   /** What the ground may give every YIELD_HOURS (material ids). */
   yields: string[];
+  /** What is built on it, and what may be (two kinds for each ground; raising costs the same for every kind). */
+  building: { kind: string; name: string; blurb: string; level: number; working: number; busyUntil: string | null } | null;
+  canBuild: { kind: string; name: string; blurb: string }[];
+  /** What building it (level 1) or raising it to the next level costs, and takes (null: at the top). */
+  nextCost: Record<string, number> | null;
+  nextHours: number | null;
+  /** What the cell gets now from what is on it. */
+  bonus: CellBonus;
   history: CellHappening[];
 }
+
+/** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
+export const buildInput = z.object({ kind: z.string().max(40) });

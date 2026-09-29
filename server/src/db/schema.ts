@@ -1,4 +1,5 @@
 import type { Site } from "@goblincamp/shared/camp";
+import type { CellBuilding } from "@goblincamp/shared/world";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
@@ -237,6 +238,8 @@ export const worldCells = pgTable(
     clearedAt: timestamp("cleared_at", { withTimezone: true, precision: 3 }),
     /** A lair that beat a party off, still hurt (shared/src/world/battle.ts LairWounds). */
     lairWounds: jsonb("lair_wounds").$type<{ hp: number[]; at: number }>(),
+    /** What the holder built on it (shared/src/world/holdings.ts); gone when the cell changes hands. */
+    building: jsonb("building").$type<CellBuilding>(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("world_cells_owner_idx").on(t.owner)],

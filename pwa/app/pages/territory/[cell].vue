@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { materialName, TERRAIN_NAMES, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
+import { materialName, TERRAIN_NAMES, type CellBonus, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
 import type { CampResidentView } from "@goblincamp/shared/camp";
 import { ApiError, api } from "~/utils/api";
 import { noteTime } from "~/utils/time";
@@ -69,6 +69,41 @@ watch(
   },
 );
 
+// the building: build one of the two for this ground, raise it, or take it down
+const busy = ref(false);
+const actProblem = ref("");
+const store = computed(() => view.value?.materials ?? {});
+const short = (cost: Record<string, number> | null) => Object.entries(cost ?? {}).filter(([id, n]) => (store.value[id] ?? 0) < n);
+const costText = (cost: Record<string, number> | null) =>
+  Object.entries(cost ?? {}).map(([id, n]) => `${materialName(id)} ${n}${(store.value[id] ?? 0) < n ? `（有 ${store.value[id] ?? 0}）` : ""}`).join("、");
+/** Taking a building down is asked again on the page (the Mac's world window shows no browser dialogs). */
+const askingDemolish = ref(false);
+async function act(path: string, body: unknown) {
+  askingDemolish.value = false;
+  busy.value = true;
+  actProblem.value = "";
+  try {
+    await api("POST", `world/cells/${cellId.value}/${path}`, body);
+    await Promise.all([load(), camp.refresh()]);
+  } catch (e) {
+    actProblem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    busy.value = false;
+  }
+}
+/** What the cell gets now, in words. */
+function bonusText(b: CellBonus): string[] {
+  const out: string[] = [];
+  const makes = Object.entries(b.makes).map(([id, n]) => `${materialName(id)} +${n}`);
+  if (makes.length) out.push(`每次產出多 ${makes.join("、")}`);
+  for (const [id, p] of Object.entries(b.finds)) out.push(`每次產出 ${Math.round(p * 100)}% 機會多一個${materialName(id)}`);
+  if (b.fort) out.push(`守這一格的血量 +${Math.round(b.fort * 100)}%`);
+  if (b.travel < 1) out.push(`從這裡出發走路時間 −${Math.round((1 - b.travel) * 100)}%`);
+  if (b.room) out.push(`最多可以多住 ${b.room} 隻`);
+  if (b.party) out.push(`從這裡出發的隊伍可以多 ${b.party} 隻`);
+  return out;
+}
+
 const lootText = (loot: Record<string, number> = {}) => Object.entries(loot).sort((a, b) => b[1] - a[1]).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 function happening(h: CellHappening): string {
   switch (h.kind) {
@@ -79,6 +114,8 @@ function happening(h: CellHappening): string {
     case "nest": return "開始蓋繁殖巢";
     case "town": return "蓋成了城鎮";
     case "recalled": return `${h.residents} 隻走回營地`;
+    case "built": return h.residents === 1 ? `開始蓋${h.name}` : `${h.name}開始升到 ${h.residents} 級`;
+    case "demolished": return `拆掉了${h.name}`;
   }
 }
 </script>
@@ -118,6 +155,37 @@ function happening(h: CellHappening): string {
         <p v-else class="muted">住滿了，要等有居民離開或老死才會再生。</p>
         <p>下次產出 <b>{{ until(d.nextYieldAt) }}</b>：{{ d.yields.map((id) => materialName(id)).join("、") }}</p>
         <p class="muted small">住越多產越多，住滿是兩倍{{ d.town ? "；城鎮再兩倍" : "" }}。至少要住 {{ d.garrisonMin }} 隻才有產出。</p>
+      </section>
+
+      <section class="panel">
+        <h2>建築</h2>
+        <template v-if="d.building">
+          <p>
+            <b>{{ d.building.name }}</b> {{ d.building.working }} 級<span v-if="d.building.busyUntil" class="muted">（{{ d.building.level === 1 ? "蓋好" : `升到 ${d.building.level} 級` }}還要 {{ until(d.building.busyUntil) }}）</span>
+          </p>
+          <p class="muted small">{{ d.building.blurb }}</p>
+          <ul v-if="bonusText(d.bonus).length" class="bonus"><li v-for="line in bonusText(d.bonus)" :key="line">{{ line }}</li></ul>
+          <template v-if="d.nextCost && !d.building.busyUntil">
+            <p class="small">升到 {{ d.building.level + 1 }} 級（{{ d.nextHours }} 小時）：{{ costText(d.nextCost) }}</p>
+          </template>
+          <div class="ops">
+            <button v-if="d.nextCost" class="btn primary" :disabled="busy || !!d.building.busyUntil || short(d.nextCost).length > 0" @click="act('build', { kind: d.building.kind })">升級</button>
+            <button v-if="!askingDemolish" class="btn" :disabled="busy" @click="askingDemolish = true">拆掉</button>
+          </div>
+          <div v-if="askingDemolish" class="ask">
+            <p>拆掉{{ d.building.name }}？花掉的素材不會回來。</p>
+            <button class="btn danger" :disabled="busy" @click="act('demolish', {})">確定拆掉</button>
+            <button class="btn" @click="askingDemolish = false">再想想</button>
+          </div>
+        </template>
+        <template v-else>
+          <p class="muted small">每一格可以蓋一個建築，看地形有兩種可以選。蓋（{{ d.nextHours }} 小時）：{{ costText(d.nextCost) }}</p>
+          <div v-for="k in d.canBuild" :key="k.kind" class="choice">
+            <div class="grow"><b>{{ k.name }}</b><small class="muted">{{ k.blurb }}</small></div>
+            <button class="btn" :disabled="busy || short(d.nextCost).length > 0" @click="act('build', { kind: k.kind })">蓋</button>
+          </div>
+        </template>
+        <p v-if="actProblem" class="status error">{{ actProblem }}</p>
       </section>
 
       <section class="panel">
@@ -167,6 +235,13 @@ p { margin: 6px 0; }
 .power { min-width: 2.2em; text-align: right; }
 .icon { flex: none; width: 32px; height: 32px; background-size: 128px 96px; background-position: 0 0; }
 .more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 10px 0 0; cursor: pointer; }
+.bonus { margin: 6px 0; padding-left: 18px; font-size: 14px; color: var(--green); }
+.ops { display: flex; gap: 8px; margin-top: 8px; }
+.ask { margin-top: 8px; padding: 10px; border-radius: 10px; background: #fff6c8; }
+.ask p { margin: 0 0 8px; }
+.choice { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.choice .grow { display: grid; white-space: normal; }
+.choice small { font-size: 12px; }
 .event { font-size: 14px; display: flex; gap: 8px; }
 .event .muted { flex: none; font-size: 12px; }
 .wide-link { display: block; margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; text-decoration: none; font-weight: 700; text-align: center; }

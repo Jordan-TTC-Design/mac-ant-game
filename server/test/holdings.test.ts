@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { cellAt, type CellDetail, type CellView, type WorldMe } from "@goblincamp/shared/world";
+import { buildingsFor, cellAt, CELL_BUILDING_COSTS, CELL_BUILDINGS, type CellDetail, type CellView, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -92,5 +92,90 @@ describe("a cell from inside", () => {
     expect((await detail(a, w.homeCell!)).body.home).toBe(true);
     expect((await detail(b, w.homeCell!)).status).toBe(403);
     expect((await detail(a, "nope")).status).toBe(404);
+  });
+});
+
+describe("a building on a cell", () => {
+  it("is picked by the ground, built, raised a level at a time, adds to every yield, and can be taken down", async () => {
+    const a = await ready();
+    const cell = await settle(a, 20);
+    let d = (await detail(a, cell)).body;
+    expect(d.building).toBeNull();
+    expect(d.canBuild).toHaveLength(2);
+    expect(d.nextCost).toEqual({ scrap_wood: 20, log: 20 });
+    const maker = CELL_BUILDINGS.find((r) => r.terrain === d.terrain && r.makes)!;
+    const other = d.canBuild.find((k) => k.kind !== maker.kind)!.kind;
+    const elsewhere = CELL_BUILDINGS.find((r) => r.terrain !== d.terrain)!.kind;
+
+    await database.sql`update camps set materials = '{}'::jsonb`;
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: maker.kind }, a)).body.error).toBe("cannot_afford");
+    await give("a@example.com", { scrap_wood: 500, scrap_iron: 200, scrap_rag: 100, log: 500, stone: 200, crystal_shard: 3 });
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: elsewhere }, a)).status).toBe(400);
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: maker.kind }, a)).status).toBe(200);
+    d = (await detail(a, cell)).body;
+    expect(d.building).toEqual(expect.objectContaining({ kind: maker.kind, level: 1, working: 0 }));
+    expect(Date.parse(d.building!.busyUntil!) - t.now().getTime()).toBe(HOUR);
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: maker.kind }, a)).body.error).toBe("busy");
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: other }, a)).body.error).toBe("exists");
+    // others see it on the map
+    expect((await map(a)).find((c) => c.cell === cell)!.building).toEqual({ kind: maker.kind, level: 1, busy: true });
+
+    t.advance(HOUR + MIN);
+    d = (await detail(a, cell)).body;
+    expect(d.building!.working).toBe(1);
+    expect(d.nextCost).toEqual(CELL_BUILDING_COSTS[1]);
+    const [id, n] = Object.entries(maker.makes!).find(([, v]) => v[0] > 0)!;
+    expect(d.bonus.makes[id]).toBe(n[0]);
+    // the next yields bring what it makes
+    t.advance(3 * HOUR);
+    d = (await detail(a, cell)).body;
+    expect(d.history.find((h) => h.kind === "yield")!.loot![id]).toBeGreaterThanOrEqual(n[0]);
+    expect(d.history.some((h) => h.kind === "built")).toBe(true);
+
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: maker.kind }, a)).status).toBe(200);
+    expect((await detail(a, cell)).body.building).toEqual(expect.objectContaining({ level: 2, working: 1 }));
+    expect((await t.call("POST", `/world/cells/${cell}/demolish`, {}, a)).status).toBe(200);
+    expect((await detail(a, cell)).body.building).toBeNull();
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: other }, a)).status).toBe(200);
+  });
+
+  it("is not for the camp's own cell, and goes when the cell is given up", async () => {
+    const a = await ready();
+    const w = await me(a);
+    const home = (await detail(a, w.homeCell!)).body;
+    expect(home.canBuild).toEqual([]);
+    await give("a@example.com", { scrap_wood: 100, log: 100 });
+    expect((await t.call("POST", `/world/cells/${w.homeCell}/build`, { kind: buildingsFor(home.terrain)[0]!.kind }, a)).body.error).toBe("camp_cell");
+    const cell = await settle(a, 20);
+    const kind = (await detail(a, cell)).body.canBuild[0]!.kind;
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind }, a)).status).toBe(200);
+    await t.call("POST", `/world/cells/${cell}/recall`, {}, a);
+    expect((await map(a)).find((c) => c.cell === cell)!.building).toBeNull();
+  });
+
+  it("lets bigger parties set out from barracks, and parties walk faster from a dock or an inn", async () => {
+    const a = await ready();
+    // (whatever ground the cell has, give it the building to test: the rules only look at what is there)
+    const cell = await settle(a, 25);
+    const walk = async () => {
+      const res = await t.call("POST", "/world/expeditions", { from: cell, to: (await me(a)).homeCell, count: 3 }, a);
+      expect(res.body).toEqual(expect.objectContaining({ kind: "move" }));
+      const minutes = (Date.parse(res.body.arriveAt) - Date.parse(res.body.setOutAt)) / MIN;
+      t.advance(minutes * MIN + 1000);
+      await t.call("POST", "/world/expeditions", { from: "home", to: cell, count: 3 }, a).then((r) => t.advance(Date.parse(r.body.arriveAt) - t.now().getTime() + 1000));
+      return minutes;
+    };
+    const plain = await walk();
+    await database.sql`update world_cells set building = ${JSON.stringify({ kind: "dock", level: 3 })}::jsonb where cell = ${cell}`;
+    const fast = await walk();
+    expect(fast).toBeLessThan(plain); // (about 0.65 of it: who walks differs a little)
+    const cap = (await me(a)).partyCap;
+    await database.sql`update world_cells set building = ${JSON.stringify({ kind: "barracks", level: 3 })}::jsonb where cell = ${cell}`;
+    expect((await me(a)).cells.find((c) => c.cell === cell)!.party).toBe(4);
+    // (enough living there to send that many and still hold it)
+    const more = await t.call("POST", "/world/expeditions", { from: "home", to: cell, count: 20 }, a);
+    t.advance(Date.parse(more.body.arriveAt) - t.now().getTime() + 1000);
+    const lair = (await map(a)).find((c) => c.lair && !c.owner)!;
+    expect((await t.call("POST", "/world/expeditions", { from: cell, to: lair.cell, count: cap + 4 }, a)).status).toBe(201);
   });
 });

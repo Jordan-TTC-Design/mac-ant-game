@@ -6,6 +6,7 @@ export * from "./contents.ts";
 export * from "./drops.ts";
 export * from "./expedition.ts";
 export * from "./grid.ts";
+export * from "./holdings.ts";
 export * from "./leaderboard.ts";
 export * from "./random.ts";
 export * from "./supplies.ts";

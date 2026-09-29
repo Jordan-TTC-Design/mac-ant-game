@@ -1,0 +1,1 @@
+ALTER TABLE "world_cells" ADD COLUMN "building" jsonb;

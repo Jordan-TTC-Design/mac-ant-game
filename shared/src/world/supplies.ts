@@ -51,8 +51,8 @@ export interface SuppliesPlan {
  * What taking `supplies` (food id → how many) along with a party of `size` means: how many may go, what is eaten, and
  * the boosts (a race's taste counts: elves get nothing from meat). `store` is what the camp has.
  */
-export function planSupplies(race: string, level: number, size: number, supplies: Record<string, number>, store: Record<string, number>): SuppliesPlan {
-  const cap = partyCap(race, level);
+export function planSupplies(race: string, level: number, size: number, supplies: Record<string, number>, store: Record<string, number>, bonus = 0): SuppliesPlan {
+  const cap = partyCap(race, level) + bonus;
   const spent: Record<string, number> = {};
   const boosts: FightBoosts = {};
   let problem: string | null = null;

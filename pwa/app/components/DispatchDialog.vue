@@ -56,7 +56,9 @@ const supplies = reactive<Record<string, number>>({});
 const store = computed(() => props.me.food ?? {});
 const rationsHeld = computed(() => Object.keys(RATIONS).reduce((n, id) => n + (store.value[id] ?? 0), 0));
 const rationsTaken = computed(() => Object.keys(RATIONS).reduce((n, id) => n + (supplies[id] ?? 0), 0));
-const cap = computed(() => props.me.partyCap ?? 60);
+/** The cell it sets out from (its building: barracks let more go, a dock or an inn shortens the walk). */
+const fromCell = computed(() => props.me.cells.find((c) => c.cell === (from.value === "home" ? props.me.homeCell : from.value)));
+const cap = computed(() => (props.me.partyCap ?? 60) + (fromCell.value?.party ?? 0));
 /** Rations to take: as many as it takes for the extra ones, from whichever kinds there are. */
 function setExtra(n: number) {
   let need = n * RATIONS_PER_EXTRA;
@@ -103,7 +105,7 @@ function toggle(id: number) {
 }
 
 /** What the food does (and what it costs) for this party. */
-const plan = computed(() => planSupplies(props.race, levelOf(props.me.xp), party.value.length, supplies, store.value));
+const plan = computed(() => planSupplies(props.race, levelOf(props.me.xp), party.value.length, supplies, store.value, fromCell.value?.party ?? 0));
 const armed = computed(() => party.value.map((a) => residentFighter(residentAsFighter(props.race, { id: a.r.id, breed: a.r.breed, gear: a.r.gear as never }), "attack", traits.value, plan.value.boosts)));
 const ourPower = computed(() => Math.round(combatPower(armed.value)));
 /** What waits there as the rules have it (a lair as it stands now: its wounds are shared by the map). */
@@ -143,7 +145,7 @@ const minutes = computed(() => {
   const start = from.value === "home" ? props.me.homeCell : from.value;
   if (!start || party.value.length === 0) return null;
   const slowest = Math.min(...party.value.map((a) => fighter(a.r).speed));
-  return travelMinutes(start, props.target.cell, slowest);
+  return Math.max(1, Math.round(travelMinutes(start, props.target.cell, slowest) * (fromCell.value?.travel ?? 1)));
 });
 const settle = ref(props.kind !== "move");
 const title = computed(() => ({ attack: props.target.boss ? "出征打世界魔王" : "出征", settle: "派人去佔領", move: "派人去駐守" })[props.kind]);

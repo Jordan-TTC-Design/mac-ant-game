@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellCenter, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { api } from "~/utils/api";
 
@@ -316,9 +316,10 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
       <template v-else-if="mine">
         <p v-if="isHome">營地就在這裡：在家的 <b>{{ cell.garrison }}</b> 隻都住這、守這，營地本身就會生居民{{ cell.town ? "・城鎮" : "" }}</p>
         <p v-else>住了 <b>{{ cell.garrison }}</b> 隻・{{ { none: "還沒有繁殖巢（不會自己生居民）", building: "繁殖巢蓋到一半", ready: "有繁殖巢，會自己生居民" }[cell.nest] }}{{ cell.town ? "・城鎮" : "" }}</p>
+        <p v-if="cell.building" class="small">🏗️ {{ cellBuildingName(cell.building.kind, race) }} {{ cell.building.level }} 級{{ cell.building.busy ? "（蓋到一半）" : "" }}</p>
         <p class="muted small">每 3 小時產出：{{ (TERRAIN_YIELD[cell.terrain] ?? []).map((y) => materialName(y.id)).join("、") }}{{ myCell ? `・下次 ${noteTime(myCell.nextYieldAt)}` : "" }}</p>
       </template>
-      <p v-else-if="cell.owner" class="muted">住了 {{ cell.garrison }} 隻</p>
+      <p v-else-if="cell.owner" class="muted">住了 {{ cell.garrison }} 隻{{ cell.building ? `・${cellBuildingName(cell.building.kind, cell.owner.race)} ${cell.building.level} 級` : "" }}</p>
       <p v-else-if="cell.lairBackAt" class="muted">巢穴清掉了，{{ noteTime(cell.lairBackAt) }} 會回來。現在可以直接住。</p>
       <p v-else class="muted">什麼都沒有，可以直接住。</p>
 

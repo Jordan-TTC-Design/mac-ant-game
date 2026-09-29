@@ -58,6 +58,16 @@ import {
   TERRAIN_YIELD,
   travelMinutes,
   cellYield,
+  buildingYield,
+  buildingsFor,
+  cellBonus,
+  cellBuildingBlurb,
+  cellBuildingName,
+  cellBuildingRule,
+  CELL_BUILDING_COSTS,
+  CELL_BUILDING_HOURS,
+  CELL_BUILDING_MAX,
+  workingLevel,
   seeded,
   YIELD_HOURS,
   WORLD_SEED,
@@ -287,6 +297,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     if (back.fought) changed = true;
     if (back.lost) continue;
     const isHome = cell.cell === home?.cell;
+    const bonus = cellBonus(camp.race, isHome ? null : cell.building, now.getTime());
+    const room = cellCapacity(camp.race, cell.town) + bonus.room;
     // (the camp's own cell raises no one of its own: the camp standing there does, at home)
     const readyAt = cell.nestStartedAt && !isHome ? new Date(cell.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
     if (readyAt && readyAt <= now) {
@@ -296,7 +308,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
         key: cellPlace(cell.cell),
         startedAt: readyAt.getTime(),
         birthMinutes: nestBirthMinutes(camp.race, cell.town),
-        cap: cellCapacity(camp.race, cell.town),
+        cap: room,
       };
       const population: Population = { residents: rows.map(toResident), nextId: camp.nextId, nextSlot: cell.nextSlot, peak: rows.length };
       const step = advance(place, population, camp.seed, now.getTime());
@@ -319,7 +331,11 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     const since = cell.yieldedTo ?? cell.heldSince ?? now;
     const times = Math.floor((now.getTime() - since.getTime()) / (YIELD_HOURS * HOUR));
     if (times > 0) {
-      const got = cellYield(camp.race, terrain, Math.min(n, cellCapacity(camp.race, cell.town)), times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town);
+      const got = cellYield(camp.race, terrain, Math.min(n, room), times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town);
+      // and what its building adds (worked only by a garrison big enough to work the ground)
+      if (n >= garrisonMin(camp.race)) {
+        for (const [mat, k] of Object.entries(buildingYield(bonus, times, seeded(WORLD_SEED, cell.cell, since.getTime(), "building")))) got[mat] = (got[mat] ?? 0) + k;
+      }
       for (const [mat, k] of Object.entries(got)) {
         camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + k };
         yields[mat] = (yields[mat] ?? 0) + k;
@@ -383,7 +399,8 @@ async function lairReturns(tx: Tx, camp: CampRow, cell: CellRow, now: Date, home
     fought = true;
     const at = new Date(t);
     const foes = lairFighters(lair).map((f) => ({ ...f, side: "attack" as const }));
-    const defending = guards.map((r) => residentFighter(fighterOf(camp.race, r), "defend", traitsOf(camp.race), fightBoosts(camp.race, camp.boosts, t)));
+    const fort = cellBonus(camp.race, cell.building, t).fort;
+    const defending = guards.map((r) => residentFighter(fighterOf(camp.race, r), "defend", traitsOf(camp.race), { ...fightBoosts(camp.race, camp.boosts, t), fort }));
     const battle = simulateBattle(foes, defending, { seed: hashString(`${cell.cell}|lair-back|${t}`), night: nightAt(cell.cell, at) });
     const fallen = new Set(battle.fallen.defend);
     await bury(tx, camp, guards.filter((r) => fallen.has(String(r.id))), at);
@@ -411,12 +428,18 @@ async function lairReturns(tx: Tx, camp: CampRow, cell: CellRow, now: Date, home
 }
 
 async function releaseCell(tx: Tx, cell: string) {
-  await tx.update(worldCells).set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: null, updatedAt: new Date() }).where(eq(worldCells.cell, cell));
+  await tx
+    .update(worldCells)
+    .set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: null, building: null, updatedAt: new Date() })
+    .where(eq(worldCells.cell, cell));
 }
 
 async function takeCell(tx: Tx, cell: string, owner: string, now: Date) {
   await touchCell(tx, cell);
-  await tx.update(worldCells).set({ owner, heldSince: now, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: now, updatedAt: now }).where(eq(worldCells.cell, cell));
+  await tx
+    .update(worldCells)
+    .set({ owner, heldSince: now, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: now, building: null, updatedAt: now })
+    .where(eq(worldCells.cell, cell));
 }
 
 /** Who goes: the named residents (they must be at `place`), or the strongest `count` of those there. */
@@ -534,9 +557,12 @@ export async function sendExpedition(
   if (walking >= MAX_WALKING) throw new WorldError(409, "too_many", `同時最多 ${MAX_WALKING} 支隊伍在路上。`);
 
   const fromCell = input.from === "home" ? player.homeCell : input.from;
+  // (a building where it sets out: a dock or an inn shortens the walk, barracks let more go)
+  let fromBonus = cellBonus(camp.race, null, now.getTime());
   if (input.from !== "home") {
     const from = await lockCell(tx, input.from);
     if (from?.owner !== userId) throw new WorldError(403, "not_yours", "只能從自己的格子出發。");
+    fromBonus = cellBonus(camp.race, from.building, now.getTime());
   }
   if (input.to === input.from) throw new WorldError(400, "invalid_input", "出發和目的地是同一格。");
   const place = input.from === "home" ? "home" : cellPlace(input.from);
@@ -548,7 +574,7 @@ export async function sendExpedition(
   // a fighting party is small (by race and level); rations let more go, some foods make it stronger (moving in is not limited)
   let carried: FightBoosts | null = null;
   if (!moving) {
-    const plan = planSupplies(camp.race, raceLevel(player.xp), party.length, input.supplies ?? {}, camp.materials);
+    const plan = planSupplies(camp.race, raceLevel(player.xp), party.length, input.supplies ?? {}, camp.materials, fromBonus.party);
     if (plan.problem) throw new WorldError(409, "too_many", plan.problem);
     for (const [id, n] of Object.entries(plan.spent)) camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) - n };
     if (Object.keys(plan.boosts).length) carried = plan.boosts;
@@ -569,7 +595,7 @@ export async function sendExpedition(
 
   const boosts = withCarried(fightBoosts(camp.race, camp.boosts, now.getTime()), carried);
   const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
-  const minutes = travelMinutes(fromCell, input.to, slowest);
+  const minutes = Math.max(1, Math.round(travelMinutes(fromCell, input.to, slowest) * fromBonus.travel));
   const [row] = await tx
     .insert(expeditions)
     .values({
@@ -651,7 +677,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   const attacker = await ownerOf(tx, camp.userId);
   const player = await lockPlayer(tx, camp.userId);
   const min = garrisonMin(camp.race);
-  const cap = cellCapacity(camp.race, cell?.town ?? false);
+  const cap = cellCapacity(camp.race, cell?.town ?? false) + (cell?.owner === camp.userId ? cellBonus(camp.race, cell.building, at.getTime()).room : 0);
   const report: ExpeditionReport = {
     ...summary(exp),
     status: "done",
@@ -718,7 +744,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
             player: defenderCamp.userId,
             residents: defenders.map((r) => fighterOf(defenderCamp.race, r, "d")),
             race: traitsOf(defenderCamp.race),
-            boosts: fightBoosts(defenderCamp.race, defenderCamp.boosts, at.getTime()),
+            boosts: { ...fightBoosts(defenderCamp.race, defenderCamp.boosts, at.getTime()), fort: campCell ? 0 : cellBonus(defenderCamp.race, cell.building, at.getTime()).fort },
           },
         },
         night: nightAt(exp.toCell, at),
@@ -964,6 +990,43 @@ export async function buildTown(tx: Tx, userId: string, cell: string, now: Date)
   await bumpVersion(tx, camp);
 }
 
+/**
+ * Builds `kind` on a held cell (its ground must allow it), or raises the one there a level (the same kind; one at a time,
+ * not while it is still going up). Another kind means taking the old one down first.
+ */
+export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: string, now: Date) {
+  const { camp } = await ownCell(tx, userId, cell);
+  await advanceWorld(tx, camp, now);
+  const row = await ownedRow(tx, userId, cell);
+  if ((await homeCellOf(tx, userId)) === cell) throw new WorldError(409, "camp_cell", "營地那一格蓋場地就好（營地頁）；建築蓋在其他領地上。");
+  const rule = cellBuildingRule(kind);
+  const terrain = await terrainOf(tx, cell);
+  if (!rule || rule.terrain !== terrain) throw new WorldError(400, "invalid_input", "這種地形不能蓋這個。");
+  const b = row.building;
+  if (b && b.kind !== kind) throw new WorldError(409, "exists", `這一格已經有${cellBuildingName(b.kind, camp.race)}了；要換先拆掉。`);
+  if (b && workingLevel(b, now.getTime()) < b.level) throw new WorldError(409, "busy", "還在蓋，蓋好才能再升級。");
+  const level = (b?.level ?? 0) + 1;
+  if (level > CELL_BUILDING_MAX) throw new WorldError(409, "top", "已經是最高級了。");
+  const cost = CELL_BUILDING_COSTS[level - 1]!;
+  if (!canAfford(camp.materials, cost)) throw new WorldError(409, "cannot_afford", `素材不夠：要 ${costText(cost)}。`);
+  camp.materials = spend(camp.materials, cost);
+  const building = { kind: rule.kind, level, busyUntil: new Date(now.getTime() + CELL_BUILDING_HOURS[level - 1]! * HOUR).toISOString() };
+  await tx.update(worldCells).set({ building, updatedAt: now }).where(eq(worldCells.cell, cell));
+  await addEvent(tx, userId, now, "world", { built: { cell, kind, level } });
+  await bumpVersion(tx, camp);
+}
+
+/** Takes the building down (nothing comes back: the ground is cleared for another). */
+export async function demolishOnCell(tx: Tx, userId: string, cell: string, now: Date) {
+  const { camp } = await ownCell(tx, userId, cell);
+  await advanceWorld(tx, camp, now);
+  const row = await ownedRow(tx, userId, cell);
+  if (!row.building) throw new WorldError(409, "none", "這一格沒有建築。");
+  await tx.update(worldCells).set({ building: null, updatedAt: now }).where(eq(worldCells.cell, cell));
+  await addEvent(tx, userId, now, "world", { demolished: { cell, kind: row.building.kind } });
+  await bumpVersion(tx, camp);
+}
+
 /** Residents on a cell walk home (all of them, or `count` if enough stay to hold it). */
 export async function recall(tx: Tx, userId: string, cell: string, count: number | undefined, now: Date) {
   const { camp } = await ownCell(tx, userId, cell);
@@ -1022,6 +1085,8 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       town: c.town,
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
+      party: cellBonus(camp.race, c.building, now.getTime()).party,
+      travel: cellBonus(camp.race, c.building, now.getTime()).travel,
     })),
     atHome,
     partyCap: partyCap(camp.race, level),
@@ -1077,6 +1142,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
         eq(campEvents.userId, userId),
         sql`(${campEvents.data} -> 'cells' ? ${cell} or ${campEvents.data} -> 'lairBack' ->> 'cell' = ${cell} or ${campEvents.data} ->> 'cell' = ${cell}
           or ${campEvents.data} ->> 'nest' = ${cell} or ${campEvents.data} ->> 'town' = ${cell} or ${campEvents.data} ->> 'recalled' = ${cell}
+          or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell}
           or (${campEvents.data} ->> 'to' = ${cell} and ${campEvents.data} ? 'arrived'))`,
       ),
     )
@@ -1093,8 +1159,12 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     else if (d.nest) history.push({ at, kind: "nest" });
     else if (d.town) history.push({ at, kind: "town" });
     else if (d.recalled) history.push({ at, kind: "recalled", residents: d.residents });
+    else if (d.built) history.push({ at, kind: "built", name: cellBuildingName(d.built.kind, camp.race), residents: d.built.level });
+    else if (d.demolished) history.push({ at, kind: "demolished", name: cellBuildingName(d.demolished.kind, camp.race) });
   }
   const center = cellCenter(cell);
+  const b = isHome ? null : row.building;
+  const top = (b?.level ?? 0) >= CELL_BUILDING_MAX;
   return {
     cell,
     lat: center.lat,
@@ -1112,6 +1182,20 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     heldSince: row.heldSince?.toISOString() ?? null,
     nextYieldAt: new Date((row.yieldedTo ?? row.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
     yields: (TERRAIN_YIELD[terrain] ?? []).map((y) => y.id),
+    building: b
+      ? {
+          kind: b.kind,
+          name: cellBuildingName(b.kind, camp.race),
+          blurb: cellBuildingBlurb(b.kind, camp.race),
+          level: b.level,
+          working: workingLevel(b, now.getTime()),
+          busyUntil: b.busyUntil && Date.parse(b.busyUntil) > now.getTime() ? b.busyUntil : null,
+        }
+      : null,
+    canBuild: isHome ? [] : buildingsFor(terrain).map((r) => ({ kind: r.kind, name: cellBuildingName(r.kind, camp.race), blurb: cellBuildingBlurb(r.kind, camp.race) })),
+    nextCost: isHome || top ? null : CELL_BUILDING_COSTS[b?.level ?? 0]!,
+    nextHours: isHome || top ? null : CELL_BUILDING_HOURS[b?.level ?? 0]!,
+    bonus: cellBonus(camp.race, b, now.getTime()),
     history,
   };
 }
@@ -1210,6 +1294,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       garrison: counts.get(cell)?.n ?? 0,
       nest: row ? nestState(row, now) : "none",
       town: row?.town ?? false,
+      building: row?.owner && row.building ? { kind: row.building.kind, level: row.building.level, busy: workingLevel(row.building, now.getTime()) < row.building.level } : null,
       ...lairWith(lair, row?.lairWounds, now),
       lairBackAt: backAt?.toISOString() ?? null,
       boss,
