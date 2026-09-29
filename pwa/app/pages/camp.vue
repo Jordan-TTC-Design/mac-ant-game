@@ -143,7 +143,10 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         <h1>{{ view ? `${race?.name ?? ""}${race?.nest ?? "營地"}` : "營地" }}</h1>
         <div class="sub">{{ statusLine }}</div>
       </div>
-      <NuxtLink to="/world" class="icon-btn">大世界</NuxtLink>
+      <nav class="world-links">
+        <NuxtLink to="/world" class="icon-btn" aria-label="大世界" title="大世界">🗺️</NuxtLink>
+        <NuxtLink to="/territory" class="icon-btn" aria-label="領地列表" title="領地列表">🏰</NuxtLink>
+      </nav>
     </header>
 
     <div v-if="!view && camp.state.status === 'none'" class="panel">這個帳號還沒有營地。在 Mac 上登入並選好種族，營地就會出現在這裡。</div>
@@ -345,4 +348,6 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .upgrading { margin-top: 10px; font-weight: 600; }
 .production .warn { color: #b3412c; }
 .production .chips { margin-top: 6px; }
+.world-links { display: flex; gap: 6px; }
+.world-links .icon-btn { padding: 6px 10px; font-size: 18px; line-height: 1.2; }
 </style>

@@ -288,3 +288,36 @@ export interface NearbyLandmark {
   km: number;
   owner: WorldOwner | null;
 }
+
+/** One held cell as the territory list shows it (`GET /api/world/territory`). */
+export interface TerritoryItem {
+  cell: string;
+  lat: number;
+  lng: number;
+  terrain: Terrain;
+  /** The camp's own cell. */
+  home: boolean;
+  town: boolean;
+  garrison: number;
+  capacity: number;
+  nest: "none" | "building" | "ready";
+  building: { kind: string; name: string; level: number; busy: boolean } | null;
+  landmark: (Landmark & { icon: string; label: string }) | null;
+  /** Held cells joined to it (itself included), and next to it. */
+  region: number;
+  neighbours: number;
+  /** It eats rations every yield. */
+  upkeep: boolean;
+  /** Friends' residents guarding it. */
+  guests: number;
+  nextYieldAt: string;
+  heldSince: string | null;
+}
+
+export interface TerritoryList {
+  items: TerritoryItem[];
+  /** Everybody living on the cells (the camp's own cell: those at home), rations in the store and how many cells eat them. */
+  residents: number;
+  rations: number;
+  paying: number;
+}

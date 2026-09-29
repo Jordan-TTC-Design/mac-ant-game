@@ -12,6 +12,7 @@ import {
   cellDetail,
   cellsAround,
   landmarksAround,
+  territoryList,
   LANDMARK_RADIUS,
   expeditionList,
   expeditionReport,
@@ -72,6 +73,12 @@ export function worldRoutes(deps: AppDeps) {
       return apiError(c, 400, "invalid_input", `lat、lng 要是座標，radius 是 1～${MAX_MAP_RADIUS} 公尺。`);
     }
     return respond(c, await run(c, () => db.transaction((tx) => cellsAround(tx, { lat, lng }, radius, now()))));
+  });
+
+  /** All your cells at a glance (the phone's territory list). */
+  app.get("/territory", async (c) => {
+    const userId = c.get("session").user.id;
+    return respond(c, await run(c, () => db.transaction((tx) => territoryList(tx, userId, now()))));
   });
 
   /** One of your own cells from inside (world/cell/[cell] on the phone). */

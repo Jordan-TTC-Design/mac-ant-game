@@ -94,6 +94,7 @@ import {
   type CellHappening,
   type CellView,
   type NearbyLandmark,
+  type TerritoryList,
   type ExpeditionReport,
   type ExpeditionSummary,
   type Lair,
@@ -1354,6 +1355,59 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       townMinCells: TOWN_MIN_CELLS,
     },
   };
+}
+
+/** All of a camp's held cells at a glance: the camp's own first, then the longest held. */
+export async function territoryList(tx: Tx, userId: string, now: Date): Promise<TerritoryList> {
+  const camp = await lockCamp(tx, userId);
+  if (!camp) throw new WorldError(404, "no_camp", "這個帳號還沒有營地。");
+  await advanceWorld(tx, camp, now);
+  const homeCell = await homeCellOf(tx, userId);
+  const held = await tx.select().from(worldCells).where(eq(worldCells.owner, userId)).orderBy(worldCells.heldSince, worldCells.cell);
+  const cells = held.map((c) => c.cell);
+  const mine = new Set(cells);
+  const ground = await terrainsFor(tx, cells);
+  const around = await surroundings(tx, cells);
+  const counts = await garrisons(tx, cells);
+  const paying = payingCells(held, homeCell);
+  const guests = new Map(
+    (cells.length
+      ? await tx
+          .select({ place: campResidents.place, n: sql<number>`count(*)::int` })
+          .from(campResidents)
+          .where(and(inArray(campResidents.place, cells.map(guardPlace)), isNull(campResidents.diedAt)))
+          .groupBy(campResidents.place)
+      : []
+    ).map((g) => [g.place.slice(6), g.n]),
+  );
+  const items = held.map((c) => {
+    const isHome = c.cell === homeCell;
+    const a = around(c.cell);
+    const rule = a.landmark ? landmarkRule(a.landmark.kind) : undefined;
+    const b = isHome ? null : c.building;
+    const at = cellCenter(c.cell);
+    return {
+      cell: c.cell,
+      lat: at.lat,
+      lng: at.lng,
+      terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
+      home: isHome,
+      town: c.town,
+      garrison: counts.get(c.cell)?.n ?? 0,
+      capacity: cellCapacity(camp.race, c.town) + cellBonus(camp.race, b, now.getTime(), a).room,
+      nest: nestState(c, now),
+      building: b ? { kind: b.kind, name: cellBuildingName(b.kind, camp.race), level: b.level, busy: workingLevel(b, now.getTime()) < b.level } : null,
+      landmark: a.landmark && rule ? { ...a.landmark, icon: rule.icon, label: rule.name } : null,
+      region: connectedCells(c.cell, mine).length,
+      neighbours: a.neighbours ?? 0,
+      upkeep: paying.has(c.cell),
+      guests: guests.get(c.cell) ?? 0,
+      nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
+      heldSince: c.heldSince?.toISOString() ?? null,
+    };
+  });
+  items.sort((x, y) => Number(y.home) - Number(x.home));
+  return { items, residents: items.reduce((n, i) => n + i.garrison, 0), rations: rationsIn(camp.materials), paying: paying.size };
 }
 
 /** One held cell from inside: how many live there and how it grows, what the ground gives, and what happened there lately. */

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
+import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type TerritoryList, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -83,6 +83,24 @@ describe("a cell from inside", () => {
     expect(Date.parse(d.body.nextBirthAt!)).toBeGreaterThanOrEqual(t.now().getTime());
     expect(d.body.history.map((h) => h.kind)).toEqual(expect.arrayContaining(["yield", "nest", "settled"]));
     expect(d.body.history.find((h) => h.kind === "yield")!.loot).toBeDefined();
+  });
+
+  it("are all listed at a glance: the camp's own first, then the others with what is on them", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const cell = await settle(a, 20);
+    await give("a@example.com", { scrap_wood: 20, log: 20 });
+    const kind = (await detail(a, cell)).body.canBuild[0]!.kind;
+    await t.call("POST", `/world/cells/${cell}/build`, { kind }, a);
+    const res = await t.call("GET", "/world/territory", undefined, a);
+    expect(res.status).toBe(200);
+    const list = res.body as TerritoryList;
+    expect(list.items.map((i) => i.cell)).toEqual([home, cell]);
+    expect(list.items[0]).toEqual(expect.objectContaining({ home: true, building: null }));
+    expect(list.items[1]).toEqual(expect.objectContaining({ home: false, nest: "none", building: expect.objectContaining({ kind, level: 1, busy: true }) }));
+    expect(list.items[1]!.garrison).toBe((await detail(a, cell)).body.garrison);
+    expect(list.residents).toBe(list.items[0]!.garrison + list.items[1]!.garrison);
+    expect((await t.call("GET", "/world/territory", undefined, await account("b@example.com"))).body.items).toEqual([]);
   });
 
   it("is only for one's own cells; the camp's own cell says so", async () => {
