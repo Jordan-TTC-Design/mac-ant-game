@@ -219,9 +219,20 @@ final class Settings {
 
     /// Where the goblins may walk on their screen: "screen" (all of it), "bottom", "right", "left" (a strip of `rangeSize` points),
     /// or "window" (inside the little camp window).
+    /// For now only the camp window is offered: the whole screen and the strips are switched off (their code stays, and turning
+    /// this off brings them back to the menu).
+    static let windowOnly = true
     var rangeMode: String {
-        get { defaults.string(forKey: "rangeMode") ?? "screen" }
+        get { Settings.windowOnly ? "window" : defaults.string(forKey: "rangeMode") ?? "screen" }
         set { defaults.set(newValue, forKey: "rangeMode") }
+    }
+    /// A player who had the whole screen or a strip moves to the camp window, shown (once; true when that happened).
+    @discardableResult
+    func moveToWindowOnly() -> Bool {
+        guard Settings.windowOnly, defaults.string(forKey: "rangeMode") != "window" else { return false }
+        defaults.set("window", forKey: "rangeMode")
+        mapCollapsed = false
+        return true
     }
     var rangeSize: Double {
         get { min(64, max(30, defaults.object(forKey: "rangeSize") as? Double ?? 42)) }
@@ -236,6 +247,11 @@ final class Settings {
     var mapOnTop: Bool {
         get { defaults.object(forKey: "mapOnTop") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "mapOnTop") }
+    }
+    /// While the camp window is used, the app also has a Dock icon (and is in ⌘Tab), like any other app.
+    var showInDock: Bool {
+        get { defaults.object(forKey: "showInDock") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "showInDock") }
     }
     /// The player closed (folded away) the camp window.
     var mapCollapsed: Bool {
