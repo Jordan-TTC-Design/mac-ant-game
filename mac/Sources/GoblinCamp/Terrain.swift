@@ -218,6 +218,10 @@ final class TerrainScene {
 
     /// How big the camp has been (most goblins ever): the camp grows with it. A young camp is only a nest and a patch of trampled earth.
     var growth = 0
+    /// The farm's level on the server (server/FARM.md): each level adds something round the first plot (a wheat field, hives, a pen…).
+    var farmLevel = 1
+    /// Whose farm (the elves' level 2 is an orchard, the undead's a bone field, their hives and sheep are of the night).
+    var farmRace = "goblin"
 
     /// Changes whenever the camp gains something to draw or a bigger clearing, so a baked picture knows when to be made again.
     var stage: Int {
@@ -226,6 +230,8 @@ final class TerrainScene {
         h.combine(lying.filter { $0.unlock <= growth }.count)
         h.combine(min(growth, 110) / 6)
         h.combine(life?.version ?? 0)
+        h.combine(farmLevel)
+        h.combine(farmRace)
         h.combine(Int(campNest.x)) // (the picture is made again when the camp is moved)
         h.combine(Int(campNest.y))
         return h.finalize()
@@ -1235,6 +1241,66 @@ final class TerrainScene {
                 }
             default: break
             }
+        }
+        drawFarmLevels(in: ctx)
+    }
+
+    /// What the farm's levels add, each on a free spot a little way from the first plot (the same spots every time for the same
+    /// camp): level 2 a wheat field (elves: berry bushes, the undead: a bone field), 3 hives, 4 a sheep pen, 5 hay and pumpkins.
+    private func drawFarmLevels(in ctx: CGContext) {
+        guard farmLevel >= 2, let anchor = plotSpots.first(where: { $0.unlock <= growth })?.center else { return }
+        let spots = farmLevelSpots(around: anchor)
+        let night = farmRace == "undead"
+        for (k, spot) in spots.enumerated() where farmLevel >= k + 2 {
+            guard let spot else { continue }
+            switch k {
+            case 0:
+                if farmRace == "elf" {
+                    for dx: CGFloat in [-14, 0, 14] { draw(TerrainItem(sprite: "berries-elfwood", foot: CGPoint(x: spot.x + dx, y: spot.y + (dx == 0 ? 6 : 0))), in: ctx) }
+                    continue
+                }
+                draw(TerrainItem(sprite: "plot-\(biome.rawValue)", foot: spot), in: ctx)
+                if night {
+                    for n in 0..<3 { draw(TerrainItem(sprite: "bones-graveyard-\(n % 2)", foot: cropSpot(spot, n * 3)), in: ctx) }
+                    guard let sprout = TerrainArt.image("crop-2-0") else { continue }
+                    for n in [1, 2, 4, 6, 7] { drawCrop(sprout, at: cropSpot(spot, n), in: ctx) }
+                } else if let wheat = TerrainArt.image("crop-0-2") {
+                    for n in 0..<8 { drawCrop(wheat, at: cropSpot(spot, n), in: ctx) }
+                }
+            case 1: draw(TerrainItem(sprite: night ? "beehives-night" : "beehives", foot: spot), in: ctx)
+            case 2: draw(TerrainItem(sprite: night ? "pen-bone" : "pen", foot: spot), in: ctx)
+            default:
+                draw(TerrainItem(sprite: "hay", foot: CGPoint(x: spot.x - 12, y: spot.y)), in: ctx)
+                draw(TerrainItem(sprite: "pumpkins", foot: CGPoint(x: spot.x + 12, y: spot.y + 3)), in: ctx)
+            }
+        }
+    }
+
+    private func drawCrop(_ image: CGImage, at: CGPoint, in ctx: CGContext) {
+        ctx.draw(image, in: CGRect(x: at.x - CGFloat(image.width) * 0.625, y: at.y, width: CGFloat(image.width) * 1.25, height: CGFloat(image.height) * 1.25))
+    }
+
+    /// Four spots near `anchor` (nil where none is free): not in water, on a path, among trees or rocks, on a plot, the camp or each other.
+    private func farmLevelSpots(around anchor: CGPoint) -> [CGPoint?] {
+        var rng = TerrainRandom(seed: seed &+ 5151)
+        var taken = plotSpots.map { ($0.center, CGFloat(34)) }
+        taken.append((campNest, 90))
+        for item in (standing + lying) where item.unlock > 0 && item.unlock <= growth { // (the camp's tents, racks, totems…, foot and top)
+            taken += [(item.foot, 24), (CGPoint(x: item.foot.x, y: item.foot.y + 18), 24)]
+        }
+        let area = paintRect.insetBy(dx: 24, dy: 20)
+        return (0..<4).map { _ in
+            for tries in 0..<60 {
+                let a = rng.range(0, 2 * .pi), r = rng.range(46, 90 + Double(tries))
+                let p = CGPoint(x: anchor.x + CGFloat(cos(a) * r), y: anchor.y + CGFloat(sin(a) * r) * 0.7)
+                guard area.contains(p), visible(p, margin: 20), !ponds.contains(where: { $0.blocks(p, margin: 30) }),
+                      !solids.contains(where: { $0.unlock <= growth && $0.blocks(p, margin: 22) }),
+                      !paths.contains(where: { $0.contains { hypot($0.x - p.x, $0.y - p.y) < 26 } }),
+                      taken.allSatisfy({ hypot($0.0.x - p.x, $0.0.y - p.y) > $0.1 + 22 }) else { continue }
+                taken.append((p, 30)) // (a pen is 40 wide)
+                return p
+            }
+            return nil
         }
     }
 

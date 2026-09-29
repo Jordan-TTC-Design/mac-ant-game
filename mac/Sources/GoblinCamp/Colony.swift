@@ -173,10 +173,15 @@ final class Colony {
     var scene: TerrainScene? {
         didSet {
             scene?.growth = peakAnts
+            scene?.farmLevel = farmLevel
+            scene?.farmRace = farmRace
             sceneStage = scene?.stage ?? 0
             obstacles = scene?.obstacles ?? []
         }
     }
+    /// The farm as the books have it (server/FARM.md): the camp window draws what each level added.
+    var farmLevel = 1 { didSet { scene?.farmLevel = farmLevel } }
+    var farmRace = "goblin" { didSet { scene?.farmRace = farmRace } }
     /// What changes in the camp window over the days (seasons, puddles, saplings, worn ground); made with the scene, kept in the save.
     /// The life of the place the goblins are in now. Each place (the camp window, the strip along the bottom, the right, the left) keeps its
     /// own, so switching between them and back never loses what was felled, dug or sown, or the paths worn into the ground.
@@ -451,7 +456,7 @@ final class Colony {
             }
         case .delivered(let id, let kind, let pieces):
             if let material = lootMaterial[id] {
-                if !followsBooks { materials[material, default: 0] += pieces } // (the books already have what raids drop; felling is only for show)
+                if !followsBooks { materials[material, default: 0] += pieces } // (the books have what raids drop, and what felling and digging make: the server counts them by the hour)
                 addFloater("+\(pieces) \(Materials.info(material)?.name ?? material)", Materials.info(material)?.rarity ?? .common, at: nest ?? .zero)
                 if !foods.contains(where: { $0.id == id }) { lootMaterial[id] = nil }
                 onAntsChanged?()
@@ -1989,6 +1994,9 @@ struct BookStores {
     /// Food boosts and cooldowns: seconds left, by food id.
     let boosts: [String: Double]
     let cooldowns: [String: Double]
+    /// The farm's level (server/FARM.md), drawn round the plots.
+    var farmLevel = 1
+    var race = "goblin"
 }
 
 extension Colony {
@@ -2055,6 +2063,8 @@ extension Colony {
         foodDelivered = stores.delivered
         boosts = Colony.kinds(stores.boosts)
         foodCooldowns = Colony.kinds(stores.cooldowns)
+        farmLevel = stores.farmLevel
+        farmRace = stores.race
         if stores.peak > peakAnts {
             peakAnts = stores.peak
             if let scene {

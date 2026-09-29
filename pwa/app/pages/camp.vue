@@ -34,7 +34,7 @@ const statusLine = computed(() => {
     case "loading": return "讀取中…";
     case "offline": return `離線中：這是 ${noteTime(new Date(camp.state.saved?.fetchedAt ?? 0).toISOString())} 的樣子`;
     case "problem": return `出了問題：${camp.state.problem}`;
-    default: return "在 Mac 上玩，這裡只能看";
+    default: return "在 Mac 上玩；這裡可以看、升級田地";
   }
 });
 
@@ -96,6 +96,37 @@ async function toggleSanctuary() {
     sanctuaryBusy.value = false;
   }
 }
+// what the camp makes by itself, and the farm (server/FARM.md)
+const production = computed(() => view.value?.production ?? null);
+const perHourText = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
+const everyText = (n: number) => (n >= 1 ? `每小時 ${perHourText(n)} 個` : `每 ${Math.round((1 / n) * 10) / 10} 小時 1 個`);
+const upgradeLeft = computed(() => {
+  const until = production.value?.farm.upgradingUntil;
+  if (!until) return "";
+  const minutes = Math.max(0, Math.ceil((Date.parse(until) - now.value) / 60_000));
+  return minutes >= 60 ? `${Math.floor(minutes / 60)} 小時 ${minutes % 60} 分` : `${minutes} 分鐘`;
+});
+watch(upgradeLeft, (text) => {
+  if (text === "0 分鐘" && camp.state.status === "ok") setTimeout(() => void camp.refresh(), 3000);
+});
+const upgradeCost = computed(() => Object.entries(production.value?.farm.next?.cost ?? {}).map(([id, n]) => ({ id, n, have: view.value?.materials[id] ?? 0 })));
+const canUpgrade = computed(() => !!production.value?.farm.next && !production.value.farm.upgradingUntil && upgradeCost.value.every((c) => c.have >= c.n));
+const farmBusy = ref(false);
+const farmProblem = ref("");
+async function upgradeFarm() {
+  const next = production.value?.farm.next;
+  if (!next || !confirm(`升級${production.value!.farm.name}，蓋${next.name}？\n\n要 ${upgradeCost.value.map((c) => `${materialName(c.id)} ×${c.n}`).join("、")}，${next.hours} 小時後完成。`)) return;
+  farmBusy.value = true;
+  farmProblem.value = "";
+  try {
+    await api("POST", "camp/commands", { kind: "farm-upgrade", requestId: crypto.randomUUID() });
+    await camp.refresh();
+  } catch (e) {
+    farmProblem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    farmBusy.value = false;
+  }
+}
 const showAllRaids = ref(false);
 const openRaid = ref<number | null>(null);
 const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${monsterName(m.id)} ×${m.count}`).join("、");
@@ -124,6 +155,36 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         <div><b>{{ view.peak }}</b><small>最多時</small></div>
         <div><b>{{ kills }}</b><small>打倒魔獸</small></div>
         <p class="next">下一隻出生：{{ nextBirth }}<br /><small>每 {{ rules.homeBirthMinutes }} 分鐘生一隻，Mac 關著也會長大</small></p>
+      </section>
+
+      <section v-if="production" class="panel production">
+        <h2>生產 <small>{{ production.workers }} 隻在工作</small></h2>
+        <ul class="made">
+          <li><span class="grow">🪵 {{ materialName("log") }}</span><small>每小時 {{ perHourText(production.perHour.log ?? 0) }}</small><b>{{ view.materials.log ?? 0 }}</b></li>
+          <li><span class="grow">🪨 {{ materialName("stone") }}</span><small>每小時 {{ perHourText(production.perHour.stone ?? 0) }}</small><b>{{ view.materials.stone ?? 0 }}</b></li>
+        </ul>
+        <p class="muted small">挖礦偶爾挖到{{ materialName("scrap_iron") }}、很少挖到{{ materialName("crystal_shard") }}。在家的居民越多做得越多（最多算 60 隻）。</p>
+        <h3>{{ production.farm.name }} Lv{{ production.farm.level }}・{{ production.farm.parts.join("、") }}</h3>
+        <ul class="made">
+          <li v-for="food in production.farm.crops" :key="food">
+            <span class="grow">{{ materialName(food) }}</span>
+            <small>{{ everyText(production.perHour[food] ?? 0) }}</small>
+            <b>{{ view.materials[food] ?? 0 }}<small> / 20</small></b>
+          </li>
+        </ul>
+        <p v-if="production.farm.upgradingUntil" class="upgrading">🔨 正在蓋{{ production.farm.next?.name }}，還要 {{ upgradeLeft }}</p>
+        <div v-else-if="production.farm.next" class="upgrade">
+          <div class="grow">
+            <b>升級 Lv{{ production.farm.next.level }}：{{ production.farm.next.name }}</b>
+            <ul class="chips">
+              <li v-for="c in upgradeCost" :key="c.id" :class="{ short: c.have < c.n }">{{ materialName(c.id) }} {{ c.have }}/{{ c.n }}</li>
+              <li>⏱ {{ production.farm.next.hours }} 小時</li>
+            </ul>
+          </div>
+          <button class="btn primary" :disabled="farmBusy || !canUpgrade" @click="upgradeFarm">升級</button>
+        </div>
+        <p v-else class="muted small">已經是最高級了（每種作物 ×1.5）。</p>
+        <p v-if="farmProblem" class="warn">{{ farmProblem }}</p>
       </section>
 
       <section class="panel">
@@ -240,4 +301,14 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .chips li { background: #f1eee2; border-radius: 8px; padding: 5px 10px; font-size: 14px; }
 .icon-btn:disabled { opacity: 0.5; }
+.made { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.made li { display: flex; align-items: baseline; gap: 10px; }
+.made small { color: var(--muted); font-size: 13px; }
+.made b { min-width: 3.5em; text-align: right; }
+.small { font-size: 13px; }
+.upgrade { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+.upgrade .chips { margin-top: 6px; }
+.chips li.short { color: var(--red); }
+.upgrading { margin-top: 10px; font-weight: 600; }
+.production .warn { color: #b3412c; }
 </style>

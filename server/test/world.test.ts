@@ -436,11 +436,11 @@ describe("出征的人數、糧食與巢穴的傷（WORLD.md §19）", () => {
   const strongest = async (a: Record<string, string>) =>
     (await map(a, DAAN, 1500)).filter((c) => c.lair && !c.boss && c.cell !== cellAt(DAAN)).sort((x, y) => y.lair!.power - x.lair!.power)[0]!;
 
-  it("a party is small at first; rations let more go and are eaten; boost food too; the camp bakes bread", async () => {
+  it("a party is small at first; rations let more go and are eaten; boost food too; the farm grows food", async () => {
     const a = await fresh();
     let w = await me(a);
     expect(w.partyCap).toBe(6); // (goblins at level 1)
-    expect(w.food).toEqual({ ration_bread: 5 }); // (given on opening)
+    expect(w.food.ration_bread).toBe(5); // (given on opening)
     const target = (await map(a, DAAN, 1500)).find((c) => c.lair && c.cell !== cellAt(DAAN))!;
     let res = await t.call("POST", "/world/expeditions", { to: target.cell, count: 7 }, a);
     expect(res.status).toBe(409);
@@ -451,9 +451,11 @@ describe("出征的人數、糧食與巢穴的傷（WORLD.md §19）", () => {
     expect(w.food.ration_bread).toBe(1);
     // honey that is not in the store
     expect((await t.call("POST", "/world/expeditions", { to: target.cell, count: 3, supplies: { food_honey: 1 } }, a)).status).toBe(409);
-    // bread: a loaf every 2 hours, up to 10
+    // no more free bread: a new camp's farm grows carrots (one every 3 hours), bread only from level 2
     t.advance(30 * HOUR);
-    expect((await me(a)).food.ration_bread).toBe(10);
+    const food = (await me(a)).food;
+    expect(food.ration_bread).toBe(1);
+    expect(food.food_carrot).toBeGreaterThanOrEqual(Math.min(20, (w.food.food_carrot ?? 0) + 10));
   });
 
   it("a lair that beats a party keeps its wounds, heals them, and a second wave meets it weaker", async () => {

@@ -35,6 +35,11 @@ const clockText = computed(() => {
 });
 const view = computed(() => camp.state.saved?.view ?? null);
 const atHome = computed(() => view.value?.residents.filter((r) => r.place === "home").length ?? 0);
+const farmLine = computed(() => {
+  const farm = view.value?.production?.farm;
+  if (!farm) return "";
+  return `${farm.name} Lv${farm.level}・${farm.parts.at(-1)}${farm.upgradingUntil ? `（正在蓋${farm.next?.name}）` : ""}`;
+});
 const lastRaid = computed(() => camp.state.saved?.raids[0] ?? null);
 const friends = computed(() => live.state.friends);
 const unread = computed(() => friends.value?.friends.reduce((n, f) => n + f.unread, 0) ?? 0);
@@ -112,6 +117,7 @@ const hello = computed(() => {
         <span class="icon">🛖</span>
         <b>營地</b>
         <small>{{ view ? `在家 ${atHome} 隻${noun}` : "讀取中…" }}</small>
+        <small v-if="farmLine">{{ farmLine }}</small>
         <small v-if="lastRaid">魔獸來襲 {{ noteTime(lastRaid.at) }}・{{ lastRaid.winner === "camp" ? "守住了" : "被打敗了" }}</small>
       </NuxtLink>
 

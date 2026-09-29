@@ -15,10 +15,18 @@ import {
   type GearSlot,
   type Wearer,
   campStage,
+  farmCrops,
+  farmName,
+  farmPartName,
+  nextFarmLevel,
+  produce,
+  productionPerHour,
   raceRules,
   startHome,
   type CampEvent,
+  type CampProduction,
   type CampView,
+  WORKERS_MAX,
   type MigrateInput,
   type Place,
   type Population,
@@ -151,6 +159,31 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   moveTo(now.getTime());
   settleGear();
 
+  // what the camp made meanwhile: felling, digging, the farm (by the hour, with those at home then; an upgrade done on the way splits it)
+  const workers = (at: number) => population.residents.filter((r) => r.bornAt <= at && (r.diedAt === null || r.diedAt > at)).length;
+  let farmLevel = camp.farmLevel;
+  let farmUpgradeUntil = camp.farmUpgradeUntil;
+  let producedTo = camp.producedTo.getTime();
+  let carry = { ...camp.productionCarry };
+  const made: Record<string, number> = {};
+  const produceTo = (to: number) => {
+    const step = produce({ race: camp.race, seed: camp.seed, workers, farmLevel, from: producedTo, to, carry, store: materials });
+    for (const [id, n] of Object.entries(step.got)) {
+      materials[id] = (materials[id] ?? 0) + n;
+      made[id] = (made[id] ?? 0) + n;
+    }
+    carry = step.carry;
+    producedTo = step.to;
+  };
+  let farmUpgraded: { level: number; at: Date } | null = null;
+  if (farmUpgradeUntil && farmUpgradeUntil <= now) {
+    produceTo(farmUpgradeUntil.getTime());
+    farmLevel++;
+    farmUpgraded = { level: farmLevel, at: farmUpgradeUntil };
+    farmUpgradeUntil = null;
+  }
+  produceTo(now.getTime());
+
   if (born.length > 0) {
     await tx.insert(campResidents).values(
       born.map((r) => ({ userId: camp.userId, id: r.id, breed: r.breed, seed: r.seed, bornAt: new Date(r.bornAt), diesAt: r.diesAt === null ? null : new Date(r.diesAt) })),
@@ -170,9 +203,23 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   }
   const armoryChanged = JSON.stringify(store) !== JSON.stringify(camp.armory);
 
-  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged;
+  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged || Object.keys(made).length > 0 || !!farmUpgraded;
   const version = changed ? camp.version + 1 : camp.version;
-  const set = { advancedTo: now, nextSlot: population.nextSlot, nextId: population.nextId, peak: population.peak, nextRaid, materials, kills, armory: store, version };
+  const set = {
+    advancedTo: now,
+    nextSlot: population.nextSlot,
+    nextId: population.nextId,
+    peak: population.peak,
+    nextRaid,
+    materials,
+    kills,
+    armory: store,
+    version,
+    farmLevel,
+    farmUpgradeUntil,
+    producedTo: new Date(producedTo),
+    productionCarry: carry,
+  };
   await tx.update(camps).set(set).where(eq(camps.userId, camp.userId));
   if (born.length > 0 || agedOut.length > 0) {
     await addEvent(tx, camp.userId, now, "population", {
@@ -181,6 +228,9 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     });
   }
   for (const raid of raids) await addEvent(tx, camp.userId, new Date(raid.at), "raid", raid);
+  if (farmUpgraded) {
+    await addEvent(tx, camp.userId, farmUpgraded.at, "farm", { level: farmUpgraded.level, name: farmPartName(camp.race, farmUpgraded.level) });
+  }
   Object.assign(camp, set);
   return changed;
 }
@@ -210,6 +260,7 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       since: camp.sanctuarySince?.toISOString() ?? null,
       canTurnOnAt: camp.sanctuaryOffAt ? new Date(camp.sanctuaryOffAt.getTime() + SANCTUARY_REST_HOURS * 3_600_000).toISOString() : null,
     },
+    production: productionView(camp, rows.filter((r) => r.place === "home").length),
     residents: rows.map((r) => ({
       id: r.id,
       breed: r.breed,
@@ -222,6 +273,23 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       gear: r.gear ?? null,
       place: r.place,
     })),
+  };
+}
+
+/** What the camp makes by the hour and where its farm stands (for the devices to show; the server does the sums). */
+export function productionView(camp: CampRow, workers: number): CampProduction {
+  const next = nextFarmLevel(camp.farmLevel);
+  return {
+    perHour: productionPerHour(camp.race, workers, camp.farmLevel),
+    workers: Math.min(workers, WORKERS_MAX),
+    farm: {
+      name: farmName(camp.race),
+      level: camp.farmLevel,
+      parts: Array.from({ length: camp.farmLevel }, (_, i) => farmPartName(camp.race, i + 1)),
+      crops: farmCrops(camp.race, camp.farmLevel).map((c) => c.food),
+      upgradingUntil: camp.farmUpgradeUntil?.toISOString() ?? null,
+      next: next ? { level: next.level, name: farmPartName(camp.race, next.level), cost: next.cost, hours: next.hours } : null,
+    },
   };
 }
 
@@ -245,7 +313,7 @@ export async function startCamp(tx: Tx, userId: string, race: string, now: Date,
   const { population } = startHome(race, seed, now.getTime());
   const [camp] = await tx
     .insert(camps)
-    .values({ userId, race, seed, startedAt: now, advancedTo: now, nextSlot: population.nextSlot, nextId: population.nextId, peak: population.peak })
+    .values({ userId, race, seed, startedAt: now, advancedTo: now, producedTo: now, nextSlot: population.nextSlot, nextId: population.nextId, peak: population.peak })
     .returning();
   await tx.insert(campResidents).values(
     population.residents.map((r) => ({ userId, id: r.id, breed: r.breed, seed: r.seed, bornAt: new Date(r.bornAt), diesAt: r.diesAt === null ? null : new Date(r.diesAt) })),
@@ -324,6 +392,7 @@ export async function migrateCamp(tx: Tx, userId: string, input: MigrateInput, n
       seed: randomInt(0, 2 ** 32),
       startedAt: now,
       advancedTo: now,
+      producedTo: now,
       nextSlot: 1,
       nextId: Math.max(0, ...residents.map((r) => r.id)) + 1,
       peak: Math.min(save.peak ?? residents.length, residents.length),

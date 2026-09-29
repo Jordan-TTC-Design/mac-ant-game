@@ -32,8 +32,6 @@ import {
   lootFor,
   lairFighters,
   materialName,
-  BREAD_HOURS,
-  BREAD_KEEP,
   HOME_MOVE_DAYS,
   isFood,
   lairWoundsView,
@@ -344,18 +342,6 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     await tx.update(worldPlayers).set({ xp: player.xp }).where(eq(worldPlayers.userId, camp.userId));
   }
   if (player) {
-    // the camp bakes bread for expeditions, a loaf every BREAD_HOURS while it has fewer than BREAD_KEEP
-    const since = player.bakedTo ?? player.openedAt;
-    const loaves = Math.floor((now.getTime() - since.getTime()) / (BREAD_HOURS * HOUR));
-    if (loaves > 0) {
-      const have = camp.materials.ration_bread ?? 0;
-      const add = Math.max(0, Math.min(loaves, BREAD_KEEP - have));
-      if (add) {
-        camp.materials = { ...camp.materials, ration_bread: have + add };
-        changed = true;
-      }
-      await tx.update(worldPlayers).set({ bakedTo: new Date(since.getTime() + loaves * BREAD_HOURS * HOUR) }).where(eq(worldPlayers.userId, camp.userId));
-    }
     const days = Math.floor((now.getTime() - player.xpCountedTo.getTime()) / DAY);
     if (days > 0) {
       const cells = held.length;
@@ -465,7 +451,7 @@ export async function openWorldFor(tx: Tx, userId: string, input: { cell?: strin
   }
   if (!input.cell) throw new WorldError(400, "invalid_input", "第一次開啟要在地圖上選營地在哪一格。");
   await standCampOn(tx, userId, input.cell, now);
-  await tx.insert(worldPlayers).values({ userId, open: true, homeCell: input.cell, openedAt: now, xpCountedTo: now, bakedTo: now });
+  await tx.insert(worldPlayers).values({ userId, open: true, homeCell: input.cell, openedAt: now, xpCountedTo: now });
   // something to take along on the first expeditions
   for (const [id, n] of Object.entries(OPENING_FOOD)) camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + n };
   await addEvent(tx, userId, now, "world", { opened: true, cell: input.cell });

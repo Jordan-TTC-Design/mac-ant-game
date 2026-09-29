@@ -149,6 +149,12 @@ export const camps = pgTable("camps", {
   romance: jsonb("romance"),
   kills: jsonb("kills").$type<Record<string, number>>().notNull().default({}),
   delivered: integer("delivered").notNull().default(0),
+  /** The farm (shared/src/camp/production.ts): its level, and when the upgrade under way is done (null: none). */
+  farmLevel: integer("farm_level").notNull().default(1),
+  farmUpgradeUntil: timestamp("farm_upgrade_until", { withTimezone: true, precision: 3 }),
+  /** Felling, digging and the farm are worked out by the hour up to here; the fractions left over wait in the carry. */
+  producedTo: timestamp("produced_to", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
+  productionCarry: jsonb("production_carry").$type<Record<string, number>>().notNull().default({}),
   /** What an old save said when it was moved in (before the caps), for looking into problems. */
   migratedFrom: jsonb("migrated_from"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -208,8 +214,6 @@ export const worldPlayers = pgTable("world_players", {
   xp: integer("xp").notNull().default(0),
   /** Held cells earn experience by the day; days are counted from here. */
   xpCountedTo: timestamp("xp_counted_to", { withTimezone: true, precision: 3 }).notNull(),
-  /** The camp bakes bread for expeditions every BREAD_HOURS; counted from here (null: from when it opened). */
-  bakedTo: timestamp("baked_to", { withTimezone: true, precision: 3 }),
 });
 
 /** Cells someone changed: held, or a lair cleared. A cell nobody touched is worked out from the seed (contents.ts). */

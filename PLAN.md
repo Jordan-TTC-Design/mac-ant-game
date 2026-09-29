@@ -693,3 +693,13 @@ Characters/<id>/
 - **沒驗證**：真的收到推播通知（Playwright 的瀏覽器卡在通知權限的詢問，也沒有推播服務；伺服器端的推播邏輯有測試，`WebPushSender` 沒有對真的推播服務送過）；iPhone／Android 實機、加入主畫面；離線時的畫面與恢復；在手機上刪除便利貼；多台同時改文字時手機上的衝突副本。
 - 修掉的：開啟通知失敗時頁面沒有任何提示（加了錯誤訊息）；上方的「← 便利貼」連結有底線。
 
+
+## 營地生產與農業（2026-09-29，還沒 commit）
+- 照 [server/FARM.md](server/FARM.md) 做完；§9 使用者都選建議的做法（兩邊都能升級、聖光模式照常生產、死靈的墓園／骨粉田→肉乾、數字先照草案）。細節與和規劃不同的地方在 FARM.md §10，數字在 BALANCE.md §3。
+- shared：`camp/production.ts`（`productionPerHour`、`produce`、`FARM_LEVELS`、各種族的田地名字與作物）；材料 `log`、`stone`；6 件 T−1 裝備；`availability.ts` 把營地生產算進拿得到的材料；拿掉 `BREAD_HOURS`、`BREAD_KEEP`。新測試 `production.test.ts`。
+- 伺服器：migration `0015_farm`（`camps.farm_level`、`farm_upgrade_until`、`produced_to`、`production_carry`，刪 `world_players.baked_to`）；`advanceCamp` 算生產與升級完成（`farm` 事件）；`CampView.production`；指令 `farm-upgrade`（`busy`、`at_top`、`not_enough`）；拿掉免費烤麵包。新測試 4 個。
+- 手機：營地頁「生產」卡片與升級按鈕（手機第二個會改營地的操作，第一個是聖光模式）；首頁營地卡片一行田地。
+- Mac：`Equipment.swift`／`Materials.swift`（`Materials.made`）；`CampLedger` 讀 `production` 與 `farm` 事件；選單「田地與生產…」對話框；田地升級、收成的台詞；營地視窗的田地隨等級長大（`TerrainScene.farmLevel`、`farmRace`、`drawFarmLevels`）；`CAMP_TEST_FARMSHEET`。
+- 已驗證：shared 63、伺服器 109 個測試；`pnpm -r typecheck`；`swift build`；`camp:check` 385 項；`CAMP_TEST_FARMSHEET` 三個營地種子 × 三個種族 × Lv1～5 的截圖（東西不壓在水、樹、小路、帳篷上）。
+- 也驗證了（本機伺服器＋另開的測試資料庫＋Nuxt dev＋Playwright，手機大小）：14 小時的營地有木材 82、石頭 43、胡蘿蔔 4；營地頁的「生產」卡片；按「升級」→ 確認 → 扣木材 60、石頭 30、顯示「正在蓋麥田，還要 2 小時」；時間到後首頁顯示「田地 Lv2・麥田」、卡片多了乾糧麵包、下一級是蜂箱。營地頁上方原本寫「這裡只能看」，改成「這裡可以看、升級田地」。
+- **沒驗證**：Mac 選單的「田地與生產…」對話框與升級按鈕實際按下去（要讓 Mac 登入本機伺服器）；線上舊營地套用 migration 後的第一次推進。

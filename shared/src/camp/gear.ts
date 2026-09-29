@@ -26,6 +26,13 @@ export interface GearRule {
 const g = (id: string, name: string, slot: GearSlot, durability: number, cost: Record<string, number>, stats: Partial<GearRule> = {}): GearRule => ({ id, name, slot, durability, cost, ...stats });
 
 export const GEAR: readonly GearRule[] = [
+  // T−1: only wood and stone, which the camp makes by itself (camp/production.ts); weaker than anything else
+  g("wood_club", "木棍", "weapon", 60, { log: 3 }, { might: 0.5 }),
+  g("stone_axe", "石斧", "weapon", 80, { log: 2, stone: 3 }, { might: 0.6 }),
+  g("stone_spear", "石矛", "weapon", 80, { log: 3, stone: 2 }, { might: 0.5, reach: 8, twoHanded: true }),
+  g("bark_buckler", "木製小圓盾", "shield", 12, { log: 4 }, { block: 0.08 }),
+  g("bark_vest", "樹皮護甲", "chest", 12, { log: 5 }, { health: 0.6 }),
+  g("stone_cap", "石片盔", "head", 10, { stone: 3 }, { health: 0.3 }),
   g("bone_knife", "骨刀", "weapon", 120, { rat_fang: 4, rat_tail: 1 }, { might: 1 }),
   g("short_sword", "短劍", "weapon", 160, { scrap_iron: 3, scrap_wood: 1, rat_pelt: 1 }, { might: 1.2 }),
   g("claw_dagger", "利爪匕首", "weapon", 150, { sharp_claw: 2, rat_fang: 4, rat_pelt: 1 }, { might: 1.5 }),

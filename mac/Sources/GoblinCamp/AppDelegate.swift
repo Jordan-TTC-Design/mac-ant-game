@@ -948,6 +948,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 NSApp.terminate(nil)
             }
         }
+        if let path = env["CAMP_TEST_FARMSHEET"] { // "path.png": the farm at levels 1 to 5 (rows), for each race in its own land (columns)
+            after(1) {
+                let size = CGSize(width: 900, height: 640)
+                let world = CGRect(x: 54, y: 54, width: size.width - 108, height: size.height - 108)
+                let columns: [(String, Biome)] = [("goblin", .meadow), ("elf", .elfwood), ("undead", .graveyard)]
+                let cw = 450, ch = 320
+                guard let sheet = CGContext(data: nil, width: cw * columns.count, height: ch * 5, bitsPerComponent: 8, bytesPerRow: 0,
+                                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
+                sheet.interpolationQuality = .medium
+                let seed = UInt64(env["CAMP_TEST_FARMSEED"].flatMap { UInt64($0) } ?? 3) * 7919
+                for (column, (race, biome)) in columns.enumerated() {
+                    for level in 1...5 {
+                        let scene = TerrainScene(seed: seed, biome: biome, world: world, nest: CGPoint(x: size.width / 2, y: size.height / 2))
+                        scene.growth = 120
+                        scene.farmLevel = level
+                        scene.farmRace = race
+                        if let image = scene.render(size: size, origin: .zero, scale: 1, hour: 12) {
+                            sheet.draw(image, in: CGRect(x: column * cw, y: (5 - level) * ch, width: cw, height: ch))
+                        }
+                    }
+                }
+                if let image = sheet.makeImage() { try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path)) }
+                log("farm sheet drawn")
+                NSApp.terminate(nil)
+            }
+        }
         if let stock = env["CAMP_TEST_LARDER"], env["CAMP_TEST_LIFE"] != nil {
             after(3) { self.colony.debugStock(Dictionary(uniqueKeysWithValues: stock.split(separator: ",").compactMap { part -> (String, Int)? in
                 let pair = part.split(separator: ":"); return pair.count == 2 ? (String(pair[0]), Int(pair[1]) ?? 0) : nil })) }
@@ -1308,8 +1334,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sanctuary.stateProvider = { [weak self] in self?.ledger.view?.sanctuary?.since != nil }
         sanctuary.toolTip = "不會有魔獸來襲、別人也打不了你；但營地 120 隻以上時生得慢一半"
         sanctuary.isHidden = !serverCamp
+        // what the camp makes by itself, and raising the farm (server/FARM.md)
+        let farm = ClosureMenuItem(title: "\(Characters.current.id == "undead" ? "墓園" : "田地")與生產…") { [weak self] in DispatchQueue.main.async { self?.showFarm() } }
+        farm.isHidden = !serverCamp
         menu.addItem(group("營地", [
-            foodMenu(), workshop, world, worldStatusItem, sanctuary,
+            foodMenu(), workshop, farm, world, worldStatusItem, sanctuary,
             .separator(),
             editItem, pickItem,
             ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } },
@@ -1985,6 +2014,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// The farm and what the camp makes by the hour (the server does the sums), with a button to raise the farm when it can.
+    private func showFarm() {
+        guard let production = ledger.view?.production, let view = ledger.view else {
+            _ = presentAlert("田地", "還沒有連上伺服器的營地資料，等一下再試。")
+            return
+        }
+        let farm = production.farm
+        let name = { (id: String) in Materials.info(id)?.name ?? id }
+        let number = { (n: Double) in n >= 10 ? "\(Int(n.rounded()))" : String(format: "%.1f", n) }
+        var lines = ["在家工作的有 \(production.workers) 隻（最多算 60 隻）。每小時："]
+        lines.append("・\(name("log")) \(number(production.perHour["log"] ?? 0))、\(name("stone")) \(number(production.perHour["stone"] ?? 0))（挖礦偶爾挖到\(name("scrap_iron"))、很少挖到\(name("crystal_shard"))）")
+        for food in farm.crops {
+            let rate = production.perHour[food] ?? 0
+            let every = rate >= 1 ? "每小時 \(number(rate)) 個" : "每 \(number(1 / max(rate, 0.001))) 小時 1 個"
+            lines.append("・\(name(food))：\(every)，倉庫有 \(view.materials[food] ?? 0)／20")
+        }
+        lines.append("")
+        lines.append("\(farm.name) Lv\(farm.level)：\(farm.parts.joined(separator: "、"))")
+        var canUpgrade = false
+        if let until = farm.upgradingUntil.flatMap(ServerTime.parse) {
+            let minutes = max(0, Int(until.timeIntervalSinceNow / 60))
+            lines.append("正在蓋\(farm.next?.name ?? "")，還要 \(minutes / 60) 小時 \(minutes % 60) 分。")
+        } else if let next = farm.next {
+            let cost = next.cost.sorted { $0.key < $1.key }.map { "\(name($0.key)) \(view.materials[$0.key] ?? 0)/\($0.value)" }.joined(separator: "、")
+            canUpgrade = next.cost.allSatisfy { (view.materials[$0.key] ?? 0) >= $0.value }
+            lines.append("升級到 Lv\(next.level)（\(next.name)）要：\(cost)，\(Int(next.hours)) 小時蓋好。")
+            if !canUpgrade { lines.append("素材還不夠。") }
+        } else {
+            lines.append("已經是最高級了（每種作物 ×1.5）。")
+        }
+        let text = lines.joined(separator: "\n")
+        guard canUpgrade else { _ = presentAlert(farm.name, text); return }
+        guard presentAlert(farm.name, text, buttons: ["升級", "關閉"]) else { return }
+        struct Body: Encodable { let kind = "farm-upgrade"; let requestId = UUID().uuidString.lowercased() }
+        Task { @MainActor in
+            do {
+                let answer = try await self.ledger.command(Body())
+                self.applyBooksToCamp()
+                self.say(answer.message)
+            } catch let error as APIError {
+                _ = self.presentAlert(farm.name, error.message)
+            } catch {}
+        }
+    }
+
     private func refreshBooks() {
         guard campReady, sync.user != nil, !booksFetching else { return }
         booksFetching = true
@@ -1993,6 +2067,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             await self.flushCommands()
             do {
                 let events = try await self.ledger.newEvents()
+                let before = self.ledger.view
                 if try await self.ledger.fetch() != nil {
                     self.booksFetchedAt = Date()
                     self.playRaids(events.filter { $0.raid != nil })
@@ -2008,6 +2083,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         let top = yields.sorted { $0.value > $1.value }.prefix(4).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
                         self.say("大世界的領地送來了 \(top)。")
                     }
+                    for done in events.compactMap(\.farm) {
+                        self.say("\(Characters.current.id == "undead" ? "墓園" : "田地")升級了！\(done.name)蓋好了（Lv\(done.level)）。")
+                    }
+                    self.tellHarvest(before: before)
                     for reward in events.compactMap(\.bossReward) {
                         let loot = reward.loot.sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
                         self.say("大家一起打倒了世界魔王\(reward.name)！我們出了 \(Int((reward.share * 100).rounded()))% 的力，分到 \(loot)，經驗 +\(reward.xp)。")
@@ -2018,6 +2097,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.booksFetchedAt = Date() // offline: try again in three minutes (births go on here meanwhile)
             }
         }
+    }
+
+    /// Now and then the princess says what the farm brought in since the books were last looked at.
+    private func tellHarvest(before: CampLedger.View?) {
+        guard let before, let now = ledger.view, let crops = now.production?.farm.crops, Double.random(in: 0..<1) < 0.35 else { return }
+        let got = crops.compactMap { id -> String? in
+            let n = (now.materials[id] ?? 0) - (before.materials[id] ?? 0)
+            return n > 0 ? "\(n) 個\(Materials.info(id)?.name ?? id)" : nil
+        }
+        guard !got.isEmpty else { return }
+        say("今天收了 \(got.joined(separator: "、"))。")
     }
 
     /// Something the player did that the books must do: queued (it waits while offline) and sent in order.

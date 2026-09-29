@@ -1,7 +1,7 @@
 /**
  * How many may go on one expedition, and the food carried along (server/WORLD.md §19). A party is small at first (by race,
  * growing with the race's level); rations taken along let more go, and a few foods make the whole party stronger. Food
- * is gathered: the held cells give it by their ground, beaten foes drop it, and the camp bakes a little bread by itself.
+ * is gathered: the held cells give it by their ground, beaten foes drop it, and the camp's farm grows it (camp/production.ts).
  */
 import { foodScale } from "../camp/food.ts";
 import type { FightBoosts } from "./battle.ts";
@@ -32,9 +32,6 @@ export const isFood = (id: string) => id in FOOD_NAMES;
 /** How many of a boost food a party of `size` needs. */
 export const boostCost = (size: number) => Math.max(1, Math.ceil(size / 5));
 
-/** The camp bakes one bread every this many hours, while it has fewer than BREAD_KEEP. */
-export const BREAD_HOURS = 2;
-export const BREAD_KEEP = 10;
 /** What a camp is given when it first opens the big world. */
 export const OPENING_FOOD: Record<string, number> = { ration_bread: 5 };
 

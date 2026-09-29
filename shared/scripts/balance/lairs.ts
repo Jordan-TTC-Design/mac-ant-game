@@ -21,6 +21,7 @@ const KIT = {
   none: {},
   sling: { weapon: { id: "slingshot", left: 100 } },
   full: { weapon: { id: "slingshot", left: 100 }, chest: { id: "beetle_armor", left: 24 }, head: { id: "rabbit_cap", left: 14 }, hands: { id: "spine_gloves", left: 16 } },
+  wood: { weapon: { id: "wood_club", left: 60 }, chest: { id: "bark_vest", left: 12 } }, // T−1: the camp's own wood (server/FARM.md)
   camp: { weapon: { id: "short_sword", left: 160 }, chest: { id: "leather_armor", left: 20 } }, // what camp raids alone pay for (T0)
   orc: { weapon: { id: "great_sword", left: 240 }, chest: { id: "iron_plate", left: 36 } }, // T1 top: needs orc drops
 };
@@ -37,6 +38,8 @@ const setups: [string, string, number, keyof typeof KIT, number][] = [
   ["精靈4 營地裝T0", "elf", 4, "camp", 4],
   ["精靈4 雙手劍鐵甲", "elf", 4, "orc", 4],
   ["哥布林6 無裝", "goblin", 6, "none", 0],
+  ["哥布林6 木棍樹皮", "goblin", 6, "wood", 6],
+  ["精靈4 木棍樹皮", "elf", 4, "wood", 4],
   ["死靈5 無裝", "undead", 5, "none", 0],
 ];
 console.log(`巢穴 | 戰力 | ${setups.map((s) => s[0]).join(" | ")}`);

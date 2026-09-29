@@ -247,6 +247,7 @@ def main():
     sprites.update(make_growth())
     sprites.update(make_farm())
     sprites.update(make_seasonal())
+    sprites.update(make_farm_levels())
     for name, img in sprites.items():
         img.save(os.path.join(OUT, name + ".png"))
     print("wrote", len(sprites), "sprites to", os.path.normpath(OUT))
@@ -742,6 +743,66 @@ def pumpkins(rnd):
         put(img, cx, cy - r + 1, (60, 110, 50))
     outline(img, (90, 44, 20))
     return img
+
+
+# ================================================================================================================
+# The farm as it is raised (server/FARM.md): beehives at level 3, a sheep pen at level 4 (the undead's: a night hive, bony sheep)
+# ================================================================================================================
+def beehive(rnd, night=False):
+    """Two straw skeps on a plank stand, a dark door low on each (at night: a glowing one)."""
+    img = new(26, 18)
+    straw = [(150, 104, 40), (206, 160, 70), (236, 200, 110)] if not night else [(70, 60, 90), (104, 92, 130), (140, 126, 170)]
+    band = (130, 90, 34) if not night else (56, 48, 76)
+    rect(img, 1, 15, 24, 2, WOOD); rect(img, 3, 17, 2, 1, WOOD); rect(img, 21, 17, 2, 1, WOOD)
+    for cx in (7, 18):
+        blob(img, cx, 10, 5, 5, straw, rnd, light=(-1, -1))
+        for y in (7, 10, 13):
+            for x in range(cx - 5, cx + 6):
+                if img.getpixel((x, y))[3] > 0:
+                    put(img, x, y, band)
+        rect(img, cx - 1, 12, 2, 2, (40, 26, 16) if not night else (150, 240, 200))
+    if not night:
+        for x, y in ((12, 3), (14, 5), (24, 4)):
+            put(img, x, y, (240, 200, 40)); put(img, x + 1, y, (30, 30, 30))   # bees
+    else:
+        for x, y in ((12, 3), (23, 5)):
+            put(img, x, y, (150, 240, 200))                                   # wisps
+    outline(img, (70, 46, 20) if not night else (30, 24, 44))
+    return img
+
+
+def sheep_pen(rnd, bony=False):
+    """A little fenced pen seen from the front, with two sheep in it (bony: two skeleton sheep); the front rail is low."""
+    img = new(40, 24)
+    post, rail = WOOD, WOOD_LIGHT
+    for x in (0, 9, 19, 29, 38):
+        rect(img, x, 3, 2, 9, post)                                            # back fence
+    rect(img, 0, 5, 40, 1, rail); rect(img, 0, 8, 40, 1, rail)
+    wool = [(206, 206, 196), (236, 236, 228), (252, 252, 248)] if not bony else [(190, 184, 164), (226, 220, 200), (244, 240, 226)]
+    face = (40, 36, 40) if not bony else (230, 224, 204)
+    for cx, cy, flip in ((12, 13, 1), (27, 14, -1)):
+        legs = face if not bony else wool[1]
+        rect(img, cx - 3, cy + 3, 1, 3, legs); rect(img, cx + 2, cy + 3, 1, 3, legs)
+        if not bony:
+            blob(img, cx, cy, 5, 3, wool, rnd)
+        else:
+            rect(img, cx - 5, cy - 2, 11, 1, wool[2])                          # spine
+            for k in range(-4, 5, 2):
+                rect(img, cx + k, cy - 1, 1, 3, wool[1])                       # ribs
+            rect(img, cx - 5, cy + 2, 11, 1, wool[0])
+        hx = cx + 6 * flip
+        rect(img, hx - 1, cy - 3, 3, 3, face)
+        put(img, hx + (1 if flip > 0 else -1), cy - 2, (20, 20, 20) if bony else (240, 240, 240))
+    for x in (0, 9, 19, 29, 38):
+        rect(img, x, 18, 2, 6, post)                                           # front fence, low
+    rect(img, 0, 20, 40, 1, rail)
+    outline(img, (60, 40, 22))
+    return img
+
+
+def make_farm_levels():
+    rnd = random.Random(55)
+    return {"beehives": beehive(rnd), "beehives-night": beehive(rnd, night=True), "pen": sheep_pen(rnd), "pen-bone": sheep_pen(rnd, bony=True)}
 
 
 def make_seasonal():

@@ -56,6 +56,12 @@ enum Materials {
         DropSpec(id: "crystal_shard", name: "碎晶", chance: 0.04, min: 1, max: 1, color: "#6ad8f0"),
     ]
 
+    /// What the camp fells and digs by itself, by the hour (the server works it out: shared/src/camp/production.ts).
+    static let made: [DropSpec] = [
+        DropSpec(id: "log", name: "木材", chance: 1, min: 1, max: 1, color: "#8a5a2c"),
+        DropSpec(id: "stone", name: "石頭", chance: 1, min: 1, max: 1, color: "#9a9a92"),
+    ]
+
     /// What the big world's foes leave (the server fights there and adds them to the books; shared/src/world/drops.ts has the
     /// same names). The chance is the plainest foe's, for the rarity shown.
     static let world: [DropSpec] = [
@@ -142,6 +148,7 @@ enum Materials {
         var seen = Set<String>()
         var result: [MaterialInfo] = scraps.map { MaterialInfo(id: $0.id, name: $0.name, rarity: $0.rarity, color: color($0.color, rarity: $0.rarity), source: "各種魔獸") }
         seen.formUnion(scraps.map(\.id))
+        for m in made { result.append(MaterialInfo(id: m.id, name: m.name, rarity: m.rarity, color: color(m.color, rarity: m.rarity), source: "營地生產")); seen.insert(m.id) }
         for find in finds { result.append(MaterialInfo(id: find.id, name: find.name, rarity: find.rarity, color: color(find.color, rarity: find.rarity), source: "採礦")); seen.insert(find.id) }
         for drop in world { result.append(MaterialInfo(id: drop.id, name: drop.name, rarity: drop.rarity, color: color(drop.color, rarity: drop.rarity), source: "大世界")); seen.insert(drop.id) }
         for kind in Animals.all where kind.hostile {

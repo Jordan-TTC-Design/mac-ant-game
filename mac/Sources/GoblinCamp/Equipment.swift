@@ -92,6 +92,19 @@ enum Gears {
     /// The basic set: every slot has a few, from cloth and leather to iron. Each monster that turns up brings its own materials, and with
     /// them new pieces (shells, wings, spores…): add them here.
     static let all: [Gear] = [
+        // T−1: only wood and stone, which the camp fells and digs by itself (server/FARM.md); weaker than anything else
+        Gear(id: "wood_club", name: "木棍", slot: .weapon, might: 0.5, cost: [("log", 3)], look: .knife, color: rgb(138, 92, 50),
+             blurb: "隨手撿的粗樹枝，總比空手好。"),
+        Gear(id: "stone_axe", name: "石斧", slot: .weapon, might: 0.6, cost: [("log", 2), ("stone", 3)], look: .shortSword, color: rgb(150, 150, 142),
+             blurb: "石頭綁在木柄上，敲下去很鈍但很痛。"),
+        Gear(id: "stone_spear", name: "石矛", slot: .weapon, grip: .two, might: 0.5, reach: 8, cost: [("log", 3), ("stone", 2)], look: .spear, color: rgb(160, 156, 146),
+             blurb: "削尖的石片綁在長木棍上。"),
+        Gear(id: "bark_buckler", name: "木製小圓盾", slot: .shield, block: 0.08, cost: [("log", 4)], look: .woodShield, color: rgb(128, 88, 50),
+             blurb: "一截木頭削成的小圓盾，擋得住一點點。"),
+        Gear(id: "bark_vest", name: "樹皮護甲", slot: .chest, health: 0.6, cost: [("log", 5)], look: .tunic, color: rgb(112, 80, 48),
+             blurb: "剝下來的樹皮綁在身上，有點刺。"),
+        Gear(id: "stone_cap", name: "石片盔", slot: .head, health: 0.3, cost: [("stone", 3)], look: .helm, color: rgb(154, 154, 146),
+             blurb: "幾片薄石片綁成的帽子，戴久了脖子會痠。"),
         // weapons: the daggers and swords in one hand, the big ones (great sword, spear, bow, twin blades) in two
         Gear(id: "bone_knife", name: "骨刀", slot: .weapon, might: 1, cost: [("rat_fang", 4), ("rat_tail", 1)], look: .knife, color: rgb(242, 235, 210),
              blurb: "用鼠牙磨成的短刀，繩子是鼠尾。"),
@@ -251,6 +264,7 @@ enum Gears {
 
     /// Wear before breaking, where it differs from the default (120 for a weapon, 20 for the rest). Cloth wears out fastest, iron lasts longest.
     static let durabilities: [String: Double] = [
+        "wood_club": 60, "stone_axe": 80, "stone_spear": 80, "bark_buckler": 12, "bark_vest": 12, "stone_cap": 10,
         "bone_knife": 120, "short_sword": 160, "claw_dagger": 150, "long_sword": 200, "twin_blades": 180, "great_sword": 240,
         "spear": 160, "bow": 140, "core_staff": 260,
         "wood_shield": 18, "goo_shield": 24,

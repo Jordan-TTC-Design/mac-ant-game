@@ -72,8 +72,8 @@ describe("a new camp", () => {
     // the same camp worked out in one go, raids and all (the server's own code, from scratch)
     const once = await account("b@example.com");
     const seedRow = await database.sql<{ seed: number; started_at: Date }[]>`select seed, started_at from camps where user_id = (select id from users where email = 'a@example.com')`;
-    await database.sql`insert into camps (user_id, race, seed, started_at, advanced_to, next_slot, next_id, peak)
-      select id, 'goblin', ${seedRow[0]!.seed}, ${seedRow[0]!.started_at}, ${seedRow[0]!.started_at}, 1, 3, 2 from users where email = 'b@example.com'`;
+    await database.sql`insert into camps (user_id, race, seed, started_at, advanced_to, produced_to, next_slot, next_id, peak)
+      select id, 'goblin', ${seedRow[0]!.seed}, ${seedRow[0]!.started_at}, ${seedRow[0]!.started_at}, ${seedRow[0]!.started_at}, 1, 3, 2 from users where email = 'b@example.com'`;
     await database.sql`insert into camp_residents (user_id, id, breed, seed, born_at, dies_at)
       select (select id from users where email = 'b@example.com'), id, breed, seed, born_at, dies_at from camp_residents
       where user_id = (select id from users where email = 'a@example.com') and id <= 2`;
@@ -216,8 +216,12 @@ describe("monster raids", () => {
     expect(raid.winner).toBe("camp");
     expect(raid.events.length).toBeGreaterThan(0); // the blows, for the Mac to play
     // what the monsters dropped and how many fell went into the books
-    const lootTotal = raids.reduce((n, e) => n + Object.values((e.data as { loot: Record<string, number> }).loot).reduce((a, b) => a + b, 0), 0);
-    expect(Object.values(camp.materials).reduce((a, b) => a + b, 0)).toBe(lootTotal);
+    // (besides what the camp fells and digs by itself: server/FARM.md)
+    const loot: Record<string, number> = {};
+    for (const e of raids) for (const [id, n] of Object.entries((e.data as { loot: Record<string, number> }).loot)) loot[id] = (loot[id] ?? 0) + n;
+    const made = new Set(Object.keys(camp.production!.perHour));
+    for (const [id, n] of Object.entries(loot)) if (!made.has(id)) expect(camp.materials[id], id).toBe(n);
+    for (const id of Object.keys(camp.materials)) if (!made.has(id)) expect(loot[id], id).toBeDefined();
     const killedTotal = raids.reduce((n, e) => n + Object.values((e.data as { killed: Record<string, number> }).killed).reduce((a, b) => a + b, 0), 0);
     expect(Object.values(camp.kills).reduce((a, b) => a + b, 0)).toBe(killedTotal);
     // and those who fell are gone
@@ -252,6 +256,67 @@ describe("monster raids", () => {
     await view(me);
     const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string }[];
     expect(events.filter((e) => e.kind === "raid")).toHaveLength(0);
+  });
+});
+
+describe("what the camp makes (server/FARM.md)", () => {
+  it("fells and digs by the hour with those at home, and the farm grows carrots from the first day", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    t.advance(24 * HOUR);
+    const camp = await view(me);
+    expect(camp.materials.log).toBeGreaterThan(24);
+    expect(camp.materials.stone).toBeGreaterThan(12);
+    expect(camp.materials.food_carrot).toBe(8);
+    expect(camp.materials.ration_bread).toBeUndefined(); // (no more free bread)
+    expect(camp.production!.farm).toMatchObject({ name: "田地", level: 1, parts: ["菜園"], crops: ["food_carrot"], upgradingUntil: null });
+    expect(camp.production!.farm.next).toMatchObject({ level: 2, name: "麥田", cost: { log: 60, stone: 30 }, hours: 2 });
+    expect(camp.production!.workers).toBe(60);
+    expect(camp.production!.perHour.log).toBeCloseTo(5);
+  });
+
+  it("raises the farm a level: pays now, done after its hours, one at a time, then grows bread", async () => {
+    const me = await account();
+    const goblins = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, breed: "common", age: 100, seed: String(i + 1) }));
+    await t.call("POST", "/camp/migrate", { race: "goblin", save: { goblins, materials: { log: 70, stone: 30 } } }, me);
+    const res = await t.call("POST", "/camp/commands", { kind: "farm-upgrade" }, me);
+    expect(res.status).toBe(200);
+    expect(res.body.message).toContain("麥田");
+    let camp = res.body.camp as CampView;
+    expect(camp.materials).toEqual({ log: 10 });
+    expect(camp.production!.farm.upgradingUntil).not.toBeNull();
+    expect((await t.call("POST", "/camp/commands", { kind: "farm-upgrade" }, me)).body.error).toBe("busy");
+    t.advance(HOUR);
+    expect((await view(me)).production!.farm.level).toBe(1);
+    t.advance(HOUR + 1000);
+    camp = await view(me);
+    expect(camp.production!.farm).toMatchObject({ level: 2, parts: ["菜園", "麥田"], upgradingUntil: null });
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string; data: { level?: number } }[];
+    expect(events.find((e) => e.kind === "farm")?.data.level).toBe(2);
+    expect((await t.call("POST", "/camp/commands", { kind: "farm-upgrade" }, me)).body.error).toBe("not_enough");
+    t.advance(10 * HOUR);
+    expect((await view(me)).materials.ration_bread).toBe(5);
+  });
+
+  it("gives elves berries and the undead jerky and a 墓園", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "undead" }, me);
+    await database.sql`update camps set farm_level = 2`;
+    t.advance(10 * HOUR);
+    const camp = await view(me);
+    expect(camp.production!.farm).toMatchObject({ name: "墓園", parts: ["墓園菜圃", "骨粉田"] });
+    expect(camp.materials.ration_jerky).toBe(5);
+  });
+
+  it("goes on in 聖光模式", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    t.advance(13 * HOUR);
+    await view(me);
+    expect((await t.call("POST", "/camp/sanctuary", { on: true }, me)).status).toBe(200);
+    const before = (await view(me)).materials.log ?? 0;
+    t.advance(10 * HOUR);
+    expect((await view(me)).materials.log).toBeGreaterThanOrEqual(before + 40);
   });
 });
 

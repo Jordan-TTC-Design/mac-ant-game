@@ -2,6 +2,8 @@ import { randomInt } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   canAfford,
+  farmPartName,
+  nextFarmLevel,
   FOOD_BOOST_MINUTES,
   FOOD_COOLDOWN_MINUTES,
   gearRule,
@@ -27,7 +29,7 @@ const MINUTE = 60_000;
 
 export type CommandResult =
   | { ok: true; message: string; resident?: number; repeated?: boolean }
-  | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big" | "too_soon"; message: string };
+  | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big" | "too_soon" | "busy" | "at_top"; message: string };
 
 const cost = (c: Record<string, number>) => Object.entries(c).map(([id, n]) => `${id} ×${n}`).join("、");
 
@@ -137,6 +139,16 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       });
       changes.nextId = camp.nextId + 1;
       message = "公主的孩子加入營地了。";
+      break;
+    }
+    case "farm-upgrade": {
+      if (camp.farmUpgradeUntil) return { ok: false, code: "busy", message: "田地正在升級中。" };
+      const next = nextFarmLevel(camp.farmLevel);
+      if (!next) return { ok: false, code: "at_top", message: "田地已經是最高級了。" };
+      if (!canAfford(materials, next.cost)) return { ok: false, code: "not_enough", message: `素材不夠：升級要 ${cost(next.cost)}。` };
+      spend(materials, next.cost);
+      changes.farmUpgradeUntil = new Date(now.getTime() + next.hours * 3_600_000);
+      message = `開始蓋${farmPartName(camp.race, next.level)}，${next.hours} 小時後完成。`;
       break;
     }
     case "story": {

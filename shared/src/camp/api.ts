@@ -65,6 +65,8 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("princess-child"), breed: z.enum(["half_gob", "half_mix", "half_hum"]), parents: z.string().max(80).default("") }),
   /** The princess's story as the Mac has it now (kept as it is; it does not count for the ranking). */
   z.object({ requestId, kind: z.literal("story"), romance: z.unknown() }),
+  /** Starts raising the farm a level (its cost is taken now; it is done after the level's hours: production.ts FARM_LEVELS). */
+  z.object({ requestId, kind: z.literal("farm-upgrade") }),
 ]);
 export type CampCommand = z.infer<typeof campCommand>;
 
@@ -107,14 +109,37 @@ export interface CampView {
   delivered: number;
   /** 聖光模式 (server/CAMP.md §7): on since (null: off), and when it may be turned on again (null: now). */
   sanctuary: { since: string | null; canTurnOnAt: string | null };
+  /** What the camp makes by itself (server/FARM.md). Older servers leave it out. */
+  production?: CampProduction;
   /** Everyone alive (at home and, later, in the big world). */
   residents: CampResidentView[];
+}
+
+/** The camp's felling, digging and farm, as the devices show them (shared/src/camp/production.ts). */
+export interface CampProduction {
+  /** Material id → how many an hour (the dig finds: the chance of one an hour). */
+  perHour: Record<string, number>;
+  /** Those at home who work (up to WORKERS_MAX). */
+  workers: number;
+  farm: {
+    /** 田地 (the undead's 墓園). */
+    name: string;
+    level: number;
+    /** What each level so far added (菜園, 麥田, …). */
+    parts: string[];
+    /** The foods it grows now. */
+    crops: string[];
+    /** An upgrade under way is done then (null: none). */
+    upgradingUntil: string | null;
+    /** The next level (null: at the top). */
+    next: { level: number; name: string; cost: Record<string, number>; hours: number } | null;
+  };
 }
 
 export interface CampEvent {
   seq: number;
   at: string;
-  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world";
+  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "farm";
   data: unknown;
 }
 

@@ -29,6 +29,9 @@ export const MATERIALS: Record<string, MaterialInfo> = {
   scrap_wood: { name: "木片", color: "#a8743c" },
   scrap_iron: { name: "廢鐵", color: "#8a929e" },
   crystal_shard: { name: "碎晶", color: "#6ad8f0" },
+  // what the camp fells and digs by itself (camp/production.ts)
+  log: { name: "木材", color: "#8a5a2c" },
+  stone: { name: "石頭", color: "#9a9a92" },
   // the home camp's monsters (mac/Resources/Animals)
   slime_goo: { name: "黏液", color: "#68d078" },
   slime_core: { name: "史萊姆核心", color: "#3aa0d8" },

@@ -43,11 +43,27 @@ final class CampLedger {
         /// 聖光模式 (server/CAMP.md §7); missing from older servers.
         struct Sanctuary: Codable, Equatable { let since: String?; let canTurnOnAt: String? }
         let sanctuary: Sanctuary?
+        /// What the camp makes by itself and its farm (server/FARM.md); missing from older servers.
+        struct Production: Codable {
+            struct Next: Codable { let level: Int; let name: String; let cost: [String: Int]; let hours: Double }
+            struct Farm: Codable {
+                let name: String
+                let level: Int
+                let parts: [String]
+                let crops: [String]
+                let upgradingUntil: String?
+                let next: Next?
+            }
+            let perHour: [String: Double]
+            let workers: Int
+            let farm: Farm
+        }
+        let production: Production?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, residents
+            case princessName, romance, kills, delivered, sanctuary, production, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -71,6 +87,7 @@ final class CampLedger {
             kills = try c.decode([String: Int].self, forKey: .kills)
             delivered = try c.decode(Int.self, forKey: .delivered)
             sanctuary = try? c.decodeIfPresent(Sanctuary.self, forKey: .sanctuary)
+            production = try? c.decodeIfPresent(Production.self, forKey: .production)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }
@@ -120,6 +137,9 @@ final class CampLedger {
         let share: Double
     }
 
+    /// The farm went up a level (its upgrade was done).
+    struct FarmDone: Decodable { let level: Int; let name: String }
+
     /// One thing that happened in the camp (`GET /api/camp/events`); raids and the big world's parties are read.
     struct Event: Decodable {
         let seq: Int
@@ -131,6 +151,7 @@ final class CampLedger {
         /// What the held cells of the big world yielded (material → how many).
         let yields: [String: Int]?
         let lairBack: LairBack?
+        let farm: FarmDone?
         private enum CodingKeys: String, CodingKey { case seq, at, kind, data }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -139,6 +160,7 @@ final class CampLedger {
             kind = try c.decode(String.self, forKey: .kind)
             raid = kind == "raid" ? try? c.decode(Raid.self, forKey: .data) : nil
             expedition = kind == "expedition" ? try? c.decode(Expedition.self, forKey: .data) : nil
+            farm = kind == "farm" ? try? c.decode(FarmDone.self, forKey: .data) : nil
             struct World: Decodable { let bossReward: BossReward?; let yields: [String: Int]?; let lairBack: LairBack? }
             let world = kind == "world" ? try? c.decode(World.self, forKey: .data) : nil
             bossReward = world?.bossReward
@@ -230,7 +252,8 @@ final class CampLedger {
         }
         return BookStores(materials: view.materials, kills: view.kills, larder: view.larder,
                           armory: view.armory.map { GearItem(id: $0.id, left: $0.left) }, peak: max(view.peak, residents.count), delivered: view.delivered,
-                          boosts: secondsLeft(view.boosts), cooldowns: secondsLeft(view.foodCooldowns))
+                          boosts: secondsLeft(view.boosts), cooldowns: secondsLeft(view.foodCooldowns),
+                          farmLevel: view.production?.farm.level ?? 1, race: view.race)
     }
 
     /// What happened since this Mac last looked (oldest first). The first time, everything before is taken as seen.
