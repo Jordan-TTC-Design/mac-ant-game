@@ -315,7 +315,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
 .boost small { color: #666; font-size: 11px; }
 .boost.on { border-color: #2f7a3a; background: #e3f3dc; }
 .boost:disabled { opacity: 0.45; cursor: default; }
-.veil { position: fixed; inset: 0 0 calc(0px - var(--vp-gap, 0px)); z-index: 50; background: rgba(10, 16, 8, 0.55); display: flex; align-items: flex-end; justify-content: center; }
+.veil { position: fixed; inset: 0; z-index: 50; background: rgba(10, 16, 8, 0.55); display: flex; align-items: flex-end; justify-content: center; }
 /* a sheet from the bottom on a phone, a window in the middle on a wide screen; the title and the buttons always show */
 .dialog {
   width: 100%; max-width: 560px; max-height: 90dvh; display: flex; flex-direction: column; background: var(--card);

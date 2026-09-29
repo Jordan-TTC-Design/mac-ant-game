@@ -68,7 +68,7 @@ function add() {
 .search { width: 100%; border: 0; border-radius: 10px; padding: 10px 12px; font-size: 16px; margin-bottom: 12px; background: #fffdf6; }
 .empty { color: #e8f0e0; text-align: center; margin-top: 40px; line-height: 1.7; }
 .fab {
-  position: fixed; right: 20px; bottom: calc(env(safe-area-inset-bottom) + 84px - var(--vp-gap, 0px)); z-index: 30; width: 60px; height: 60px; border-radius: 16px;
+  position: fixed; right: 20px; bottom: calc(env(safe-area-inset-bottom) + 84px); z-index: 30; width: 60px; height: 60px; border-radius: 16px;
   background: var(--paper-yellow); border: 3px solid #1f1f1f; font-size: 32px; font-weight: 900; box-shadow: 4px 4px 0 #1f1f1f; cursor: pointer;
 }
 </style>

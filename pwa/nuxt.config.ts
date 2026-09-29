@@ -17,7 +17,10 @@ export default defineNuxtConfig({
         { name: "theme-color", content: "#2f4a2a" },
         { name: "mobile-web-app-capable", content: "yes" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
-        { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+        // "default", not "black-translucent": with the page drawn under the status bar, the home-screen app on newer iOS
+        // made the page shorter than the screen by the status bar's height and drew nothing in the strip left at the bottom
+        // (the tab bar floated above it, and could not be moved into it). The status bar gets its own strip instead.
+        { name: "apple-mobile-web-app-status-bar-style", content: "default" },
         { name: "apple-mobile-web-app-title", content: "哥布林營地" },
       ],
       link: [{ rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" }],

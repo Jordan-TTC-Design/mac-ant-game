@@ -469,7 +469,7 @@ p { margin: 6px 0; line-height: 1.55; }
 
 /* the cell's card, up from the bottom */
 .sheet {
-  position: fixed; left: 0; right: 0; bottom: calc(0px - var(--vp-gap, 0px)); z-index: 40; margin: 0 auto; max-width: 560px;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0 auto; max-width: 560px;
   background: var(--card); border-radius: 18px 18px 0 0; border: 3px solid #1f1f1f; border-bottom: 0;
   padding: 14px 16px calc(env(safe-area-inset-bottom) + 14px); box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.25); animation: rise 0.18s ease-out;
 }

@@ -132,7 +132,7 @@ async function signOut() {
     <details class="sizes" @toggle="measure">
       <summary>畫面尺寸（除錯用）</summary>
       <p v-if="sizes" class="muted small">
-        主畫面 App：{{ sizes.standalone ? "是" : "否" }}・螢幕 {{ sizes.screen }}・網頁 {{ sizes.inner }}／{{ sizes.client }}・可見 {{ sizes.visual ?? "—" }}・安全區 上 {{ sizes.safeTop }} 下 {{ sizes.safeBottom }}・補 {{ sizes.gap }}
+        主畫面 App：{{ sizes.standalone ? "是" : "否" }}・螢幕 {{ sizes.screen }}・網頁 {{ sizes.inner }}／{{ sizes.client }}・可見 {{ sizes.visual ?? "—" }}・安全區 上 {{ sizes.safeTop }} 下 {{ sizes.safeBottom }}・差 {{ sizes.gap }}
       </p>
     </details>
   </main>

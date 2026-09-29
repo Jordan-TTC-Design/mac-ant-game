@@ -1,8 +1,7 @@
 /**
- * The iPhone's home-screen app gives the page a viewport shorter than the screen (by about the status bar's height), so
- * everything fixed to the bottom (the tab bar, the big world's card, the bars under a note or a chat) floats above the
- * bottom edge with a strip of background under it. Measured here: how much shorter the page is than the screen. The
- * elements fixed to the bottom move down by that much (--vp-gap). When iOS gets it right the gap is 0 and nothing moves.
+ * The screen's sizes as the phone reports them, for 設定 →「畫面尺寸（除錯用）」: when something sits in the wrong place on an
+ * iPhone, a screenshot of these says why. `gap`: how much shorter than the screen the home-screen app makes the page.
+ * (Moving the bottom bars down by it did not work: iOS does not draw the page there at all. See nuxt.config.ts.)
  */
 export interface ViewportSizes {
   standalone: boolean;

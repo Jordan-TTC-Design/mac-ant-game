@@ -28,7 +28,7 @@ const on = (to: string) =>
 
 <style scoped>
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: calc(0px - var(--vp-gap, 0px)); z-index: 20; display: flex; justify-content: center;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; justify-content: center;
   padding: 6px 8px calc(env(safe-area-inset-bottom) + 6px); background: rgba(24, 38, 22, 0.96); border-top: 2px solid #1f1f1f;
   /* (no backdrop-filter: on iPhone it made the fixed bar lag and redraw oddly while scrolling) */
 }

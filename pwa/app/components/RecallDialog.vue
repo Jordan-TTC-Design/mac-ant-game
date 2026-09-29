@@ -89,7 +89,7 @@ async function go() {
 </template>
 
 <style scoped>
-.sheet-back { position: fixed; inset: 0 0 calc(0px - var(--vp-gap, 0px)); z-index: 50; background: rgba(0, 0, 0, 0.45); display: flex; align-items: flex-end; justify-content: center; }
+.sheet-back { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, 0.45); display: flex; align-items: flex-end; justify-content: center; }
 .sheet { width: 100%; max-width: 560px; max-height: 85vh; overflow-y: auto; background: var(--card); border-radius: 16px 16px 0 0; padding: 12px 14px calc(env(safe-area-inset-bottom) + 12px); }
 header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 header b { flex: 1; font-size: 16px; }
