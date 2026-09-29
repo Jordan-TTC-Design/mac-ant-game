@@ -863,7 +863,10 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   const outcome = report.outcome!;
   const involved = [camp.userId];
 
-  /** The survivors stay on the cell (up to its room) or walk home (onto the camp's own cell: they are home). */
+  /**
+   * The survivors stay on the cell (up to its room) or walk back: to the held cell they set out from while it is still the
+   * camp's and has room, else home (onto the camp's own cell: they are home).
+   */
   const placeSurvivors = async (survivors: ResidentRow[], stay: boolean) => {
     let staying: ResidentRow[] = [];
     if (stay && exp.toCell !== player?.homeCell) {
@@ -874,8 +877,20 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         await tx.update(campResidents).set({ place: cellPlace(exp.toCell) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, staying.map((r) => r.id))));
       }
     }
-    const home = survivors.filter((r) => !staying.includes(r));
-    if (home.length) await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, home.map((r) => r.id))));
+    let back = survivors.filter((r) => !staying.includes(r));
+    if (back.length && exp.fromPlace !== "home" && exp.fromPlace !== exp.toCell && exp.fromPlace !== player?.homeCell) {
+      const from = await lockCell(tx, exp.fromPlace);
+      if (from?.owner === camp.userId) {
+        const there = (await aliveAt(tx, camp.userId, cellPlace(exp.fromPlace))).length;
+        const room = cellCapacity(camp.race, from.town) + cellBonus(camp.race, from.building, at.getTime()).room - there;
+        const returning = back.slice(0, Math.max(0, room));
+        if (returning.length) {
+          await tx.update(campResidents).set({ place: cellPlace(exp.fromPlace) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, returning.map((r) => r.id))));
+          back = back.filter((r) => !returning.includes(r));
+        }
+      }
+    }
+    if (back.length) await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, back.map((r) => r.id))));
     return staying.length;
   };
 

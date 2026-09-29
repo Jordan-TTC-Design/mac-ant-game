@@ -198,6 +198,23 @@ describe("a building on a cell", () => {
   });
 });
 
+describe("parties from a held cell", () => {
+  it("walk back to the cell they set out from (home when it is gone or full)", async () => {
+    const a = await ready();
+    const cell = await settle(a, 25);
+    const lair = (await map(a)).filter((c) => c.lair && !c.owner).sort((x, y) => x.lair!.power - y.lair!.power)[0]!;
+    const before = (await detail(a, cell)).body.garrison;
+    const res = await t.call("POST", "/world/expeditions", { from: cell, to: lair.cell, count: 10 }, a);
+    expect(res.status).toBe(201);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const w = await me(a);
+    const fallen = w.recent[0]!.outcome!.fallen;
+    const c = await camp(a);
+    expect(c.residents.filter((r) => r.place === `cell:${cell}`).length).toBe(before - fallen);
+    expect(c.residents.some((r) => r.place.startsWith("exp:"))).toBe(false);
+  });
+});
+
 describe("landmarks", () => {
   it("can be looked for around a point: the nearest first, with who holds each", async () => {
     const a = await ready();
