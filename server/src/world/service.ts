@@ -40,6 +40,7 @@ import {
   partyCap,
   planSupplies,
   woundedLairFighters,
+  slowed,
   type FightBoosts,
   NEST_BUILD_HOURS,
   NEST_COST,
@@ -968,7 +969,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
           },
           allies: guests.fighters,
         },
-        night: nightAt(exp.toCell, at),
+        night: nightAt(exp.toCell, at) && !exp.boosts?.lantern,
       });
       report.fighters = [
         ...party.map((r) => ({ id: String(r.id), name: r.name ?? "", side: "attack" as const, hp: hpOf(camp.race, r), race: camp.race, breed: r.breed })),
@@ -1019,7 +1020,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     const kind = bossKind(sighting.kind)!;
     const defenders = bossFighters(kind, row.hp);
     const attackers = party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), withCarried(fightBoosts(camp.race, camp.boosts, at.getTime()), exp.boosts)));
-    const battle = simulateBattle(attackers, defenders, { seed: hashString(`${exp.id}|boss`), maxRounds: BOSS_ROUNDS, night: nightAt(exp.toCell, at) });
+    const battle = simulateBattle(attackers, slowed(defenders, exp.boosts), { seed: hashString(`${exp.id}|boss`), maxRounds: BOSS_ROUNDS, night: nightAt(exp.toCell, at) && !exp.boosts?.lantern });
     const hpAfter = Math.max(0, Math.round(battle.hpLeft.boss ?? row.hp));
     const dealt = row.hp - hpAfter;
     const damage = { ...row.damage, [camp.userId]: (row.damage[camp.userId] ?? 0) + dealt };
@@ -1066,7 +1067,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         expeditionId: exp.id,
         party: { player: camp.userId, residents: party.map((r) => fighterOf(camp.race, r)), race: traitsOf(camp.race), boosts: withCarried(fightBoosts(camp.race, camp.boosts, at.getTime()), exp.boosts) },
         target: { kind: "lair", lair, fighters: foes },
-        night: nightAt(exp.toCell, at),
+        night: nightAt(exp.toCell, at) && !exp.boosts?.lantern,
       });
       report.fighters = [
         ...party.map((r) => ({ id: String(r.id), name: r.name ?? "", side: "attack" as const, hp: hpOf(camp.race, r), race: camp.race, breed: r.breed })),
@@ -1083,8 +1084,10 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       const survivors = party.filter((r) => !fallenA.has(String(r.id)));
       if (result.won) {
         // what the lair kept, and what each beaten foe drops (drops.ts)
-        const loot = { ...result.loot };
+        let loot = { ...result.loot };
         for (const [mat, n] of Object.entries(lairDrops(lair, result.battle.fallen.defend, exp.id))) loot[mat] = (loot[mat] ?? 0) + n;
+        // (幸運符: half as much again)
+        if (exp.boosts?.luck) loot = Object.fromEntries(Object.entries(loot).map(([m, n]) => [m, Math.ceil(n * 1.5)]));
         outcome.loot = loot;
         for (const [mat, n] of Object.entries(loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
         for (const i of result.battle.fallen.defend.map((f) => Number(f.split("#")[1]))) {

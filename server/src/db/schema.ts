@@ -1,5 +1,5 @@
 import type { Site } from "@goblincamp/shared/camp";
-import type { CellBuilding } from "@goblincamp/shared/world";
+import type { CellBuilding, FightBoosts } from "@goblincamp/shared/world";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
@@ -145,6 +145,8 @@ export const camps = pgTable("camps", {
   armory: jsonb("armory").$type<{ id: string; left: number; held?: boolean }[]>().notNull().default([]),
   /** Whether the store is handed out by itself (shared/src/camp/gear.ts `redistribute`); off: only by hand. */
   autoGear: boolean("auto_gear").notNull().default(true),
+  /** 任務 claimed (shared/src/camp/quests.ts): quest id → when (ISO). */
+  quests: jsonb("quests").$type<Record<string, string>>().notNull().default({}),
   /** Food boosts still running and food cooldowns: food id → the time it ends (ISO). */
   boosts: jsonb("boosts").$type<Record<string, string>>().notNull().default({}),
   foodCooldowns: jsonb("food_cooldowns").$type<Record<string, string>>().notNull().default({}),
@@ -258,7 +260,7 @@ export const expeditions = pgTable(
     party: jsonb("party").$type<number[]>().notNull(),
     settle: boolean("settle").notNull().default(false),
     /** The food boosts the party carries (shared/src/world/supplies.ts). */
-    boosts: jsonb("boosts").$type<{ meat?: number; cheese?: number; carrot?: number; honey?: number }>(),
+    boosts: jsonb("boosts").$type<FightBoosts>(),
     setOutAt: timestamp("set_out_at", { withTimezone: true, precision: 3 }).notNull(),
     arriveAt: timestamp("arrive_at", { withTimezone: true, precision: 3 }).notNull(),
     status: text("status", { enum: ["walking", "done"] }).notNull().default("walking"),

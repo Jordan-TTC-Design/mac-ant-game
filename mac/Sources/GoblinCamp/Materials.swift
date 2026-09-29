@@ -141,6 +141,11 @@ enum Materials {
         DropSpec(id: "thick_hide", name: "厚野豬皮", chance: 1, min: 1, max: 2, color: "#7a5038"), // 野豬王
         DropSpec(id: "toad_skin", name: "蛙王皮", chance: 1, min: 1, max: 2, color: "#4a8a3a"), // 蛙王
         DropSpec(id: "toad_gem", name: "蛙王寶石", chance: 0.35, min: 1, max: 1, color: "#40f0a0"), // 蛙王
+        DropSpec(id: "item_bandage", name: "草藥繃帶", chance: 0, min: 0, max: 0, color: "#e8e0c8"), // 道具（工坊做的）
+        DropSpec(id: "item_tonic", name: "蜂王漿", chance: 0, min: 0, max: 0, color: "#fff0a0"), // 道具
+        DropSpec(id: "item_sticky", name: "黏黏彈", chance: 0, min: 0, max: 0, color: "#e87a9a"), // 道具
+        DropSpec(id: "item_charm", name: "幸運符", chance: 0, min: 0, max: 0, color: "#f0d020"), // 道具
+        DropSpec(id: "item_lantern", name: "夜光燈籠", chance: 0, min: 0, max: 0, color: "#8a8af0"), // 道具
         DropSpec(id: "dragon_scale", name: "龍鱗", chance: 0.3, min: 1, max: 1, color: "#c83a2a"), // 小飛龍
         DropSpec(id: "dragon_heart", name: "龍心", chance: 0.25, min: 1, max: 1, color: "#ff5a3a"), // 古龍
         DropSpec(id: "soul_gem", name: "靈魂寶石", chance: 0.8, min: 1, max: 1, color: "#8a5aff"), // 巫妖王

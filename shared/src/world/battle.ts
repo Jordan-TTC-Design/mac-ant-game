@@ -74,6 +74,18 @@ export interface FightBoosts {
   honey?: number;
   /** Hit points +this share: defending a cell with a watchtower or near a temple (holdings.ts). */
   fort?: number;
+  /** 道具 taken along (supplies.ts ITEMS): 蜂王漿 attack and hit points +10%; 草藥繃帶 hits taken −10%; 黏黏彈 the foes 25%
+   * slower (sticky: see slowed); 幸運符 more loot and 夜光燈籠 no night for the dark ones (both worked out by the server). */
+  tonic?: number;
+  bandage?: number;
+  sticky?: number;
+  luck?: number;
+  lantern?: number;
+}
+
+/** The foes a party with 黏黏彈 meets: a quarter slower. */
+export function slowed(foes: Fighter[], boosts: FightBoosts | null | undefined): Fighter[] {
+  return boosts?.sticky ? foes.map((f) => ({ ...f, speed: f.speed * 0.75 })) : foes;
 }
 
 /**
@@ -105,13 +117,13 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
     name: r.name,
     side,
     row: healer || range > 0 ? "back" : "front",
-    hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0))),
-    maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0))),
-    attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0)),
+    hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0))),
+    maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0))),
+    attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0) + 0.1 * (boosts.tonic ?? 0)),
     range,
     speed: r.speed * (1 + 0.15 * (boosts.carrot ?? 0)),
     heal: healer ? Math.round(r.might * 5) : 0,
-    guard: Math.min(0.6, (r.gearGuard ?? 0) + 0.2 * (boosts.cheese ?? 0)),
+    guard: Math.min(0.6, (r.gearGuard ?? 0) + 0.2 * (boosts.cheese ?? 0) + 0.1 * (boosts.bandage ?? 0)),
     lead: leader ? LEAD_PER_LEADER : 0,
     night: 1,
   };

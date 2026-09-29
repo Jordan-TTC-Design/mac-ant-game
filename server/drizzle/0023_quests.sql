@@ -1,0 +1,1 @@
+ALTER TABLE "camps" ADD COLUMN "quests" jsonb DEFAULT '{}'::jsonb NOT NULL;

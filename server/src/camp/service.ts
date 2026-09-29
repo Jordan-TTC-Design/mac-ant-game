@@ -256,6 +256,7 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     larder: camp.larder,
     armory: camp.armory,
     autoGear: camp.autoGear,
+    questsDone: Object.keys(camp.quests ?? {}),
     boosts: camp.boosts,
     foodCooldowns: camp.foodCooldowns,
     princessName: camp.princessName,

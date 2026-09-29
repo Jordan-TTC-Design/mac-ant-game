@@ -121,6 +121,12 @@ export const MATERIALS: Record<string, MaterialInfo> = {
   thick_hide: { name: "厚野豬皮", color: "#7a5038" },
   toad_skin: { name: "蛙王皮", color: "#4a8a3a" },
   toad_gem: { name: "蛙王寶石", color: "#40f0a0" },
+  // 道具, made in the workshop (supplies.ts ITEMS)
+  item_bandage: { name: "草藥繃帶", color: "#e8e0c8" },
+  item_tonic: { name: "蜂王漿", color: "#fff0a0" },
+  item_sticky: { name: "黏黏彈", color: "#e87a9a" },
+  item_charm: { name: "幸運符", color: "#f0d020" },
+  item_lantern: { name: "夜光燈籠", color: "#8a8af0" },
   // what the world's great monsters leave (bosses.ts)
   dragon_scale: { name: "龍鱗", color: "#c83a2a" },
   dragon_heart: { name: "龍心", color: "#ff5a3a" },

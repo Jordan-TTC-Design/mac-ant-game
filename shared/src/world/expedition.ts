@@ -5,7 +5,7 @@
  * The server calls `resolveExpedition` when the party arrives (its arrival time comes from `travelMinutes`), stores the result
  * with its seed, and sends it to both sides; the Macs play `battle.events` back.
  */
-import { lairFighters, simulateBattle, type BattleResult, type FightBoosts, type Fighter, type RaceTraits, type Resident, residentFighter } from "./battle.ts";
+import { lairFighters, simulateBattle, slowed, type BattleResult, type FightBoosts, type Fighter, type RaceTraits, type Resident, residentFighter } from "./battle.ts";
 import { lootFor, type Lair } from "./contents.ts";
 import { XP } from "./leaderboard.ts";
 import { seeded } from "./random.ts";
@@ -42,10 +42,12 @@ export interface ExpeditionOutcome {
 export function resolveExpedition(options: { worldSeed: number; expeditionId: string; party: Party; target: Target; night?: boolean }): ExpeditionOutcome {
   const { party, target } = options;
   const attackers = party.residents.map((r) => residentFighter(r, "attack", party.race, party.boosts));
-  const defenders: Fighter[] =
+  const defenders: Fighter[] = slowed(
     target.kind === "lair"
       ? (target.fighters ?? lairFighters(target.lair))
-      : [...target.defender.residents.map((r) => residentFighter(r, "defend", target.defender.race, target.defender.boosts)), ...(target.allies ?? [])];
+      : [...target.defender.residents.map((r) => residentFighter(r, "defend", target.defender.race, target.defender.boosts)), ...(target.allies ?? [])],
+    party.boosts,
+  );
   const seed = seeded(options.worldSeed, options.expeditionId, "battle")() * 2 ** 32;
   const battle = simulateBattle(attackers, defenders, { seed: Math.floor(seed), night: options.night });
   const won = battle.winner === "attack";

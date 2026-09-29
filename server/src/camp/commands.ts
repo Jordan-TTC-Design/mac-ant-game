@@ -26,7 +26,7 @@ import {
   type GearItem,
   type Wearer,
 } from "@goblincamp/shared/camp";
-import { materialName } from "@goblincamp/shared/world";
+import { itemRule, materialName } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps } from "../db/schema.ts";
 import { addEvent, campRaceLevel, HALF_BREED_LIFESPAN, refundFor } from "./service.ts";
@@ -79,6 +79,16 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
 
   switch (command.kind) {
     case "craft": {
+      // a 道具 (world/supplies.ts ITEMS) goes into the store like food
+      const tool = itemRule(command.gear);
+      if (tool) {
+        if (tool.unlock && !camp.quests?.[tool.unlock]) return { ok: false, code: "not_allowed", message: `${tool.name}要先完成任務才能做（看「任務」頁）。` };
+        if (!canAfford(materials, tool.cost)) return { ok: false, code: "not_enough", message: `素材不夠：${tool.name}要 ${cost(tool.cost)}。` };
+        spend(materials, tool.cost);
+        materials[tool.id] = (materials[tool.id] ?? 0) + 1;
+        message = `做好了${tool.name}，放進倉庫（出征時可以帶）。`;
+        break;
+      }
       const rule = gearRule(command.gear);
       if (!rule) return { ok: false, code: "unknown_gear", message: "工坊不會做這個。" };
       if (!canAfford(materials, rule.cost)) return { ok: false, code: "not_enough", message: `素材不夠：${rule.name}要 ${cost(rule.cost)}。` };

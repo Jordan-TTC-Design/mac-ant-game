@@ -2,7 +2,7 @@
 // The workshop on the phone: make gear (for whoever needs it most, or for someone picked), every piece there is (worn or
 // in the store: take it off, give it, hold it), and mending. The same commands as the Mac's workshop.
 import type { CampResidentView, GearItem, GearRule, GearSlot } from "@goblincamp/shared/camp";
-import { materialName as sharedMaterialName } from "@goblincamp/shared/world";
+import { ITEMS, materialName as sharedMaterialName, type ItemRule } from "@goblincamp/shared/world";
 
 const ok = await useSignedIn();
 const { user } = useAccount();
@@ -18,7 +18,7 @@ const materialName = (id: string) => names.value.materials[id] ?? sharedMaterial
 const home = computed(() => view.value?.residents.filter((r) => r.place === "home") ?? []);
 const nameOf = (r: CampResidentView) => r.name || residentNameFromSeed(view.value!.race, r.seed, r.legacySeed);
 
-const tab = ref<"make" | "have" | "mend">("make");
+const tab = ref<"make" | "items" | "have" | "mend">("make");
 const slotFilter = ref<GearSlot | "all">("all");
 const onlyMakeable = ref(false);
 const message = ref("");
@@ -81,6 +81,8 @@ const jobs = computed(() =>
 );
 const costText = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ×${n}`).join("、");
 const affordable = (cost: Record<string, number>) => Object.entries(cost).every(([id, n]) => have(id) >= n);
+/** A 道具's recipe is open once its quest is done (the server keeps which: view.questsDone). */
+const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).includes(i.unlock);
 </script>
 
 <template>
@@ -94,6 +96,7 @@ const affordable = (cost: Record<string, number>) => Object.entries(cost).every(
     <template v-else>
       <nav class="tabs">
         <button :class="{ on: tab === 'make' }" @click="tab = 'make'">製作</button>
+        <button :class="{ on: tab === 'items' }" @click="tab = 'items'">道具</button>
         <button :class="{ on: tab === 'have' }" @click="tab = 'have'">現有裝備</button>
         <button :class="{ on: tab === 'mend' }" @click="tab = 'mend'">修理<small v-if="jobs.length"> {{ jobs.length }}</small></button>
       </nav>
@@ -128,6 +131,22 @@ const affordable = (cost: Record<string, number>) => Object.entries(cost).every(
           </article>
         </template>
         <p v-if="recipes.length === 0" class="muted">沒有符合的。</p>
+      </section>
+
+      <section v-if="tab === 'items'" class="panel">
+        <p class="muted small">道具放在倉庫，出征時和加成食物一樣帶著用（每 5 隻 1 個）。有些要先完成任務才會解鎖。</p>
+        <article v-for="i in ITEMS" :key="i.id" class="recipe" :class="{ dim: !itemOpen(i) }">
+          <div class="grow">
+            <div class="title"><b>{{ i.name }}</b><span v-if="!itemOpen(i)" class="tier closed">任務解鎖</span></div>
+            <small class="muted">{{ i.what }}・倉庫有 {{ have(i.id) }}</small>
+            <div class="cost">
+              <span v-for="[id, n] in Object.entries(i.cost)" :key="id" :class="have(id) >= n ? 'enough' : 'short'">{{ materialName(id) }} {{ have(id) }}/{{ n }}</span>
+            </div>
+          </div>
+          <button class="btn primary" :disabled="busy || !itemOpen(i) || !affordable(i.cost)" @click="run({ kind: 'craft', gear: i.id })">
+            {{ itemOpen(i) ? "製作" : "未解鎖" }}
+          </button>
+        </article>
       </section>
 
       <section v-if="tab === 'have'" class="panel">

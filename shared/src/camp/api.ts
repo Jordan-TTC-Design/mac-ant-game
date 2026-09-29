@@ -119,6 +119,8 @@ export interface CampView {
   armory: { id: string; left: number; held?: boolean }[];
   /** Whether the store is handed out by itself (off: only by hand). Older servers leave it out (on). */
   autoGear?: boolean;
+  /** 任務 whose reward was taken (camp/quests.ts): some open a 道具's recipe. */
+  questsDone?: string[];
   boosts: Record<string, string>;
   foodCooldowns: Record<string, string>;
   princessName: string;

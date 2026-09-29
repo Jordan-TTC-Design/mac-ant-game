@@ -63,6 +63,12 @@ export const GEAR: readonly GearRule[] = [
   g("frog_boots", "蛙皮靴", "feet", 20, { frog_skin: 3, frog_leg: 1 }, { health: 0.3, speed: 0.12 }),
   g("pelt_wraps", "鼠皮護腕", "hands", 14, { rat_pelt: 3, rat_fang: 1 }, { health: 0.5 }),
   g("iron_gauntlets", "鐵手甲", "hands", 26, { scrap_iron: 4, rat_pelt: 1 }, { might: 0.4, health: 0.4 }),
+  // 2026-09-29: from what camp raids leave that nothing used (夜之心、黏舌、金蛙眼) or little (凝膠、核心、蛙腿)
+  g("tongue_whip", "黏舌鞭", "weapon", 130, { sticky_tongue: 3, frog_leg: 2 }, { might: 1.5, reach: 14 }),
+  g("frog_crown", "金蛙頭冠", "head", 20, { golden_frog_eye: 1, frog_skin: 3 }, { health: 1.0, speed: 0.05 }),
+  g("night_pants", "夜行褲", "legs", 18, { night_heart: 1, bat_wing: 3 }, { health: 1.0, speed: 0.04 }),
+  g("gel_greaves", "黏液護腿", "legs", 16, { elastic_gel: 3, slime_goo: 3 }, { health: 1.1 }),
+  g("core_gloves", "核心手套", "hands", 20, { slime_core: 1, elastic_gel: 2 }, { might: 0.3, health: 0.6 }),
   // 2026-09-28: made from what the big world's foes drop (world/drops.ts); the Mac's Equipment.swift has the same list
   g("wolf_fang_spear", "狼牙槍", "weapon", 170, { wolf_fang: 4, scrap_wood: 4, leather_strap: 1 }, { might: 2.3, reach: 12, twoHanded: true }),
   g("venom_dagger", "毒牙匕首", "weapon", 140, { venom_sac: 2, bat_fang: 2, scrap_iron: 2 }, { might: 2.2, speed: 0.03 }),

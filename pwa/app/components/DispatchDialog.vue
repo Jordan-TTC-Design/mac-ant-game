@@ -2,6 +2,7 @@
 import { RACE_RANGE, residentAsFighter, type CampView } from "@goblincamp/shared/camp";
 import {
   BOOST_FOODS,
+  BOOST_ITEMS,
   bossFighters,
   bossKind,
   boostCost,
@@ -144,7 +145,7 @@ const hints = computed(() => {
   const bare = party.value.filter((a) => !a.gear).length;
   if (bare > 0) out.push(`${bare} 隻沒穿裝備：去工坊做武器和護甲，戰力會高很多`);
   if (extra.value < extraCanTake.value) out.push(`帶乾糧可以多派（每 ${RATIONS_PER_EXTRA} 份多 1 隻，最多多 ${Math.floor(cap.value / 2)} 隻）`);
-  const unused = Object.entries(BOOST_FOODS).filter(([id]) => !supplies[id] && (store.value[id] ?? 0) >= boostCost(party.value.length));
+  const unused = Object.entries({ ...BOOST_FOODS, ...BOOST_ITEMS }).filter(([id]) => !supplies[id] && (store.value[id] ?? 0) >= boostCost(party.value.length));
   if (unused.length) out.push(`帶${unused.map(([, f]) => f.name).join("、")}可以加成`);
   out.push("打輸了巢穴會留傷，趁牠還沒回血派第二波");
   return out;
@@ -214,7 +215,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
             </div>
             <div class="boosts">
               <button
-                v-for="(f, id) in BOOST_FOODS"
+                v-for="(f, id) in { ...BOOST_FOODS, ...Object.fromEntries(Object.entries(BOOST_ITEMS).filter(([k]) => (store[k] ?? 0) > 0 || supplies[k])) }"
                 :key="id"
                 class="boost"
                 :class="{ on: supplies[id] }"
