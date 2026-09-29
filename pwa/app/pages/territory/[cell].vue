@@ -108,7 +108,7 @@ function bonusText(b: CellBonus): string[] {
 const lootText = (loot: Record<string, number> = {}) => Object.entries(loot).sort((a, b) => b[1] - a[1]).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 function happening(h: CellHappening): string {
   switch (h.kind) {
-    case "yield": return `產出了 ${lootText(h.loot)}`;
+    case "yield": return `${h.hungry ? "乾糧不夠，產出減半：" : "產出了 "}${lootText(h.loot) || "（沒有）"}`;
     case "lairBack": {
       const help = h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : "";
       return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}${help}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}${help}）`;
@@ -164,6 +164,18 @@ function happening(h: CellHappening): string {
         <p v-else class="muted">住滿了，要等有居民離開或老死才會再生。</p>
         <p>下次產出 <b>{{ until(d.nextYieldAt) }}</b>：{{ d.yields.map((id) => materialName(id)).join("、") }}</p>
         <p class="muted small">住越多產越多，住滿是兩倍{{ d.town ? "；城鎮再兩倍" : "" }}。至少要住 {{ d.garrisonMin }} 隻才有產出。</p>
+      </section>
+
+      <section class="panel">
+        <h2>糧食</h2>
+        <p v-if="!d.upkeep.pays">這一格不用吃乾糧（營地和最早佔的 {{ d.upkeep.freeCells }} 格免費）。</p>
+        <template v-else>
+          <p>這一格每 3 小時吃 <b>{{ d.upkeep.perYield }}</b> 份乾糧。</p>
+          <p :class="d.upkeep.rations < d.upkeep.paying ? 'warn' : 'muted'">
+            倉庫有 {{ d.upkeep.rations }} 份，{{ d.upkeep.paying }} 格要吃{{ d.upkeep.rations < d.upkeep.paying ? "：不夠了，下次產出會減半" : `，大約夠 ${Math.floor(d.upkeep.rations / d.upkeep.paying) * 3} 小時` }}。
+          </p>
+        </template>
+        <p class="muted small">第 {{ d.upkeep.freeCells + 1 }} 格起，每格每 3 小時吃 1 份乾糧（麵包、魚乾、莓果乾、肉乾都可以）；沒得吃不會死，只是那次產出減半。</p>
       </section>
 
       <section class="panel">

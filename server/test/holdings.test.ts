@@ -244,3 +244,39 @@ describe("cells held side by side", () => {
     expect(defending).toBe(garrison + 5);
   });
 });
+
+describe("keeping many cells", () => {
+  it("the first three besides the camp are free; the rest eat rations every yield, and go hungry without", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const around = neighbors(home);
+    const at = t.now().toISOString();
+    for (const c of around) await database.sql`insert into world_cells (cell, cleared_at) values (${c}, ${at}::timestamptz) on conflict (cell) do update set cleared_at = ${at}::timestamptz`;
+    const cells: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      cells.push(await settle(a, 10, [], (c) => c.cell === around[i]));
+      t.advance(MIN); // (held one after another: the last is the one that pays)
+    }
+    let w = await me(a);
+    expect(w.upkeep).toEqual(expect.objectContaining({ paying: 1, perYield: 1, freeCells: 3 }));
+    expect(w.cells.filter((c) => c.upkeep).map((c) => c.cell)).toEqual([cells[3]]);
+    expect((await detail(a, cells[3]!)).body.upkeep.pays).toBe(true);
+    expect((await detail(a, cells[0]!)).body.upkeep.pays).toBe(false);
+
+    // no rations: the fourth goes hungry at its next yield (the others give nothing this time, so none of their food comes in first)
+    await database.sql`update camps set materials = '{}'::jsonb`;
+    const later = new Date(t.now().getTime() + 24 * HOUR).toISOString();
+    await database.sql`update world_cells set yielded_to = ${later}::timestamptz where cell in ${database.sql([home, cells[0]!, cells[1]!, cells[2]!])}`;
+    t.advance(3 * HOUR);
+    const hungry = (await detail(a, cells[3]!)).body.history.find((h) => h.kind === "yield");
+    expect(hungry?.hungry).toBe(true);
+
+    // with rations: one is eaten every yield
+    await database.sql`update camps set materials = '{"ration_fish": 5}'::jsonb`;
+    t.advance(3 * HOUR);
+    w = await me(a);
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, a)).body.events as { data: { upkeep?: Record<string, number>; hungry?: string[] } }[];
+    expect(events.filter((e) => e.data.upkeep).at(-1)!.data.upkeep).toEqual({ ration_fish: 1 });
+    expect((await detail(a, cells[3]!)).body.history.find((h) => h.kind === "yield")?.hungry).toBeUndefined();
+  });
+});

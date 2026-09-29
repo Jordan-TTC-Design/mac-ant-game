@@ -7,6 +7,7 @@
 import type { Terrain } from "./contents.ts";
 import { neighbors } from "./grid.ts";
 import { hashString } from "./random.ts";
+import { RATIONS } from "./supplies.ts";
 
 export type CellBuildingKind =
   | "sawmill"
@@ -193,6 +194,39 @@ export function connectedCells(cell: string, held: ReadonlySet<string>): string[
 /** How many of the cells next to `cell` are held. */
 export function heldNeighbours(cell: string, held: ReadonlySet<string>): number {
   return neighbors(cell).filter((n) => held.has(n)).length;
+}
+
+// --- keeping many cells ------------------------------------------------------------------------------------------
+
+/**
+ * Holding many cells costs food (server/WORLD.md §20): the camp's own cell and the first UPKEEP_FREE_CELLS others (the
+ * longest held) are free; every other one eats UPKEEP_RATIONS of the camp's rations at every yield. A cell that goes
+ * hungry is not lost: its yield that time is HUNGRY_YIELD of what it would be.
+ */
+export const UPKEEP_FREE_CELLS = 3;
+export const UPKEEP_RATIONS = 1;
+export const HUNGRY_YIELD = 0.5;
+
+/** Eats `need` rations from the store (the kind there is most of first): what was eaten, and how many. */
+export function eatRations(store: Record<string, number>, need: number): { eaten: Record<string, number>; paid: number } {
+  const eaten: Record<string, number> = {};
+  let paid = 0;
+  const left = { ...store };
+  while (paid < need) {
+    const most = Object.keys(RATIONS).sort((a, b) => (left[b] ?? 0) - (left[a] ?? 0))[0]!;
+    if ((left[most] ?? 0) <= 0) break;
+    left[most]! -= 1;
+    eaten[most] = (eaten[most] ?? 0) + 1;
+    paid++;
+  }
+  return { eaten, paid };
+}
+
+/** A yield scaled for how well the cell was fed (share 0…1 of the rations it needed). */
+export function fedYield(got: Record<string, number>, fed: number): Record<string, number> {
+  if (fed >= 1) return got;
+  const k = HUNGRY_YIELD + (1 - HUNGRY_YIELD) * fed;
+  return Object.fromEntries(Object.entries(got).map(([id, n]) => [id, Math.floor(n * k)]).filter(([, n]) => (n as number) > 0));
 }
 
 // --- what a cell gets ---------------------------------------------------------------------------------------------

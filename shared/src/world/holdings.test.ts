@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, connectedCells, heldNeighbours, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
+import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, connectedCells, eatRations, fedYield, heldNeighbours, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
 import { cellId, neighbors } from "./grid.ts";
 import { materialName } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
@@ -74,5 +74,18 @@ describe("cells held side by side", () => {
     expect(heldNeighbours(a, held)).toBe(2);
     expect(cellBonus("goblin", null, 0, { neighbours: 2 }).yieldBoost).toBeCloseTo(0.2);
     expect(cellBonus("goblin", null, 0, { neighbours: 6 }).yieldBoost).toBeCloseTo(0.3);
+  });
+});
+
+describe("keeping many cells", () => {
+  it("eats rations, the kind there is most of first, as many as there are", () => {
+    expect(eatRations({ ration_bread: 1, ration_fish: 3, scrap_wood: 9 }, 3)).toEqual({ eaten: { ration_fish: 2, ration_bread: 1 }, paid: 3 });
+    expect(eatRations({ ration_berry: 1 }, 3)).toEqual({ eaten: { ration_berry: 1 }, paid: 1 });
+    expect(eatRations({}, 2)).toEqual({ eaten: {}, paid: 0 });
+  });
+  it("halves a hungry cell's yield, in proportion to how hungry", () => {
+    expect(fedYield({ scrap_wood: 8, amber: 1 }, 1)).toEqual({ scrap_wood: 8, amber: 1 });
+    expect(fedYield({ scrap_wood: 8, amber: 1 }, 0)).toEqual({ scrap_wood: 4 });
+    expect(fedYield({ scrap_wood: 8 }, 0.5)).toEqual({ scrap_wood: 6 });
   });
 });

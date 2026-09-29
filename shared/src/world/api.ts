@@ -173,6 +173,8 @@ export interface WorldMe {
     town: boolean;
     terrain: Terrain;
     nextYieldAt: string;
+    /** It eats rations every yield (beyond the free cells). */
+    upkeep: boolean;
     /** How many held cells are joined to it side by side (itself included): a town needs TOWN_MIN_CELLS. */
     region: number;
     /** Parties setting out from it may be this many bigger, and walk this share of the time (its building). */
@@ -181,6 +183,8 @@ export interface WorldMe {
   }[];
   /** At home, free to go (not on an expedition). */
   atHome: number;
+  /** Holding many cells eats rations (holdings.ts): how many cells pay, how many rations every yield, how many are in the store. */
+  upkeep: { paying: number; perYield: number; rations: number; freeCells: number };
   /** How many may go on one expedition now (by race and level), before rations. */
   partyCap: number;
   /** The food in the store for expeditions (supplies.ts), by id. */
@@ -206,6 +210,8 @@ export interface CellHappening {
   kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished";
   loot?: Record<string, number>;
   held?: boolean;
+  /** A yield eaten short: there were not rations enough to keep it. */
+  hungry?: boolean;
   /** Came from the held cells next to it to help defend it. */
   helped?: number;
   fallen?: number;
@@ -253,6 +259,8 @@ export interface CellDetail {
   /** Held cells next to it (they add to its yield, and send help when it is fought over), and how many are joined to it. */
   neighbours: number;
   region: number;
+  /** Whether it eats rations (beyond the free cells), and how the store stands against all that do. */
+  upkeep: { pays: boolean; paying: number; rations: number; freeCells: number; perYield: number };
   history: CellHappening[];
 }
 

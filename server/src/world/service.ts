@@ -73,6 +73,11 @@ import {
   connectedCells,
   heldNeighbours,
   REINFORCE_PER_CELL,
+  eatRations,
+  fedYield,
+  RATIONS,
+  UPKEEP_FREE_CELLS,
+  UPKEEP_RATIONS,
   type CellSurroundings,
   seeded,
   YIELD_HOURS,
@@ -283,6 +288,12 @@ async function surroundings(tx: Tx, held: string[]): Promise<(cell: string) => C
   });
 }
 
+/** The held cells that eat rations: all but the camp's own and the UPKEEP_FREE_CELLS longest held (`held` oldest first). */
+function payingCells(held: Pick<CellRow, "cell">[], homeCell: string | null): Set<string> {
+  return new Set(held.filter((c) => c.cell !== homeCell).slice(UPKEEP_FREE_CELLS).map((c) => c.cell));
+}
+const rationsIn = (store: Record<string, number>) => Object.keys(RATIONS).reduce((n, id) => n + Math.max(0, store[id] ?? 0), 0);
+
 /**
  * Those the camp's held cells next to `cell` can spare to help defend it: up to REINFORCE_PER_CELL from each, the
  * strongest, keeping what each must keep (the camp's own cell: those at home).
@@ -314,10 +325,13 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   for (const r of old) await bury(tx, camp, [r], r.diesAt!);
   if (old.length) changed = true;
 
-  const held = await tx.select().from(worldCells).where(eq(worldCells.owner, camp.userId)).for("update");
+  const held = await tx.select().from(worldCells).where(eq(worldCells.owner, camp.userId)).orderBy(worldCells.heldSince, worldCells.cell).for("update");
   const yields: Record<string, number> = {};
   const yieldsByCell: Record<string, Record<string, number>> = {};
+  const upkeep: Record<string, number> = {};
+  const hungry: string[] = [];
   const [home] = await tx.select({ cell: worldPlayers.homeCell }).from(worldPlayers).where(eq(worldPlayers.userId, camp.userId));
+  const paying = payingCells(held, home?.cell ?? null);
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
   const around = await surroundings(tx, held.map((c) => c.cell));
   let landmarkXp = 0;
@@ -373,19 +387,34 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       if (n >= garrisonMin(camp.race)) {
         for (const [mat, k] of Object.entries(buildingYield(bonus, times, seeded(WORLD_SEED, cell.cell, since.getTime(), "building")))) got[mat] = (got[mat] ?? 0) + k;
       }
-      for (const [mat, k] of Object.entries(got)) {
+      // a cell beyond the free ones eats rations every yield; hungry, it yields less
+      let fed = got;
+      if (paying.has(cell.cell)) {
+        const need = times * UPKEEP_RATIONS;
+        const { eaten, paid } = eatRations(camp.materials, need);
+        for (const [id, k] of Object.entries(eaten)) {
+          camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) - k };
+          upkeep[id] = (upkeep[id] ?? 0) + k;
+        }
+        if (paid < need) hungry.push(cell.cell);
+        fed = fedYield(got, paid / need);
+        changed = true;
+      }
+      for (const [mat, k] of Object.entries(fed)) {
         camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + k };
         yields[mat] = (yields[mat] ?? 0) + k;
       }
       await tx.update(worldCells).set({ yieldedTo: new Date(since.getTime() + times * YIELD_HOURS * HOUR) }).where(eq(worldCells.cell, cell.cell));
-      if (Object.keys(got).length) {
-        yieldsByCell[cell.cell] = got;
+      if (Object.keys(fed).length) {
+        yieldsByCell[cell.cell] = fed;
         changed = true;
       }
     }
   }
 
-  if (Object.keys(yields).length) await addEvent(tx, camp.userId, now, "world", { yields, cells: yieldsByCell });
+  if (Object.keys(yields).length || Object.keys(upkeep).length || hungry.length) {
+    await addEvent(tx, camp.userId, now, "world", { yields, cells: yieldsByCell, ...(Object.keys(upkeep).length ? { upkeep } : {}), ...(hungry.length ? { hungry } : {}) });
+  }
   // spoils of great monsters this camp helped beat
   const rewards = await tx.select().from(worldRewards).where(and(eq(worldRewards.userId, camp.userId), isNull(worldRewards.claimedAt))).for("update");
   let rewardXp = 0;
@@ -1108,7 +1137,8 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
   if (!camp) throw new WorldError(404, "no_camp", "這個帳號還沒有營地。");
   await advanceWorld(tx, camp, now);
   const player = await lockPlayer(tx, userId);
-  const held = await tx.select().from(worldCells).where(eq(worldCells.owner, userId)).orderBy(worldCells.heldSince);
+  const held = await tx.select().from(worldCells).where(eq(worldCells.owner, userId)).orderBy(worldCells.heldSince, worldCells.cell);
+  const paying = payingCells(held, player?.homeCell ?? null);
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
   const counts = await garrisons(tx, held.map((c) => c.cell));
   const around = await surroundings(tx, held.map((c) => c.cell));
@@ -1145,10 +1175,12 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
       region: connectedCells(c.cell, new Set(held.map((h) => h.cell))).length,
+      upkeep: paying.has(c.cell),
       party: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).party,
       travel: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).travel,
     })),
     atHome,
+    upkeep: { paying: paying.size, perYield: paying.size * UPKEEP_RATIONS, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS },
     partyCap: partyCap(camp.race, level),
     food: Object.fromEntries(Object.entries(camp.materials).filter(([id, n]) => isFood(id) && n > 0)),
     walking: walking.map((w) => summary(w, userId)),
@@ -1202,7 +1234,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
         eq(campEvents.userId, userId),
         sql`(${campEvents.data} -> 'cells' ? ${cell} or ${campEvents.data} -> 'lairBack' ->> 'cell' = ${cell} or ${campEvents.data} ->> 'cell' = ${cell}
           or ${campEvents.data} ->> 'nest' = ${cell} or ${campEvents.data} ->> 'town' = ${cell} or ${campEvents.data} ->> 'recalled' = ${cell}
-          or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell}
+          or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell}
           or (${campEvents.data} ->> 'to' = ${cell} and ${campEvents.data} ? 'arrived'))`,
       ),
     )
@@ -1212,7 +1244,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   for (const e of events) {
     const d = e.data as Record<string, any>;
     const at = e.at.toISOString();
-    if (d.cells?.[cell]) history.push({ at, kind: "yield", loot: d.cells[cell] });
+    if (d.cells?.[cell] || d.hungry?.includes(cell)) history.push({ at, kind: "yield", loot: d.cells?.[cell] ?? {}, hungry: d.hungry?.includes(cell) || undefined });
     else if (d.lairBack) history.push({ at, kind: "lairBack", name: d.lairBack.name, held: d.lairBack.held, fallen: d.lairBack.fallen, killed: d.lairBack.killed, loot: d.lairBack.loot, helped: d.lairBack.helped });
     else if (d.defended) history.push({ at, kind: "attacked", by: d.by, held: d.won, fallen: d.fallen, expedition: d.id });
     else if (d.arrived && (d.cell === "settled" || d.cell === "taken")) history.push({ at, kind: "settled", fallen: d.fallen, killed: d.killed, expedition: d.id });
@@ -1225,6 +1257,8 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   const center = cellCenter(cell);
   const b = isHome ? null : row.building;
   const mine = await heldCells(tx, userId);
+  const heldRows = await tx.select({ cell: worldCells.cell }).from(worldCells).where(eq(worldCells.owner, userId)).orderBy(worldCells.heldSince, worldCells.cell);
+  const paying = payingCells(heldRows, homeCell);
   const around = (await surroundings(tx, mine))(cell);
   const landmark = around.landmark ? landmarkRule(around.landmark.kind) : undefined;
   const top = (b?.level ?? 0) >= CELL_BUILDING_MAX;
@@ -1263,6 +1297,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     templeNear: !!around.templeNear,
     neighbours: around.neighbours ?? 0,
     region: connectedCells(cell, new Set(mine)).length,
+    upkeep: { pays: paying.has(cell), paying: paying.size, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS, perYield: UPKEEP_RATIONS },
     history,
   };
 }

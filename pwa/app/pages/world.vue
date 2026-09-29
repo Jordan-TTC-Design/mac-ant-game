@@ -198,7 +198,7 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
       <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
       <div style="flex: 1">
         <h1>大世界</h1>
-        <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}</div>
+        <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}<template v-if="s.me.upkeep?.paying">・<span :class="{ hungry: s.me.upkeep.rations < s.me.upkeep.perYield }">乾糧 {{ s.me.upkeep.rations }}（每 3 小時吃 {{ s.me.upkeep.perYield }}）</span></template></div>
       </div>
       <NuxtLink to="/leaderboard" class="icon-btn">排行</NuxtLink>
     </header>
@@ -432,4 +432,5 @@ p { margin: 6px 0; line-height: 1.55; }
 .row input { flex: 1; min-width: 0; }
 .landmark { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: #7a5a00; }
 .landmark small { display: block; font-weight: 500; color: var(--muted); }
+.hungry { color: #ffb3a6; font-weight: 700; }
 </style>
