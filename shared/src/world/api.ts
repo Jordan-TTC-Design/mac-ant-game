@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { BattleEvent } from "./battle.ts";
 import type { Terrain } from "./contents.ts";
 import { isCellId } from "./grid.ts";
-import type { CellBonus } from "./holdings.ts";
+import type { CellBonus, Landmark } from "./holdings.ts";
 
 /** The one world everybody shares. */
 export const WORLD_SEED = 20_260_927;
@@ -99,6 +99,8 @@ export interface CellView {
   garrison: number;
   nest: "none" | "building" | "ready";
   town: boolean;
+  /** A real place standing in it (holdings.ts). */
+  landmark?: Landmark | null;
   /** What its holder built on it. */
   building?: { kind: string; level: number; busy: boolean } | null;
   lair: LairView | null;
@@ -240,6 +242,10 @@ export interface CellDetail {
   nextHours: number | null;
   /** What the cell gets now from what is on it. */
   bonus: CellBonus;
+  /** The real place standing in it, and what it does for the holder. */
+  landmark: (Landmark & { icon: string; label: string; blurb: string }) | null;
+  /** One of the holder's temples is next to it. */
+  templeNear: boolean;
   history: CellHappening[];
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, landmarkRule, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { api } from "~/utils/api";
 
@@ -298,6 +298,7 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
         <div class="grow">
           <h2>{{ title }}<small v-if="cell.lair"> {{ cell.lair.level }} 級</small></h2>
           <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && !mine ? `・從營地走約 ${minutesTo} 分鐘` : "" }}</p>
+          <p v-if="cell.landmark" class="landmark">{{ landmarkRule(cell.landmark.kind)?.icon }} {{ cell.landmark.name }}（{{ landmarkRule(cell.landmark.kind)?.name }}）<small>{{ landmarkRule(cell.landmark.kind)?.blurb }}</small></p>
         </div>
       </div>
 
@@ -429,4 +430,6 @@ p { margin: 6px 0; line-height: 1.55; }
 .ask p { flex-basis: 100%; margin: 0; font-size: 14px; line-height: 1.5; }
 .row { display: flex; align-items: center; gap: 8px; width: 100%; font-weight: 600; }
 .row input { flex: 1; min-width: 0; }
+.landmark { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: #7a5a00; }
+.landmark small { display: block; font-weight: 500; color: var(--muted); }
 </style>

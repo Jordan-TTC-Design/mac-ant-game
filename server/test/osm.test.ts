@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { cellAt, cellsWithin } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
-import { cellTerrain, gunzipTile, readTile, terrainsFor, useTileSource } from "../src/world/osm.ts";
+import { cellLandmark, cellTerrain, gunzipTile, landmarksFor, readTile, terrainsFor, useTileSource } from "../src/world/osm.ts";
 import { emptyTables, openTestDatabase } from "./helpers.ts";
 
 // 大安森林公園 and the streets around it, as OpenFreeMap had them (zoom 14, tile 13723/7014; © OpenStreetMap contributors)
@@ -20,6 +20,15 @@ describe("the real map's terrain (OpenStreetMap)", () => {
     expect(around.forest ?? 0).toBeGreaterThan(0);
   });
 
+  it("finds the landmarks: stations, temples, universities, museums, markets, each in the one cell it stands in", () => {
+    const tile = readTile(saved, 14, 13723, 7014);
+    const found = cellsWithin(PARK, 1000).map((c) => cellLandmark(tile, c)).filter((l) => l);
+    expect(found).toEqual(expect.arrayContaining([{ kind: "station", name: "大安" }, { kind: "temple", name: "臺北清真大寺" }]));
+    expect(new Set(found.map((l) => l!.name)).size).toBe(found.length); // (one cell each)
+    expect(found.length).toBeLessThan(cellsWithin(PARK, 1000).length / 4);
+    expect(new Set(found.map((l) => l!.kind))).toEqual(new Set(["station", "temple", "university", "museum", "market"]));
+  });
+
   describe("kept in the database", () => {
     let database: Database;
     let asked = 0;
@@ -33,7 +42,7 @@ describe("the real map's terrain (OpenStreetMap)", () => {
     });
     beforeEach(async () => {
       await emptyTables(database);
-      await database.sql`truncate world_terrain`;
+      await database.sql`truncate world_terrain, world_landmarks`;
       asked = 0;
     });
     afterAll(async () => {
@@ -52,6 +61,18 @@ describe("the real map's terrain (OpenStreetMap)", () => {
       const before = asked;
       expect((await terrainsFor(database.db, [park])).get(park)).toBe("forest");
       expect(asked).toBe(before); // (from the table, no tile needed)
+    });
+
+    it("keeps each cell's landmark (or that it has none) once looked at", async () => {
+      const cells = cellsWithin(PARK, 1000);
+      const first = await landmarksFor(database.db, cells);
+      const station = cells.find((c) => first.get(c)?.name === "大安")!;
+      expect(first.get(station)).toEqual({ kind: "station", name: "大安" });
+      // (only those in the saved tile: a cell whose tile cannot be had is looked at again later)
+      expect((await database.sql`select count(*)::int as n from world_landmarks`)[0]!.n).toBeGreaterThan(cells.length / 2);
+      const before = asked;
+      expect((await landmarksFor(database.db, [station])).get(station)).toEqual({ kind: "station", name: "大安" });
+      expect(asked).toBe(before);
     });
   });
 });

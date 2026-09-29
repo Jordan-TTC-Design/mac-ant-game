@@ -5,6 +5,7 @@
  * cell has none (the camp has its sites: shared/src/camp/sites.ts).
  */
 import type { Terrain } from "./contents.ts";
+import { hashString } from "./random.ts";
 
 export type CellBuildingKind =
   | "sawmill"
@@ -119,6 +120,53 @@ export function workingLevel(b: CellBuilding | null | undefined, now: number): n
   return busy ? b.level - 1 : b.level;
 }
 
+// --- landmarks ----------------------------------------------------------------------------------------------------
+
+/**
+ * Real places on the map (OpenStreetMap, server/src/world/osm.ts) that make a cell worth more to whoever holds it: one per
+ * cell at most, the most telling kind first (the order below).
+ */
+export type LandmarkKind = "station" | "temple" | "university" | "museum" | "stadium" | "market";
+export interface Landmark {
+  kind: LandmarkKind;
+  name: string;
+}
+export interface LandmarkRule {
+  kind: LandmarkKind;
+  name: string;
+  icon: string;
+  blurb: string;
+}
+export const LANDMARKS: readonly LandmarkRule[] = [
+  { kind: "station", name: "車站", icon: "🚉", blurb: "從這裡出發走路時間 −30%" },
+  { kind: "temple", name: "廟宇", icon: "⛩️", blurb: "守這一格血量 +20%，旁邊自己的格子 +10%" },
+  { kind: "university", name: "大學", icon: "🎓", blurb: "佔著每天多 20 經驗值" },
+  { kind: "museum", name: "古蹟・博物館", icon: "🏛️", blurb: "每次產出有機會挖到碎晶、琥珀" },
+  { kind: "stadium", name: "體育場", icon: "🏟️", blurb: "從這裡出發的隊伍可以多 3 隻" },
+  { kind: "market", name: "市場", icon: "🧺", blurb: "每次產出多給乾糧麵包和起司" },
+];
+const LANDMARK_RULES = new Map(LANDMARKS.map((l) => [l.kind, l]));
+export function landmarkRule(kind: string): LandmarkRule | undefined {
+  return LANDMARK_RULES.get(kind as LandmarkKind);
+}
+/** A temple's help to the held cells next to it. */
+export const TEMPLE_AURA = 0.1;
+/** Experience a day for holding a university (on top of every cell's XP.cellDay). */
+export const UNIVERSITY_XP = 20;
+
+/**
+ * The stand-in for a server without the real map (tests, WORLD_TERRAIN=seed): about one cell in twenty is a landmark,
+ * the same every time.
+ */
+export function standInLandmark(cell: string): Landmark | null {
+  const h = hashString(`${cell}|landmark`);
+  if (h % 100 >= 5) return null;
+  const rule = LANDMARKS[Math.floor(h / 100) % LANDMARKS.length]!;
+  return { kind: rule.kind, name: rule.name };
+}
+
+// --- what a cell gets ---------------------------------------------------------------------------------------------
+
 /** What a held cell gets from what is on it. */
 export interface CellBonus {
   /** More every yield (whole numbers). */
@@ -130,20 +178,37 @@ export interface CellBonus {
   travel: number;
   room: number;
   party: number;
+  /** Experience a day for holding it, beyond every cell's own. */
+  xp: number;
 }
 
-export function cellBonus(race: string, building: CellBuilding | null | undefined, now: number): CellBonus {
-  const out: CellBonus = { makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0 };
+/** Besides its building: the landmark on the cell, and whether a temple of the same holder stands next to it. */
+export interface CellSurroundings {
+  landmark?: Landmark | null;
+  templeNear?: boolean;
+}
+
+export function cellBonus(race: string, building: CellBuilding | null | undefined, now: number, around: CellSurroundings = {}): CellBonus {
+  const out: CellBonus = { makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0 };
+  switch (around.landmark?.kind) {
+    case "station": out.travel *= 0.7; break;
+    case "temple": out.fort += 0.2; break;
+    case "university": out.xp += UNIVERSITY_XP; break;
+    case "museum": out.finds = { crystal_shard: 0.15, amber: 0.15 }; break;
+    case "stadium": out.party += 3; break;
+    case "market": out.makes = { ration_bread: 1, food_cheese: 1 }; break;
+  }
+  if (around.templeNear && around.landmark?.kind !== "temple") out.fort += TEMPLE_AURA;
   const level = workingLevel(building, now);
   const rule = building ? RULES.get(building.kind) : undefined;
   if (!rule || level < 1) return out;
   const k = (Math.min(CELL_BUILDING_MAX, level) - 1) as 0 | 1 | 2;
-  for (const [id, v] of Object.entries(rule.races?.[race]?.makes ?? rule.makes ?? {})) if (v[k]) out.makes[id] = v[k];
-  for (const [id, v] of Object.entries(rule.finds ?? {})) out.finds[id] = v[k];
-  if (rule.fort) out.fort = rule.fort[k];
-  if (rule.travel) out.travel = rule.travel[k];
-  if (rule.room) out.room = rule.room[k];
-  if (rule.party) out.party = rule.party[k];
+  for (const [id, v] of Object.entries(rule.races?.[race]?.makes ?? rule.makes ?? {})) if (v[k]) out.makes[id] = (out.makes[id] ?? 0) + v[k];
+  for (const [id, v] of Object.entries(rule.finds ?? {})) out.finds[id] = Math.min(1, (out.finds[id] ?? 0) + v[k]);
+  if (rule.fort) out.fort += rule.fort[k];
+  if (rule.travel) out.travel *= rule.travel[k];
+  if (rule.room) out.room += rule.room[k];
+  if (rule.party) out.party += rule.party[k];
   return out;
 }
 

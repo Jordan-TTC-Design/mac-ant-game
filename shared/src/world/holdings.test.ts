@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, workingLevel } from "./holdings.ts";
+import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
 import { materialName } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 
@@ -22,7 +22,7 @@ describe("buildings on held cells", () => {
     expect(cellBonus("goblin", { kind: "watchtower", level: 1, busyUntil: later }, at).fort).toBe(0);
     expect(cellBonus("goblin", { kind: "watchtower", level: 3 }, at).fort).toBe(0.35);
     expect(cellBonus("goblin", { kind: "dock", level: 2 }, at).travel).toBe(0.75);
-    expect(cellBonus("goblin", null, at)).toEqual({ makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0 });
+    expect(cellBonus("goblin", null, at)).toEqual({ makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0 });
   });
 
   it("has each race's own version where it differs", () => {
@@ -37,5 +37,26 @@ describe("buildings on held cells", () => {
     const got = buildingYield(bonus, 4, () => (k++ % 2 === 0 ? 0 : 0.99));
     expect(got.scrap_iron).toBe(20);
     expect(got.crystal_shard).toBe(2);
+  });
+});
+
+describe("landmarks", () => {
+  it("add to what the building gives, and a temple helps the held cells next to it", () => {
+    const station = { kind: "station" as const, name: "大安站" };
+    expect(cellBonus("goblin", { kind: "inn", level: 3 }, 0, { landmark: station }).travel).toBeCloseTo(0.7 * 0.65);
+    expect(cellBonus("goblin", { kind: "watchtower", level: 1 }, 0, { landmark: { kind: "temple", name: "福德宮" } }).fort).toBeCloseTo(0.35);
+    expect(cellBonus("goblin", null, 0, { templeNear: true }).fort).toBe(0.1);
+    expect(cellBonus("goblin", null, 0, { landmark: { kind: "temple", name: "福德宮" }, templeNear: true }).fort).toBe(0.2);
+    expect(cellBonus("goblin", { kind: "field", level: 2 }, 0, { landmark: { kind: "market", name: "東門市場" } }).makes).toEqual({ ration_bread: 2, food_cheese: 1, food_carrot: 2 });
+    expect(cellBonus("goblin", null, 0, { landmark: { kind: "university", name: "臺大" } }).xp).toBe(20);
+  });
+
+  it("has a stand-in without the real map: a few cells, every kind, the same every time", () => {
+    const cells = Array.from({ length: 4000 }, (_, i) => `${i % 80}:${Math.floor(i / 80)}`);
+    const found = cells.map(standInLandmark).filter((l) => l);
+    expect(found.length / cells.length).toBeGreaterThan(0.03);
+    expect(found.length / cells.length).toBeLessThan(0.07);
+    expect(new Set(found.map((l) => l!.kind)).size).toBe(LANDMARKS.length);
+    expect(standInLandmark(cells[7]!)).toEqual(standInLandmark(cells[7]!));
   });
 });

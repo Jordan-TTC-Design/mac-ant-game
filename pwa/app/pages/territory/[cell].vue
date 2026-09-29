@@ -138,6 +138,11 @@ function happening(h: CellHappening): string {
     <template v-else>
       <CampScene :race="race" :stage="d.town ? 3 : 1" :residents="living" :sheets="art?.sheets ?? {}" :princess="false" />
 
+      <section v-if="d.landmark || d.templeNear" class="panel landmark">
+        <p v-if="d.landmark"><span class="big">{{ d.landmark.icon }}</span> <b>{{ d.landmark.name }}</b>（{{ d.landmark.label }}）<br /><small>{{ d.landmark.blurb }}</small></p>
+        <p v-if="d.templeNear" class="small">⛩️ 旁邊有你的廟宇：守這一格血量 +10%</p>
+      </section>
+
       <section class="panel grid">
         <div><b>{{ d.garrison }}</b><small>住在這裡（最多 {{ d.capacity }}）</small></div>
         <div><b :class="{ warn: d.garrison < d.garrisonMin + 2 }">{{ d.garrisonMin }}</b><small>至少要留幾隻</small></div>
@@ -235,6 +240,9 @@ p { margin: 6px 0; }
 .power { min-width: 2.2em; text-align: right; }
 .icon { flex: none; width: 32px; height: 32px; background-size: 128px 96px; background-position: 0 0; }
 .more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 10px 0 0; cursor: pointer; }
+.landmark p { margin: 0; }
+.landmark .big { font-size: 22px; }
+.landmark small { color: var(--muted); }
 .bonus { margin: 6px 0; padding-left: 18px; font-size: 14px; color: var(--green); }
 .ops { display: flex; gap: 8px; margin-top: 8px; }
 .ask { margin-top: 8px; padding: 10px; border-radius: 10px; background: #fff6c8; }

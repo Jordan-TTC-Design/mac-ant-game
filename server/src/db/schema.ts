@@ -434,3 +434,10 @@ export const feedbackVotes = pgTable(
   },
   (t) => [primaryKey({ columns: [t.feedbackId, t.userId] })],
 );
+
+/** Which cells hold a real landmark (OpenStreetMap, world/osm.ts), looked at once: a row with no kind means none. */
+export const worldLandmarks = pgTable("world_landmarks", {
+  cell: text("cell").primaryKey(),
+  kind: text("kind"),
+  name: text("name"),
+});

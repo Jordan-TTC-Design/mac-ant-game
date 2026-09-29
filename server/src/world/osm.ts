@@ -11,9 +11,9 @@ import { gunzipSync } from "node:zlib";
 import { VectorTile, type VectorTileFeature } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
 import { inArray } from "drizzle-orm";
-import { cellCenter, HEX_RADIUS, terrainAt, WORLD_SEED, type Terrain } from "@goblincamp/shared/world";
+import { cellAt, cellCenter, HEX_RADIUS, standInLandmark, type LatLng, terrainAt, WORLD_SEED, type Landmark, type LandmarkKind, type Terrain } from "@goblincamp/shared/world";
 import type { Db } from "../auth/session.ts";
-import { worldTerrain } from "../db/schema.ts";
+import { worldLandmarks, worldTerrain } from "../db/schema.ts";
 
 const Z = 14;
 const TILEJSON = "https://tiles.openfreemap.org/planet";
@@ -43,7 +43,19 @@ export interface ReadTile {
   roads: { box: number[]; lines: Point[][] }[];
   /** Addresses and places (points), for how built-up a cell is. */
   spots: Point[];
+  /** Named places that make a landmark (holdings.ts), with the rank of their kind (0 the most telling). */
+  landmarks: (Point & Landmark & { rank: number })[];
 }
+
+/** The places of the poi layer that count as landmarks, by kind (the first that fits; most telling first). */
+const LANDMARK_POIS: { kind: LandmarkKind; fits: (cls: string, sub: string) => boolean }[] = [
+  { kind: "station", fits: (c, s) => c === "railway" && ["subway", "station", "halt"].includes(s) },
+  { kind: "temple", fits: (c, s) => c === "place_of_worship" && ["taoist", "buddhist", "chinese_folk", "taiwanese_folk", "shinto", "hindu", "muslim"].includes(s) },
+  { kind: "university", fits: (c, s) => c === "college" && (s === "university" || s === "college") },
+  { kind: "museum", fits: (c) => c === "museum" || c === "monument" || c === "castle" },
+  { kind: "stadium", fits: (c, s) => c === "stadium" && s === "stadium" },
+  { kind: "market", fits: (c, s) => c === "grocery" && s === "marketplace" },
+];
 
 function tileOf(lat: number, lng: number): { x: number; y: number; fx: number; fy: number } {
   const n = 2 ** Z;
@@ -97,7 +109,46 @@ export function readTile(data: Uint8Array, z: number, x: number, y: number): Rea
       if (f.type === 1) for (const ring of f.loadGeometry()) spots.push(...ring);
     }
   }
-  return { z, x, y, extent, areas, roads, spots };
+  const landmarks: ReadTile["landmarks"] = [];
+  const named = new Set<string>();
+  const poi = tile.layers.poi;
+  if (poi) {
+    for (let i = 0; i < poi.length; i++) {
+      const f = poi.feature(i);
+      const p = f.properties;
+      const name = String(p["name:zh"] ?? p.name ?? "").trim();
+      if (f.type !== 1 || !name) continue;
+      const rank = LANDMARK_POIS.findIndex((l) => l.fits(String(p.class), String(p.subclass)));
+      if (rank < 0) continue;
+      const at = f.loadGeometry()[0]?.[0];
+      // (a station or a temple is often mapped as several points: the first one counts)
+      if (!at || named.has(name)) continue;
+      named.add(name);
+      landmarks.push({ x: at.x, y: at.y, kind: LANDMARK_POIS[rank]!.kind, name, rank });
+    }
+  }
+  return { z, x, y, extent, areas, roads, spots, landmarks };
+}
+
+/** Where a point of a tile is on the earth. */
+function pointAt(tile: ReadTile, p: Point): LatLng {
+  const n = 2 ** tile.z;
+  const fx = tile.x + p.x / tile.extent;
+  const fy = tile.y + p.y / tile.extent;
+  return { lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * fy) / n))) * 180) / Math.PI, lng: (fx / n) * 360 - 180 };
+}
+
+/** The landmark in a cell: of the places standing in it, the most telling kind (the nearest its middle among those), or none. */
+export function cellLandmark(tile: ReadTile, cell: string): Landmark | null {
+  const c = cellCenter(cell);
+  let best: (Landmark & { rank: number; d: number }) | null = null;
+  for (const l of tile.landmarks) {
+    const at = pointAt(tile, l);
+    if (cellAt(at) !== cell) continue;
+    const d = Math.hypot(at.lat - c.lat, at.lng - c.lng);
+    if (!best || l.rank < best.rank || (l.rank === best.rank && d < best.d)) best = { kind: l.kind, name: l.name, rank: l.rank, d };
+  }
+  return best ? { kind: best.kind, name: best.name } : null;
 }
 
 function inside(p: Point, rings: Point[][]): boolean {
@@ -241,6 +292,39 @@ export async function terrainsFor(db: Db, cells: string[]): Promise<Map<string, 
     }
   }
   if (found.length) await db.insert(worldTerrain).values(found.map((f) => ({ cell: f.cell, terrain: f.terrain, source: "osm" }))).onConflictDoNothing();
+  return out;
+}
+
+/** The landmarks of these cells (none: not there): kept ones from the table, the rest read from the tiles and kept. */
+export async function landmarksFor(db: Db, cells: string[]): Promise<Map<string, Landmark | null>> {
+  const out = new Map<string, Landmark | null>();
+  if (cells.length === 0) return out;
+  const unique = [...new Set(cells)];
+  if (!useOsm()) {
+    for (const c of unique) out.set(c, standInLandmark(c));
+    return out;
+  }
+  for (const row of await db.select().from(worldLandmarks).where(inArray(worldLandmarks.cell, unique))) {
+    out.set(row.cell, row.kind ? { kind: row.kind as LandmarkKind, name: row.name ?? "" } : null);
+  }
+  const missing = unique.filter((c) => !out.has(c));
+  const byTile = new Map<string, string[]>();
+  for (const c of missing) {
+    const at = cellCenter(c);
+    const t = tileOf(at.lat, at.lng);
+    byTile.set(`${t.x}/${t.y}`, [...(byTile.get(`${t.x}/${t.y}`) ?? []), c]);
+  }
+  const found: { cell: string; kind: string | null; name: string | null }[] = [];
+  for (const [key, list] of byTile) {
+    const [x, y] = key.split("/").map(Number) as [number, number];
+    const tile = await tileAt(x, y);
+    for (const c of list) {
+      const l = tile ? cellLandmark(tile, c) : null;
+      out.set(c, l);
+      if (tile) found.push({ cell: c, kind: l?.kind ?? null, name: l?.name ?? null });
+    }
+  }
+  if (found.length) await db.insert(worldLandmarks).values(found).onConflictDoNothing();
   return out;
 }
 

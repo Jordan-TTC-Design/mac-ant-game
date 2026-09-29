@@ -68,6 +68,9 @@ import {
   CELL_BUILDING_HOURS,
   CELL_BUILDING_MAX,
   workingLevel,
+  landmarkRule,
+  neighbors,
+  type CellSurroundings,
   seeded,
   YIELD_HOURS,
   WORLD_SEED,
@@ -91,7 +94,7 @@ import {
   type WorldOwner,
 } from "@goblincamp/shared/world";
 import type { AppDeps } from "../app.ts";
-import { terrainOf, terrainsFor } from "./osm.ts";
+import { landmarksFor, terrainOf, terrainsFor } from "./osm.ts";
 import type { Tx } from "../auth/session.ts";
 import { addEvent, advanceCamp, lockCamp, toResident, type CampRow, type ResidentRow } from "../camp/service.ts";
 import { campEvents, campResidents, camps, devices, expeditions, users, worldBosses, worldCells, worldPlayers, worldRewards } from "../db/schema.ts";
@@ -266,6 +269,14 @@ async function bumpVersion(tx: Tx, camp: CampRow) {
   await tx.update(camps).set({ version: camp.version, nextId: camp.nextId, materials: camp.materials, kills: camp.kills }).where(eq(camps.userId, camp.userId));
 }
 
+/** What stands on and around a camp's held cells: each one's landmark, and whether one of its own temples is next to it. */
+async function surroundings(tx: Tx, held: string[]): Promise<(cell: string) => CellSurroundings> {
+  const landmarks = await landmarksFor(tx, held);
+  const mine = new Set(held);
+  return (cell) => ({ landmark: landmarks.get(cell) ?? null, templeNear: neighbors(cell).some((n) => mine.has(n) && landmarks.get(n)?.kind === "temple") });
+}
+const heldCells = async (tx: Tx, userId: string) => (await tx.select({ cell: worldCells.cell }).from(worldCells).where(eq(worldCells.owner, userId))).map((r) => r.cell);
+
 /**
  * Works the camp's world side out to `now`: residents away from home dying of age, nests raising residents on held cells,
  * cells left empty given up, and the experience held cells earn by the day. The home camp is advanced first.
@@ -285,6 +296,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   const yieldsByCell: Record<string, Record<string, number>> = {};
   const [home] = await tx.select({ cell: worldPlayers.homeCell }).from(worldPlayers).where(eq(worldPlayers.userId, camp.userId));
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
+  const around = await surroundings(tx, held.map((c) => c.cell));
+  let landmarkXp = 0;
   for (const cell of held) {
     const terrain = ground.get(cell.cell) ?? terrainAt(WORLD_SEED, cell.cell);
     // (a camp's cell opened before its nest came with it gets it now)
@@ -292,12 +305,13 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       cell.nestStartedAt = new Date((cell.heldSince ?? now).getTime() - NEST_BUILD_HOURS * HOUR);
       await tx.update(worldCells).set({ nestStartedAt: cell.nestStartedAt }).where(eq(worldCells.cell, cell.cell));
     }
+    const isHome = cell.cell === home?.cell;
+    const bonus = cellBonus(camp.race, isHome ? null : cell.building, now.getTime(), around(cell.cell));
     // a lair beaten here comes back when its time is up and tries to take its ground back
-    const back = await lairReturns(tx, camp, cell, now, home?.cell ?? null, terrain);
+    const back = await lairReturns(tx, camp, cell, now, home?.cell ?? null, terrain, around(cell.cell));
     if (back.fought) changed = true;
     if (back.lost) continue;
-    const isHome = cell.cell === home?.cell;
-    const bonus = cellBonus(camp.race, isHome ? null : cell.building, now.getTime());
+    landmarkXp += bonus.xp;
     const room = cellCapacity(camp.race, cell.town) + bonus.room;
     // (the camp's own cell raises no one of its own: the camp standing there does, at home)
     const readyAt = cell.nestStartedAt && !isHome ? new Date(cell.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
@@ -370,7 +384,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       const cells = held.length;
       await tx
         .update(worldPlayers)
-        .set({ xp: player.xp + days * cells * XP.cellDay, xpCountedTo: new Date(player.xpCountedTo.getTime() + days * DAY) })
+        .set({ xp: player.xp + days * (cells * XP.cellDay + landmarkXp), xpCountedTo: new Date(player.xpCountedTo.getTime() + days * DAY) })
         .where(eq(worldPlayers.userId, camp.userId));
     }
   }
@@ -383,7 +397,15 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
  * §15): held, it is beaten again (its drops go to the camp's store); not, the garrison is gone and the lair has its ground
  * back. The camp's own first cell is spared (the camp stands there).
  */
-async function lairReturns(tx: Tx, camp: CampRow, cell: CellRow, now: Date, homeCell: string | null, terrain: Terrain): Promise<{ fought: boolean; lost: boolean }> {
+async function lairReturns(
+  tx: Tx,
+  camp: CampRow,
+  cell: CellRow,
+  now: Date,
+  homeCell: string | null,
+  terrain: Terrain,
+  around: CellSurroundings,
+): Promise<{ fought: boolean; lost: boolean }> {
   // (the camp's own cell, and every cell of a camp in 聖光模式, are left alone)
   if (cell.cell === homeCell || !cell.clearedAt || camp.sanctuarySince) return { fought: false, lost: false };
   const lair = lairAt(WORLD_SEED, cell.cell, terrain);
@@ -399,7 +421,7 @@ async function lairReturns(tx: Tx, camp: CampRow, cell: CellRow, now: Date, home
     fought = true;
     const at = new Date(t);
     const foes = lairFighters(lair).map((f) => ({ ...f, side: "attack" as const }));
-    const fort = cellBonus(camp.race, cell.building, t).fort;
+    const fort = cellBonus(camp.race, cell.building, t, around).fort;
     const defending = guards.map((r) => residentFighter(fighterOf(camp.race, r), "defend", traitsOf(camp.race), { ...fightBoosts(camp.race, camp.boosts, t), fort }));
     const battle = simulateBattle(foes, defending, { seed: hashString(`${cell.cell}|lair-back|${t}`), night: nightAt(cell.cell, at) });
     const fallen = new Set(battle.fallen.defend);
@@ -558,11 +580,12 @@ export async function sendExpedition(
 
   const fromCell = input.from === "home" ? player.homeCell : input.from;
   // (a building where it sets out: a dock or an inn shortens the walk, barracks let more go)
-  let fromBonus = cellBonus(camp.race, null, now.getTime());
+  const around = await surroundings(tx, await heldCells(tx, userId));
+  let fromBonus = cellBonus(camp.race, null, now.getTime(), around(fromCell));
   if (input.from !== "home") {
     const from = await lockCell(tx, input.from);
     if (from?.owner !== userId) throw new WorldError(403, "not_yours", "只能從自己的格子出發。");
-    fromBonus = cellBonus(camp.race, from.building, now.getTime());
+    fromBonus = cellBonus(camp.race, from.building, now.getTime(), around(fromCell));
   }
   if (input.to === input.from) throw new WorldError(400, "invalid_input", "出發和目的地是同一格。");
   const place = input.from === "home" ? "home" : cellPlace(input.from);
@@ -744,7 +767,10 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
             player: defenderCamp.userId,
             residents: defenders.map((r) => fighterOf(defenderCamp.race, r, "d")),
             race: traitsOf(defenderCamp.race),
-            boosts: { ...fightBoosts(defenderCamp.race, defenderCamp.boosts, at.getTime()), fort: campCell ? 0 : cellBonus(defenderCamp.race, cell.building, at.getTime()).fort },
+            boosts: {
+              ...fightBoosts(defenderCamp.race, defenderCamp.boosts, at.getTime()),
+              fort: cellBonus(defenderCamp.race, campCell ? null : cell.building, at.getTime(), (await surroundings(tx, await heldCells(tx, defenderCamp.userId)))(exp.toCell)).fort,
+            },
           },
         },
         night: nightAt(exp.toCell, at),
@@ -1053,6 +1079,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
   const held = await tx.select().from(worldCells).where(eq(worldCells.owner, userId)).orderBy(worldCells.heldSince);
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
   const counts = await garrisons(tx, held.map((c) => c.cell));
+  const around = await surroundings(tx, held.map((c) => c.cell));
   const [{ atHome }] = (await tx
     .select({ atHome: sql<number>`count(*)::int` })
     .from(campResidents)
@@ -1085,8 +1112,8 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       town: c.town,
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
-      party: cellBonus(camp.race, c.building, now.getTime()).party,
-      travel: cellBonus(camp.race, c.building, now.getTime()).travel,
+      party: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).party,
+      travel: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).travel,
     })),
     atHome,
     partyCap: partyCap(camp.race, level),
@@ -1164,6 +1191,8 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   }
   const center = cellCenter(cell);
   const b = isHome ? null : row.building;
+  const around = (await surroundings(tx, await heldCells(tx, userId)))(cell);
+  const landmark = around.landmark ? landmarkRule(around.landmark.kind) : undefined;
   const top = (b?.level ?? 0) >= CELL_BUILDING_MAX;
   return {
     cell,
@@ -1195,7 +1224,9 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     canBuild: isHome ? [] : buildingsFor(terrain).map((r) => ({ kind: r.kind, name: cellBuildingName(r.kind, camp.race), blurb: cellBuildingBlurb(r.kind, camp.race) })),
     nextCost: isHome || top ? null : CELL_BUILDING_COSTS[b?.level ?? 0]!,
     nextHours: isHome || top ? null : CELL_BUILDING_HOURS[b?.level ?? 0]!,
-    bonus: cellBonus(camp.race, b, now.getTime()),
+    bonus: cellBonus(camp.race, b, now.getTime(), around),
+    landmark: around.landmark && landmark ? { ...around.landmark, icon: landmark.icon, label: landmark.name, blurb: landmark.blurb } : null,
+    templeNear: !!around.templeNear,
     history,
   };
 }
@@ -1264,6 +1295,7 @@ function lairWith(lair: Lair | null, wounds: { hp: number[]; at: number } | null
 export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date): Promise<CellView[]> {
   const ids = cellsWithin(point, Math.min(radius, MAX_MAP_RADIUS));
   const ground = await terrainsFor(tx, ids);
+  const landmarks = await landmarksFor(tx, ids);
   const rows = ids.length ? await tx.select().from(worldCells).where(inArray(worldCells.cell, ids)) : [];
   const byCell = new Map(rows.map((r) => [r.cell, r]));
   const ownerIds = [...new Set(rows.map((r) => r.owner).filter((o): o is string => !!o))];
@@ -1294,6 +1326,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       garrison: counts.get(cell)?.n ?? 0,
       nest: row ? nestState(row, now) : "none",
       town: row?.town ?? false,
+      landmark: landmarks.get(cell) ?? null,
       building: row?.owner && row.building ? { kind: row.building.kind, level: row.building.level, busy: workingLevel(row.building, now.getTime()) < row.building.level } : null,
       ...lairWith(lair, row?.lairWounds, now),
       lairBackAt: backAt?.toISOString() ?? null,

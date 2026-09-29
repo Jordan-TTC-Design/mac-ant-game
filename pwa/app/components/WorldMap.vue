@@ -3,7 +3,7 @@ import { Map as MapLibre, Marker, setWorkerUrl, type GeoJSONSource } from "mapli
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { FeatureCollection } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { cellAt, HEX_RADIUS, type CellView } from "@goblincamp/shared/world";
+import { cellAt, HEX_RADIUS, landmarkRule, type CellView } from "@goblincamp/shared/world";
 
 // The big world on the real map (OpenStreetMap, in the game's colours: utils/mapStyle.ts), drawn at a low resolution and
 // scaled up with sharp pixels. Only the cell picked and the held ones are outlined (yours yellow, others' red); each lair
@@ -123,8 +123,15 @@ function drawMarkers() {
     } else if (c.lair) {
       const icon = c.lair.kind === "enemy_town" ? "enemy_town" : leaderOf(c.lair.foes);
       el.append(foeElement(icon, 22), label(`Lv${c.lair.level}`));
-    } else {
+    } else if (!c.landmark) {
       continue;
+    }
+    // a real place standing in it (a station, a temple…): a small mark in the corner
+    if (c.landmark) {
+      const mark = document.createElement("span");
+      mark.className = el.childElementCount ? "map-landmark corner" : "map-landmark";
+      mark.textContent = landmarkRule(c.landmark.kind)?.icon ?? "📍";
+      el.append(mark);
     }
     markers.push(new Marker({ element: el, anchor: "center" }).setLngLat([c.lng, c.lat]).addTo(map));
   }
@@ -318,6 +325,9 @@ watch(
 .map :deep(.map-label) { margin-top: -2px; font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; line-height: 1; }
 .map :deep(.map-label.mine) { color: #ffe27a; }
 .map :deep(.map-label.theirs) { color: #ff9a8a; }
+.map :deep(.map-cell) { position: relative; }
+.map :deep(.map-landmark) { font-size: 15px; line-height: 1; filter: drop-shadow(0 0 1px #fff); }
+.map :deep(.map-landmark.corner) { position: absolute; top: -8px; right: -12px; font-size: 12px; }
 .map :deep(.map-hp) { display: block; width: 44px; height: 6px; margin-top: 1px; background: rgba(0, 0, 0, 0.55); border-radius: 3px; overflow: hidden; }
 .map :deep(.map-hp i) { display: block; height: 100%; background: #ff4a3a; }
 </style>

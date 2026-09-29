@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { buildingsFor, cellAt, CELL_BUILDING_COSTS, CELL_BUILDINGS, type CellDetail, type CellView, type WorldMe } from "@goblincamp/shared/world";
+import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, type CellDetail, type CellView, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -47,9 +47,9 @@ async function ready(email = "a@example.com", at = DAAN) {
   return a;
 }
 /** Sends `count` to settle the nearest free or lair cell (lairs weakest first) and waits for them to get there. */
-async function settle(auth: Record<string, string>, count = 20, not: string[] = []) {
+async function settle(auth: Record<string, string>, count = 20, not: string[] = [], pick?: (c: CellView) => boolean) {
   const home = (await me(auth)).homeCell!;
-  const cells = (await map(auth)).filter((c) => !c.owner && !c.boss && c.cell !== home && !not.includes(c.cell));
+  const cells = (await map(auth)).filter((c) => !c.owner && !c.boss && c.cell !== home && !not.includes(c.cell) && (!pick || pick(c)));
   const target = cells.filter((c) => !c.lair)[0] ?? cells.sort((x, y) => x.lair!.power - y.lair!.power)[0]!;
   const res = await t.call("POST", "/world/expeditions", { to: target.cell, count, settle: true }, auth);
   expect(res.status).toBe(201);
@@ -177,5 +177,20 @@ describe("a building on a cell", () => {
     t.advance(Date.parse(more.body.arriveAt) - t.now().getTime() + 1000);
     const lair = (await map(a)).find((c) => c.lair && !c.owner)!;
     expect((await t.call("POST", "/world/expeditions", { from: cell, to: lair.cell, count: cap + 4 }, a)).status).toBe(201);
+  });
+});
+
+describe("landmarks", () => {
+  it("show on the map, and whoever holds one gets what it gives", async () => {
+    const a = await ready();
+    const cells = await map(a);
+    const marked = cells.filter((c) => c.landmark);
+    expect(marked.length).toBeGreaterThan(0);
+    for (const c of marked) expect(c.landmark).toEqual(standInLandmark(c.cell));
+    const cell = await settle(a, 20, [], (c) => !!c.landmark);
+    const d = (await detail(a, cell)).body;
+    expect(d.landmark).toEqual(expect.objectContaining(standInLandmark(cell)!));
+    expect(d.landmark!.blurb.length).toBeGreaterThan(0);
+    expect(d.bonus).toEqual(cellBonus("goblin", null, t.now().getTime(), { landmark: standInLandmark(cell) }));
   });
 });
