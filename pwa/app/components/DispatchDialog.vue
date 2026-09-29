@@ -3,6 +3,7 @@ import { RACE_RANGE, residentAsFighter, type CampView } from "@goblincamp/shared
 import {
   BOOST_FOODS,
   BOOST_ITEMS,
+  lairEntry,
   bossFighters,
   bossKind,
   boostCost,
@@ -87,6 +88,8 @@ const available = computed(() =>
     .map((r) => ({ r, power: power(r), gear: Object.keys(r.gear ?? {}).length }))
     .sort((a, b) => b.power - a.power || a.r.id - b.r.id),
 );
+/** A lair lets in only so many (world/expedition.ts lairEntry); a great monster and another camp's cell do not. */
+const entry = computed(() => (props.target.lair && !props.target.boss && !props.target.owner ? lairEntry(props.target.lair.count, props.target.lair.boss) : null));
 const most = computed(() =>
   Math.max(
     0,
@@ -94,9 +97,11 @@ const most = computed(() =>
       60,
       available.value.length - keep.value,
       capped.value ? cap.value + extra.value : props.kind === "guard" ? GUESTS_MAX - (props.target.guests ?? 0) : props.me.rules.cellCapacity,
+      entry.value ?? 60,
     ),
   ),
 );
+
 
 // the party: picked one by one (ticks); starts as the best 10 for the job (the strongest to fight, plain ones to settle)
 const picked = ref(new Set<number>());
@@ -112,6 +117,31 @@ function toggle(id: number) {
   else if (next.size < most.value) next.add(id);
   picked.value = next;
 }
+
+// against another camp: the server knows who would stand up to the party (the strongest, as many as the cell has room for)
+const scouted = ref<{ win: number; fallen: number; killed: number; facing: number; total: number } | null>(null);
+let scouting: ReturnType<typeof setTimeout> | undefined;
+watch(
+  () => [props.kind, props.target.owner?.id, party.value.map((a) => a.r.id).join(","), JSON.stringify(supplies), from.value],
+  () => {
+    clearTimeout(scouting);
+    scouted.value = null;
+    if (props.kind !== "attack" || !props.target.owner || party.value.length === 0) return;
+    scouting = setTimeout(async () => {
+      try {
+        scouted.value = await api("POST", "world/expeditions/estimate", {
+          from: from.value,
+          to: props.target.cell,
+          residents: party.value.map((a) => a.r.id),
+          supplies: Object.fromEntries(Object.entries(supplies).filter(([, n]) => n > 0)),
+        });
+      } catch {
+        // (no guess: the button still works)
+      }
+    }, 400);
+  },
+  { immediate: true },
+);
 
 /** What the food does (and what it costs) for this party. */
 const plan = computed(() => planSupplies(props.race, levelOf(props.me.xp), party.value.length, supplies, store.value, fromCell.value?.party ?? 0));
@@ -189,11 +219,19 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
             <div v-else-if="target.owner"><small>對方守軍</small><b>{{ target.garrison }} 隻</b></div>
             <div v-if="minutes !== null"><small>走過去</small><b>{{ minutes }} 分</b></div>
           </div>
-          <div v-if="odds !== null" class="odds"><i :style="{ width: `${odds * 100}%` }" /></div>
+          <div v-if="scouted" class="odds"><i :style="{ width: `${scouted.win * 100}%` }" /></div>
+          <p v-if="scouted" class="muted small">
+            對方會有 <b>{{ scouted.facing }}</b> 隻迎戰（最強的先上；全部 {{ scouted.total }} 隻，一格的地方有限，最多是你的 1.5 倍）。
+            勝率約 <b>{{ Math.round(scouted.win * 100) }}%</b>・我方平均倒下 {{ scouted.fallen.toFixed(1) }}・打倒對方 {{ scouted.killed.toFixed(1) }} 隻
+            {{ scouted.win >= 0.8 ? "（應該打得贏）" : scouted.win >= 0.45 ? "（有點冒險）" : "（很難打贏）" }}
+          </p>
+          <p v-else-if="target.owner && kind === 'attack' && party.length" class="muted small">估算中…</p>
+          <div v-if="odds !== null && !target.owner" class="odds"><i :style="{ width: `${odds * 100}%` }" /></div>
           <p v-if="guess" class="muted small">
-            勝率約 <b>{{ Math.round(guess.win * 100) }}%</b>・平均倒下 {{ guess.fallen.toFixed(1) }} 隻
+            勝率約 <b>{{ Math.round(guess.win * 100) }}%</b>・平均倒下 {{ guess.fallen.toFixed(1) }} 隻・打倒 {{ guess.killed.toFixed(1) }} 隻
             {{ guess.win >= 0.8 ? "（應該打得贏）" : guess.win >= 0.45 ? "（有點冒險）" : "（很難打贏）" }}
           </p>
+          <p v-if="entry !== null" class="muted small">這個巢穴很小，一次最多只能進去 {{ entry }} 隻：靠裝備、道具和糧食取勝，不是人多。</p>
           <p v-else-if="odds !== null" class="muted small">{{ odds > 0.65 ? "應該打得贏" : odds > 0.45 ? "差不多，有點冒險" : "看起來打不過" }}</p>
           <p v-if="target.lairWounds" class="muted small">巢穴受傷中：剩 {{ target.lairWounds.standing }}/{{ target.lairWounds.total }} 隻、{{ Math.round(target.lairWounds.hpShare * 100) }}% 血</p>
           <ul v-if="hints.length" class="hints">

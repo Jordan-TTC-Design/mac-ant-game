@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { bossIn, bossWindow, cellAt, cellCenter, cellsWithin, neighbors, regionOf, WORLD_SEED, type CellView, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
+import { bossIn, bossWindow, cellAt, lairEntry, cellCenter, cellsWithin, neighbors, regionOf, WORLD_SEED, type CellView, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { APP_URL, bearer, emptyTables, logIn, mac, openTestDatabase, phone, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -162,9 +162,11 @@ describe("expeditions", () => {
     const minutes = (Date.parse(res.body.arriveAt) - Date.parse(res.body.setOutAt)) / MIN;
     expect(minutes).toBeGreaterThanOrEqual(3);
     expect(minutes).toBeLessThan(30);
-    // on the road: not at home
+    // on the road: not at home (as many as the lair holds: lairEntry)
+    const entry = lairEntry(target.lair!.count, target.lair!.boss);
+    expect(res.body.party).toBe(Math.min(25, entry));
     const walking = await camp(a);
-    expect(walking.residents.filter((r) => r.place === `exp:${res.body.id}`)).toHaveLength(25);
+    expect(walking.residents.filter((r) => r.place === `exp:${res.body.id}`)).toHaveLength(Math.min(25, entry));
     expect((await me(a)).walking).toHaveLength(1);
 
     t.advance(minutes * MIN + 1000);
@@ -186,7 +188,7 @@ describe("expeditions", () => {
     // the report has the whole fight to play back
     const report = (await t.call("GET", `/world/expeditions/${done.id}`, undefined, a)).body as ExpeditionReport;
     expect(report.events.length).toBeGreaterThan(0);
-    expect(report.fighters.filter((f) => f.side === "attack")).toHaveLength(25);
+    expect(report.fighters.filter((f) => f.side === "attack")).toHaveLength(Math.min(25, entry));
     expect(report.lair?.name).toBe(target.lair!.name);
   });
 

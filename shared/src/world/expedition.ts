@@ -65,3 +65,20 @@ export function resolveExpedition(options: { worldSeed: number; expeditionId: st
     canSettle: won && battle.standing.attack.length >= garrisonMin(party.race.id ?? "goblin"),
   };
 }
+
+/**
+ * A cell is only so big (2026-09-29): against a party of `attackers`, at most PVP_FRONT times as many of a camp's
+ * defenders stand up to it at once — its strongest (a camp's own cell too, with all its people). Before this, a party of
+ * six met a whole camp and fell without felling anyone. At 1.5 the defenders' ground still counts: gear alike, the party
+ * loses but fells a few; a tier better, it is even; well better, it wins (at 2 even a tier better lost every time).
+ */
+export const PVP_FRONT = 1.5;
+export const pvpFront = (attackers: number) => Math.ceil(Math.max(1, attackers) * PVP_FRONT);
+
+/**
+ * How many may go into a lair (2026-09-29): a den holds only so many — twice its foes and two more; a 初期魔王's lair,
+ * three times and three more. So a lair is beaten with gear, food and 道具, not with a crowd.
+ */
+export function lairEntry(foes: number, boss = false): number {
+  return boss ? foes * 3 + 3 : foes * 2 + 2;
+}

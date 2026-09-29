@@ -35,7 +35,16 @@ export interface Fighter {
   night: number;
   /** 狂化: once it is down to RAGE_BELOW of its hit points it goes berserk — attack +this share, and quicker (a 初期魔王). */
   rage?: number;
+  /**
+   * How set it is on one foe (0…1): the chance a fighter up close keeps hitting the one it hit last. Residents fight
+   * together (RESIDENT_FOCUS), beasts of little wit less so (FOE_FOCUS), a berserker not at all; left out, none (every blow
+   * at someone new, as fights were before 2026-09-29, when a small party could lose without felling anyone).
+   */
+  focus?: number;
 }
+
+export const RESIDENT_FOCUS = 0.7;
+export const FOE_FOCUS = 0.4;
 
 /** A berserker goes wild below this share of its hit points, and acts this much quicker then. */
 export const RAGE_BELOW = 0.5;
@@ -126,6 +135,7 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
     guard: Math.min(0.6, (r.gearGuard ?? 0) + 0.2 * (boosts.cheese ?? 0) + 0.1 * (boosts.bandage ?? 0)),
     lead: leader ? LEAD_PER_LEADER : 0,
     night: 1,
+    focus: RESIDENT_FOCUS,
   };
 }
 
@@ -144,6 +154,7 @@ export function lairFighters(lair: Lair): Fighter[] {
       hp: Math.round(foe.hp * hpScale),
       maxHp: Math.round(foe.hp * hpScale),
       attack: foe.attack * attackScale,
+      focus: FOE_FOCUS,
       ...(foe.rage ? { rage: foe.rage } : {}),
       range: foe.range,
       speed: foe.speed,
@@ -226,7 +237,7 @@ function leadOf(fighters: Fighter[], side: Side): number {
   return Math.min(LEAD_CAP, fighters.filter((f) => f.side === side && f.hp > 0).reduce((sum, f) => sum + f.lead, 0));
 }
 
-function pickTarget(actor: Fighter, enemies: Fighter[], random: Random): Fighter | undefined {
+function pickTarget(actor: Fighter, enemies: Fighter[], random: Random, last?: Fighter, focus = 0): Fighter | undefined {
   const alive = enemies.filter((f) => f.hp > 0);
   if (alive.length === 0) return undefined;
   if (actor.range > 0) {
@@ -236,13 +247,21 @@ function pickTarget(actor: Fighter, enemies: Fighter[], random: Random): Fighter
   }
   const front = alive.filter((f) => f.row === "front");
   const reachable = front.length > 0 ? front : alive;
+  if (focus > 0) {
+    // one set on its foe keeps at it; else, as often as it is set, it goes for one already hurt (a few of the most hurt)
+    if (last && last.hp > 0 && reachable.includes(last) && random() < focus) return last;
+    if (random() < focus) {
+      const hurt = [...reachable].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp).slice(0, 3);
+      return hurt[Math.floor(random() * hurt.length)];
+    }
+  }
   return reachable[Math.floor(random() * reachable.length)];
 }
 
 export function simulateBattle(attackers: Fighter[], defenders: Fighter[], options: BattleOptions): BattleResult {
   const random = randomFrom(options.seed);
   const maxRounds = options.maxRounds ?? MAX_ROUNDS;
-  const all = [...attackers, ...defenders].map((f) => ({ ...f, raging: false }));
+  const all = [...attackers, ...defenders].map((f) => ({ ...f, raging: false, last: undefined as Fighter | undefined }));
   const events: BattleEvent[] = [];
   const alive = (side: Side) => all.some((f) => f.side === side && f.hp > 0);
   let round = 0;
@@ -272,8 +291,10 @@ export function simulateBattle(attackers: Fighter[], defenders: Fighter[], optio
           continue;
         }
       }
-      const target = pickTarget(actor, enemies, random);
+      // (a berserker lashes out at anyone)
+      const target = pickTarget(actor, enemies, random, actor.last, actor.raging ? 0 : (actor.focus ?? 0));
       if (!target) break;
+      actor.last = target;
       if (random() >= HIT_CHANCE) {
         events.push({ round, actor: actor.id, target: target.id, kind: "miss" });
         continue;
@@ -317,13 +338,14 @@ export function combatPower(fighters: Fighter[]): number {
  * The chance a party wins, by fighting it out `runs` times with different luck (what the dispatch dialog shows), and how
  * many of the party fall on average.
  */
-export function estimateBattle(attackers: Fighter[], defenders: Fighter[], runs = 40, night = false): { win: number; fallen: number } {
-  if (attackers.length === 0) return { win: 0, fallen: 0 };
-  let wins = 0, fallen = 0;
+export function estimateBattle(attackers: Fighter[], defenders: Fighter[], runs = 40, night = false): { win: number; fallen: number; killed: number } {
+  if (attackers.length === 0) return { win: 0, fallen: 0, killed: 0 };
+  let wins = 0, fallen = 0, killed = 0;
   for (let i = 0; i < runs; i++) {
     const result = simulateBattle(attackers, defenders, { seed: 7919 * (i + 1), night });
     if (result.winner === "attack") wins++;
     fallen += result.fallen.attack.length;
+    killed += result.fallen.defend.length;
   }
-  return { win: wins / runs, fallen: fallen / runs };
+  return { win: wins / runs, fallen: fallen / runs, killed: killed / runs };
 }

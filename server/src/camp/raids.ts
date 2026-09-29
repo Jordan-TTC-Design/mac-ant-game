@@ -65,6 +65,7 @@ function monsterFighters(plan: RaidPlan, level: number): { fighters: Fighter[]; 
         guard: 0,
         lead: 0,
         night: foe.night ?? 1,
+        // (no focus: monsters blundering into a camp lash out at whoever is near — BALANCE.md: raids seldom kill)
       });
       kinds.push(id);
     }

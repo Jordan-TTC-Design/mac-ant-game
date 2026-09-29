@@ -5,7 +5,7 @@
  * spoils by the damage they did. Which one, where and when comes from the world's seed, like the lairs.
  */
 import type { DropRule } from "../camp/combat.ts";
-import type { Fighter } from "./battle.ts";
+import { FOE_FOCUS, type Fighter } from "./battle.ts";
 import { FOES, type Terrain } from "./contents.ts";
 import { cellId, parseCell, type CellId } from "./grid.ts";
 import { between, pickWeighted, seeded } from "./random.ts";
@@ -118,7 +118,7 @@ export function bossMaxHp(id: string): number {
 export function bossFighters(kind: BossKind, hp: number): Fighter[] {
   const foe = FOES[kind.id]!;
   const out: Fighter[] = [
-    { id: "boss", name: foe.name, side: "defend", row: foe.row, hp, maxHp: foe.hp, attack: foe.attack, range: foe.range, speed: foe.speed, heal: foe.heal ?? 0, guard: 0.1, lead: 0, night: foe.night ?? 1 },
+    { id: "boss", name: foe.name, side: "defend", row: foe.row, hp, maxHp: foe.hp, attack: foe.attack, range: foe.range, speed: foe.speed, heal: foe.heal ?? 0, guard: 0.1, lead: 0, night: foe.night ?? 1, focus: FOE_FOCUS },
   ];
   for (const m of kind.minions) {
     const t = FOES[m.foe]!;

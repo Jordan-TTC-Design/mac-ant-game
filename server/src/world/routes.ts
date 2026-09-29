@@ -7,6 +7,7 @@ import {
   buildNest,
   buildOnCell,
   demolishOnCell,
+  estimateExpedition,
   unguard,
   buildTown,
   cellDetail,
@@ -98,6 +99,14 @@ export function worldRoutes(deps: AppDeps) {
       return apiError(c, 400, "invalid_input", `lat、lng 要是座標，radius 是 1～${LANDMARK_RADIUS} 公尺。`);
     }
     return respond(c, await run(c, async () => ({ landmarks: await db.transaction((tx) => landmarksAround(tx, { lat, lng }, radius)) })));
+  });
+
+  /** What a party would likely meet and how it would fare (nothing is sent). */
+  app.post("/expeditions/estimate", async (c) => {
+    const body = await readJson(c, expeditionInput);
+    if ("response" in body) return body.response;
+    const userId = c.get("session").user.id;
+    return respond(c, await run(c, () => db.transaction((tx) => estimateExpedition(tx, userId, body.data, now()))));
   });
 
   app.post("/expeditions", async (c) => {
