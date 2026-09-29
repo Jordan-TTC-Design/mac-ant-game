@@ -4,6 +4,7 @@
  * defended, makes the walk from it shorter, lets more live there, or lets bigger parties set out from it. The camp's own
  * cell has none (the camp has its sites: shared/src/camp/sites.ts).
  */
+import { raceRules } from "../camp/races.ts";
 import type { Terrain } from "./contents.ts";
 import { neighbors } from "./grid.ts";
 import { hashString } from "./random.ts";
@@ -191,6 +192,35 @@ export function connectedCells(cell: string, held: ReadonlySet<string>): string[
   return [...seen];
 }
 
+// --- towns and the cells joined to them (2026-09-30) ---
+
+/** Every town in a region adds this share of a cell's room (cellCapacity) to every cell of the region, the town cells too. */
+export const TOWN_ROOM_SHARE = 0.5;
+/** At most this many towns of a region count for it (more may stand; they only help their own cell). */
+export const TOWN_ROOM_MAX = 4;
+/** A region may have one town for every this many cells in it. */
+export const TOWN_CELLS_EACH = 4;
+
+/** The towns in `cell`'s region (itself included) among `towns`. */
+export function regionTowns(cell: string, held: ReadonlySet<string>, towns: ReadonlySet<string>): number {
+  return connectedCells(cell, held).filter((c) => towns.has(c)).length;
+}
+
+/** The other towns of a region that count for `cell` (a town cell counts itself among the TOWN_ROOM_MAX, but gets its own room otherwise). */
+export function townsJoined(inRegion: number, isTown: boolean): number {
+  return Math.max(0, Math.min(TOWN_ROOM_MAX, inRegion) - (isTown ? 1 : 0));
+}
+
+/** The room `joined` towns add to one cell. */
+export function townRoom(cellCap: number, joined: number): number {
+  return Math.round(cellCap * TOWN_ROOM_SHARE * Math.min(TOWN_ROOM_MAX, Math.max(0, joined)));
+}
+
+/** Whether a region of `region` cells that already has `towns` towns may have one more. */
+export function regionHasRoomForTown(region: number, towns: number): boolean {
+  return region >= TOWN_CELLS_EACH * (towns + 1);
+}
+
 /** How many of the cells next to `cell` are held. */
 export function heldNeighbours(cell: string, held: ReadonlySet<string>): number {
   return neighbors(cell).filter((n) => held.has(n)).length;
@@ -270,6 +300,8 @@ export interface CellSurroundings {
   templeNear?: boolean;
   /** How many held cells are next to it. */
   neighbours?: number;
+  /** The towns of its region that add to its room (townsJoined). */
+  townsJoined?: number;
 }
 
 export function cellBonus(race: string, building: CellBuilding | null | undefined, now: number, around: CellSurroundings = {}): CellBonus {
@@ -283,6 +315,7 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
     case "market": out.makes = { ration_bread: 1, food_cheese: 1 }; break;
   }
   if (around.templeNear && around.landmark?.kind !== "temple") out.fort += TEMPLE_AURA;
+  out.room += townRoom(raceRules(race).cellCap, around.townsJoined ?? 0);
   const level = workingLevel(building, now);
   const rule = building ? RULES.get(building.kind) : undefined;
   if (!rule || level < 1) return out;

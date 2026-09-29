@@ -5,7 +5,7 @@
  */
 import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { PushSubscriptionJSON, WorldPush } from "@goblincamp/shared";
-import { advance, fightBoosts, RACE_RANGE, residentAsFighter, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
+import { advance, fightBoosts, RACE_RANGE, raceRules, residentAsFighter, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
 import {
   afterDefeat,
   bossAt,
@@ -77,6 +77,12 @@ import {
   neighbors,
   connectedCells,
   heldNeighbours,
+  townsJoined,
+  townRoom,
+  regionTowns,
+  regionHasRoomForTown,
+  TOWN_CELLS_EACH,
+  type CellBuilding,
   REINFORCE_PER_CELL,
   eatRations,
   fedYield,
@@ -300,15 +306,41 @@ async function bumpVersion(tx: Tx, camp: CampRow) {
   await tx.update(camps).set({ version: camp.version, nextId: camp.nextId, materials: camp.materials, kills: camp.kills }).where(eq(camps.userId, camp.userId));
 }
 
-/** What stands on and around a camp's held cells: each one's landmark, and whether one of its own temples is next to it. */
+/**
+ * What stands on and around a camp's held cells: each one's landmark, whether one of its own temples is next to it, how
+ * many of its cells are next to it, and the towns of its region that add to its room.
+ */
 async function surroundings(tx: Tx, held: string[]): Promise<(cell: string) => CellSurroundings> {
   const landmarks = await landmarksFor(tx, held);
   const mine = new Set(held);
+  const towns = await townsIn(tx, held);
+  const inRegion = new Map<string, number>();
+  const regionTownsOf = (cell: string) => {
+    if (!inRegion.has(cell)) {
+      const region = connectedCells(cell, mine);
+      const n = region.filter((c) => towns.has(c)).length;
+      for (const c of region) inRegion.set(c, n);
+    }
+    return inRegion.get(cell) ?? 0;
+  };
   return (cell) => ({
     landmark: landmarks.get(cell) ?? null,
     templeNear: neighbors(cell).some((n) => mine.has(n) && landmarks.get(n)?.kind === "temple"),
     neighbours: heldNeighbours(cell, mine),
+    townsJoined: mine.has(cell) ? townsJoined(regionTownsOf(cell), towns.has(cell)) : 0,
   });
+}
+
+/** The towns among these cells. */
+async function townsIn(tx: Tx, cells: string[]): Promise<Set<string>> {
+  if (!cells.length) return new Set();
+  return new Set((await tx.select({ cell: worldCells.cell }).from(worldCells).where(and(inArray(worldCells.cell, cells), eq(worldCells.town, true)))).map((r) => r.cell));
+}
+
+/** Most residents a held cell houses: by race (a town twice that), plus what its building, landmark and the region's towns add. */
+async function roomOf(tx: Tx, camp: { userId: string; race: string }, row: { cell: string; town: boolean; building: CellBuilding | null }, at: Date, isHome = false): Promise<number> {
+  const around = (await surroundings(tx, await heldCells(tx, camp.userId)))(row.cell);
+  return cellCapacity(camp.race, row.town) + cellBonus(camp.race, isHome ? null : row.building, at.getTime(), around).room;
 }
 
 /** Whether two accounts are friends (an ask answered yes). */
@@ -955,7 +987,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   const attacker = await ownerOf(tx, camp.userId);
   const player = await lockPlayer(tx, camp.userId);
   const min = garrisonMin(camp.race);
-  const cap = cellCapacity(camp.race, cell?.town ?? false) + (cell?.owner === camp.userId ? cellBonus(camp.race, cell.building, at.getTime()).room : 0);
+  const cap = cell?.owner === camp.userId ? await roomOf(tx, camp, cell, at) : cellCapacity(camp.race, cell?.town ?? false);
   const report: ExpeditionReport = {
     ...summary(exp),
     status: "done",
@@ -989,7 +1021,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       const from = await lockCell(tx, exp.fromPlace);
       if (from?.owner === camp.userId) {
         const there = (await aliveAt(tx, camp.userId, cellPlace(exp.fromPlace))).length;
-        const room = cellCapacity(camp.race, from.town) + cellBonus(camp.race, from.building, at.getTime()).room - there;
+        const room = (await roomOf(tx, camp, from, at)) - there;
         const returning = back.slice(0, Math.max(0, room));
         if (returning.length) {
           await tx.update(campResidents).set({ place: cellPlace(exp.fromPlace) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, returning.map((r) => r.id))));
@@ -1303,9 +1335,16 @@ export async function buildTown(tx: Tx, userId: string, cell: string, now: Date)
   await advanceWorld(tx, camp, now);
   const row = await ownedRow(tx, userId, cell);
   if (row.town) throw new WorldError(409, "exists", "這一格已經是城鎮了。");
-  // a town stands in a region of its holder's: TOWN_MIN_CELLS held cells joined side by side (this one among them)
-  const region = connectedCells(cell, new Set(await heldCells(tx, userId))).length;
+  // a town stands in a region of its holder's: TOWN_MIN_CELLS held cells joined side by side (this one among them), and one more
+  // town for every TOWN_CELLS_EACH more cells
+  const held = new Set(await heldCells(tx, userId));
+  const region = connectedCells(cell, held).length;
   if (region < TOWN_MIN_CELLS) throw new WorldError(409, "too_few", `城鎮要蓋在至少 ${TOWN_MIN_CELLS} 格相連的領地裡（這裡連著 ${region} 格）。`);
+  const towns = await townsIn(tx, [...held]);
+  const already = regionTowns(cell, held, towns);
+  if (!regionHasRoomForTown(region, already)) {
+    throw new WorldError(409, "too_few", `這一區每 ${TOWN_CELLS_EACH} 格可以蓋 1 座城鎮：連著 ${region} 格、已經有 ${already} 座，要連到 ${TOWN_CELLS_EACH * (already + 1)} 格才能再蓋。`);
+  }
   if (!canAfford(camp.materials, TOWN_COST)) throw new WorldError(409, "cannot_afford", `素材不夠：城鎮要 ${costText(TOWN_COST)}。`);
   camp.materials = spend(camp.materials, TOWN_COST);
   // a town has a nest of its own (it raises residents as fast as the home camp)
@@ -1444,6 +1483,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
       region: connectedCells(c.cell, new Set(held.map((h) => h.cell))).length,
+      regionTowns: regionTowns(c.cell, new Set(held.map((h) => h.cell)), new Set(held.filter((h) => h.town).map((h) => h.cell))),
       upkeep: paying.has(c.cell),
       party: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).party,
       travel: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).travel,
@@ -1472,6 +1512,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       nestBirthMinutes: nestBirthMinutes(camp.race),
       townCost: TOWN_COST,
       townMinCells: TOWN_MIN_CELLS,
+      townCellsEach: TOWN_CELLS_EACH,
     },
   };
 }
@@ -1514,6 +1555,7 @@ export async function territoryList(tx: Tx, userId: string, now: Date): Promise<
       town: c.town,
       garrison: counts.get(c.cell)?.n ?? 0,
       capacity: cellCapacity(camp.race, c.town) + cellBonus(camp.race, b, now.getTime(), a).room,
+      townRoom: isHome ? 0 : townRoom(raceRules(camp.race).cellCap, a.townsJoined ?? 0),
       nest: nestState(c, now),
       building: b ? { kind: b.kind, name: cellBuildingName(b.kind, camp.race), level: b.level, busy: workingLevel(b, now.getTime()) < b.level } : null,
       landmark: a.landmark && rule ? { ...a.landmark, icon: rule.icon, label: rule.name } : null,
@@ -1540,7 +1582,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   const isHome = cell === homeCell;
   const terrain = await terrainOf(tx, cell);
   const garrison = (await dwellers(tx, userId, cell, homeCell)).length;
-  const capacity = cellCapacity(camp.race, row.town);
+  const capacity = await roomOf(tx, camp, row, now, isHome);
   const nest = nestState(row, now);
   const readyAt = row.nestStartedAt ? new Date(row.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
   const birthMinutes = row.nestStartedAt && !isHome ? nestBirthMinutes(camp.race, row.town) : null;
@@ -1627,6 +1669,8 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     templeNear: !!around.templeNear,
     neighbours: around.neighbours ?? 0,
     region: connectedCells(cell, new Set(mine)).length,
+    regionTowns: regionTowns(cell, new Set(mine), await townsIn(tx, mine)),
+    townRoom: isHome ? 0 : townRoom(raceRules(camp.race).cellCap, around.townsJoined ?? 0),
     guests: guestRows.map((g) => ({ owner: g.owner, name: g.name ?? "？", count: g.n })),
     upkeep: { pays: paying.has(cell), paying: paying.size, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS, perYield: UPKEEP_RATIONS, everyHours: UPKEEP_EVERY * YIELD_HOURS },
     history,

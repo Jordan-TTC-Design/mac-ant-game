@@ -274,6 +274,37 @@ describe("cells held side by side", () => {
     expect((await t.call("POST", `/world/cells/${first}/town`, undefined, a)).status).toBe(200);
   });
 
+  it("every town lets each cell of its region house half as many more (stacking, 4 at most), one town per 4 cells", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const ring = neighbors(home);
+    const outer = neighbors(ring[0]!).find((c) => c !== home && !ring.includes(c))!;
+    await clear([...ring, outer]);
+    for (const c of ring.slice(0, 3)) await settle(a, 20, [], (x) => x.cell === c);
+    await give("a@example.com", { scrap_wood: 1000, scrap_iron: 500, scrap_rag: 300, crystal_shard: 10 });
+    const [first, second, third] = ring as [string, string, string];
+
+    // before: a goblin cell houses 50, a town 100
+    expect((await detail(a, second)).body.capacity).toBe(50);
+    expect((await t.call("POST", `/world/cells/${first}/town`, undefined, a)).status).toBe(200);
+    let d = (await detail(a, second)).body;
+    expect(d.capacity).toBe(75); // +25 from the town
+    expect(d).toMatchObject({ regionTowns: 1, townRoom: 25 });
+    expect((await detail(a, first)).body.capacity).toBe(100); // (a town gets no room from itself)
+    const list = (await t.call("GET", "/world/territory", undefined, a)).body as TerritoryList;
+    expect(list.items.find((i) => i.cell === second)).toMatchObject({ capacity: 75, townRoom: 25 });
+
+    // a second town needs 8 cells in the region
+    const refused = await t.call("POST", `/world/cells/${third}/town`, undefined, a);
+    expect(refused.body.error).toBe("too_few");
+    expect(refused.body.message).toContain("8");
+    for (const c of [...ring.slice(3), outer]) await settle(a, 20, [], (x) => x.cell === c);
+    expect((await me(a)).cells.find((c) => c.cell === third)).toMatchObject({ region: 8, regionTowns: 1 });
+    expect((await t.call("POST", `/world/cells/${third}/town`, undefined, a)).status).toBe(200);
+    expect((await detail(a, second)).body.capacity).toBe(100); // two towns: +50
+    expect((await detail(a, first)).body.capacity).toBe(125); // a town: 100, and +25 from the other one
+  });
+
   it("send help when a cell is attacked: the camp next to it lends its strongest", async () => {
     const a = await ready();
     const home = (await me(a)).homeCell!;

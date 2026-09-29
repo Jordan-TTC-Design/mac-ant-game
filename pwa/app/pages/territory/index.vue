@@ -95,6 +95,7 @@ const NEST: Record<TerritoryItem["nest"], string> = { none: "沒有巢", buildin
           <span class="tags">
             <small>👥 {{ i.garrison }}{{ i.home ? "" : `/${i.capacity}` }}</small>
             <small v-if="i.town" class="tag gold">城鎮</small>
+            <small v-if="i.townRoom" class="tag gold">🏰 +{{ i.townRoom }}</small>
             <small v-if="!i.home">{{ NEST[i.nest] }}</small>
             <small v-if="i.building" class="tag">🏗️ {{ i.building.name }} Lv{{ i.building.level }}{{ i.building.busy ? "（蓋中）" : "" }}</small>
             <small v-if="i.region > 1">🔗 連 {{ i.region }} 格</small>

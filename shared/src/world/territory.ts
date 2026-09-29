@@ -107,7 +107,7 @@ export function nestBirths(race: string, since: Date, now: Date, garrison: numbe
 
 // --- towns ---------------------------------------------------------------------------------------------------------
 
-/** A town can be built once the camp holds this many cells (castles come later). */
+/** A town can be built in a region of this many joined cells (and one more town for every TOWN_CELLS_EACH more: holdings.ts). */
 export const TOWN_MIN_CELLS = 4;
 export const TOWN_COST: Record<string, number> = { scrap_wood: 120, scrap_iron: 60, scrap_rag: 40, crystal_shard: 2 };
 

@@ -191,9 +191,11 @@ function happening(h: CellHappening): string {
         <h2>相連的領地</h2>
         <p>旁邊有 <b>{{ d.neighbours }}</b> 格是你的・這一區連著 <b>{{ d.region }}</b> 格</p>
         <p v-if="d.bonus.yieldBoost" class="good">地形產出 +{{ Math.round(d.bonus.yieldBoost * 100) }}%</p>
+        <p v-if="d.townRoom" class="good">城鎮加成：最多住的 +{{ d.townRoom }}（這一區 {{ d.regionTowns }} 座城鎮）</p>
         <p class="muted small">
           旁邊每有一格自己的，產出多 10%（最多 30%）；被打時旁邊的格子各派最多 5 隻來幫忙守。
-          {{ d.town ? "" : d.region >= 4 ? "這一區夠大，可以蓋城鎮了。" : `城鎮要蓋在 4 格相連的地方（還差 ${4 - d.region} 格）。` }}
+          這一區每座城鎮讓每一格多住一半（最多算 4 座）；每 4 格可以蓋 1 座城鎮。
+          {{ d.town ? "" : d.region >= 4 * (d.regionTowns + 1) ? "這一區夠大，可以再蓋一座城鎮。" : `再連到 ${4 * (d.regionTowns + 1)} 格就能蓋${d.regionTowns ? "下一座" : ""}城鎮（還差 ${4 * (d.regionTowns + 1) - d.region} 格）。` }}
         </p>
       </section>
 

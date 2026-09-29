@@ -398,7 +398,7 @@ async function goToLandmark(l: NearbyLandmark) {
           <NuxtLink v-else to="/camp" class="btn primary">看營地</NuxtLink>
           <button v-if="!isHome" class="btn" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
           <button v-if="!isHome && cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
-          <button v-if="!cell.town && (myCell?.region ?? 0) >= s.me.rules.townMinCells" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
+          <button v-if="!cell.town && (myCell?.region ?? 0) >= s.me.rules.townCellsEach * ((myCell?.regionTowns ?? 0) + 1)" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
           <button v-if="!isHome" class="btn" :disabled="busy" @click="recall">撤回</button>
           <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>
         </template>

@@ -183,6 +183,8 @@ export interface WorldMe {
     upkeep: boolean;
     /** How many held cells are joined to it side by side (itself included): a town needs TOWN_MIN_CELLS. */
     region: number;
+    /** The towns in that region (one may stand for every TOWN_CELLS_EACH cells). */
+    regionTowns: number;
     /** Parties setting out from it may be this many bigger, and walk this share of the time (its building). */
     party: number;
     travel: number;
@@ -208,7 +210,7 @@ export interface WorldMe {
   }[];
   /** The great monsters out now near the camp (the nearest few), to go and look at. */
   bosses: { cell: string; kind: string; name: string; lat: number; lng: number; km: number; hp: number; maxHp: number; endsAt: string }[];
-  rules: { garrisonMin: number; cellCapacity: number; nestCost: Record<string, number>; nestHours: number; nestBirthMinutes: number; townCost: Record<string, number>; townMinCells: number };
+  rules: { garrisonMin: number; cellCapacity: number; nestCost: Record<string, number>; nestHours: number; nestBirthMinutes: number; townCost: Record<string, number>; townMinCells: number; townCellsEach: number };
 }
 
 /** One thing that happened on a held cell (newest first in `CellDetail.history`). */
@@ -269,6 +271,9 @@ export interface CellDetail {
   /** Held cells next to it (they add to its yield, and send help when it is fought over), and how many are joined to it. */
   neighbours: number;
   region: number;
+  /** The towns in its region, and the room they add to this cell (counted in `capacity`; at most TOWN_ROOM_MAX towns count). */
+  regionTowns: number;
+  townRoom: number;
   /** Friends' residents guarding it, by friend. */
   guests: { owner: string; name: string; count: number }[];
   /** Whether it eats rations (beyond the free cells), and how the store stands against all that do. */
@@ -308,6 +313,8 @@ export interface TerritoryItem {
   /** Held cells joined to it (itself included), and next to it. */
   region: number;
   neighbours: number;
+  /** The room the towns of its region add (counted in `capacity`). */
+  townRoom: number;
   /** It eats rations every yield. */
   upkeep: boolean;
   /** Friends' residents guarding it. */
