@@ -30,7 +30,7 @@ const on = (to: string) =>
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; justify-content: center;
   padding: 6px 8px calc(env(safe-area-inset-bottom) + 6px); background: rgba(24, 38, 22, 0.96); border-top: 2px solid #1f1f1f;
-  backdrop-filter: blur(6px);
+  /* (no backdrop-filter: on iPhone it made the fixed bar lag and redraw oddly while scrolling) */
 }
 .tab { flex: 1; max-width: 110px; display: grid; justify-items: center; gap: 1px; padding: 4px 0; border-radius: 10px; color: #c9d6c0; text-decoration: none; }
 .tab.on { color: #fff; background: rgba(255, 255, 255, 0.12); }

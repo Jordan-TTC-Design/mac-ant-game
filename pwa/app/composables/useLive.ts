@@ -107,7 +107,8 @@ export function useLive() {
   }
   async function send(id: string, text: string) {
     const msg = await api<ChatMessage>("POST", `friends/${id}/messages`, { text });
-    if (state.chat?.friend.id === id) state.chat.messages.push(msg);
+    // (the server's own "friends.changed" may have reloaded the chat with this message in it already)
+    if (state.chat?.friend.id === id && !state.chat.messages.some((m) => m.id === msg.id)) state.chat.messages.push(msg);
     void loadFriends();
   }
 

@@ -21,7 +21,8 @@ watch(
   () => chat.value?.messages.length,
   async () => {
     await nextTick();
-    window.scrollTo({ top: document.body.scrollHeight });
+    const page = document.getElementById("scroller"); // (the page scrolls in there, not the document: see app.vue)
+    page?.scrollTo({ top: page.scrollHeight });
   },
 );
 
