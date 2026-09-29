@@ -34,7 +34,7 @@ const statusLine = computed(() => {
     case "loading": return "讀取中…";
     case "offline": return `離線中：這是 ${noteTime(new Date(camp.state.saved?.fetchedAt ?? 0).toISOString())} 的樣子`;
     case "problem": return `出了問題：${camp.state.problem}`;
-    default: return "在 Mac 上玩；這裡可以看、蓋場地";
+    default: return ""; // (all is well: no line, the header stays short)
   }
 });
 
@@ -141,7 +141,7 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
       <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
       <div style="flex: 1">
         <h1>{{ view ? `${race?.name ?? ""}${race?.nest ?? "營地"}` : "營地" }}</h1>
-        <div class="sub">{{ statusLine }}</div>
+        <div v-if="statusLine" class="sub">{{ statusLine }}</div>
       </div>
       <nav class="world-links">
         <NuxtLink to="/world" class="icon-btn" aria-label="大世界" title="大世界">🗺️</NuxtLink>
