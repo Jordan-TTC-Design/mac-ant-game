@@ -34,7 +34,7 @@ const statusLine = computed(() => {
     case "loading": return "讀取中…";
     case "offline": return `離線中：這是 ${noteTime(new Date(camp.state.saved?.fetchedAt ?? 0).toISOString())} 的樣子`;
     case "problem": return `出了問題：${camp.state.problem}`;
-    default: return "在 Mac 上玩；這裡可以看、升級田地";
+    default: return "在 Mac 上玩；這裡可以看、蓋場地";
   }
 });
 
@@ -96,35 +96,38 @@ async function toggleSanctuary() {
     sanctuaryBusy.value = false;
   }
 }
-// what the camp makes by itself, and the farm (server/FARM.md)
+// the camp's sites (server/FARM.md §11): build, raise, take down
 const production = computed(() => view.value?.production ?? null);
 const perHourText = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
-const everyText = (n: number) => (n >= 1 ? `每小時 ${perHourText(n)} 個` : `每 ${Math.round((1 / n) * 10) / 10} 小時 1 個`);
-const upgradeLeft = computed(() => {
-  const until = production.value?.farm.upgradingUntil;
-  if (!until) return "";
+const makesText = (makes: Record<string, number>) =>
+  Object.entries(makes).map(([id, n]) => (n < 0.1 && (id === "crystal_shard") ? `${materialName(id)} ${Math.round(n * 100)}%` : `${materialName(id)} ${perHourText(n)}`)).join("、");
+const costText = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ×${n}`).join("、");
+const affordable = (cost: Record<string, number>) => Object.entries(cost).every(([id, n]) => (view.value?.materials[id] ?? 0) >= n);
+const leftText = (until: string) => {
   const minutes = Math.max(0, Math.ceil((Date.parse(until) - now.value) / 60_000));
   return minutes >= 60 ? `${Math.floor(minutes / 60)} 小時 ${minutes % 60} 分` : `${minutes} 分鐘`;
+};
+// when a site is done, ask (the server works it out)
+watch(() => production.value?.busy && Date.parse(production.value.busy.until) <= now.value, (done) => {
+  if (done && camp.state.status === "ok") setTimeout(() => void camp.refresh(), 3000);
 });
-watch(upgradeLeft, (text) => {
-  if (text === "0 分鐘" && camp.state.status === "ok") setTimeout(() => void camp.refresh(), 3000);
-});
-const upgradeCost = computed(() => Object.entries(production.value?.farm.next?.cost ?? {}).map(([id, n]) => ({ id, n, have: view.value?.materials[id] ?? 0 })));
-const canUpgrade = computed(() => !!production.value?.farm.next && !production.value.farm.upgradingUntil && upgradeCost.value.every((c) => c.have >= c.n));
-const farmBusy = ref(false);
-const farmProblem = ref("");
-async function upgradeFarm() {
-  const next = production.value?.farm.next;
-  if (!next || !confirm(`升級${production.value!.farm.name}，蓋${next.name}？\n\n要 ${upgradeCost.value.map((c) => `${materialName(c.id)} ×${c.n}`).join("、")}，${next.hours} 小時後完成。`)) return;
-  farmBusy.value = true;
-  farmProblem.value = "";
+const freePlots = computed(() => Math.max(0, (production.value?.slots ?? 0) - (production.value?.used ?? 0)));
+const picking = ref(false);
+const openSite = ref<number | null>(null);
+const siteBusy = ref(false);
+const siteProblem = ref("");
+async function siteCommand(question: string, command: Record<string, unknown>) {
+  if (!confirm(question)) return;
+  siteBusy.value = true;
+  siteProblem.value = "";
   try {
-    await api("POST", "camp/commands", { kind: "farm-upgrade", requestId: crypto.randomUUID() });
+    await api("POST", "camp/commands", { ...command, requestId: crypto.randomUUID() });
     await camp.refresh();
+    picking.value = false;
   } catch (e) {
-    farmProblem.value = e instanceof ApiError ? e.message : String(e);
+    siteProblem.value = e instanceof ApiError ? e.message : String(e);
   } finally {
-    farmBusy.value = false;
+    siteBusy.value = false;
   }
 }
 const showAllRaids = ref(false);
@@ -158,33 +161,49 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
       </section>
 
       <section v-if="production" class="panel production">
-        <h2>生產 <small>{{ production.workers }} 隻在工作</small></h2>
-        <ul class="made">
-          <li><span class="grow">🪵 {{ materialName("log") }}</span><small>每小時 {{ perHourText(production.perHour.log ?? 0) }}</small><b>{{ view.materials.log ?? 0 }}</b></li>
-          <li><span class="grow">🪨 {{ materialName("stone") }}</span><small>每小時 {{ perHourText(production.perHour.stone ?? 0) }}</small><b>{{ view.materials.stone ?? 0 }}</b></li>
-        </ul>
-        <p class="muted small">挖礦偶爾挖到{{ materialName("scrap_iron") }}、很少挖到{{ materialName("crystal_shard") }}。在家的居民越多做得越多（最多算 60 隻）。</p>
-        <h3>{{ production.farm.name }} Lv{{ production.farm.level }}・{{ production.farm.parts.join("、") }}</h3>
-        <ul class="made">
-          <li v-for="food in production.farm.crops" :key="food">
-            <span class="grow">{{ materialName(food) }}</span>
-            <small>{{ everyText(production.perHour[food] ?? 0) }}</small>
-            <b>{{ view.materials[food] ?? 0 }}<small> / 20</small></b>
+        <h2>場地 <small>空地 {{ production.used }}/{{ production.slots }}・人手 {{ production.workers }}/{{ production.need }}</small></h2>
+        <p v-if="production.share < 1" class="warn small">人手不夠：每個場地只有 {{ Math.round(production.share * 100) }}% 的速度。營地的居民越多，養得起越多場地（每一級要 10 隻）。</p>
+        <p v-if="production.busy" class="upgrading">🔨 正在蓋{{ production.sites.find((x) => x.id === production!.busy!.site)?.name }}，還要 {{ leftText(production.busy.until) }}</p>
+        <ul class="sites">
+          <li v-for="site in production.sites" :key="site.id" :class="{ open: openSite === site.id }">
+            <button class="site-row" @click="openSite = openSite === site.id ? null : site.id">
+              <b>{{ site.name }}</b>
+              <small>{{ site.level === 0 ? "蓋的中" : `Lv${site.level}` }}{{ site.parts ? `・${site.parts.at(-1)}` : "" }}</small>
+              <span class="grow makes">{{ site.level === 0 ? "" : `每小時 ${makesText(site.makes)}` }}</span>
+            </button>
+            <div v-if="openSite === site.id" class="site-more">
+              <p v-if="site.parts" class="muted small">{{ site.parts.join("、") }}</p>
+              <template v-if="site.next && !site.busyUntil">
+                <p class="small">升到 Lv{{ site.next.level }}：每小時 {{ makesText(site.next.makes) }}</p>
+                <ul class="chips">
+                  <li v-for="[id, n] in Object.entries(site.next.cost)" :key="id" :class="{ short: (view.materials[id] ?? 0) < n }">{{ materialName(id) }} {{ view.materials[id] ?? 0 }}/{{ n }}</li>
+                  <li>⏱ {{ site.next.hours }} 小時</li>
+                </ul>
+              </template>
+              <p v-else-if="!site.next" class="muted small">已經是最高級了。</p>
+              <div class="actions">
+                <button v-if="site.next && !site.busyUntil" class="btn primary" :disabled="siteBusy || !!production.busy || !affordable(site.next.cost)"
+                  @click="siteCommand(`升級${site.name}到 Lv${site.next.level}？\n\n要 ${costText(site.next.cost)}，${site.next.hours} 小時後完成。`, { kind: 'site-upgrade', site: site.id })">升級</button>
+                <button v-if="site.refund" class="btn" :disabled="siteBusy"
+                  @click="siteCommand(`拆掉${site.name}？\n\n空地馬上空出來，拿回 ${costText(site.refund) || '（沒有）'}。`, { kind: 'site-demolish', site: site.id })">拆掉</button>
+              </div>
+            </div>
+          </li>
+          <li v-for="n in freePlots" :key="`free-${n}`">
+            <button class="site-row free" @click="picking = !picking"><b>空地</b><span class="grow makes">可以蓋一個場地</span></button>
           </li>
         </ul>
-        <p v-if="production.farm.upgradingUntil" class="upgrading">🔨 正在蓋{{ production.farm.next?.name }}，還要 {{ upgradeLeft }}</p>
-        <div v-else-if="production.farm.next" class="upgrade">
-          <div class="grow">
-            <b>升級 Lv{{ production.farm.next.level }}：{{ production.farm.next.name }}</b>
-            <ul class="chips">
-              <li v-for="c in upgradeCost" :key="c.id" :class="{ short: c.have < c.n }">{{ materialName(c.id) }} {{ c.have }}/{{ c.n }}</li>
-              <li>⏱ {{ production.farm.next.hours }} 小時</li>
-            </ul>
-          </div>
-          <button class="btn primary" :disabled="farmBusy || !canUpgrade" @click="upgradeFarm">升級</button>
+        <div v-if="picking && freePlots > 0" class="pick">
+          <p v-if="production.busy" class="muted small">一次只能蓋一個，等現在的蓋好。</p>
+          <button v-for="b in production.buildable" :key="b.kind" class="build" :disabled="siteBusy || !!production.busy || !affordable(b.cost)"
+            @click="siteCommand(`蓋${b.name}？\n\n要 ${costText(b.cost)}，${b.hours} 小時後完成。`, { kind: 'site-build', site: b.kind })">
+            <b>{{ b.name }}</b>
+            <small>每小時 {{ makesText(b.makes) }}</small>
+            <small :class="{ short: !affordable(b.cost) }">{{ costText(b.cost) }}</small>
+          </button>
         </div>
-        <p v-else class="muted small">已經是最高級了（每種作物 ×1.5）。</p>
-        <p v-if="farmProblem" class="warn">{{ farmProblem }}</p>
+        <p class="muted small">沒有場地也會撿一點木材、石頭。空地隨營地長大變多（2／4／6 格），大世界的種族每 5 級再多 1 格。</p>
+        <p v-if="siteProblem" class="warn">{{ siteProblem }}</p>
       </section>
 
       <section class="panel">
@@ -301,14 +320,22 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .chips li { background: #f1eee2; border-radius: 8px; padding: 5px 10px; font-size: 14px; }
 .icon-btn:disabled { opacity: 0.5; }
-.made { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.made li { display: flex; align-items: baseline; gap: 10px; }
-.made small { color: var(--muted); font-size: 13px; }
-.made b { min-width: 3.5em; text-align: right; }
 .small { font-size: 13px; }
-.upgrade { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
-.upgrade .chips { margin-top: 6px; }
+.sites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.site-row { width: 100%; display: flex; align-items: baseline; gap: 8px; border: 1px solid var(--line); background: #faf8f0; border-radius: 10px; padding: 9px 10px; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.site-row small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.site-row .makes { min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.site-row.free { border-style: dashed; background: none; }
+.open .site-row { border-color: var(--green); }
+.site-more { padding: 6px 4px 4px; }
+.actions { display: flex; gap: 8px; margin-top: 8px; }
+.pick { display: grid; gap: 6px; margin-top: 8px; }
+.build { display: grid; gap: 2px; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 10px; font: inherit; color: inherit; cursor: pointer; }
+.build:disabled { opacity: 0.55; cursor: default; }
+.build small { color: var(--muted); font-size: 12px; }
+.short { color: var(--red) !important; }
 .chips li.short { color: var(--red); }
 .upgrading { margin-top: 10px; font-weight: 600; }
 .production .warn { color: #b3412c; }
+.production .chips { margin-top: 6px; }
 </style>

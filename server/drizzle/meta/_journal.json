@@ -113,6 +113,20 @@
       "when": 1790653393109,
       "tag": "0015_farm",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790655076474,
+      "tag": "0016_sites",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790655076844,
+      "tag": "0017_drop_farm_columns",
+      "breakpoints": true
     }
   ]
 }

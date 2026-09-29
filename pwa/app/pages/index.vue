@@ -36,9 +36,11 @@ const clockText = computed(() => {
 const view = computed(() => camp.state.saved?.view ?? null);
 const atHome = computed(() => view.value?.residents.filter((r) => r.place === "home").length ?? 0);
 const farmLine = computed(() => {
-  const farm = view.value?.production?.farm;
-  if (!farm) return "";
-  return `${farm.name} Lv${farm.level}・${farm.parts.at(-1)}${farm.upgradingUntil ? `（正在蓋${farm.next?.name}）` : ""}`;
+  const p = view.value?.production;
+  if (!p) return "";
+  const farm = p.sites.find((x) => x.kind === "farm");
+  const others = p.sites.filter((x) => x.kind !== "farm" && x.level > 0).length;
+  return `${farm ? `${farm.name} Lv${farm.level}` : ""}・場地 ${p.used}/${p.slots}${others ? `（${others} 個在生產）` : ""}${p.busy ? "・蓋的中" : ""}`;
 });
 const lastRaid = computed(() => camp.state.saved?.raids[0] ?? null);
 const friends = computed(() => live.state.friends);

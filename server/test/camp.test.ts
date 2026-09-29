@@ -259,64 +259,102 @@ describe("monster raids", () => {
   });
 });
 
-describe("what the camp makes (server/FARM.md)", () => {
-  it("fells and digs by the hour with those at home, and the farm grows carrots from the first day", async () => {
+describe("the camp's sites (server/FARM.md §11)", () => {
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+  async function campWith(materials: Record<string, number>, n = 60, race = "goblin") {
+    const me = await account();
+    const goblins = Array.from({ length: n }, (_, i) => ({ id: i + 1, breed: "common", age: 100, seed: String(i + 1) }));
+    await t.call("POST", "/camp/migrate", { race, save: { goblins, materials, peak: n } }, me);
+    return me;
+  }
+
+  it("starts a new camp with the farm only, gathering a little, the farm growing carrots", async () => {
     const me = await account();
     await t.call("POST", "/camp/start", { race: "goblin" }, me);
     t.advance(24 * HOUR);
     const camp = await view(me);
-    expect(camp.materials.log).toBeGreaterThan(24);
-    expect(camp.materials.stone).toBeGreaterThan(12);
+    expect(camp.materials.log).toBe(48);
+    expect(camp.materials.stone).toBe(24);
     expect(camp.materials.food_carrot).toBe(8);
     expect(camp.materials.ration_bread).toBeUndefined(); // (no more free bread)
-    expect(camp.production!.farm).toMatchObject({ name: "田地", level: 1, parts: ["菜園"], crops: ["food_carrot"], upgradingUntil: null });
-    expect(camp.production!.farm.next).toMatchObject({ level: 2, name: "麥田", cost: { log: 60, stone: 30 }, hours: 2 });
-    expect(camp.production!.workers).toBe(60);
-    expect(camp.production!.perHour.log).toBeCloseTo(5);
+    const p = camp.production!;
+    expect(p.sites).toHaveLength(1);
+    expect(p.sites[0]).toMatchObject({ kind: "farm", name: "田地", level: 1, parts: ["菜園"], refund: null });
+    expect(p.sites[0]!.next).toMatchObject({ level: 2, cost: { log: 60, stone: 30 }, hours: 2 });
+    expect(p.slots).toBe(6); // (a day old: the third look)
+    expect(p.buildable.map((b) => b.kind)).toEqual(["lumber", "quarry", "mine", "traps", "fishery", "hunter", "scrapyard"]);
   });
 
-  it("raises the farm a level: pays now, done after its hours, one at a time, then grows bread", async () => {
-    const me = await account();
-    const goblins = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, breed: "common", age: 100, seed: String(i + 1) }));
-    await t.call("POST", "/camp/migrate", { race: "goblin", save: { goblins, materials: { log: 70, stone: 30 } } }, me);
-    const res = await t.call("POST", "/camp/commands", { kind: "farm-upgrade" }, me);
+  it("builds a site: pays now, works once built, one at a time, and needs hands", async () => {
+    const me = await campWith({ log: 100, stone: 20 }, 60);
+    let res = await cmd(me, { kind: "site-build", site: "lumber" });
     expect(res.status).toBe(200);
-    expect(res.body.message).toContain("麥田");
+    expect(res.body.message).toContain("伐木場");
     let camp = res.body.camp as CampView;
-    expect(camp.materials).toEqual({ log: 10 });
-    expect(camp.production!.farm.upgradingUntil).not.toBeNull();
-    expect((await t.call("POST", "/camp/commands", { kind: "farm-upgrade" }, me)).body.error).toBe("busy");
-    t.advance(HOUR);
-    expect((await view(me)).production!.farm.level).toBe(1);
+    expect(camp.materials).toEqual({ log: 90, stone: 20 });
+    expect(camp.production!.sites[1]).toMatchObject({ kind: "lumber", level: 0 });
+    expect(camp.production!.busy).not.toBeNull();
+    expect((await cmd(me, { kind: "site-build", site: "quarry" })).body.error).toBe("busy");
     t.advance(HOUR + 1000);
     camp = await view(me);
-    expect(camp.production!.farm).toMatchObject({ level: 2, parts: ["菜園", "麥田"], upgradingUntil: null });
-    const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string; data: { level?: number } }[];
-    expect(events.find((e) => e.kind === "farm")?.data.level).toBe(2);
-    expect((await t.call("POST", "/camp/commands", { kind: "farm-upgrade" }, me)).body.error).toBe("not_enough");
+    expect(camp.production!.sites[1]).toMatchObject({ kind: "lumber", level: 1, busyUntil: null });
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string; data: { kind?: string; level?: number } }[];
+    expect(events.find((e) => e.kind === "site")?.data).toMatchObject({ kind: "lumber", level: 1 });
+    const before = camp.materials.log!;
     t.advance(10 * HOUR);
-    expect((await view(me)).materials.ration_bread).toBe(5);
+    expect((await view(me)).materials.log).toBe(before + 10 * (2 + 2)); // (the gathering, and the lumber camp with every hand)
+    expect((await view(me)).production).toMatchObject({ need: 20, share: 1 });
   });
 
-  it("gives elves berries and the undead jerky and a 墓園", async () => {
-    const me = await account();
-    await t.call("POST", "/camp/start", { race: "undead" }, me);
-    await database.sql`update camps set farm_level = 2`;
-    t.advance(10 * HOUR);
-    const camp = await view(me);
-    expect(camp.production!.farm).toMatchObject({ name: "墓園", parts: ["墓園菜圃", "骨粉田"] });
-    expect(camp.materials.ration_jerky).toBe(5);
+  it("has only so many plots, and refuses what the race cannot build", async () => {
+    const me = await campWith({ log: 1000, stone: 1000 }, 12); // (the first look: two plots, the farm on one)
+    expect((await cmd(me, { kind: "site-build", site: "grove" })).body.error).toBe("not_allowed");
+    expect((await cmd(me, { kind: "site-build", site: "quarry" })).status).toBe(200);
+    t.advance(2 * HOUR);
+    const full = await cmd(me, { kind: "site-build", site: "mine" });
+    expect(full.body.error).toBe("no_room");
   });
 
-  it("goes on in 聖光模式", async () => {
-    const me = await account();
-    await t.call("POST", "/camp/start", { race: "goblin" }, me);
-    t.advance(13 * HOUR);
-    await view(me);
+  it("raises a site and the farm; takes a site down for half of what it cost", async () => {
+    const me = await campWith({ log: 500, stone: 200 }, 60);
+    await cmd(me, { kind: "site-build", site: "lumber" });
+    t.advance(HOUR + 1000);
+    const lumber = (await view(me)).production!.sites.find((x) => x.kind === "lumber")!;
+    expect((await cmd(me, { kind: "site-upgrade", site: lumber.id })).status).toBe(200);
+    expect((await cmd(me, { kind: "farm-upgrade" })).body.error).toBe("busy");
+    t.advance(4 * HOUR + 1000);
+    expect((await view(me)).production!.sites.find((x) => x.id === lumber.id)!.level).toBe(2);
+    const farmUp = await cmd(me, { kind: "farm-upgrade" });
+    expect(farmUp.body.message).toContain("麥田");
+    t.advance(2 * HOUR + 1000);
+    expect((await view(me)).production!.sites[0]).toMatchObject({ level: 2, parts: ["菜園", "麥田"] });
+    const logs = (await view(me)).materials.log!;
+    const down = await cmd(me, { kind: "site-demolish", site: lumber.id });
+    expect(down.status).toBe(200);
+    expect((down.body.camp as CampView).materials.log).toBe(logs + 35); // (half of 10 + 60)
+    expect((down.body.camp as CampView).production!.sites.map((x) => x.kind)).toEqual(["farm"]);
+    expect((await cmd(me, { kind: "site-demolish", site: 1 })).body.error).toBe("not_allowed");
+  });
+
+  it("gives the undead a 墓園 and a 醃肉窖, and goes on in 聖光模式", async () => {
+    const me = await campWith({ log: 100 }, 50, "undead");
+    expect((await cmd(me, { kind: "site-build", site: "fishery" })).body.message).toContain("醃肉窖");
     expect((await t.call("POST", "/camp/sanctuary", { on: true }, me)).status).toBe(200);
-    const before = (await view(me)).materials.log ?? 0;
-    t.advance(10 * HOUR);
-    expect((await view(me)).materials.log).toBeGreaterThanOrEqual(before + 40);
+    t.advance(7 * HOUR);
+    const camp = await view(me);
+    expect(camp.production!.sites[0]!.name).toBe("墓園");
+    expect(camp.materials.ration_jerky).toBe(1); // (0.33 an hour for the six hours since it was built: 1.98)
+  });
+
+  it("works the hands out hour by hour: a camp too small slows every site", async () => {
+    const me = await campWith({ log: 100, stone: 40 }, 5);
+    await cmd(me, { kind: "site-build", site: "lumber" });
+    t.advance(HOUR + 1000);
+    const camp = await view(me);
+    const home = camp.residents.filter((r) => r.place === "home").length; // (five, and those born since)
+    expect(home).toBeLessThan(20);
+    expect(camp.production).toMatchObject({ workers: home, need: 20 });
+    expect(camp.production!.share).toBeCloseTo(home / 20);
   });
 });
 

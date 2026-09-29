@@ -43,20 +43,36 @@ final class CampLedger {
         /// 聖光模式 (server/CAMP.md §7); missing from older servers.
         struct Sanctuary: Codable, Equatable { let since: String?; let canTurnOnAt: String? }
         let sanctuary: Sanctuary?
-        /// What the camp makes by itself and its farm (server/FARM.md); missing from older servers.
+        /// The camp's sites and what they make (server/FARM.md §11, shared/src/camp/api.ts `CampProduction`); missing from older servers.
         struct Production: Codable {
-            struct Next: Codable { let level: Int; let name: String; let cost: [String: Int]; let hours: Double }
-            struct Farm: Codable {
+            struct Busy: Codable { let site: Int; let until: String }
+            struct Next: Codable { let level: Int; let cost: [String: Int]; let hours: Double; let makes: [String: Double] }
+            struct Site: Codable {
+                let id: Int
+                let kind: String
                 let name: String
+                /// 0: still being built.
                 let level: Int
-                let parts: [String]
-                let crops: [String]
-                let upgradingUntil: String?
+                let maxLevel: Int
+                let parts: [String]?
+                let makes: [String: Double]
+                let busyUntil: String?
                 let next: Next?
+                /// nil: it cannot be taken down (the farm).
+                let refund: [String: Int]?
             }
-            let perHour: [String: Double]
+            struct Buildable: Codable { let kind: String; let name: String; let cost: [String: Int]; let hours: Double; let makes: [String: Double] }
+            let slots: Int
+            let used: Int
             let workers: Int
-            let farm: Farm
+            let need: Int
+            let share: Double
+            let perHour: [String: Double]
+            let busy: Busy?
+            let sites: [Site]
+            let buildable: [Buildable]
+
+            var farm: Site? { sites.first { $0.kind == "farm" } }
         }
         let production: Production?
         let residents: [Resident]
@@ -137,8 +153,8 @@ final class CampLedger {
         let share: Double
     }
 
-    /// The farm went up a level (its upgrade was done).
-    struct FarmDone: Decodable { let level: Int; let name: String }
+    /// A site was built or went up a level (for the farm, `part` is what the level added).
+    struct SiteDone: Decodable { let site: Int; let kind: String; let level: Int; let name: String; let part: String? }
 
     /// One thing that happened in the camp (`GET /api/camp/events`); raids and the big world's parties are read.
     struct Event: Decodable {
@@ -151,7 +167,7 @@ final class CampLedger {
         /// What the held cells of the big world yielded (material → how many).
         let yields: [String: Int]?
         let lairBack: LairBack?
-        let farm: FarmDone?
+        let site: SiteDone?
         private enum CodingKeys: String, CodingKey { case seq, at, kind, data }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -160,7 +176,7 @@ final class CampLedger {
             kind = try c.decode(String.self, forKey: .kind)
             raid = kind == "raid" ? try? c.decode(Raid.self, forKey: .data) : nil
             expedition = kind == "expedition" ? try? c.decode(Expedition.self, forKey: .data) : nil
-            farm = kind == "farm" ? try? c.decode(FarmDone.self, forKey: .data) : nil
+            site = kind == "site" ? try? c.decode(SiteDone.self, forKey: .data) : nil
             struct World: Decodable { let bossReward: BossReward?; let yields: [String: Int]?; let lairBack: LairBack? }
             let world = kind == "world" ? try? c.decode(World.self, forKey: .data) : nil
             bossReward = world?.bossReward
@@ -253,7 +269,8 @@ final class CampLedger {
         return BookStores(materials: view.materials, kills: view.kills, larder: view.larder,
                           armory: view.armory.map { GearItem(id: $0.id, left: $0.left) }, peak: max(view.peak, residents.count), delivered: view.delivered,
                           boosts: secondsLeft(view.boosts), cooldowns: secondsLeft(view.foodCooldowns),
-                          farmLevel: view.production?.farm.level ?? 1, race: view.race)
+                          farmLevel: view.production?.farm?.level ?? 1, race: view.race,
+                          sites: (view.production?.sites ?? []).filter { $0.kind != "farm" }.map { (id: $0.id, kind: $0.kind, level: $0.level) })
     }
 
     /// What happened since this Mac last looked (oldest first). The first time, everything before is taken as seen.

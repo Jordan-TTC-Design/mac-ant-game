@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pickItem: ClosureMenuItem!
     private var editItem: ClosureMenuItem!
     private var foodMenuItem: NSMenuItem!
+    private var sitesMenuItem: NSMenuItem!
     private var clearFoodItem: ClosureMenuItem!
     private var nestMenuItem: NSMenuItem!
     private var customSpawnItem: ClosureMenuItem!
@@ -964,6 +965,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         scene.growth = 120
                         scene.farmLevel = level
                         scene.farmRace = race
+                        if env["CAMP_TEST_SITES"] != nil { // every site this race may build, at level 0 to 3 down the rows
+                            let kinds = ["lumber", "quarry", "mine", "traps", "fishery", "hunter", race == "elf" ? "grove" : race == "undead" ? "soulwell" : "scrapyard"]
+                            scene.sites = kinds.enumerated().map { (id: $0.offset + 2, kind: $0.element, level: min(3, max(0, level - 2 + ($0.offset == 0 ? -1 : 0)))) }
+                        }
                         if let image = scene.render(size: size, origin: .zero, scale: 1, hour: 12) {
                             sheet.draw(image, in: CGRect(x: column * cw, y: (5 - level) * ch, width: cw, height: ch))
                         }
@@ -1334,11 +1339,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sanctuary.stateProvider = { [weak self] in self?.ledger.view?.sanctuary?.since != nil }
         sanctuary.toolTip = "不會有魔獸來襲、別人也打不了你；但營地 120 隻以上時生得慢一半"
         sanctuary.isHidden = !serverCamp
-        // what the camp makes by itself, and raising the farm (server/FARM.md)
-        let farm = ClosureMenuItem(title: "\(Characters.current.id == "undead" ? "墓園" : "田地")與生產…") { [weak self] in DispatchQueue.main.async { self?.showFarm() } }
-        farm.isHidden = !serverCamp
+        // the camp's sites: building, raising and taking them down (server/FARM.md §11)
+        sitesMenuItem = NSMenuItem(title: "營地場地", action: nil, keyEquivalent: "")
+        sitesMenuItem.submenu = NSMenu(title: "營地場地")
+        sitesMenuItem.submenu?.autoenablesItems = false
+        sitesMenuItem.isHidden = !serverCamp
         menu.addItem(group("營地", [
-            foodMenu(), workshop, farm, world, worldStatusItem, sanctuary,
+            foodMenu(), workshop, sitesMenuItem, world, worldStatusItem, sanctuary,
             .separator(),
             editItem, pickItem,
             ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } },
@@ -2014,47 +2021,136 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// The farm and what the camp makes by the hour (the server does the sums), with a button to raise the farm when it can.
-    private func showFarm() {
-        guard let production = ledger.view?.production, let view = ledger.view else {
-            _ = presentAlert("田地", "還沒有連上伺服器的營地資料，等一下再試。")
+    // MARK: The camp's sites (server/FARM.md §11)
+
+    private func materialsText(_ cost: [String: Int]) -> String {
+        cost.sorted { $0.key < $1.key }.map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
+    }
+
+    /// "木材 4、石頭 2" an hour; a find (a chance an hour) as "偶爾碎晶".
+    private func makesText(_ makes: [String: Double], finds: Bool = true) -> String {
+        makes.sorted { $0.value > $1.value }.map { id, n in
+            let name = Materials.info(id)?.name ?? id
+            if id == "crystal_shard" { return "偶爾\(name)" }
+            return "\(name) \(n >= 10 || n == n.rounded() ? "\(Int(n.rounded()))" : String(format: "%.1f", n))"
+        }.joined(separator: "、")
+    }
+
+    private func hoursText(_ hours: Double) -> String { hours == hours.rounded() ? "\(Int(hours)) 小時" : String(format: "%.1f 小時", hours) }
+
+    /// Fills the sites menu afresh from the last books: a summary, each site (raise it, take it down), each free plot (build on it).
+    private func refreshSitesMenu() {
+        guard let sub = sitesMenuItem?.submenu else { return }
+        sub.removeAllItems()
+        guard let view = ledger.view, let production = view.production else {
+            let wait = NSMenuItem(title: "還沒有連上伺服器的營地資料", action: nil, keyEquivalent: "")
+            wait.isEnabled = false
+            sub.addItem(wait)
             return
         }
-        let farm = production.farm
-        let name = { (id: String) in Materials.info(id)?.name ?? id }
-        let number = { (n: Double) in n >= 10 ? "\(Int(n.rounded()))" : String(format: "%.1f", n) }
-        var lines = ["在家工作的有 \(production.workers) 隻（最多算 60 隻）。每小時："]
-        lines.append("・\(name("log")) \(number(production.perHour["log"] ?? 0))、\(name("stone")) \(number(production.perHour["stone"] ?? 0))（挖礦偶爾挖到\(name("scrap_iron"))、很少挖到\(name("crystal_shard"))）")
-        for food in farm.crops {
-            let rate = production.perHour[food] ?? 0
-            let every = rate >= 1 ? "每小時 \(number(rate)) 個" : "每 \(number(1 / max(rate, 0.001))) 小時 1 個"
-            lines.append("・\(name(food))：\(every)，倉庫有 \(view.materials[food] ?? 0)／20")
-        }
-        lines.append("")
-        lines.append("\(farm.name) Lv\(farm.level)：\(farm.parts.joined(separator: "、"))")
-        var canUpgrade = false
-        if let until = farm.upgradingUntil.flatMap(ServerTime.parse) {
+        let have = view.materials
+        let affordable = { (cost: [String: Int]) in cost.allSatisfy { (have[$0.key] ?? 0) >= $0.value } }
+        var summary = "空地 \(production.used)/\(production.slots)・人手 \(production.workers)/\(production.need)"
+        if production.share < 1 { summary += "（場地只有 \(Int((production.share * 100).rounded()))% 的速度）" }
+        let header = NSMenuItem(title: summary, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        sub.addItem(header)
+        let busySite = production.busy.flatMap { busy in production.sites.first { $0.id == busy.site } }
+        if let busy = production.busy, let site = busySite, let until = ServerTime.parse(busy.until) {
             let minutes = max(0, Int(until.timeIntervalSinceNow / 60))
-            lines.append("正在蓋\(farm.next?.name ?? "")，還要 \(minutes / 60) 小時 \(minutes % 60) 分。")
-        } else if let next = farm.next {
-            let cost = next.cost.sorted { $0.key < $1.key }.map { "\(name($0.key)) \(view.materials[$0.key] ?? 0)/\($0.value)" }.joined(separator: "、")
-            canUpgrade = next.cost.allSatisfy { (view.materials[$0.key] ?? 0) >= $0.value }
-            lines.append("升級到 Lv\(next.level)（\(next.name)）要：\(cost)，\(Int(next.hours)) 小時蓋好。")
-            if !canUpgrade { lines.append("素材還不夠。") }
-        } else {
-            lines.append("已經是最高級了（每種作物 ×1.5）。")
+            let line = NSMenuItem(title: "正在蓋\(site.name)，還要 \(minutes / 60) 小時 \(minutes % 60) 分", action: nil, keyEquivalent: "")
+            line.isEnabled = false
+            sub.addItem(line)
         }
-        let text = lines.joined(separator: "\n")
-        guard canUpgrade else { _ = presentAlert(farm.name, text); return }
-        guard presentAlert(farm.name, text, buttons: ["升級", "關閉"]) else { return }
-        struct Body: Encodable { let kind = "farm-upgrade"; let requestId = UUID().uuidString.lowercased() }
+        sub.addItem(.separator())
+        for site in production.sites {
+            let what = site.level == 0 ? "蓋好之前不會生產" : "每小時 \(makesText(site.makes))"
+            let item = NSMenuItem(title: site.level == 0 ? "\(site.name)（蓋到一半，\(what)）" : "\(site.name) Lv\(site.level)（\(what)）", action: nil, keyEquivalent: "")
+            let menu = NSMenu(title: site.name)
+            menu.autoenablesItems = false
+            if let parts = site.parts, !parts.isEmpty {
+                let line = NSMenuItem(title: parts.joined(separator: "、"), action: nil, keyEquivalent: "")
+                line.isEnabled = false
+                menu.addItem(line)
+            }
+            if let next = site.next {
+                let up = ClosureMenuItem(title: "升級到 Lv\(next.level)（\(materialsText(next.cost))，\(hoursText(next.hours))）") { [weak self] in
+                    DispatchQueue.main.async {
+                        guard let self, self.presentAlert("升級\(site.name)？", "要 \(self.materialsText(next.cost))，\(self.hoursText(next.hours))後蓋好。\n升級後每小時：\(self.makesText(next.makes))。\n蓋的時候照樣生產。", buttons: ["升級", "取消"]) else { return }
+                        self.sendSiteCommand(SiteCommand(kind: "site-upgrade", site: .id(site.id)), title: site.name)
+                    }
+                }
+                up.isEnabled = production.busy == nil && site.level > 0 && affordable(next.cost)
+                up.toolTip = production.busy != nil ? "一次只能蓋一個" : affordable(next.cost) ? nil : "素材不夠"
+                menu.addItem(up)
+            } else {
+                let top = NSMenuItem(title: "已經是最高級了", action: nil, keyEquivalent: "")
+                top.isEnabled = false
+                menu.addItem(top)
+            }
+            if let refund = site.refund {
+                let back = refund.isEmpty ? "" : "（拿回 \(materialsText(refund))）"
+                menu.addItem(ClosureMenuItem(title: "拆掉\(back)") { [weak self] in
+                    DispatchQueue.main.async {
+                        guard let self, self.presentAlert("拆掉\(site.name)？", "那一格馬上空出來\(back.isEmpty ? "" : "，拿回 \(self.materialsText(refund))")。", buttons: ["拆掉", "取消"]) else { return }
+                        self.sendSiteCommand(SiteCommand(kind: "site-demolish", site: .id(site.id)), title: site.name)
+                    }
+                })
+            }
+            item.submenu = menu
+            sub.addItem(item)
+        }
+        for _ in 0..<max(0, production.slots - production.used) {
+            let item = NSMenuItem(title: "空地（可以蓋場地）", action: nil, keyEquivalent: "")
+            let menu = NSMenu(title: "空地")
+            menu.autoenablesItems = false
+            for kind in production.buildable {
+                let build = ClosureMenuItem(title: "\(kind.name)：\(materialsText(kind.cost))，\(hoursText(kind.hours))（每小時 \(makesText(kind.makes))）") { [weak self] in
+                    DispatchQueue.main.async {
+                        guard let self, self.presentAlert("蓋\(kind.name)？", "要 \(self.materialsText(kind.cost))，\(self.hoursText(kind.hours))後蓋好。\n蓋好後每小時：\(self.makesText(kind.makes))（Lv1 要 10 隻在家的居民）。", buttons: ["蓋", "取消"]) else { return }
+                        self.sendSiteCommand(SiteCommand(kind: "site-build", site: .kind(kind.kind)), title: kind.name)
+                    }
+                }
+                build.isEnabled = production.busy == nil && affordable(kind.cost)
+                build.toolTip = production.busy != nil ? "一次只能蓋一個" : affordable(kind.cost) ? nil : "素材不夠"
+                menu.addItem(build)
+            }
+            item.submenu = menu
+            sub.addItem(item)
+        }
+        if production.used >= production.slots {
+            let full = NSMenuItem(title: "空地用完了：營地長大、種族升級會多出空地", action: nil, keyEquivalent: "")
+            full.isEnabled = false
+            sub.addItem(full)
+        }
+    }
+
+    /// `site-build` (a kind), `site-upgrade` and `site-demolish` (a site's id) as the server takes them.
+    private struct SiteCommand: Encodable {
+        enum Target { case id(Int), kind(String) }
+        let kind: String
+        let site: Target
+        let requestId = UUID().uuidString.lowercased()
+        private enum CodingKeys: String, CodingKey { case kind, site, requestId }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(kind, forKey: .kind)
+            try c.encode(requestId, forKey: .requestId)
+            switch site {
+            case .id(let id): try c.encode(id, forKey: .site)
+            case .kind(let kind): try c.encode(kind, forKey: .site)
+            }
+        }
+    }
+
+    private func sendSiteCommand(_ command: SiteCommand, title: String) {
         Task { @MainActor in
             do {
-                let answer = try await self.ledger.command(Body())
+                let answer = try await self.ledger.command(command)
                 self.applyBooksToCamp()
                 self.say(answer.message)
             } catch let error as APIError {
-                _ = self.presentAlert(farm.name, error.message)
+                _ = self.presentAlert(title, error.message)
             } catch {}
         }
     }
@@ -2083,8 +2179,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         let top = yields.sorted { $0.value > $1.value }.prefix(4).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
                         self.say("大世界的領地送來了 \(top)。")
                     }
-                    for done in events.compactMap(\.farm) {
-                        self.say("\(Characters.current.id == "undead" ? "墓園" : "田地")升級了！\(done.name)蓋好了（Lv\(done.level)）。")
+                    for done in events.compactMap(\.site) {
+                        if done.kind == "farm" {
+                            self.say("\(done.name)升級了！\(done.part ?? "")蓋好了（Lv\(done.level)）。")
+                        } else {
+                            self.say(done.level <= 1 ? "\(done.name)蓋好了！" : "\(done.name)升到 Lv\(done.level) 了！")
+                        }
                     }
                     self.tellHarvest(before: before)
                     for reward in events.compactMap(\.bossReward) {
@@ -2101,7 +2201,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Now and then the princess says what the farm brought in since the books were last looked at.
     private func tellHarvest(before: CampLedger.View?) {
-        guard let before, let now = ledger.view, let crops = now.production?.farm.crops, Double.random(in: 0..<1) < 0.35 else { return }
+        let foods = { (id: String) in id.hasPrefix("ration_") || id.hasPrefix("food_") }
+        guard let before, let now = ledger.view, let sites = now.production?.sites, Double.random(in: 0..<1) < 0.35 else { return }
+        let crops = Set(sites.flatMap { $0.makes.keys.filter(foods) }).sorted()
         let got = crops.compactMap { id -> String? in
             let n = (now.materials[id] ?? 0) - (before.materials[id] ?? 0)
             return n > 0 ? "\(n) 個\(Materials.info(id)?.name ?? id)" : nil
@@ -3707,6 +3809,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         foodMenuItem.isEnabled = colony.phase == .running && !isHiddenByUser
         clearFoodItem.isEnabled = !colony.foods.isEmpty
         refreshFoodMenu()
+        refreshSitesMenu()
         refreshAccountMenu()
         refreshStates(in: menu)
     }

@@ -2,8 +2,12 @@ import { randomInt } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   canAfford,
-  farmPartName,
-  nextFarmLevel,
+  buildableKinds,
+  farmParts,
+  siteName,
+  siteNext,
+  slotsFor,
+  type Site,
   FOOD_BOOST_MINUTES,
   FOOD_COOLDOWN_MINUTES,
   gearRule,
@@ -20,18 +24,19 @@ import {
   type GearItem,
   type Wearer,
 } from "@goblincamp/shared/camp";
+import { materialName } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps } from "../db/schema.ts";
-import { addEvent, HALF_BREED_LIFESPAN } from "./service.ts";
+import { addEvent, campRaceLevel, HALF_BREED_LIFESPAN, refundFor } from "./service.ts";
 
 type CampRow = typeof camps.$inferSelect;
 const MINUTE = 60_000;
 
 export type CommandResult =
   | { ok: true; message: string; resident?: number; repeated?: boolean }
-  | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big" | "too_soon" | "busy" | "at_top"; message: string };
+  | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big" | "too_soon" | "busy" | "at_top" | "no_room"; message: string };
 
-const cost = (c: Record<string, number>) => Object.entries(c).map(([id, n]) => `${id} ×${n}`).join("、");
+const cost = (c: Record<string, number>) => Object.entries(c).map(([id, n]) => `${materialName(id)} ×${n}`).join("、");
 
 /**
  * Does one thing the player asked for, checked against the books (server/CAMP.md §3.3). The camp must be locked and
@@ -141,14 +146,46 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       message = "公主的孩子加入營地了。";
       break;
     }
+    case "site-build": {
+      if (!buildableKinds(camp.race).includes(command.site)) return { ok: false, code: "not_allowed", message: "這個種族不能蓋這個。" };
+      const busy = camp.sites.find((x) => x.busyUntil);
+      if (busy) return { ok: false, code: "busy", message: `${siteName(camp.race, busy.kind)}還在蓋，一次只能蓋一個。` };
+      const slots = slotsFor(camp.race, camp.peak, await campRaceLevel(tx, camp.userId));
+      if (camp.sites.length >= slots) return { ok: false, code: "no_room", message: `空地都用完了（${slots} 格）。營地長大或種族升級會多出空地。` };
+      const first = siteNext(command.site, 0)!;
+      const name = siteName(camp.race, command.site);
+      if (!canAfford(materials, first.cost)) return { ok: false, code: "not_enough", message: `素材不夠：蓋${name}要 ${cost(first.cost)}。` };
+      spend(materials, first.cost);
+      const site: Site = { id: Math.max(0, ...camp.sites.map((x) => x.id)) + 1, kind: command.site, level: 0, busyUntil: new Date(now.getTime() + first.hours * 3_600_000).toISOString() };
+      changes.sites = [...camp.sites, site];
+      message = `開始蓋${name}，${first.hours} 小時後完成。`;
+      break;
+    }
+    case "site-upgrade":
     case "farm-upgrade": {
-      if (camp.farmUpgradeUntil) return { ok: false, code: "busy", message: "田地正在升級中。" };
-      const next = nextFarmLevel(camp.farmLevel);
-      if (!next) return { ok: false, code: "at_top", message: "田地已經是最高級了。" };
-      if (!canAfford(materials, next.cost)) return { ok: false, code: "not_enough", message: `素材不夠：升級要 ${cost(next.cost)}。` };
+      const target = command.kind === "farm-upgrade" ? camp.sites.find((x) => x.kind === "farm") : camp.sites.find((x) => x.id === command.site);
+      if (!target) return { ok: false, code: "not_found", message: "找不到這個場地。" };
+      const name = siteName(camp.race, target.kind);
+      const busy = camp.sites.find((x) => x.busyUntil);
+      if (busy) return { ok: false, code: "busy", message: `${siteName(camp.race, busy.kind)}還在蓋，一次只能蓋一個。` };
+      const next = siteNext(target.kind, target.level);
+      if (!next) return { ok: false, code: "at_top", message: `${name}已經是最高級了。` };
+      if (!canAfford(materials, next.cost)) return { ok: false, code: "not_enough", message: `素材不夠：升級${name}要 ${cost(next.cost)}。` };
       spend(materials, next.cost);
-      changes.farmUpgradeUntil = new Date(now.getTime() + next.hours * 3_600_000);
-      message = `開始蓋${farmPartName(camp.race, next.level)}，${next.hours} 小時後完成。`;
+      const until = new Date(now.getTime() + next.hours * 3_600_000).toISOString();
+      changes.sites = camp.sites.map((x) => (x.id === target.id ? { ...x, busyUntil: until } : x));
+      const what = target.kind === "farm" ? farmParts(camp.race, target.level + 1).at(-1) : `${name} Lv${target.level + 1}`;
+      message = `開始蓋${what}，${next.hours} 小時後完成。`;
+      break;
+    }
+    case "site-demolish": {
+      const target = camp.sites.find((x) => x.id === command.site);
+      if (!target) return { ok: false, code: "not_found", message: "找不到這個場地。" };
+      if (target.kind === "farm") return { ok: false, code: "not_allowed", message: "田地不能拆。" };
+      const back = refundFor(target);
+      for (const [id, n] of Object.entries(back)) materials[id] = (materials[id] ?? 0) + n;
+      changes.sites = camp.sites.filter((x) => x.id !== target.id);
+      message = `拆掉了${siteName(camp.race, target.kind)}` + (Object.keys(back).length ? `，拿回 ${cost(back)}。` : "。");
       break;
     }
     case "story": {

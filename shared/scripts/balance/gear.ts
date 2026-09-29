@@ -6,7 +6,7 @@
  *
  *   cd shared && ../server/node_modules/.bin/tsx scripts/balance/gear.ts
  */
-import { CAMP_MONSTERS, GEAR, MONSTER_DROPS, productionPerHour, RACE_RANGE, raceRules, residentAsFighter, SCRAP_DROPS, WORKERS_MAX } from "../../src/camp/index.ts";
+import { CAMP_MONSTERS, campPerHour, GEAR, MONSTER_DROPS, RACE_RANGE, raceRules, residentAsFighter, SCRAP_DROPS, sitePerHour, type Site } from "../../src/camp/index.ts";
 import { FOE_DROPS, LAIRS, MATERIALS, residentFighter, TERRAIN_YIELD, type Fighter } from "../../src/world/index.ts";
 
 const CAMP_SIZE = 150;
@@ -19,7 +19,9 @@ const add = (src: string, id: string, n: number) => ((income[id] ??= {})[src] = 
 const raidsPerDay = (24 * 60) / raceRules("goblin").raidEveryMinutes;
 const campMonsters = CAMP_MONSTERS.filter((m) => m.level <= (CAMP_SIZE >= 60 ? 2 : 1));
 const perRaid = Math.min(12, 2 + Math.floor(CAMP_SIZE / 30) + 1);
-for (const [id, n] of Object.entries(productionPerHour("goblin", Math.min(WORKERS_MAX, CAMP_SIZE), 1))) if (!id.startsWith("food_")) add("營地生產", id, n * 24);
+// the camp's sites: a CAMP_SIZE goblin camp with the six plots it has at the third look, all at level 2 (120 hands)
+const SITES: Site[] = (["farm", "lumber", "quarry", "mine", "traps", "scrapyard"] as const).map((kind, i) => ({ id: i + 1, kind, level: 2 }));
+for (const [id, n] of Object.entries(campPerHour("goblin", SITES, 1))) if (!id.startsWith("food_") && !id.startsWith("ration_")) add("營地生產", id, n * 24);
 for (const m of campMonsters) for (const d of [...(MONSTER_DROPS[m.id] ?? []), ...SCRAP_DROPS]) add("來襲", d.id, (avg(d) * perRaid * raidsPerDay) / campMonsters.length);
 for (const [t, list] of Object.entries(TERRAIN_YIELD)) for (const y of list) add(`領地(${t})/天`, y.id, (8 * y.chance * (y.min + y.max)) / 2);
 const open = new Set(LAIRS.filter((l) => l.tier === 1).flatMap((l) => l.members.map((m) => m.foe)));
@@ -62,11 +64,14 @@ console.log("\n## 沒有任何裝備要用的材料");
 console.log(Object.keys(MATERIALS).filter((id) => !used.has(id) && !id.startsWith("ration_") && !id.startsWith("food_")).map((id) => `${MATERIALS[id]!.name}（${id}）`).join("、"));
 console.log(`\n## 來襲的材料收入（哥布林 ${CAMP_SIZE} 隻，每天 ${raidsPerDay} 次，每次約 ${perRaid} 隻魔獸）`);
 console.log(Object.entries(income).filter(([, s]) => s["來襲"]).sort((a, b) => b[1]["來襲"]! - a[1]["來襲"]!).map(([id, s]) => `${MATERIALS[id]?.name ?? id} ${s["來襲"]!.toFixed(1)}`).join("、"));
-console.log(`\n## 營地自己的生產（每天；在家的居民算到 ${WORKERS_MAX} 隻為止，server/FARM.md）`);
-console.log("種族\t在家\t木材\t石頭\t廢鐵\t碎晶");
+console.log(`\n## 每種場地每天的產量（人手滿；碎晶是期望值）`);
+console.log("種族\t場地\tLv1\tLv2\tLv3");
 for (const race of ["goblin", "elf", "undead"]) {
-  for (const home of [2, 10, 30, 60, 150]) {
-    const p = productionPerHour(race, home, 1);
-    console.log(`${race}\t${home}\t${(p.log! * 24).toFixed(0)}\t${(p.stone! * 24).toFixed(0)}\t${(p.scrap_iron! * 24).toFixed(1)}\t${(p.crystal_shard! * 24).toFixed(2)}`);
+  for (const kind of ["lumber", "quarry", "mine", "traps", "fishery", "hunter", "scrapyard", "grove", "soulwell"] as const) {
+    const cells = [1, 2, 3].map((level) => {
+      const { makes, finds } = sitePerHour(race, { kind, level });
+      return Object.entries({ ...makes, ...finds }).map(([id, n]) => `${MATERIALS[id]?.name ?? id} ${(n * 24).toFixed(1)}`).join(" ");
+    });
+    if (cells[0]) console.log(`${race}\t${kind}\t${cells.join("\t")}`);
   }
 }

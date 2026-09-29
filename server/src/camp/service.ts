@@ -15,25 +15,31 @@ import {
   type GearSlot,
   type Wearer,
   campStage,
-  farmCrops,
-  farmName,
-  farmPartName,
-  nextFarmLevel,
+  buildableKinds,
+  campPerHour,
+  farmParts,
   produce,
-  productionPerHour,
+  siteMaxLevel,
+  siteName,
+  siteNext,
+  sitePerHour,
+  siteSpent,
+  slotsFor,
+  staffing,
+  DEMOLISH_REFUND,
+  type Site,
   raceRules,
   startHome,
   type CampEvent,
   type CampProduction,
   type CampView,
-  WORKERS_MAX,
   type MigrateInput,
   type Place,
   type Population,
   type RaidReport,
   type Resident,
 } from "@goblincamp/shared/camp";
-import { hashString, randomFrom } from "@goblincamp/shared/world";
+import { hashString, raceLevel, randomFrom } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps, expeditions, worldCells, worldPlayers } from "../db/schema.ts";
 import { resolveRaid, type RaidOutcome } from "./raids.ts";
@@ -159,15 +165,14 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   moveTo(now.getTime());
   settleGear();
 
-  // what the camp made meanwhile: felling, digging, the farm (by the hour, with those at home then; an upgrade done on the way splits it)
+  // what the sites made meanwhile (by the hour, with those at home then); a site built or raised on the way splits it
   const workers = (at: number) => population.residents.filter((r) => r.bornAt <= at && (r.diedAt === null || r.diedAt > at)).length;
-  let farmLevel = camp.farmLevel;
-  let farmUpgradeUntil = camp.farmUpgradeUntil;
+  let sites: Site[] = camp.sites.map((x) => ({ ...x }));
   let producedTo = camp.producedTo.getTime();
   let carry = { ...camp.productionCarry };
   const made: Record<string, number> = {};
   const produceTo = (to: number) => {
-    const step = produce({ race: camp.race, seed: camp.seed, workers, farmLevel, from: producedTo, to, carry, store: materials });
+    const step = produce({ race: camp.race, seed: camp.seed, sites, workers, from: producedTo, to, carry, store: materials });
     for (const [id, n] of Object.entries(step.got)) {
       materials[id] = (materials[id] ?? 0) + n;
       made[id] = (made[id] ?? 0) + n;
@@ -175,12 +180,12 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     carry = step.carry;
     producedTo = step.to;
   };
-  let farmUpgraded: { level: number; at: Date } | null = null;
-  if (farmUpgradeUntil && farmUpgradeUntil <= now) {
-    produceTo(farmUpgradeUntil.getTime());
-    farmLevel++;
-    farmUpgraded = { level: farmLevel, at: farmUpgradeUntil };
-    farmUpgradeUntil = null;
+  const finished: { site: Site; at: Date }[] = [];
+  for (const site of [...sites].filter((x) => x.busyUntil && Date.parse(x.busyUntil) <= now.getTime()).sort((a, b) => Date.parse(a.busyUntil!) - Date.parse(b.busyUntil!))) {
+    const at = Date.parse(site.busyUntil!);
+    produceTo(at);
+    sites = sites.map((x) => (x.id === site.id ? { id: x.id, kind: x.kind, level: x.level + 1 } : x));
+    finished.push({ site: sites.find((x) => x.id === site.id)!, at: new Date(at) });
   }
   produceTo(now.getTime());
 
@@ -203,7 +208,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   }
   const armoryChanged = JSON.stringify(store) !== JSON.stringify(camp.armory);
 
-  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged || Object.keys(made).length > 0 || !!farmUpgraded;
+  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged || Object.keys(made).length > 0 || finished.length > 0;
   const version = changed ? camp.version + 1 : camp.version;
   const set = {
     advancedTo: now,
@@ -215,8 +220,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     kills,
     armory: store,
     version,
-    farmLevel,
-    farmUpgradeUntil,
+    sites,
     producedTo: new Date(producedTo),
     productionCarry: carry,
   };
@@ -228,8 +232,9 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     });
   }
   for (const raid of raids) await addEvent(tx, camp.userId, new Date(raid.at), "raid", raid);
-  if (farmUpgraded) {
-    await addEvent(tx, camp.userId, farmUpgraded.at, "farm", { level: farmUpgraded.level, name: farmPartName(camp.race, farmUpgraded.level) });
+  for (const { site, at } of finished) {
+    const part = site.kind === "farm" ? farmParts(camp.race, site.level).at(-1) : undefined;
+    await addEvent(tx, camp.userId, at, "site", { site: site.id, kind: site.kind, level: site.level, name: siteName(camp.race, site.kind), part });
   }
   Object.assign(camp, set);
   return changed;
@@ -260,7 +265,7 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       since: camp.sanctuarySince?.toISOString() ?? null,
       canTurnOnAt: camp.sanctuaryOffAt ? new Date(camp.sanctuaryOffAt.getTime() + SANCTUARY_REST_HOURS * 3_600_000).toISOString() : null,
     },
-    production: productionView(camp, rows.filter((r) => r.place === "home").length),
+    production: productionView(camp, rows.filter((r) => r.place === "home").length, await campRaceLevel(tx, camp.userId)),
     residents: rows.map((r) => ({
       id: r.id,
       breed: r.breed,
@@ -276,21 +281,53 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
   };
 }
 
-/** What the camp makes by the hour and where its farm stands (for the devices to show; the server does the sums). */
-export function productionView(camp: CampRow, workers: number): CampProduction {
-  const next = nextFarmLevel(camp.farmLevel);
+/** The camp's race level in the big world (1 for a camp that never opened it): it gives more plots for sites. */
+export async function campRaceLevel(tx: Tx, userId: string): Promise<number> {
+  const [player] = await tx.select({ xp: worldPlayers.xp }).from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  return raceLevel(player?.xp ?? 0);
+}
+
+/** The camp's sites, what they make and what could be built (for the devices to show; the server does the sums). */
+export function productionView(camp: CampRow, workers: number, level: number): CampProduction {
+  const { need, share } = staffing(camp.sites, workers);
+  const busy = camp.sites.find((x) => x.busyUntil);
   return {
-    perHour: productionPerHour(camp.race, workers, camp.farmLevel),
-    workers: Math.min(workers, WORKERS_MAX),
-    farm: {
-      name: farmName(camp.race),
-      level: camp.farmLevel,
-      parts: Array.from({ length: camp.farmLevel }, (_, i) => farmPartName(camp.race, i + 1)),
-      crops: farmCrops(camp.race, camp.farmLevel).map((c) => c.food),
-      upgradingUntil: camp.farmUpgradeUntil?.toISOString() ?? null,
-      next: next ? { level: next.level, name: farmPartName(camp.race, next.level), cost: next.cost, hours: next.hours } : null,
-    },
+    slots: slotsFor(camp.race, camp.peak, level),
+    used: camp.sites.length,
+    workers,
+    need,
+    share,
+    perHour: campPerHour(camp.race, camp.sites, share),
+    busy: busy ? { site: busy.id, until: new Date(busy.busyUntil!).toISOString() } : null,
+    sites: camp.sites.map((site) => {
+      const next = siteNext(site.kind, site.level);
+      const { makes, finds } = sitePerHour(camp.race, site);
+      const after = next ? sitePerHour(camp.race, { kind: site.kind, level: site.level + 1 }) : null;
+      return {
+        id: site.id,
+        kind: site.kind,
+        name: siteName(camp.race, site.kind),
+        level: site.level,
+        maxLevel: siteMaxLevel(site.kind),
+        parts: site.kind === "farm" ? farmParts(camp.race, site.level) : undefined,
+        makes: { ...makes, ...finds },
+        busyUntil: site.busyUntil ? new Date(site.busyUntil).toISOString() : null,
+        next: next && after ? { level: site.level + 1, cost: next.cost, hours: next.hours, makes: { ...after.makes, ...after.finds } } : null,
+        refund: site.kind === "farm" ? null : refundFor(site),
+      };
+    }),
+    buildable: buildableKinds(camp.race).map((kind) => {
+      const first = siteNext(kind, 0)!;
+      const at1 = sitePerHour(camp.race, { kind, level: 1 });
+      return { kind, name: siteName(camp.race, kind), cost: first.cost, hours: first.hours, makes: { ...at1.makes, ...at1.finds } };
+    }),
   };
+}
+
+/** What taking a site down gives back: half of all it cost, the level under way included. */
+export function refundFor(site: Site): Record<string, number> {
+  const spent = siteSpent(site.kind, site.level + (site.busyUntil ? 1 : 0));
+  return Object.fromEntries(Object.entries(spent).map(([id, n]) => [id, Math.floor(n * DEMOLISH_REFUND)]).filter(([, n]) => (n as number) > 0));
 }
 
 async function clearCamp(tx: Tx, userId: string) {

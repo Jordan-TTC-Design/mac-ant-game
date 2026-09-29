@@ -1,3 +1,4 @@
+import type { Site } from "@goblincamp/shared/camp";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
@@ -149,10 +150,9 @@ export const camps = pgTable("camps", {
   romance: jsonb("romance"),
   kills: jsonb("kills").$type<Record<string, number>>().notNull().default({}),
   delivered: integer("delivered").notNull().default(0),
-  /** The farm (shared/src/camp/production.ts): its level, and when the upgrade under way is done (null: none). */
-  farmLevel: integer("farm_level").notNull().default(1),
-  farmUpgradeUntil: timestamp("farm_upgrade_until", { withTimezone: true, precision: 3 }),
-  /** Felling, digging and the farm are worked out by the hour up to here; the fractions left over wait in the carry. */
+  /** The camp's sites (shared/src/camp/sites.ts): the farm first; a site with `busyUntil` is being built or raised. */
+  sites: jsonb("sites").$type<Site[]>().notNull().default([{ id: 1, kind: "farm", level: 1 }]),
+  /** What the sites make is worked out by the hour up to here; the fractions left over wait in the carry. */
   producedTo: timestamp("produced_to", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   productionCarry: jsonb("production_carry").$type<Record<string, number>>().notNull().default({}),
   /** What an old save said when it was moved in (before the caps), for looking into problems. */

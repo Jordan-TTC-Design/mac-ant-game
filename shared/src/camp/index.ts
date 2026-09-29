@@ -6,3 +6,4 @@ export * from "./combat.ts";
 export * from "./gear.ts";
 export * from "./food.ts";
 export * from "./production.ts";
+export * from "./sites.ts";

@@ -65,7 +65,13 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("princess-child"), breed: z.enum(["half_gob", "half_mix", "half_hum"]), parents: z.string().max(80).default("") }),
   /** The princess's story as the Mac has it now (kept as it is; it does not count for the ranking). */
   z.object({ requestId, kind: z.literal("story"), romance: z.unknown() }),
-  /** Starts raising the farm a level (its cost is taken now; it is done after the level's hours: production.ts FARM_LEVELS). */
+  /** Builds a site on a free plot (its cost is taken now; it works once built: sites.ts). */
+  z.object({ requestId, kind: z.literal("site-build"), site: z.enum(["lumber", "quarry", "mine", "traps", "fishery", "hunter", "scrapyard", "grove", "soulwell"]) }),
+  /** Raises a site a level (it goes on working meanwhile). */
+  z.object({ requestId, kind: z.literal("site-upgrade"), site: z.number().int().min(1) }),
+  /** Takes a site down (not the farm): the plot is free at once, half of what it cost comes back. */
+  z.object({ requestId, kind: z.literal("site-demolish"), site: z.number().int().min(1) }),
+  /** Raises the farm a level (the same as site-upgrade on the farm). */
   z.object({ requestId, kind: z.literal("farm-upgrade") }),
 ]);
 export type CampCommand = z.infer<typeof campCommand>;
@@ -109,37 +115,52 @@ export interface CampView {
   delivered: number;
   /** 聖光模式 (server/CAMP.md §7): on since (null: off), and when it may be turned on again (null: now). */
   sanctuary: { since: string | null; canTurnOnAt: string | null };
-  /** What the camp makes by itself (server/FARM.md). Older servers leave it out. */
+  /** The camp's sites and what they make (server/FARM.md §11). Older servers leave it out. */
   production?: CampProduction;
   /** Everyone alive (at home and, later, in the big world). */
   residents: CampResidentView[];
 }
 
-/** The camp's felling, digging and farm, as the devices show them (shared/src/camp/production.ts). */
+/** The camp's sites, as the devices show them (shared/src/camp/sites.ts; the server does the sums). */
 export interface CampProduction {
-  /** Material id → how many an hour (the dig finds: the chance of one an hour). */
-  perHour: Record<string, number>;
-  /** Those at home who work (up to WORKERS_MAX). */
+  /** Plots of ground, and how many have a site. */
+  slots: number;
+  used: number;
+  /** Residents at home, the hands the sites need, and the share they get (0…1: every site works that fast). */
   workers: number;
-  farm: {
-    /** 田地 (the undead's 墓園). */
-    name: string;
-    level: number;
-    /** What each level so far added (菜園, 麥田, …). */
-    parts: string[];
-    /** The foods it grows now. */
-    crops: string[];
-    /** An upgrade under way is done then (null: none). */
-    upgradingUntil: string | null;
-    /** The next level (null: at the top). */
-    next: { level: number; name: string; cost: Record<string, number>; hours: number } | null;
-  };
+  need: number;
+  share: number;
+  /** What the camp makes an hour now (the finds: their chance an hour). */
+  perHour: Record<string, number>;
+  /** A site being built or raised (one at a time), or null. */
+  busy: { site: number; until: string } | null;
+  sites: CampSiteView[];
+  /** What may be built on a free plot. */
+  buildable: { kind: string; name: string; cost: Record<string, number>; hours: number; makes: Record<string, number> }[];
+}
+
+export interface CampSiteView {
+  id: number;
+  kind: string;
+  name: string;
+  /** 0: still being built. */
+  level: number;
+  maxLevel: number;
+  /** The farm: what each level added (菜園, 麥田, …). */
+  parts?: string[];
+  /** What it makes an hour with every hand at its level (the finds: their chance). */
+  makes: Record<string, number>;
+  busyUntil: string | null;
+  /** The next level (null: at the top). */
+  next: { level: number; cost: Record<string, number>; hours: number; makes: Record<string, number> } | null;
+  /** What taking it down gives back (null: it cannot be, the farm). */
+  refund: Record<string, number> | null;
 }
 
 export interface CampEvent {
   seq: number;
   at: string;
-  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "farm";
+  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "site";
   data: unknown;
 }
 

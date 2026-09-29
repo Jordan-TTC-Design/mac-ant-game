@@ -4,7 +4,7 @@ import { ApiError, api } from "~/utils/api";
 
 /**
  * The account's camp as the server keeps it, to look at (the camp is played on the Mac; the phone only turns 聖光模式 and
- * raises the farm).
+ * builds the camp's sites).
  * Fetched when the page opens, when the server says the camp changed (over the notes' WebSocket), and every minute while
  * the page is in sight (births come every few minutes and asking works them out). The last one is kept for offline.
  */

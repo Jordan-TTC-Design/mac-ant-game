@@ -222,6 +222,8 @@ final class TerrainScene {
     var farmLevel = 1
     /// Whose farm (the elves' level 2 is an orchard, the undead's a bone field, their hives and sheep are of the night).
     var farmRace = "goblin"
+    /// The camp's other sites (server/FARM.md §11): each drawn in its own little area round the camp (level 0: being built).
+    var sites: [(id: Int, kind: String, level: Int)] = []
 
     /// Changes whenever the camp gains something to draw or a bigger clearing, so a baked picture knows when to be made again.
     var stage: Int {
@@ -232,6 +234,7 @@ final class TerrainScene {
         h.combine(life?.version ?? 0)
         h.combine(farmLevel)
         h.combine(farmRace)
+        for site in sites { h.combine(site.id); h.combine(site.kind); h.combine(site.level) }
         h.combine(Int(campNest.x)) // (the picture is made again when the camp is moved)
         h.combine(Int(campNest.y))
         return h.finalize()
@@ -1243,6 +1246,64 @@ final class TerrainScene {
             }
         }
         drawFarmLevels(in: ctx)
+        drawSites(in: ctx)
+    }
+
+    /// The sprite of a site for this camp's race (the undead's fishery is a jerky cellar, the elves' hunter an archer's hut).
+    private func siteSprite(_ kind: String) -> String {
+        switch kind {
+        case "fishery" where farmRace == "undead": return "site-jerky"
+        case "hunter" where farmRace == "elf": return "site-archer"
+        default: return "site-\(kind)"
+        }
+    }
+
+    /// Each site on its own spot round the camp, kept by its id (a new site never moves an old one); crates beside a level 2
+    /// site, and a banner too at level 3.
+    private func drawSites(in ctx: CGContext) {
+        guard !sites.isEmpty else { return }
+        let spots = siteSpots(count: (sites.map(\.id).max() ?? 0) + 1)
+        for site in sites.sorted(by: { $0.id < $1.id }) {
+            guard spots.indices.contains(site.id), let spot = spots[site.id] else { continue }
+            if site.level <= 0 { draw(TerrainItem(sprite: "site-building", foot: spot), in: ctx); continue }
+            if site.level >= 3 { draw(TerrainItem(sprite: "site-banner", foot: CGPoint(x: spot.x - 26, y: spot.y + 6)), in: ctx) }
+            draw(TerrainItem(sprite: siteSprite(site.kind), foot: spot), in: ctx)
+            if site.level >= 2 { draw(TerrainItem(sprite: "site-crates", foot: CGPoint(x: spot.x + 30, y: spot.y - 2)), in: ctx) }
+        }
+    }
+
+    /// Whether `p` is on or just below a shelf's edge (things set there would hang over its face).
+    private func nearTerrace(_ p: CGPoint, _ margin: CGFloat) -> Bool {
+        terraces.contains { t in p.x >= t.minX - margin && p.x <= t.maxX + margin && abs(p.y - t.edge(at: min(t.maxX, max(t.minX, p.x)))) < margin }
+    }
+
+    /// Spots for sites by id (nil where none is free), on a ring round the camp further out than the farm: not in water, on a
+    /// path, among trees or rocks, on a plot, the camp's tents, the farm's additions or each other. The same for the same camp.
+    private func siteSpots(count: Int) -> [CGPoint?] {
+        var rng = TerrainRandom(seed: seed &+ 6161)
+        var taken = plotSpots.map { ($0.center, CGFloat(40)) }
+        taken.append((campNest, 100))
+        for item in (standing + lying) where item.unlock > 0 && item.unlock <= growth {
+            taken += [(item.foot, 26), (CGPoint(x: item.foot.x, y: item.foot.y + 18), 26)]
+        }
+        if let anchor = plotSpots.first(where: { $0.unlock <= growth })?.center {
+            for spot in farmLevelSpots(around: anchor).compactMap({ $0 }) { taken.append((spot, 30)) }
+        }
+        let area = paintRect.insetBy(dx: 30, dy: 24)
+        return (0..<count).map { _ in
+            for tries in 0..<80 {
+                let a = rng.range(0, 2 * .pi), r = rng.range(120, 200 + Double(tries) * 2)
+                let p = CGPoint(x: campNest.x + CGFloat(cos(a) * r), y: campNest.y + CGFloat(sin(a) * r) * 0.75)
+                guard area.contains(p), visible(p, margin: 26), !ponds.contains(where: { $0.blocks(p, margin: 36) }),
+                      !solids.contains(where: { $0.unlock <= growth && $0.blocks(p, margin: 26) }),
+                      !paths.contains(where: { $0.contains { hypot($0.x - p.x, $0.y - p.y) < 30 } }),
+                      !nearTerrace(p, 34),
+                      taken.allSatisfy({ hypot($0.0.x - p.x, $0.0.y - p.y) > $0.1 + 34 }) else { continue }
+                taken.append((p, 34))
+                return p
+            }
+            return nil
+        }
     }
 
     /// What the farm's levels add, each on a free spot a little way from the first plot (the same spots every time for the same
@@ -1296,6 +1357,7 @@ final class TerrainScene {
                 guard area.contains(p), visible(p, margin: 20), !ponds.contains(where: { $0.blocks(p, margin: 30) }),
                       !solids.contains(where: { $0.unlock <= growth && $0.blocks(p, margin: 22) }),
                       !paths.contains(where: { $0.contains { hypot($0.x - p.x, $0.y - p.y) < 26 } }),
+                      !nearTerrace(p, 28),
                       taken.allSatisfy({ hypot($0.0.x - p.x, $0.0.y - p.y) > $0.1 + 22 }) else { continue }
                 taken.append((p, 30)) // (a pen is 40 wide)
                 return p

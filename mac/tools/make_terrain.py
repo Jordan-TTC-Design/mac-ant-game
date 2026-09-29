@@ -248,6 +248,7 @@ def main():
     sprites.update(make_farm())
     sprites.update(make_seasonal())
     sprites.update(make_farm_levels())
+    sprites.update(make_sites())
     for name, img in sprites.items():
         img.save(os.path.join(OUT, name + ".png"))
     print("wrote", len(sprites), "sprites to", os.path.normpath(OUT))
@@ -803,6 +804,211 @@ def sheep_pen(rnd, bony=False):
 def make_farm_levels():
     rnd = random.Random(55)
     return {"beehives": beehive(rnd), "beehives-night": beehive(rnd, night=True), "pen": sheep_pen(rnd), "pen-bone": sheep_pen(rnd, bony=True)}
+
+
+# ================================================================================================================
+# The camp's sites (server/FARM.md §11): one little area each; a level 2 site gets crates beside it, level 3 a banner too
+# ================================================================================================================
+LOG = [(96, 62, 32), (130, 88, 48), (168, 120, 70)]
+ROCK = [(104, 106, 112), (140, 142, 148), (176, 178, 184)]
+
+
+def log_end(img, cx, cy):
+    blob(img, cx, cy, 2, 2, [(150, 104, 58), (196, 150, 96), (220, 180, 120)], random.Random(cx * 7 + cy))
+    put(img, cx, cy, (120, 80, 40))
+
+
+def site_lumber(rnd):
+    img = new(34, 20)
+    for row, (y, n) in enumerate(((16, 4), (12, 3), (8, 2))):         # a pile of logs, ends to the front
+        for k in range(n):
+            x = 5 + row * 3 + k * 6
+            rect(img, x - 2, y - 2, 5, 5, LOG[1])
+            log_end(img, x, y)
+    rect(img, 24, 10, 9, 2, WOOD_LIGHT)                                  # a sawhorse with a log on it
+    for x, y in ((24, 12), (26, 12), (30, 12), (32, 12)):
+        rect(img, x, y, 1, 7, WOOD)
+    rect(img, 23, 7, 11, 3, LOG[1]); put(img, 23, 8, LOG[2])
+    rect(img, 28, 3, 1, 5, (190, 196, 204)); rect(img, 27, 2, 3, 1, WOOD)  # a saw stuck in it
+    outline(img, (60, 38, 20))
+    return img
+
+
+def site_quarry(rnd):
+    img = new(34, 20)
+    blob(img, 11, 13, 10, 6, ROCK, rnd, light=(-1, -1))                  # a heap of broken stone
+    blob(img, 8, 9, 5, 3, ROCK, rnd, light=(-1, -1))
+    rect(img, 22, 9, 10, 9, ROCK[1]); rect(img, 22, 9, 10, 2, ROCK[2]); rect(img, 30, 11, 2, 7, ROCK[0])  # a cut block
+    for x in range(23, 31, 3):
+        put(img, x, 14, ROCK[0])
+    rect(img, 17, 4, 1, 9, WOOD); rect(img, 15, 3, 5, 2, (120, 124, 132))  # a pick leaning on it
+    outline(img, (50, 52, 58))
+    return img
+
+
+def site_mine(rnd):
+    img = new(36, 24)
+    blob(img, 14, 13, 13, 10, ROCK, rnd, light=(-1, -1))                 # the hillside
+    rect(img, 9, 10, 10, 14, (26, 22, 24))                               # the dark mouth
+    rect(img, 7, 8, 2, 16, WOOD); rect(img, 19, 8, 2, 16, WOOD); rect(img, 7, 7, 14, 2, WOOD_LIGHT)  # its frame
+    for x in range(8, 20, 2):
+        put(img, x, 23, (80, 80, 84))                                    # rails
+    rect(img, 24, 17, 10, 5, (96, 100, 108)); rect(img, 24, 17, 10, 1, (140, 144, 150))  # a little cart of ore
+    blob(img, 29, 16, 4, 2, [(70, 72, 78), (110, 112, 118), (150, 152, 158)], rnd)
+    put(img, 27, 15, (120, 220, 240))
+    rect(img, 25, 22, 2, 2, (40, 40, 44)); rect(img, 31, 22, 2, 2, (40, 40, 44))
+    outline(img, (40, 34, 30))
+    return img
+
+
+def cage(img, x0, y0, w, h):
+    for x in range(x0, x0 + w, 2):
+        rect(img, x, y0, 1, h, WOOD)
+    rect(img, x0, y0, w, 1, WOOD_LIGHT); rect(img, x0, y0 + h - 1, w, 1, WOOD_LIGHT)
+
+
+def site_traps(rnd):
+    img = new(32, 18)
+    cage(img, 1, 6, 13, 11)
+    blob(img, 7, 13, 3, 2, [(90, 80, 70), (130, 118, 104), (160, 148, 132)], rnd)   # a rat inside
+    put(img, 4, 13, (220, 150, 150))
+    cage(img, 17, 9, 11, 8)
+    rect(img, 19, 16, 7, 1, (170, 170, 176))                            # a spring trap by it
+    for x in range(20, 26, 2):
+        put(img, x, 15, (200, 200, 206))
+    outline(img, (60, 40, 22))
+    return img
+
+
+def site_fishery(rnd):
+    img = new(36, 22)
+    for x in range(0, 36):                                              # water at the bottom
+        for y in range(16, 22):
+            put(img, x, y, (70, 130, 190) if (x + y) % 5 else (120, 176, 220))
+    rect(img, 2, 13, 20, 3, WOOD_LIGHT)                                  # the jetty
+    for x in range(2, 22, 4):
+        put(img, x, 13, WOOD)
+    for x in (4, 12, 20):
+        rect(img, x, 16, 1, 4, WOOD)
+    rect(img, 24, 2, 1, 12, WOOD); rect(img, 34, 2, 1, 12, WOOD); rect(img, 24, 2, 11, 1, WOOD_LIGHT)  # the drying rack
+    for x in (26, 29, 32):
+        rect(img, x, 3, 2, 5, (150, 170, 184)); put(img, x, 8, (110, 130, 150))
+    outline(img, (40, 50, 60))
+    return img
+
+
+def site_jerky(rnd):
+    img = new(32, 20)
+    blob(img, 14, 12, 13, 7, [(60, 64, 60), (84, 88, 82), (104, 108, 100)], rnd)   # a mound
+    rect(img, 8, 9, 12, 10, (40, 32, 26))                                # the cellar door, down into it
+    for x in range(8, 20, 3):
+        rect(img, x, 9, 1, 10, (70, 52, 38))
+    rect(img, 22, 3, 9, 1, WOOD); rect(img, 22, 3, 1, 12, WOOD)          # meat hung up to dry
+    for x in (25, 28):
+        rect(img, x, 4, 2, 5, (140, 70, 50)); put(img, x, 9, (110, 50, 36))
+    outline(img, (30, 26, 24))
+    return img
+
+
+def hut(img, x0, y0, w, h, roof):
+    rect(img, x0, y0 + h // 2, w, h - h // 2, WOOD)                      # walls
+    for k in range(h // 2 + 1):                                          # the roof
+        rect(img, x0 - 1 + k, y0 + h // 2 - k, w + 2 - 2 * k, 1, roof)
+    rect(img, x0 + w // 2 - 1, y0 + h - 5, 3, 5, (40, 28, 18))            # the door
+
+
+def site_hunter(rnd):
+    img = new(32, 22)
+    hut(img, 2, 4, 16, 18, (150, 110, 60))
+    rect(img, 21, 6, 1, 15, WOOD); rect(img, 29, 6, 1, 15, WOOD); rect(img, 21, 6, 9, 1, WOOD_LIGHT)   # a frame with a hide
+    rect(img, 22, 7, 7, 9, (170, 124, 80)); put(img, 22, 16, (170, 124, 80)); put(img, 28, 16, (170, 124, 80))
+    outline(img, (50, 34, 20))
+    return img
+
+
+def site_archer(rnd):
+    img = new(32, 22)
+    hut(img, 2, 4, 16, 18, (70, 130, 80))
+    blob(img, 26, 12, 5, 5, [(200, 190, 170), (236, 228, 210), (250, 246, 236)], rnd)   # a straw target
+    blob(img, 26, 12, 3, 3, [(180, 50, 50), (210, 70, 60), (230, 100, 90)], rnd)
+    put(img, 26, 12, (250, 240, 200))
+    rect(img, 26, 17, 1, 5, WOOD)
+    rect(img, 27, 10, 4, 1, WOOD_LIGHT); put(img, 31, 9, (240, 240, 240))   # an arrow in it
+    outline(img, (40, 50, 30))
+    return img
+
+
+def site_scrapyard(rnd):
+    img = new(32, 18)
+    blob(img, 14, 12, 12, 5, [(90, 80, 70), (130, 116, 100), (160, 146, 128)], rnd)   # a heap of junk
+    rect(img, 6, 6, 8, 2, (150, 156, 166)); rect(img, 16, 5, 2, 7, WOOD_LIGHT)
+    rect(img, 19, 8, 6, 3, (190, 90, 84)); rect(img, 9, 9, 4, 3, (216, 200, 160))
+    put(img, 22, 6, (140, 146, 156)); put(img, 23, 5, (140, 146, 156))
+    blob(img, 27, 15, 3, 2, [(120, 124, 132), (156, 160, 168), (190, 194, 200)], rnd)   # a dented pot
+    outline(img, (50, 40, 30))
+    return img
+
+
+def site_grove(rnd):
+    img = new(32, 20)
+    blob(img, 10, 10, 9, 7, [(40, 100, 60), (60, 140, 80), (90, 176, 100)], rnd)     # a berry bush
+    for x, y in ((6, 8), (10, 6), (13, 10), (8, 12), (15, 7)):
+        put(img, x, y, (190, 50, 90))
+    for cx in (22, 28):                                                  # baskets
+        rect(img, cx - 3, 13, 7, 6, (170, 124, 64))
+        for x in range(cx - 3, cx + 4, 2):
+            put(img, x, 15, (130, 90, 44))
+        rect(img, cx - 2, 12, 5, 1, (190, 50, 90) if cx == 22 else (232, 180, 60))
+    outline(img, (30, 60, 36))
+    return img
+
+
+def site_soulwell(rnd):
+    img = new(26, 22)
+    blob(img, 13, 16, 10, 5, ROCK, rnd, light=(-1, -1))                  # the stone ring
+    blob(img, 13, 15, 7, 3, [(40, 150, 140), (90, 220, 200), (160, 250, 236)], rnd)   # teal glow
+    rect(img, 4, 4, 1, 12, (70, 60, 76)); rect(img, 21, 4, 1, 12, (70, 60, 76)); rect(img, 3, 3, 20, 2, (90, 80, 96))   # a frame
+    for x, y in ((9, 8), (16, 6), (13, 10)):
+        put(img, x, y, (160, 250, 236))                                  # wisps rising
+    outline(img, (30, 26, 40))
+    return img
+
+
+def site_building(rnd):
+    img = new(24, 14)
+    for x in (2, 21):
+        rect(img, x, 2, 1, 11, WOOD)                                     # stakes and string
+    rect(img, 2, 3, 20, 1, (220, 210, 180))
+    for k in range(3):
+        rect(img, 5 + k * 2, 11 - k * 2, 12, 2, WOOD_LIGHT if k % 2 else LOG[1])   # stacked planks
+    outline(img, (60, 40, 22))
+    return img
+
+
+def site_crates(rnd):
+    img = new(14, 12)
+    for x0, y0 in ((0, 4), (6, 5), (3, 0)):
+        rect(img, x0, y0, 7, 7, (160, 116, 64)); rect(img, x0, y0, 7, 1, (196, 150, 90))
+        put(img, x0 + 3, y0 + 3, WOOD)
+    outline(img, (60, 40, 22))
+    return img
+
+
+def site_banner(rnd):
+    img = new(10, 20)
+    rect(img, 1, 0, 1, 20, WOOD)
+    rect(img, 2, 1, 7, 7, (190, 50, 50)); rect(img, 2, 8, 3, 2, (190, 50, 50)); rect(img, 6, 8, 3, 2, (190, 50, 50))
+    rect(img, 4, 3, 3, 3, (240, 210, 90))
+    outline(img, (60, 30, 20))
+    return img
+
+
+def make_sites():
+    rnd = random.Random(77)
+    return {"site-lumber": site_lumber(rnd), "site-quarry": site_quarry(rnd), "site-mine": site_mine(rnd), "site-traps": site_traps(rnd),
+            "site-fishery": site_fishery(rnd), "site-jerky": site_jerky(rnd), "site-hunter": site_hunter(rnd), "site-archer": site_archer(rnd),
+            "site-scrapyard": site_scrapyard(rnd), "site-grove": site_grove(rnd), "site-soulwell": site_soulwell(rnd),
+            "site-building": site_building(rnd), "site-crates": site_crates(rnd), "site-banner": site_banner(rnd)}
 
 
 def make_seasonal():

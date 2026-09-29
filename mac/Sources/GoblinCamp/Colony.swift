@@ -175,6 +175,7 @@ final class Colony {
             scene?.growth = peakAnts
             scene?.farmLevel = farmLevel
             scene?.farmRace = farmRace
+            scene?.sites = sites
             sceneStage = scene?.stage ?? 0
             obstacles = scene?.obstacles ?? []
         }
@@ -182,6 +183,7 @@ final class Colony {
     /// The farm as the books have it (server/FARM.md): the camp window draws what each level added.
     var farmLevel = 1 { didSet { scene?.farmLevel = farmLevel } }
     var farmRace = "goblin" { didSet { scene?.farmRace = farmRace } }
+    var sites: [(id: Int, kind: String, level: Int)] = [] { didSet { scene?.sites = sites } }
     /// What changes in the camp window over the days (seasons, puddles, saplings, worn ground); made with the scene, kept in the save.
     /// The life of the place the goblins are in now. Each place (the camp window, the strip along the bottom, the right, the left) keeps its
     /// own, so switching between them and back never loses what was felled, dug or sown, or the paths worn into the ground.
@@ -1997,6 +1999,8 @@ struct BookStores {
     /// The farm's level (server/FARM.md), drawn round the plots.
     var farmLevel = 1
     var race = "goblin"
+    /// The camp's other sites (server/FARM.md §11), drawn round the camp.
+    var sites: [(id: Int, kind: String, level: Int)] = []
 }
 
 extension Colony {
@@ -2065,6 +2069,7 @@ extension Colony {
         foodCooldowns = Colony.kinds(stores.cooldowns)
         farmLevel = stores.farmLevel
         farmRace = stores.race
+        sites = stores.sites
         if stores.peak > peakAnts {
             peakAnts = stores.peak
             if let scene {
