@@ -48,8 +48,15 @@ export const expeditionInput = z
   .refine((v) => v.residents || v.count, "residents or count");
 export type ExpeditionInput = z.infer<typeof expeditionInput>;
 
-/** `POST /api/world/cells/:cell/recall`: residents on a held cell walk home (all of them: the cell is given up). */
-export const recallInput = z.object({ count: z.number().int().min(1).max(100).optional() });
+/**
+ * `POST /api/world/cells/:cell/recall`: residents on a held cell (or, with `campers`, those camping beside it) walk to the camp
+ * or to another held cell (`to`: "home" or a cell). No count, or too few left behind: all go and the cell is given up.
+ */
+export const recallInput = z.object({
+  count: z.number().int().min(1).max(500).optional(),
+  to: z.string().max(40).optional(),
+  campers: z.boolean().optional(),
+});
 
 export const battleEventSchema = z.object({
   round: z.number().int(),
@@ -120,7 +127,8 @@ export interface CellView {
 
 export interface ExpeditionSummary {
   id: string;
-  kind: "attack" | "move" | "guard";
+  /** recall: walking back from a cell (WORLD.md §24); reroute: those of a recall who found no room, walking on to a cell with room. */
+  kind: "attack" | "move" | "guard" | "recall" | "reroute";
   from: string;
   to: string;
   party: number;
@@ -131,7 +139,7 @@ export interface ExpeditionSummary {
   outcome: null | {
     won: boolean;
     /** cleared: a lair beaten; taken: a player's cell won; settled: moved in; held: the defenders held; guarding: staying on a friend's cell; back: nothing to do there. */
-    cell: "cleared" | "taken" | "settled" | "held" | "guarding" | "back";
+    cell: "cleared" | "taken" | "settled" | "held" | "guarding" | "back" | "camping";
     against: string;
     loot: Record<string, number>;
     xp: number;
@@ -188,6 +196,9 @@ export interface WorldMe {
     /** Parties setting out from it may be this many bigger, and walk this share of the time (its building). */
     party: number;
     travel: number;
+    /** Most who may live there (all bonuses counted), and how many camp beside it waiting for room. */
+    capacity: number;
+    camping: number;
   }[];
   /** At home, free to go (not on an expedition). */
   atHome: number;
@@ -274,6 +285,8 @@ export interface CellDetail {
   /** The towns in its region, and the room they add to this cell (counted in `capacity`; at most TOWN_ROOM_MAX towns count). */
   regionTowns: number;
   townRoom: number;
+  /** The holder's residents camping beside it, waiting for room (they help defend it and move in as room frees up). */
+  camping: number;
   /** Friends' residents guarding it, by friend. */
   guests: { owner: string; name: string; count: number }[];
   /** Whether it eats rations (beyond the free cells), and how the store stands against all that do. */
@@ -315,6 +328,8 @@ export interface TerritoryItem {
   neighbours: number;
   /** The room the towns of its region add (counted in `capacity`). */
   townRoom: number;
+  /** Residents camping beside it, waiting for room. */
+  camping: number;
   /** It eats rations every yield. */
   upkeep: boolean;
   /** Friends' residents guarding it. */

@@ -2004,6 +2004,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let loot = (e.loot ?? [:]).sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
             if e.defended == true {
                 say("\(e.by ?? "有人")來打我們的領地，" + (e.won == true ? "守住了！" : "領地被搶走了……") + ((e.fallen ?? 0) > 0 ? "倒下 \(e.fallen!) 隻。" : ""))
+            } else if e.arrived == true, e.kind == "recall" || e.kind == "reroute" {
+                say("撤回的隊伍到了" + (e.cell == "back" ? "營地。" : "\(e.against ?? "領地")。"))
             } else if e.arrived == true {
                 let what: String
                 switch e.cell {

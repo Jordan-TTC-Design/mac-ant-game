@@ -134,7 +134,9 @@ final class CampLedger {
         let arrived: Bool?
         let defended: Bool?
         let won: Bool?
-        /// cleared, taken, settled, held, back
+        /// attack, move, guard, recall (walking back from a cell), reroute (the rest of a recall, looking for room)
+        let kind: String?
+        /// cleared, taken, settled, held, back, guarding, camping
         let cell: String?
         let against: String?
         let loot: [String: Int]?

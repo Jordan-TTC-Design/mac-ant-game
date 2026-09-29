@@ -305,6 +305,73 @@ describe("cells held side by side", () => {
     expect((await detail(a, first)).body.capacity).toBe(125); // a town: 100, and +25 from the other one
   });
 
+  /** Waits until every party on the road has arrived (and whatever they set off in turn). */
+  async function arriveAll(auth: Record<string, string>) {
+    for (let k = 0; k < 4; k++) {
+      const walking = (await me(auth)).walking;
+      if (!walking.length) return;
+      t.advance(Math.max(...walking.map((w) => Date.parse(w.arriveAt))) - t.now().getTime() + 1000);
+    }
+  }
+  const cellOf = async (auth: Record<string, string>, cell: string) => (await me(auth)).cells.find((c) => c.cell === cell);
+
+  it("recall walks: fills the cell it goes to, the rest camp beside it and move in as room frees up", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const [bCell, aCell] = neighbors(home) as [string, string];
+    await clear([bCell, aCell]);
+    await settle(a, 25, [], (c) => c.cell === bCell);
+    const more = await t.call("POST", "/world/expeditions", { from: "home", to: bCell, count: 20 }, a);
+    expect(more.status).toBe(201);
+    await settle(a, 20, [], (c) => c.cell === aCell);
+    await arriveAll(a);
+    expect((await cellOf(a, bCell))!.garrison).toBe(45);
+
+    // all 20 go: the cell is given up at once, and they are on the road (not there yet)
+    const res = await t.call("POST", `/world/cells/${aCell}/recall`, { to: bCell }, a);
+    expect(res.status).toBe(200);
+    let w = res.body as WorldMe;
+    expect(w.cells.some((c) => c.cell === aCell)).toBe(false);
+    expect(w.walking).toEqual([expect.objectContaining({ kind: "recall", from: aCell, to: bCell, party: 20 })]);
+    expect((await cellOf(a, bCell))!.garrison).toBe(45);
+
+    await arriveAll(a);
+    let b = (await cellOf(a, bCell))!;
+    expect(b).toMatchObject({ garrison: 50, capacity: 50, camping: 15 }); // (no other cell has room)
+    expect((await detail(a, bCell)).body.camping).toBe(15);
+
+    // ten walk home from it: the campers move in
+    expect((await t.call("POST", `/world/cells/${bCell}/recall`, { to: "home", count: 10 }, a)).status).toBe(200);
+    b = (await cellOf(a, bCell))!;
+    expect(b).toMatchObject({ garrison: 50, camping: 5 });
+    // and the campers can be sent off too
+    expect((await t.call("POST", `/world/cells/${bCell}/recall`, { to: "home", campers: true }, a)).status).toBe(200);
+    w = await me(a);
+    expect(w.cells.find((c) => c.cell === bCell)).toMatchObject({ garrison: 50, camping: 0 });
+    expect(w.walking.filter((x) => x.kind === "recall").map((x) => x.party).sort()).toEqual([10, 5]);
+  });
+
+  it("recall: those who do not fit walk on to the nearest cell with room", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const [bCell, aCell, cCell] = neighbors(home) as [string, string, string];
+    await clear([bCell, aCell, cCell]);
+    await settle(a, 25, [], (c) => c.cell === bCell);
+    await t.call("POST", "/world/expeditions", { from: "home", to: bCell, count: 20 }, a);
+    await settle(a, 20, [], (c) => c.cell === aCell);
+    await settle(a, 10, [], (c) => c.cell === cCell);
+    await arriveAll(a);
+
+    expect((await t.call("POST", `/world/cells/${aCell}/recall`, { to: bCell }, a)).status).toBe(200);
+    const first = (await me(a)).walking[0]!;
+    t.advance(Date.parse(first.arriveAt) - t.now().getTime() + 1000);
+    const w = await me(a);
+    expect(w.cells.find((c) => c.cell === bCell)).toMatchObject({ garrison: 50, camping: 0 });
+    expect(w.walking).toEqual([expect.objectContaining({ kind: "reroute", from: bCell, to: cCell, party: 15 })]);
+    await arriveAll(a);
+    expect((await cellOf(a, cCell))!.garrison).toBe(25);
+  });
+
   it("send help when a cell is attacked: the camp next to it lends its strongest", async () => {
     const a = await ready();
     const home = (await me(a)).homeCell!;

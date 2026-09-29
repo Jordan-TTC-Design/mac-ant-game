@@ -140,10 +140,14 @@ const moveHere = () => {
 const openAgain = () => doIt(() => world.openWorld(), "重新開啟了大世界。");
 const nest = () => doIt(() => world.nest(selected.value!), "開始蓋繁殖巢了（2 小時）。");
 const town = () => doIt(() => world.town(selected.value!), "蓋了城鎮！");
-const recall = () => {
-  if (!confirm("所有居民都走回營地，這一格就不是你的了。")) return;
-  void doIt(() => world.recall(selected.value!), "都回營地了。");
-};
+// 撤回: pick where to and how many in the recall sheet (they walk; `campers`: those camping beside the cell)
+const recalling = ref<null | "garrison" | "campers">(null);
+const recall = () => (recalling.value = "garrison");
+async function recalled(text: string) {
+  recalling.value = null;
+  message.value = text;
+  await world.refresh();
+}
 
 // the dispatch dialog
 const dispatch = ref<"attack" | "settle" | "move" | "guard" | null>(null);
@@ -309,7 +313,7 @@ async function goToLandmark(l: NearbyLandmark) {
       <section v-if="s.me.walking.length" class="panel">
         <h2>在路上</h2>
         <p v-for="w in s.me.walking" :key="w.id" class="line">
-          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ w.kind === "move" ? "（搬家）" : w.kind === "guard" ? "（幫守）" : "" }}<br />
+          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ { move: "（搬家）", guard: "（幫守）", recall: "（撤回）", reroute: "（找有空位的領地）" }[w.kind as string] ?? "" }}<br />
           <small>{{ left(w.arriveAt) }}</small>
         </p>
       </section>
@@ -372,6 +376,7 @@ async function goToLandmark(l: NearbyLandmark) {
       <template v-else-if="mine">
         <p v-if="isHome">營地就在這裡：在家的 <b>{{ cell.garrison }}</b> 隻都住這、守這，營地本身就會生居民{{ cell.town ? "・城鎮" : "" }}</p>
         <p v-else>住了 <b>{{ cell.garrison }}</b> 隻・{{ { none: "還沒有繁殖巢（不會自己生居民）", building: "繁殖巢蓋到一半", ready: "有繁殖巢，會自己生居民" }[cell.nest] }}{{ cell.town ? "・城鎮" : "" }}</p>
+        <p v-if="myCell?.camping" class="muted small">⛺ 外面扎營 {{ myCell.camping }} 隻（住不下，等有空位就住進去，也會幫忙守）</p>
         <p v-if="cell.guests" class="small">🤝 好友幫守 {{ cell.guests }} 隻</p>
         <p v-if="cell.building" class="small">🏗️ {{ cellBuildingName(cell.building.kind, race) }} {{ cell.building.level }} 級{{ cell.building.busy ? "（蓋到一半）" : "" }}</p>
         <p class="muted small">每 3 小時產出：{{ (TERRAIN_YIELD[cell.terrain] ?? []).map((y) => materialName(y.id)).join("、") }}{{ myCell ? `・下次 ${noteTime(myCell.nextYieldAt)}` : "" }}</p>
@@ -400,6 +405,7 @@ async function goToLandmark(l: NearbyLandmark) {
           <button v-if="!isHome && cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
           <button v-if="!cell.town && (myCell?.region ?? 0) >= s.me.rules.townCellsEach * ((myCell?.regionTowns ?? 0) + 1)" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
           <button v-if="!isHome" class="btn" :disabled="busy" @click="recall">撤回</button>
+          <button v-if="myCell?.camping" class="btn" :disabled="busy" @click="recalling = 'campers'">叫扎營的走</button>
           <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>
         </template>
         <template v-else>
@@ -423,6 +429,16 @@ async function goToLandmark(l: NearbyLandmark) {
     </aside>
 
     <DispatchDialog v-if="dispatch && cell && s.me" :target="cell" :kind="dispatch" :me="s.me" :race="race" @close="dispatch = null" @sent="sent" />
+    <RecallDialog
+      v-if="recalling && cell && s.me && myCell"
+      :from="cell.cell"
+      :title="recalling === 'campers' ? '叫扎營的走' : '撤回'"
+      :available="recalling === 'campers' ? myCell.camping : myCell.garrison"
+      :keep="s.me.rules.garrisonMin"
+      :campers="recalling === 'campers'"
+      @close="recalling = null"
+      @done="recalled"
+    />
   </main>
 </template>
 

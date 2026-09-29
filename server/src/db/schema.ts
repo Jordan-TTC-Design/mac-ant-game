@@ -253,7 +253,7 @@ export const expeditions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["attack", "move", "guard"] }).notNull(),
+    kind: text("kind", { enum: ["attack", "move", "guard", "recall", "reroute"] }).notNull(),
     /** "home" or a cell id. */
     fromPlace: text("from_place").notNull(),
     toCell: text("to_cell").notNull(),

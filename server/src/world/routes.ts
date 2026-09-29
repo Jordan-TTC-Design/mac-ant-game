@@ -160,7 +160,7 @@ export function worldRoutes(deps: AppDeps) {
     return c.json(await db.transaction((tx) => worldMe(tx, userId, now())));
   });
   cellAction("demolish", (userId, cell) => (tx) => demolishOnCell(tx, userId, cell, now()));
-  cellAction("recall", (userId, cell, body) => (tx) => recall(tx, userId, cell, (body as { count?: number }).count, now()));
+  cellAction("recall", (userId, cell, body) => (tx) => recall(tx, userId, cell, body as { count?: number; to?: string; campers?: boolean }, now()));
   /** The camp moves here (once every HOME_MOVE_DAYS). */
   cellAction("home", (userId, cell) => (tx) => moveHome(tx, userId, cell, now()));
 
