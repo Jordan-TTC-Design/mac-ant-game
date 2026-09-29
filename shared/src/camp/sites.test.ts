@@ -15,11 +15,13 @@ describe("the camp's sites", () => {
     expect([slotsFor("goblin", 150, 4), slotsFor("goblin", 150, 5), slotsFor("goblin", 150, 10)]).toEqual([6, 7, 8]);
   });
 
-  it("gives every race the same shared kinds in its own version, and one of its own", () => {
+  it("gives every race the same shared kinds in its own version (odds and ends too), and one of its own", () => {
     const shared = ["lumber", "quarry", "mine", "traps", "fishery", "hunter"];
     expect(buildableKinds("goblin")).toEqual([...shared, "scrapyard"]);
-    expect(buildableKinds("elf")).toEqual([...shared, "grove"]);
-    expect(buildableKinds("undead")).toEqual([...shared, "soulwell"]);
+    expect(buildableKinds("elf")).toEqual([...shared, "scrapyard", "grove"]);
+    expect(buildableKinds("undead")).toEqual([...shared, "scrapyard", "soulwell"]);
+    expect(siteName("elf", "scrapyard")).toBe("拾荒棚");
+    expect(sitePerHour("elf", { kind: "scrapyard", level: 1 }).makes.scrap_rag).toBeCloseTo(0.7);
     expect(siteName("undead", "fishery")).toBe("醃肉窖");
     expect(Object.keys(sitePerHour("undead", { kind: "fishery", level: 1 }).makes)).toEqual(["ration_jerky"]);
     expect(siteName("elf", "hunter")).toBe("射手小屋");

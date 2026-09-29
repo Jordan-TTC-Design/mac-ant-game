@@ -54,6 +54,7 @@ const scaled = (m: Record<string, readonly [number, number, number]>, k: number)
 const LUMBER = { log: lv(2, 4, 7) };
 const QUARRY = { stone: lv(1, 2, 3.5) };
 const ORE = { scrap_iron: lv(0.3, 0.6, 1) };
+const SCRAPS = { scrap_rag: lv(1, 2, 3), scrap_wood: lv(1, 2, 3) };
 
 export const SITE_RULES: readonly SiteRule[] = [
   {
@@ -92,9 +93,10 @@ export const SITE_RULES: readonly SiteRule[] = [
     costs: [{ log: 40, stone: 10 }, { log: 100, stone: 40, fox_tail: 2 }, { log: 200, stone: 100, orc_tusk: 2 }],
   },
   {
+    // every race may pick odds and ends up (2026-09-29: elves and the undead had no rags or chips but the raids'); goblins best
     kind: "scrapyard",
-    only: ["goblin"],
-    base: { name: "廢料場", makes: { scrap_rag: lv(1, 2, 3), scrap_wood: lv(1, 2, 3) } },
+    base: { name: "廢料場", makes: SCRAPS },
+    races: { elf: { name: "拾荒棚", makes: scaled(SCRAPS, 0.7) }, undead: { name: "拾骨場", makes: scaled(SCRAPS, 0.7) } },
     costs: [{ log: 40, stone: 20 }, { log: 100, stone: 50 }, { log: 200, stone: 120, leather_strap: 2 }],
   },
   {

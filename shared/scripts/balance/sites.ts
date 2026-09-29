@@ -15,8 +15,8 @@ const DAYS = 14;
 const WORLD = new Set(["leather_strap", "orc_tusk", "crude_blade", "fox_tail"]);
 const ORDER: Record<string, SiteKind[]> = {
   goblin: ["lumber", "quarry", "traps", "mine", "scrapyard", "fishery"],
-  elf: ["lumber", "quarry", "traps", "grove", "mine", "hunter"],
-  undead: ["lumber", "quarry", "traps", "mine", "soulwell", "fishery"],
+  elf: ["lumber", "quarry", "traps", "mine", "scrapyard", "grove"],
+  undead: ["lumber", "quarry", "traps", "scrapyard", "mine", "soulwell"],
 };
 const kit = [GEAR.find((g) => g.id === "short_sword")!, GEAR.find((g) => g.id === "leather_armor")!];
 const kitCost: Record<string, number> = {};
