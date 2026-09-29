@@ -8,6 +8,10 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
     private let summary = NSTextField(wrappingLabelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
     private let table = NSTableView()
+    /// The picked goblin's gear, one row per slot: what it wears, and the stock's pieces for that slot to change to.
+    private let gearBox = NSStackView()
+    /// What the gear rows were built from (rebuilt only when it changes, so an open menu is not pulled away every second).
+    private var gearSignature = ""
     private var rows: [Ant] = []
     private var timer: Timer?
 
@@ -18,7 +22,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
 
     init(colony: Colony) {
         self.colony = colony
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 330, height: 700),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 760),
                         styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         super.init()
@@ -29,7 +33,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         // above the transparent overlay windows, which sit at the status-bar level
         panel.level = Levels.dialog
         panel.collectionBehavior = [.canJoinAllSpaces]
-        panel.minSize = NSSize(width: 300, height: 320)
+        panel.minSize = NSSize(width: 340, height: 480)
         buildContent()
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
             self?.stopUpdating()
@@ -38,6 +42,8 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
 
     /// Test aids.
     var windowNumber: Int { panel.windowNumber }
+    var contentViewForTesting: NSView? { panel.contentView }
+    func useLightAppearanceForTesting() { panel.appearance = NSAppearance(named: .aqua) }
 
     func select(row: Int) {
         guard rows.indices.contains(row) else { return }
@@ -54,7 +60,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         panel.title = "\(Characters.current.noun)名冊"
         if let screen = NSScreen.main {
             let area = screen.visibleFrame
-            let width: CGFloat = 330
+            let width: CGFloat = 360
             panel.setFrame(NSRect(x: area.maxX - width - 8, y: area.minY + 8, width: width, height: area.height - 16), display: false)
         }
         reload()
@@ -116,9 +122,15 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         scroll.borderType = .noBorder
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
+        gearBox.orientation = .vertical
+        gearBox.alignment = .leading
+        gearBox.spacing = 3
+        gearBox.translatesAutoresizingMaskIntoConstraints = false
+
         content.addSubview(summary)
         content.addSubview(scroll)
         content.addSubview(detail)
+        content.addSubview(gearBox)
         NSLayoutConstraint.activate([
             summary.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
             summary.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
@@ -129,8 +141,11 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
             detail.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 8),
             detail.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
             detail.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
-            detail.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -10),
             detail.heightAnchor.constraint(greaterThanOrEqualToConstant: 96),
+            gearBox.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 6),
+            gearBox.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
+            gearBox.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
+            gearBox.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -10),
         ])
     }
 
@@ -169,11 +184,18 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         updateDetail()
     }
 
+    /// Reloads when the panel is showing (after a gear command was answered).
+    func refreshIfVisible() {
+        if panel.isVisible { reload() }
+    }
+
     private func updateDetail() {
         guard let id = colony.selectedAntID, let ant = colony.ants.first(where: { $0.id == id }) else {
-            detail.stringValue = "點一隻，畫面上會圈出牠。"
+            detail.stringValue = "點一隻，畫面上會圈出牠，也可以在下面幫牠換裝備。"
+            updateGear(nil)
             return
         }
+        defer { updateGear(ant) }
         let breed = breeds[min(ant.breedIndex, breeds.count - 1)]
         let t = ant.traits
         let left = max(0, t.lifespan - ant.age)
@@ -185,14 +207,69 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         text += "年齡 \(IntervalFormat.text(ant.age.rounded()))，還剩約 \(IntervalFormat.text(left.rounded()))\n"
         text += String(format: "速度 ×%.2f　感知 ×%.2f　休息 ×%.2f\n", t.speed, t.sense, t.rest)
         text += "一次搬 \(t.carry) 份　叫同伴 +\(t.recruit)" + (ant.lifeFraction > Ant.elderStart ? "　（年老，走得慢）" : "")
-        var worn: [String] = []
-        for slot in GearSlot.allCases {
-            if let item = ant.item(in: slot), let gear = item.gear { worn.append("\(slot.label) \(gear.name) \(Int(item.fraction * 100))%") }
-        }
-        text += "\n" + (worn.isEmpty ? "裝備：（沒有）" : "裝備：" + worn.joined(separator: "　"))
         text += String(format: "\n出手 %.1f　血量 %.0f", ant.might, ant.maxHealth)
         if let activity = ant.activity { text += "\n現在：\(activity.label)" }
         detail.stringValue = text
+    }
+
+    // MARK: Gear
+
+    /// One row per slot for the picked goblin: 「武器」 and a pop-up with what it wears (📌: put on by hand), the stock's pieces
+    /// that fit there (保留: held), and 「脫下（收回倉庫）」.
+    private func updateGear(_ ant: Ant?) {
+        let signature: String = {
+            guard let ant else { return "" }
+            let worn = GearSlot.allCases.map { s in ant.item(in: s).map { "\($0.id)\(Int($0.fraction * 100))\($0.pinned)" } ?? "-" }
+            let stock = colony.armory.map { "\($0.id)\(Int($0.fraction * 100))\($0.held)" }
+            return "\(ant.id)|\(ant.isChild)|\(worn)|\(stock)"
+        }()
+        guard signature != gearSignature else { return }
+        gearSignature = signature
+        gearBox.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard let ant else { return }
+        let title = NSTextField(labelWithString: ant.isChild ? "裝備（小孩還不能穿）" : "裝備（選一件換上；📌 是你手動給的）")
+        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        gearBox.addArrangedSubview(title)
+        guard !ant.isChild else { return }
+        for slot in GearSlot.allCases {
+            let label = NSTextField(labelWithString: slot.label)
+            label.font = .systemFont(ofSize: 12)
+            label.widthAnchor.constraint(equalToConstant: 40).isActive = true
+            let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+            popup.font = .systemFont(ofSize: 12)
+            popup.menu?.autoenablesItems = false
+            let current = ant.item(in: slot)
+            popup.addItem(withTitle: current.map { "\($0.pinned ? "📌 " : "")\($0.gear?.name ?? $0.id) \(Int($0.fraction * 100))%" } ?? "（空）")
+            let pieces = colony.armory.enumerated().filter { $0.element.gear?.slot == slot }.sorted { ($0.element.gear?.power ?? 0) > ($1.element.gear?.power ?? 0) }
+            if !pieces.isEmpty {
+                popup.menu?.addItem(.separator())
+                for (index, item) in pieces {
+                    let gear = item.gear!
+                    let entry = ClosureMenuItem(title: "換上 \(gear.name) \(Int(item.fraction * 100))%（\(gear.effectText)）" + (item.held ? "　保留" : "")) { [weak self] in
+                        guard let self else { return }
+                        if let why = self.colony.equip(stock: index, on: ant.id) { self.detail.stringValue = why }
+                        self.gearSignature = ""
+                        self.reload()
+                    }
+                    if colony.cannotWear(gear, on: ant) != nil { entry.isEnabled = false; entry.toolTip = colony.cannotWear(gear, on: ant) }
+                    popup.menu?.addItem(entry)
+                }
+            }
+            if current != nil {
+                popup.menu?.addItem(.separator())
+                popup.menu?.addItem(ClosureMenuItem(title: "脫下（收回倉庫）") { [weak self] in
+                    self?.colony.unequip(antID: ant.id, slot: slot)
+                    self?.gearSignature = ""
+                    self?.reload()
+                })
+            }
+            if pieces.isEmpty && current == nil { popup.isEnabled = false }
+            popup.selectItem(at: 0)
+            let row = NSStackView(views: [label, popup])
+            row.spacing = 6
+            popup.widthAnchor.constraint(equalToConstant: 280).isActive = true
+            gearBox.addArrangedSubview(row)
+        }
     }
 
     // MARK: Table

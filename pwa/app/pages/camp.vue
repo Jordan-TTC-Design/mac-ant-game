@@ -261,6 +261,11 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         <button v-if="raids.length > 3" class="more" @click="showAllRaids = !showAllRaids">{{ showAllRaids ? "收起" : `看更早的（${raids.length - 3} 次）` }}</button>
       </section>
 
+      <nav class="shortcuts">
+        <NuxtLink to="/workshop" class="btn">🔨 工坊（做裝備、現有裝備、修理）</NuxtLink>
+        <NuxtLink to="/roster" class="btn">📜 名冊（換裝備）</NuxtLink>
+      </nav>
+
       <section class="panel">
         <h2>倉庫</h2>
         <h3>素材</h3>
@@ -321,6 +326,8 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .chips li { background: #f1eee2; border-radius: 8px; padding: 5px 10px; font-size: 14px; }
 .icon-btn:disabled { opacity: 0.5; }
 .small { font-size: 13px; }
+.shortcuts { display: grid; gap: 8px; margin-top: 14px; }
+.shortcuts .btn { text-align: center; text-decoration: none; }
 .sites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
 .site-row { width: 100%; display: flex; align-items: baseline; gap: 8px; border: 1px solid var(--line); background: #faf8f0; border-radius: 10px; padding: 9px 10px; text-align: left; cursor: pointer; font: inherit; color: inherit; }
 .site-row small { color: var(--muted); font-size: 12px; white-space: nowrap; }

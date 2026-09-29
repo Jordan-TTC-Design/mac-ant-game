@@ -4,10 +4,18 @@ import Foundation
 struct SavedGear: Codable {
     var id: String
     var left: Double?
+    /// Put on by hand (on a goblin) / taken off by hand (in the stock): see `GearItem`.
+    var pinned: Bool?
+    var held: Bool?
 
-    private enum Keys: String, CodingKey { case id, left }
+    private enum Keys: String, CodingKey { case id, left, pinned, held }
 
-    init(id: String, left: Double?) { self.id = id; self.left = left }
+    init(id: String, left: Double?, pinned: Bool = false, held: Bool = false) {
+        self.id = id
+        self.left = left
+        self.pinned = pinned ? true : nil
+        self.held = held ? true : nil
+    }
 
     init(from decoder: Decoder) throws {
         if let plain = try? decoder.singleValueContainer().decode(String.self) {
@@ -17,6 +25,8 @@ struct SavedGear: Codable {
             let c = try decoder.container(keyedBy: Keys.self)
             id = try c.decode(String.self, forKey: .id)
             left = try c.decodeIfPresent(Double.self, forKey: .left)
+            pinned = try? c.decodeIfPresent(Bool.self, forKey: .pinned)
+            held = try? c.decodeIfPresent(Bool.self, forKey: .held)
         }
     }
 }
@@ -68,6 +78,8 @@ struct SavedState: Codable {
     var foodCooldowns: [String: Double]?
     /// Which race the camp is (a character id); older saves are goblins.
     var race: String?
+    /// Whether the stock is handed out by itself (nil: yes).
+    var autoGear: Bool?
 }
 
 /// Colony progress in ~/Library/Application Support/GoblinCamp/state.json.

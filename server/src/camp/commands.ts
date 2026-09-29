@@ -2,6 +2,8 @@ import { randomInt } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   canAfford,
+  cannotWear,
+  takeOff,
   buildableKinds,
   farmParts,
   siteName,
@@ -35,6 +37,11 @@ const MINUTE = 60_000;
 export type CommandResult =
   | { ok: true; message: string; resident?: number; repeated?: boolean }
   | { ok: false; code: "unknown_gear" | "not_enough" | "nobody_needs" | "not_found" | "not_allowed" | "cooling_down" | "too_big" | "too_soon" | "busy" | "at_top" | "no_room"; message: string };
+
+/** The store's piece at `index` if it is `gear`, else the first `gear` in the store (the list may have moved since). */
+function findStock(store: GearItem[], index: number, gear: string): number {
+  return store[index]?.id === gear ? index : store.findIndex((x) => x.id === gear);
+}
 
 const cost = (c: Record<string, number>) => Object.entries(c).map(([id, n]) => `${materialName(id)} ×${n}`).join("、");
 
@@ -76,13 +83,69 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (!rule) return { ok: false, code: "unknown_gear", message: "工坊不會做這個。" };
       if (!canAfford(materials, rule.cost)) return { ok: false, code: "not_enough", message: `素材不夠：${rule.name}要 ${cost(rule.cost)}。` };
       const item: GearItem = { id: rule.id, left: rule.durability };
-      const pick = neediest(camp.race, await loadWearers(), item);
-      if (!pick) return { ok: false, code: "nobody_needs", message: `沒有人需要${rule.name}（大家都有一樣好或更好的）。` };
-      spend(materials, rule.cost);
-      give(pick, item, store);
-      redistribute(camp.race, wearers!, store);
-      message = `做好了${rule.name}。`;
-      resident = pick.id; // (the devices say who by name: names come from the seed on them)
+      const all = await loadWearers();
+      if (command.to !== undefined) {
+        // for whoever the player picked (pinned there: the handing out leaves it be)
+        const to = all.find((w) => w.id === command.to);
+        if (!to) return { ok: false, code: "not_found", message: "找不到這位居民（可能不在家）。" };
+        const why = cannotWear(to, item);
+        if (why) return { ok: false, code: "not_allowed", message: why };
+        spend(materials, rule.cost);
+        give(to, item, store, true);
+        resident = to.id;
+      } else {
+        const pick = camp.autoGear ? neediest(camp.race, all, item) : null;
+        if (camp.autoGear && !pick) return { ok: false, code: "nobody_needs", message: `沒有人需要${rule.name}（大家都有一樣好或更好的）。` };
+        spend(materials, rule.cost);
+        if (pick) give(pick, item, store);
+        else store.push(item); // (the handing out is off: into the store)
+        resident = pick?.id; // (the devices say who by name: names come from the seed on them)
+      }
+      redistribute(camp.race, all, store, camp.autoGear);
+      message = resident === undefined ? `做好了${rule.name}，放進倉庫。` : `做好了${rule.name}。`;
+      break;
+    }
+    case "equip": {
+      const all = await loadWearers();
+      const to = all.find((w) => w.id === command.resident);
+      if (!to) return { ok: false, code: "not_found", message: "找不到這位居民（可能不在家）。" };
+      const at = findStock(store, command.stock, command.gear);
+      if (at < 0) return { ok: false, code: "not_found", message: "倉庫裡找不到這件。" };
+      const item = store[at]!;
+      const why = cannotWear(to, item);
+      if (why) return { ok: false, code: "not_allowed", message: why };
+      store.splice(at, 1);
+      give(to, item, store, true);
+      redistribute(camp.race, all, store, camp.autoGear);
+      message = `換上了${gearRule(item.id)!.name}。`;
+      resident = to.id;
+      break;
+    }
+    case "unequip": {
+      const all = await loadWearers();
+      const from = all.find((w) => w.id === command.resident);
+      const piece = from && takeOff(from, command.slot, store);
+      if (!piece) return { ok: false, code: "not_found", message: "那個位置沒有裝備。" };
+      message = `${gearRule(piece.id)?.name ?? piece.id}收回倉庫了（保留，不會自動發出去）。`;
+      resident = from!.id;
+      break;
+    }
+    case "gear-hold": {
+      const at = findStock(store, command.stock, command.gear);
+      if (at < 0) return { ok: false, code: "not_found", message: "倉庫裡找不到這件。" };
+      const name = gearRule(store[at]!.id)?.name ?? store[at]!.id;
+      if (command.held) store[at] = { ...store[at]!, held: true };
+      else {
+        store[at] = { id: store[at]!.id, left: store[at]!.left };
+        redistribute(camp.race, await loadWearers(), store, camp.autoGear);
+      }
+      message = command.held ? `${name}保留在倉庫。` : `${name}交給自動分配。`;
+      break;
+    }
+    case "auto-gear": {
+      changes.autoGear = command.on;
+      if (command.on) redistribute(camp.race, await loadWearers(), store, true);
+      message = command.on ? "倉庫的裝備會自動發給最需要的居民（你手動給的、保留的不會動）。" : "倉庫的裝備不再自動分配，要自己發。";
       break;
     }
     case "repair": {

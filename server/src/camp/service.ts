@@ -117,11 +117,11 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
       if (r.diedAt === null && !wearers.has(r.id)) wearers.set(r.id, { id: r.id, breed: r.breed, gear: {} });
       const w = wearers.get(r.id);
       if (r.diedAt !== null && w) {
-        store.push(...(Object.values(w.gear) as GearItem[]));
+        store.push(...(Object.values(w.gear) as GearItem[]).map((g) => ({ id: g.id, left: g.left }))); // (to be handed out again)
         wearers.delete(r.id);
       }
     }
-    redistribute(camp.race, [...wearers.values()], store);
+    redistribute(camp.race, [...wearers.values()], store, camp.autoGear);
   };
 
   const moveTo = (time: number) => {
@@ -255,6 +255,7 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     materials: camp.materials,
     larder: camp.larder,
     armory: camp.armory,
+    autoGear: camp.autoGear,
     boosts: camp.boosts,
     foodCooldowns: camp.foodCooldowns,
     princessName: camp.princessName,

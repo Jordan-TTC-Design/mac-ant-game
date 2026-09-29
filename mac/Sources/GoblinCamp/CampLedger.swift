@@ -5,7 +5,14 @@ import Foundation
 /// and turned into what `Colony.restore` already reads. Where the camp stands and its land stay this Mac's own
 /// (camp-local.json; see `Persistence`).
 final class CampLedger {
-    struct GearPiece: Codable { let id: String; let left: Double }
+    /// A piece as the books have it (`pinned`: put on by hand; `held`: taken off by hand into the store).
+    struct GearPiece: Codable {
+        let id: String
+        let left: Double
+        var pinned: Bool?
+        var held: Bool?
+        var item: GearItem { GearItem(id: id, left: left, pinned: pinned == true, held: held == true) }
+    }
 
     struct Resident: Codable {
         let id: Int
@@ -34,6 +41,8 @@ final class CampLedger {
         let materials: [String: Int]
         let larder: [String: Int]
         let armory: [GearPiece]
+        /// Whether the store is handed out by itself; missing from older servers (on).
+        let autoGear: Bool?
         let boosts: [String: String]
         let foodCooldowns: [String: String]
         let princessName: String
@@ -78,7 +87,7 @@ final class CampLedger {
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
-            case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, boosts, foodCooldowns
+            case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, boosts, foodCooldowns
             case princessName, romance, kills, delivered, sanctuary, production, residents
         }
 
@@ -96,6 +105,7 @@ final class CampLedger {
             materials = try c.decode([String: Int].self, forKey: .materials)
             larder = try c.decode([String: Int].self, forKey: .larder)
             armory = try c.decode([GearPiece].self, forKey: .armory)
+            autoGear = try? c.decodeIfPresent(Bool.self, forKey: .autoGear)
             boosts = try c.decode([String: String].self, forKey: .boosts)
             foodCooldowns = try c.decode([String: String].self, forKey: .foodCooldowns)
             princessName = try c.decode(String.self, forKey: .princessName)
@@ -253,7 +263,7 @@ final class CampLedger {
             if let dies = r.diesAt.flatMap(ServerTime.parse), let born = ServerTime.parse(r.bornAt), dies > born {
                 share = min(1, max(0, now.timeIntervalSince(born) / dies.timeIntervalSince(born)))
             }
-            let gear = (r.gear ?? [:]).mapValues { GearItem(id: $0.id, left: $0.left) }
+            let gear = (r.gear ?? [:]).mapValues(\.item)
             return BookResident(id: r.id, breed: r.breed, seed: r.legacySeed.flatMap { UInt64($0) } ?? UInt64(r.seed), name: r.name,
                                 parents: r.parents, lifeShare: share, gear: gear)
         }
@@ -267,10 +277,11 @@ final class CampLedger {
             ends.compactMapValues { ServerTime.parse($0).map { $0.timeIntervalSince(now) } }.filter { $0.value > 0 }
         }
         return BookStores(materials: view.materials, kills: view.kills, larder: view.larder,
-                          armory: view.armory.map { GearItem(id: $0.id, left: $0.left) }, peak: max(view.peak, residents.count), delivered: view.delivered,
+                          armory: view.armory.map(\.item), peak: max(view.peak, residents.count), delivered: view.delivered,
                           boosts: secondsLeft(view.boosts), cooldowns: secondsLeft(view.foodCooldowns),
                           farmLevel: view.production?.farm?.level ?? 1, race: view.race,
-                          sites: (view.production?.sites ?? []).filter { $0.kind != "farm" }.map { (id: $0.id, kind: $0.kind, level: $0.level) })
+                          sites: (view.production?.sites ?? []).filter { $0.kind != "farm" }.map { (id: $0.id, kind: $0.kind, level: $0.level) },
+                          autoGear: view.autoGear ?? true)
     }
 
     /// What happened since this Mac last looked (oldest first). The first time, everything before is taken as seen.
@@ -303,6 +314,10 @@ final class CampLedger {
         var food: String?
         var name: String?
         var romance: RomanceState?
+        /// craft: for whom; gear-hold: held or not; auto-gear: on or off.
+        var to: Int?
+        var held: Bool?
+        var on: Bool?
         init(kind: String) { requestId = UUID().uuidString.lowercased(); self.kind = kind }
     }
 
@@ -431,7 +446,7 @@ final class CampLedger {
                 age = share * Traits.baseLifespan * stat
             }
             return SavedGoblin(id: r.id, breed: r.breed, age: age, seed: r.legacySeed.flatMap { UInt64($0) } ?? UInt64(r.seed), name: r.name,
-                               gear: r.gear?.mapValues { SavedGear(id: $0.id, left: $0.left) }, parents: r.parents)
+                               gear: r.gear?.mapValues { SavedGear(id: $0.id, left: $0.left, pinned: $0.pinned == true) }, parents: r.parents)
         }
         func secondsLeft(_ ends: [String: String]) -> [String: Double]? {
             let left = ends.compactMapValues { ServerTime.parse($0).map { $0.timeIntervalSince(now) } }.filter { $0.value > 0 }
@@ -440,7 +455,7 @@ final class CampLedger {
         return SavedState(nestX: nest.x, nestY: nest.y, antCount: goblins.count, goblins: goblins, delivered: view.delivered, nextID: view.nextId,
                           princessName: view.princessName.isEmpty ? nil : view.princessName, materials: view.materials, kills: view.kills, peak: view.peak,
                           playSeconds: local?.playSeconds, larder: view.larder, terrain: local?.terrain, terrains: local?.terrains,
-                          armoryItems: view.armory.map { SavedGear(id: $0.id, left: $0.left) }, romance: view.romance,
+                          armoryItems: view.armory.map { SavedGear(id: $0.id, left: $0.left, held: $0.held == true) }, romance: view.romance,
                           boosts: secondsLeft(view.boosts), foodCooldowns: secondsLeft(view.foodCooldowns), race: view.race)
     }
 }

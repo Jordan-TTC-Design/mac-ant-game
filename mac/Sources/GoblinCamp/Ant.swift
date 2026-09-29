@@ -187,6 +187,8 @@ struct Ant {
     var gear: [String: String] = [:]
     /// How much wear each of those pieces has left (slot → `GearItem.left`).
     var gearLeft: [String: Double] = [:]
+    /// Slots whose piece was put on by hand (the handing out leaves them be).
+    var gearPinned: Set<String> = []
     /// Damage per hit, hits it can take and the chance to shrug off a monster's hit: the breed's numbers plus what it wears (a worn-out piece counts half).
     var might: Double { traits.might + wornGear.reduce(0) { $0 + $1.might * condition($1) } }
     var maxHealth: Double { traits.maxHealth + wornGear.reduce(0) { $0 + $1.health * condition($1) } }
@@ -196,7 +198,7 @@ struct Ant {
     var gearReach: Double { wornGear.reduce(0) { $0 + $1.reach } }
 
     func item(in slot: GearSlot) -> GearItem? {
-        gear[slot.rawValue].map { GearItem(id: $0, left: gearLeft[slot.rawValue]) }
+        gear[slot.rawValue].map { GearItem(id: $0, left: gearLeft[slot.rawValue], pinned: gearPinned.contains(slot.rawValue)) }
     }
     private func condition(_ gear: Gear) -> Double { item(in: gear.slot)?.isWorn == true ? 0.5 : 1 }
 
@@ -206,6 +208,7 @@ struct Ant {
         let old = self.item(in: slot)
         gear[slot.rawValue] = item.id
         gearLeft[slot.rawValue] = item.left
+        if item.pinned { gearPinned.insert(slot.rawValue) } else { gearPinned.remove(slot.rawValue) }
         return old
     }
 
@@ -213,6 +216,7 @@ struct Ant {
         let old = item(in: slot)
         gear[slot.rawValue] = nil
         gearLeft[slot.rawValue] = nil
+        gearPinned.remove(slot.rawValue)
         return old
     }
     /// What it wears that counts: a shield is no use with a two-handed weapon in the hands.

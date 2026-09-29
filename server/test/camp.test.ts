@@ -451,6 +451,71 @@ describe("commands", () => {
     expect((await cmd(me, { kind: "story", romance: { stage: "married" } })).body.camp.romance).toEqual({ stage: "married" });
   });
 
+  it("crafts for whoever the player picks, and leaves that piece there (pinned)", async () => {
+    const me = await campWith({ rat_fang: 20, rat_tail: 5, scrap_iron: 20, scrap_wood: 5, rat_pelt: 5 });
+    const res = await cmd(me, { kind: "craft", gear: "bone_knife", to: 4 });
+    expect(res.status).toBe(200);
+    expect(res.body.resident).toBe(4);
+    let camp = res.body.camp as CampView;
+    expect(camp.residents.find((r) => r.id === 4)!.gear!.weapon).toEqual({ id: "bone_knife", left: 120, pinned: true });
+    // a better piece made for nobody in particular goes elsewhere, not over the pinned one
+    camp = (await cmd(me, { kind: "craft", gear: "short_sword" })).body.camp;
+    expect(camp.residents.find((r) => r.id === 4)!.gear!.weapon!.id).toBe("bone_knife");
+    expect(camp.residents.filter((r) => r.gear?.weapon?.id === "short_sword")).toHaveLength(1);
+    expect((await cmd(me, { kind: "craft", gear: "bone_knife", to: 999 })).body.error).toBe("not_found");
+  });
+
+  it("puts a piece on and takes it off by hand; what is taken off is held, not handed out", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/migrate", {
+      race: "goblin",
+      save: { goblins: [{ id: 1, breed: "common", age: 10, seed: "1", gear: { weapon: "long_sword" } }, { id: 2, breed: "brute", age: 10, seed: "2" }] },
+    }, me);
+    let res = await cmd(me, { kind: "unequip", resident: 1, slot: "weapon" });
+    expect(res.status).toBe(200);
+    let camp = res.body.camp as CampView;
+    expect(camp.armory).toEqual([{ id: "long_sword", left: 200, held: true }]);
+    expect(camp.residents.every((r) => !r.gear?.weapon)).toBe(true); // (held: nobody got it)
+    t.advance(HOUR); // (births hand the store out: still held)
+    expect((await view(me)).armory.find((x) => x.id === "long_sword")?.held).toBe(true);
+    res = await cmd(me, { kind: "equip", resident: 2, stock: 99, gear: "long_sword" }); // (a stale place: found by its id)
+    expect(res.status).toBe(200);
+    camp = res.body.camp;
+    expect(camp.residents.find((r) => r.id === 2)!.gear!.weapon).toMatchObject({ id: "long_sword", pinned: true });
+    expect(camp.armory.some((x) => x.id === "long_sword")).toBe(false);
+    expect((await cmd(me, { kind: "unequip", resident: 2, slot: "head" })).body.error).toBe("not_found");
+  });
+
+  it("lets a held piece go to the handing out again, and turns the handing out off", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/migrate", {
+      race: "goblin",
+      save: { goblins: [{ id: 1, breed: "common", age: 10, seed: "1", gear: { weapon: "long_sword" } }, { id: 2, breed: "common", age: 10, seed: "2" }] },
+    }, me);
+    await cmd(me, { kind: "unequip", resident: 1, slot: "weapon" });
+    let camp = (await cmd(me, { kind: "gear-hold", stock: 0, gear: "long_sword", held: false })).body.camp as CampView;
+    expect(camp.armory).toHaveLength(0);
+    expect(camp.residents.filter((r) => r.gear?.weapon?.id === "long_sword")).toHaveLength(1);
+    camp = (await cmd(me, { kind: "auto-gear", on: false })).body.camp;
+    expect(camp.autoGear).toBe(false);
+    await database.sql`update camps set materials = '{"rat_fang": 8, "rat_tail": 2}'`;
+    const made = await cmd(me, { kind: "craft", gear: "bone_knife" });
+    expect(made.body.message).toContain("放進倉庫");
+    expect((made.body.camp as CampView).armory).toEqual([{ id: "bone_knife", left: 120 }]);
+  });
+
+  it("refuses a shield for one holding a two-handed weapon", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/migrate", {
+      race: "goblin",
+      save: { goblins: [{ id: 1, breed: "common", age: 10, seed: "1", gear: { weapon: "spear" } }], armoryItems: ["wood_shield"] },
+    }, me);
+    await cmd(me, { kind: "auto-gear", on: false });
+    const res = await cmd(me, { kind: "equip", resident: 1, stock: 0, gear: "wood_shield" });
+    expect(res.body.error).toBe("not_allowed");
+    expect(res.body.message).toContain("雙手");
+  });
+
   it("hands a fallen or old resident's gear back to the store, and on to the next", async () => {
     const me = await account();
     await t.call("POST", "/camp/migrate", {

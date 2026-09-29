@@ -10,7 +10,9 @@ const TABS = [
   { to: "/camp", label: "營地", icon: "🛖" },
   { to: "/friends", label: "好友", icon: "💬" },
 ];
-const on = (to: string) => (to === "/" ? route.path === "/" : route.path === to || route.path.startsWith(`${to}/`));
+// (the workshop and the roster are the camp's)
+const on = (to: string) =>
+  to === "/" ? route.path === "/" : route.path === to || route.path.startsWith(`${to}/`) || (to === "/camp" && ["/workshop", "/roster"].includes(route.path));
 </script>
 
 <template>

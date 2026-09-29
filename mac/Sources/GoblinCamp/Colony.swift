@@ -117,6 +117,8 @@ final class Colony {
     private var healTimer = 0.0
     /// Gear that came back (its wearer died, or something better replaced it) and nobody needs yet: gear id → how many.
     private(set) var armory: [GearItem] = []
+    /// Whether the stock is handed out by itself (what the player placed by hand is never moved either way).
+    private(set) var autoGear = true
     private var monsterTimer = -1.0
     private var raidTimer = 0.0
     private var animalTimer: Double = -1
@@ -1346,34 +1348,66 @@ final class Colony {
 
     enum CraftResult {
         case made(gear: Gear, by: String)
+        /// Made, and put in the stock (the handing out is off, and nobody was picked).
+        case stored(gear: Gear)
         /// Not enough of these materials.
         case missing
         /// Everybody already wears something at least as good for that slot.
         case nobodyNeeds
+        /// It cannot go on the one picked (a shield for someone with a two-handed weapon).
+        case refused(String)
         /// The camp follows the books: sent to the server, which makes it and says who got it.
         case sent(gear: Gear)
     }
 
     func canAfford(_ gear: Gear) -> Bool { gear.cost.allSatisfy { materials[$0.0, default: 0] >= $0.1 } }
 
-    /// How many goblins wear this piece now.
+    /// How many goblins wear this piece now, and how many are in the stock.
     func wearers(of gear: Gear) -> Int { ants.filter { $0.gear[gear.slot.rawValue] == gear.id }.count }
+    func inStock(of gear: Gear) -> Int { armory.filter { $0.id == gear.id }.count }
 
-    /// Makes a piece of gear from the stored materials and gives it to the goblin who gains most from it (see `neediest`).
-    func craft(_ gear: Gear) -> CraftResult {
+    /// Who the handing out would give this piece to now (nil: nobody needs it, or the handing out is off).
+    func autoPick(for gear: Gear) -> Ant? {
+        guard autoGear, let i = neediest(for: GearItem(gear)) else { return nil }
+        return ants[i]
+    }
+
+    /// Why this piece cannot go on that goblin by hand (nil: it can): a shield has no hand beside a two-handed weapon.
+    func cannotWear(_ gear: Gear, on ant: Ant) -> String? {
+        if gear.slot == .shield, ant.item(in: .weapon)?.gear?.grip == .two { return "\(ant.name)拿著雙手武器，沒有手拿盾。" }
+        return nil
+    }
+
+    /// Makes a piece of gear from the stored materials. For `antID` (picked by hand: pinned there), or else for the goblin
+    /// who gains most from it (see `neediest`); with the handing out off and nobody picked, it goes to the stock.
+    func craft(_ gear: Gear, for antID: Int? = nil) -> CraftResult {
         guard canAfford(gear) else { return .missing }
+        if let antID, let ant = ants.first(where: { $0.id == antID }), let why = cannotWear(gear, on: ant) { return .refused(why) }
         if followsBooks {
-            onBookCommand?(.craft(gear.id))
+            onBookCommand?(.craft(gear.id, to: antID))
             return .sent(gear: gear)
         }
-        let item = GearItem(gear)
-        guard let pick = neediest(for: item) else { return .nobodyNeeds }
+        var item = GearItem(gear)
+        let pick: Int?
+        if let antID {
+            pick = ants.firstIndex { $0.id == antID }
+            guard pick != nil else { return .refused("找不到這位居民。") }
+            item.pinned = true
+        } else {
+            pick = autoGear ? neediest(for: item) : nil
+            if autoGear, pick == nil { return .nobodyNeeds }
+        }
         for (id, count) in gear.cost {
             materials[id, default: 0] -= count
             if materials[id] == 0 { materials[id] = nil }
         }
         made += 1
-        give(item, to: pick)
+        guard let pick else {
+            armory.append(item)
+            onAntsChanged?()
+            return .stored(gear: gear)
+        }
+        give(item, to: pick, byHand: antID != nil)
         if let nest { addFloater("製作 \(gear.name) → \(ants[pick].name)", .uncommon, at: nest) }
         selectedAntID = ants[pick].id // ring the new owner so you can see who got it
         if !armory.isEmpty { redistributeArmory() } // what it replaced goes to the next one who needs it
@@ -1381,14 +1415,73 @@ final class Colony {
         return .made(gear: gear, by: ants[pick].name)
     }
 
+    /// Puts the stock's piece at `index` on a goblin by hand (pinned there; what it wore there goes to the stock, held).
+    /// Returns a reason when it cannot.
+    @discardableResult
+    func equip(stock index: Int, on antID: Int) -> String? {
+        guard armory.indices.contains(index), let gear = armory[index].gear else { return "倉庫裡找不到這件。" }
+        guard let i = ants.firstIndex(where: { $0.id == antID }) else { return "找不到這位居民。" }
+        if let why = cannotWear(gear, on: ants[i]) { return why }
+        if followsBooks {
+            onBookCommand?(.equip(resident: antID, stock: index, gear: gear.id))
+            selectedAntID = antID
+            return nil
+        }
+        var item = armory.remove(at: index)
+        item.held = false
+        item.pinned = true
+        give(item, to: i, byHand: true)
+        selectedAntID = antID
+        if !armory.isEmpty { redistributeArmory() }
+        onAntsChanged?()
+        return nil
+    }
+
+    /// Takes a goblin's piece off by hand: it goes to the stock, held (not handed out again).
+    func unequip(antID: Int, slot: GearSlot) {
+        guard let i = ants.firstIndex(where: { $0.id == antID }), ants[i].item(in: slot) != nil else { return }
+        if followsBooks {
+            onBookCommand?(.unequip(resident: antID, slot: slot.rawValue))
+            return
+        }
+        if var piece = ants[i].takeOff(slot) {
+            piece.pinned = false
+            piece.held = true
+            armory.append(piece)
+            ants[i].health = min(ants[i].health, ants[i].maxHealth)
+        }
+        onAntsChanged?()
+    }
+
+    /// Holds the stock's piece at `index` (the handing out leaves it be), or lets it go to the handing out again.
+    func hold(stock index: Int, _ held: Bool) {
+        guard armory.indices.contains(index) else { return }
+        if followsBooks {
+            onBookCommand?(.gearHold(stock: index, gear: armory[index].id, held: held))
+            return
+        }
+        armory[index].held = held
+        if !held { redistributeArmory() }
+        onAntsChanged?()
+    }
+
+    /// Turns the handing out of the stock on or off.
+    func setAutoGear(_ on: Bool) {
+        if followsBooks { onBookCommand?(.autoGear(on)) }
+        autoGear = on
+        if !followsBooks, on { redistributeArmory() }
+        onAntsChanged?()
+    }
+
     /// Who gains most from this piece: the goblin whose gear in that slot is worst (none at all first, a worn-out piece counts half);
     /// among equals the strong ones get weapons, the sturdy ones shields, the rest the average of both. Nobody who already has
-    /// something at least as good.
+    /// something at least as good, and nobody whose piece there was put on by hand.
     private func neediest(for item: GearItem) -> Int? {
         guard let gear = item.gear else { return nil }
         func currentPower(_ ant: Ant) -> Double { ant.item(in: gear.slot)?.power ?? 0 }
         func twoHanded(_ ant: Ant) -> Bool { ant.item(in: .weapon)?.gear?.grip == .two }
-        let candidates = ants.indices.filter { !ants[$0].isDying && currentPower(ants[$0]) < item.power && !(gear.slot == .shield && twoHanded(ants[$0])) }
+        func placed(_ ant: Ant) -> Bool { ant.gearPinned.contains(gear.slot.rawValue) || (gear.grip == .two && ant.gearPinned.contains(GearSlot.shield.rawValue)) }
+        let candidates = ants.indices.filter { !ants[$0].isDying && currentPower(ants[$0]) < item.power && !(gear.slot == .shield && twoHanded(ants[$0])) && !placed(ants[$0]) }
         return candidates.min(by: { a, b in
             let pa = currentPower(ants[a]), pb = currentPower(ants[b])
             if pa != pb { return pa < pb }
@@ -1397,29 +1490,38 @@ final class Colony {
         })
     }
 
-    /// Puts a piece on a goblin. What it wore in that slot goes back to the camp's stock (with the wear it has).
-    private func give(_ item: GearItem, to index: Int) {
+    /// Puts a piece on a goblin. What it wore in that slot goes back to the camp's stock (with the wear it has; held when this
+    /// was done by hand).
+    private func give(_ item: GearItem, to index: Int, byHand: Bool = false) {
         let before = ants[index].maxHealth
-        if let old = ants[index].equip(item) { armory.append(old) }
+        var piece = item
+        piece.held = false
+        if !byHand { piece.pinned = false }
+        if var old = ants[index].equip(piece) {
+            old.pinned = false
+            old.held = byHand
+            armory.append(old)
+        }
         ants[index].health = min(ants[index].maxHealth, ants[index].health + max(0, ants[index].maxHealth - before))
     }
 
     /// A goblin is gone (old age, or killed in a fight): everything it wore comes back to the nest.
     private func returnGear(of index: Int) {
-        let pieces = GearSlot.allCases.compactMap { ants[index].takeOff($0) }
+        let pieces = GearSlot.allCases.compactMap { ants[index].takeOff($0) }.map { GearItem(id: $0.id, left: $0.left) }
         guard !pieces.isEmpty else { return }
         armory.append(contentsOf: pieces)
         if let nest { addFloater("歸還 " + pieces.compactMap { $0.gear?.name }.joined(separator: "、"), .common, at: nest) }
     }
 
     /// Hands the stock on: each piece to the goblin who needs it most (a newborn with nothing, a goblin with something worse), best pieces first.
-    /// Pieces nobody needs stay in the stock.
+    /// Pieces nobody needs stay in the stock, and so do those held; with the handing out off nothing moves.
     func redistributeArmory() {
+        guard autoGear else { return }
         var changed = true, rounds = 0
         while changed, rounds < 200 {
             changed = false
             rounds += 1
-            for index in armory.indices.sorted(by: { armory[$0].power > armory[$1].power }) {
+            for index in armory.indices.filter({ !armory[$0].held }).sorted(by: { armory[$0].power > armory[$1].power }) {
                 guard let pick = neediest(for: armory[index]) else { continue }
                 give(armory.remove(at: index), to: pick)
                 changed = true
@@ -1613,7 +1715,8 @@ final class Colony {
         savedLives = saved.terrains ?? [:]
         if savedLives["window"] == nil, let older = saved.terrain { savedLives["window"] = older } // (saves from before there were strips)
         scene?.growth = peakAnts
-        armory = (saved.armoryItems ?? []).map { GearItem(id: $0.id, left: $0.left) }.filter { $0.gear != nil }
+        armory = (saved.armoryItems ?? []).map { GearItem(id: $0.id, left: $0.left, held: $0.held == true) }.filter { $0.gear != nil }
+        autoGear = saved.autoGear ?? true
         for (id, count) in saved.armory ?? [:] where Gears.by(id: id) != nil { armory.append(contentsOf: Array(repeating: GearItem(id: id, left: nil), count: count)) }
 
         func scattered() -> CGPoint {
@@ -1627,7 +1730,7 @@ final class Colony {
                 var ant = makeAnt(at: scattered(), breedIndex: breeds.firstIndex { $0.id == g.breed } ?? 0, age: g.age, seed: g.seed, id: g.id, name: g.name)
                 ant.parents = g.parents ?? ""
                 for (slot, saved) in g.gear ?? [:] where GearSlot(rawValue: slot) != nil && Gears.by(id: saved.id) != nil {
-                    _ = ant.equip(GearItem(id: saved.id, left: saved.left))
+                    _ = ant.equip(GearItem(id: saved.id, left: saved.left, pinned: saved.pinned == true))
                 }
                 ant.health = ant.maxHealth
                 return ant
@@ -1651,14 +1754,15 @@ final class Colony {
                           goblins: ants.map { SavedGoblin(id: $0.id, breed: breeds[min($0.breedIndex, breeds.count - 1)].id, age: $0.age, seed: $0.seed, name: $0.name,
                                                     gear: savedGear(of: $0), parents: $0.parents.isEmpty ? nil : $0.parents) },
                           delivered: foodDelivered, nextID: nextAntID, princessName: princessName.isEmpty ? nil : princessName,
-                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: allLives["window"], terrains: allLives.isEmpty ? nil : allLives, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left) },
+                          materials: materials.isEmpty ? nil : materials, kills: kills.isEmpty ? nil : kills, peak: peakAnts, playSeconds: playSeconds, larder: larder.isEmpty ? nil : larder, terrain: allLives["window"], terrains: allLives.isEmpty ? nil : allLives, armoryItems: armory.isEmpty ? nil : armory.map { SavedGear(id: $0.id, left: $0.left, held: $0.held) },
                           romance: romance, boosts: boosts.isEmpty ? nil : Colony.names(boosts),
-                          foodCooldowns: foodCooldowns.isEmpty ? nil : Colony.names(foodCooldowns), race: Characters.current.id)
+                          foodCooldowns: foodCooldowns.isEmpty ? nil : Colony.names(foodCooldowns), race: Characters.current.id,
+                          autoGear: autoGear ? nil : false)
     }
 
     private func savedGear(of ant: Ant) -> [String: SavedGear]? {
         var result: [String: SavedGear] = [:]
-        for slot in GearSlot.allCases { if let item = ant.item(in: slot) { result[slot.rawValue] = SavedGear(id: item.id, left: item.left) } }
+        for slot in GearSlot.allCases { if let item = ant.item(in: slot) { result[slot.rawValue] = SavedGear(id: item.id, left: item.left, pinned: item.pinned) } }
         return result.isEmpty ? nil : result
     }
 
@@ -1978,7 +2082,11 @@ struct BookResident {
 
 /// A player's action the server does when the camp follows the books (shared/src/camp/api.ts `campCommand`).
 enum BookCommand {
-    case craft(String)
+    case craft(String, to: Int?)
+    case equip(resident: Int, stock: Int, gear: String)
+    case unequip(resident: Int, slot: String)
+    case gearHold(stock: Int, gear: String, held: Bool)
+    case autoGear(Bool)
     case repair(resident: Int?, slot: String?, stock: Int?)
     case food(String)
     case princessName(String)
@@ -2001,6 +2109,8 @@ struct BookStores {
     var race = "goblin"
     /// The camp's other sites (server/FARM.md §11), drawn round the camp.
     var sites: [(id: Int, kind: String, level: Int)] = []
+    /// Whether the stock is handed out by itself.
+    var autoGear = true
 }
 
 extension Colony {
@@ -2054,7 +2164,7 @@ extension Colony {
             for slot in GearSlot.allCases {
                 let want = r.gear[slot.rawValue]
                 let now = ants[i].item(in: slot)
-                if want?.id == now?.id, want?.left == now?.left { continue }
+                if want?.id == now?.id, want?.left == now?.left, want?.pinned == now?.pinned { continue }
                 _ = ants[i].takeOff(slot)
                 if let want, want.gear != nil { _ = ants[i].equip(want) }
                 changed = true
@@ -2064,6 +2174,7 @@ extension Colony {
         kills = stores.kills
         larder = stores.larder
         armory = stores.armory.filter { $0.gear != nil }
+        autoGear = stores.autoGear
         foodDelivered = stores.delivered
         boosts = Colony.kinds(stores.boosts)
         foodCooldowns = Colony.kinds(stores.cooldowns)

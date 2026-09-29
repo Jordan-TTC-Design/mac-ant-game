@@ -54,8 +54,16 @@ const requestId = z.uuid().optional();
 
 /** `POST /api/camp/commands`: one thing the player does. The server checks it against the books (server/CAMP.md §3.3). */
 export const campCommand = z.discriminatedUnion("kind", [
-  /** The workshop makes a piece; it goes to whoever needs it most. */
-  z.object({ requestId, kind: z.literal("craft"), gear: z.string().max(40) }),
+  /** The workshop makes a piece; it goes to `to` (a resident at home, by hand: pinned), or else to whoever needs it most. */
+  z.object({ requestId, kind: z.literal("craft"), gear: z.string().max(40), to: z.number().int().min(1).optional() }),
+  /** Puts a piece from the store (`stock`, its place in the list; `gear` checks it is the one meant) on a resident by hand. */
+  z.object({ requestId, kind: z.literal("equip"), resident: z.number().int(), stock: z.number().int().min(0), gear: z.string().max(40) }),
+  /** Takes a resident's piece off by hand: it goes to the store, held. */
+  z.object({ requestId, kind: z.literal("unequip"), resident: z.number().int(), slot: z.enum(GEAR_SLOTS) }),
+  /** Holds a piece in the store (the handing out leaves it be) or lets it go again. */
+  z.object({ requestId, kind: z.literal("gear-hold"), stock: z.number().int().min(0), gear: z.string().max(40), held: z.boolean() }),
+  /** Turns the handing out of the store on or off for the camp. */
+  z.object({ requestId, kind: z.literal("auto-gear"), on: z.boolean() }),
   /** Mends a piece a resident wears (`resident` + `slot`) or one in the store (`stock`, its place in the list). */
   z.object({ requestId, kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
   /** Puts a food (or, for the undead, a soul) down. */
@@ -88,7 +96,8 @@ export interface CampResidentView {
   parents: string | null;
   bornAt: string;
   diesAt: string | null;
-  gear: Record<string, { id: string; left: number }> | null;
+  /** What it wears (`pinned`: put on by hand, the handing out leaves it be). */
+  gear: Record<string, { id: string; left: number; pinned?: boolean }> | null;
   place: string;
 }
 
@@ -106,7 +115,10 @@ export interface CampView {
   version: number;
   materials: Record<string, number>;
   larder: Record<string, number>;
-  armory: { id: string; left: number }[];
+  /** The store (`held`: taken off by hand, not handed out). */
+  armory: { id: string; left: number; held?: boolean }[];
+  /** Whether the store is handed out by itself (off: only by hand). Older servers leave it out (on). */
+  autoGear?: boolean;
   boosts: Record<string, string>;
   foodCooldowns: Record<string, string>;
   princessName: string;

@@ -140,8 +140,10 @@ export const camps = pgTable("camps", {
   nextRaid: integer("next_raid").notNull().default(0),
   materials: jsonb("materials").$type<Record<string, number>>().notNull().default({}),
   larder: jsonb("larder").$type<Record<string, number>>().notNull().default({}),
-  /** Gear in the camp's store: [{ id, left }] (left = wear left, 0…1). */
-  armory: jsonb("armory").$type<{ id: string; left: number }[]>().notNull().default([]),
+  /** Gear in the camp's store: [{ id, left, held? }] (left = wear left; held = taken off by hand, not handed out). */
+  armory: jsonb("armory").$type<{ id: string; left: number; held?: boolean }[]>().notNull().default([]),
+  /** Whether the store is handed out by itself (shared/src/camp/gear.ts `redistribute`); off: only by hand. */
+  autoGear: boolean("auto_gear").notNull().default(true),
   /** Food boosts still running and food cooldowns: food id → the time it ends (ISO). */
   boosts: jsonb("boosts").$type<Record<string, string>>().notNull().default({}),
   foodCooldowns: jsonb("food_cooldowns").$type<Record<string, string>>().notNull().default({}),
@@ -175,8 +177,8 @@ export const campResidents = pgTable(
     bornAt: timestamp("born_at", { withTimezone: true, precision: 3 }).notNull(),
     diesAt: timestamp("dies_at", { withTimezone: true, precision: 3 }),
     diedAt: timestamp("died_at", { withTimezone: true, precision: 3 }),
-    /** What it wears: slot → { id, left }. */
-    gear: jsonb("gear").$type<Record<string, { id: string; left: number }>>(),
+    /** What it wears: slot → { id, left, pinned? } (pinned = put on by hand, the handing out leaves it be). */
+    gear: jsonb("gear").$type<Record<string, { id: string; left: number; pinned?: boolean }>>(),
     /** home, or a cell / an expedition in the big world (later). */
     place: text("place").notNull().default("home"),
   },

@@ -1,7 +1,9 @@
 /**
  * The workshop's gear and how the camp hands it out (the Mac's Equipment.swift and Colony's craft / neediest /
- * redistributeArmory / repair / wear). Nobody equips by hand: a piece goes to whoever needs it most, what it replaces goes
- * to the store, and the store is handed out again whenever someone is born, dies or a piece is made.
+ * redistributeArmory / repair / wear). A piece goes to whoever needs it most, what it replaces goes to the store, and the
+ * store is handed out again whenever someone is born, dies or a piece is made — except what the player placed by hand: a
+ * piece put on a resident by hand is `pinned` (never taken off or replaced by the handing out), a piece taken off by hand is
+ * `held` in the store (never handed out). The handing out can be turned off for a camp.
  */
 import { BREED_STATS } from "./combat.ts";
 
@@ -120,6 +122,10 @@ export function gearRule(id: string): GearRule | undefined {
 export interface GearItem {
   id: string;
   left: number;
+  /** On a resident: put there by hand (the handing out leaves it be). */
+  pinned?: boolean;
+  /** In the store: taken off by hand (the handing out leaves it be). */
+  held?: boolean;
 }
 
 /** One number to tell which of two pieces for the same slot is better (a worn-out one, under a quarter, counts half). */
@@ -171,6 +177,7 @@ export function neediest(race: string, wearers: readonly Wearer[], item: GearIte
   for (const w of wearers) {
     const now = gearPower(w.gear[rule.slot]);
     if (now >= power) continue;
+    if (w.gear[rule.slot]?.pinned || (rule.twoHanded && w.gear.shield?.pinned)) continue; // (what the player placed stays)
     if (rule.slot === "shield" && gearRule(w.gear.weapon?.id ?? "")?.twoHanded) continue;
     if (!best) { best = w; continue; }
     const bestNow = gearPower(best.gear[rule.slot]);
@@ -179,22 +186,48 @@ export function neediest(race: string, wearers: readonly Wearer[], item: GearIte
   return best;
 }
 
-/** Puts `item` on `wearer`; what it wore there goes back to `store` (a two-handed weapon also sends the shield back). */
-export function give(wearer: Wearer, item: GearItem, store: GearItem[]): void {
+/**
+ * Puts `item` on `wearer`; what it wore there goes back to `store` (a two-handed weapon also sends the shield back). By
+ * hand (`byHand`): the piece is pinned there, and what it sends back is held.
+ */
+export function give(wearer: Wearer, item: GearItem, store: GearItem[], byHand = false): void {
   const rule = gearRule(item.id)!;
+  const back = (piece: GearItem) => store.push(byHand ? { id: piece.id, left: piece.left, held: true } : { id: piece.id, left: piece.left });
   const old = wearer.gear[rule.slot];
-  if (old) store.push(old);
-  wearer.gear[rule.slot] = item;
+  if (old) back(old);
+  wearer.gear[rule.slot] = byHand ? { id: item.id, left: item.left, pinned: true } : { id: item.id, left: item.left };
   if (rule.twoHanded && wearer.gear.shield) {
-    store.push(wearer.gear.shield);
+    back(wearer.gear.shield);
     delete wearer.gear.shield;
   }
 }
 
-/** Hands the store on, best pieces first, each to whoever needs it most; what nobody needs stays. Changes both in place. */
-export function redistribute(race: string, wearers: Wearer[], store: GearItem[]): void {
+/** Takes the piece in `slot` off `wearer` by hand: it goes to the store, held. Returns it (null: nothing there). */
+export function takeOff(wearer: Wearer, slot: GearSlot, store: GearItem[]): GearItem | null {
+  const piece = wearer.gear[slot];
+  if (!piece) return null;
+  delete wearer.gear[slot];
+  const held = { id: piece.id, left: piece.left, held: true };
+  store.push(held);
+  return held;
+}
+
+/** Why `item` cannot go on `wearer` by hand (null: it can). */
+export function cannotWear(wearer: Wearer, item: GearItem): string | null {
+  const rule = gearRule(item.id);
+  if (!rule) return "工坊不認得這件。";
+  if (rule.slot === "shield" && gearRule(wearer.gear.weapon?.id ?? "")?.twoHanded) return "拿著雙手武器，沒有手拿盾。";
+  return null;
+}
+
+/**
+ * Hands the store on, best pieces first, each to whoever needs it most; what nobody needs stays, and so does what is held.
+ * Changes both in place. `auto` false (the camp turned the handing out off): nothing moves.
+ */
+export function redistribute(race: string, wearers: Wearer[], store: GearItem[], auto = true): void {
+  if (!auto) return;
   for (let rounds = 0; rounds < 500; rounds++) {
-    const order = store.map((item, i) => ({ item, i })).sort((a, b) => gearPower(b.item) - gearPower(a.item));
+    const order = store.map((item, i) => ({ item, i })).filter(({ item }) => !item.held).sort((a, b) => gearPower(b.item) - gearPower(a.item));
     const next = order.find(({ item }) => neediest(race, wearers, item));
     if (!next) return;
     store.splice(next.i, 1);

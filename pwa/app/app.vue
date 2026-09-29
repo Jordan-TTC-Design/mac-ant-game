@@ -3,7 +3,7 @@
 // before signing in).
 const route = useRoute();
 const { user } = useAccount();
-const TABBED = ["/", "/notes", "/pomodoro", "/camp", "/friends", "/settings", "/claude"];
+const TABBED = ["/", "/notes", "/pomodoro", "/camp", "/workshop", "/roster", "/friends", "/settings", "/claude"];
 const tabbed = computed(() => !!user.value && (TABBED.includes(route.path.replace(/\/$/, "") || "/") || route.path.startsWith("/friends/")));
 </script>
 

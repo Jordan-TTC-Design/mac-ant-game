@@ -1,0 +1,1 @@
+ALTER TABLE "camps" ADD COLUMN "auto_gear" boolean DEFAULT true NOT NULL;

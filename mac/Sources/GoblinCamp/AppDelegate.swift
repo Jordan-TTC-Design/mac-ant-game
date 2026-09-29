@@ -784,12 +784,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let ok = self.colony.repair(job)
                     log("repair jobs \(jobs.count); mended \(job.gear.name) (\(Int(job.item.fraction * 100))% -> \(ok ? "100" : "no")%), cost \(Colony.repairCost(job.gear).map { "\($0.0)×\($0.1)" }), stock changed \(before != self.colony.materials); jobs left \(self.colony.repairJobs().count)")
                 }
+                // by hand: a piece made for the strongest (pinned), one taken off into the stock (held)
+                if let strong = self.colony.ants.filter({ !$0.isChild }).max(by: { $0.might < $1.might }), let sword = Gears.by(id: "short_sword") {
+                    self.colony.debugAddMaterials(Dictionary(uniqueKeysWithValues: sword.cost.map { ($0.0, $0.1) }))
+                    log("craft for \(strong.name): \(self.colony.craft(sword, for: strong.id))")
+                }
+                if let other = self.colony.ants.first(where: { $0.item(in: .head) != nil && !$0.gearPinned.contains("head") }) {
+                    self.colony.unequip(antID: other.id, slot: .head)
+                    log("took \(other.name)'s head piece off; held in stock: \(self.colony.armory.filter(\.held).count)")
+                }
                 self.workshopWindow?.refresh()
             }
             after(5) {
                 guard let view = self.workshopWindow?.contentViewForTesting, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
                 view.cacheDisplay(in: view.bounds, to: rep)
                 if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: s)) }
+                for (tab, name) in [(WorkshopWindow.Tab.pieces, "pieces"), (.repair, "repair")] {
+                    self.workshopWindow?.select(tab)
+                    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: s.replacingOccurrences(of: ".png", with: "-\(name).png"))) }
+                }
+                self.roster.show()
+                self.roster.useLightAppearanceForTesting()
+                self.colony.selectedAntID = self.colony.ants.filter { !$0.isChild }.max(by: { $0.might < $1.might })?.id
+                self.roster.refreshIfVisible()
+                if let rv = self.roster.contentViewForTesting, let rrep = rv.bitmapImageRepForCachingDisplay(in: rv.bounds) {
+                    rv.cacheDisplay(in: rv.bounds, to: rrep)
+                    if let png = rrep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: s.replacingOccurrences(of: ".png", with: "-roster.png"))) }
+                }
                 log("workshop drawn; materials left \(self.colony.materials)")
                 if let map = self.mapWindow?.view, let rep = map.bitmapImageRepForCachingDisplay(in: map.bounds) {
                     map.cacheDisplay(in: map.bounds, to: rep)
@@ -2216,7 +2239,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func sendCommand(_ command: BookCommand) {
         var q: CampLedger.Queued
         switch command {
-        case .craft(let gear): q = .init(kind: "craft"); q.gear = gear
+        case .craft(let gear, let to): q = .init(kind: "craft"); q.gear = gear; q.to = to
+        case .equip(let resident, let stock, let gear): q = .init(kind: "equip"); q.resident = resident; q.stock = stock; q.gear = gear
+        case .unequip(let resident, let slot): q = .init(kind: "unequip"); q.resident = resident; q.slot = slot
+        case .gearHold(let stock, let gear, let held): q = .init(kind: "gear-hold"); q.stock = stock; q.gear = gear; q.held = held
+        case .autoGear(let on): q = .init(kind: "auto-gear"); q.on = on
         case .repair(let resident, let slot, let stock): q = .init(kind: "repair"); q.resident = resident; q.slot = slot; q.stock = stock
         case .food(let food): q = .init(kind: "food"); q.food = food
         case .princessName(let name): q = .init(kind: "princess-name"); q.name = name
@@ -2226,20 +2253,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { @MainActor in await self.flushCommands() }
     }
 
+    /// Commands the workshop and the roster send (their answers show in the workshop).
+    private static let gearCommands: Set<String> = ["craft", "repair", "equip", "unequip", "gear-hold", "auto-gear"]
+
     private func flushCommands() async {
         await ledger.sendPending { [weak self] command, result in
             guard let self else { return }
             switch result {
             case .success(let answer):
                 self.applyBooksToCamp()
-                if ["craft", "repair"].contains(command.kind), !answer.message.isEmpty {
+                if Self.gearCommands.contains(command.kind), !answer.message.isEmpty {
                     let who = answer.resident.flatMap { id in self.colony.ants.first { $0.id == id }?.name }
-                    self.workshopWindow?.show(answer.message + (who.map { "交給\($0)。" } ?? ""))
+                    let tell = ["craft", "equip"].contains(command.kind) ? who.map { "交給\($0)。" } ?? "" : ""
+                    self.workshopWindow?.show(answer.message + tell)
+                    if ["craft", "equip"].contains(command.kind), let id = answer.resident { // ring the new owner
+                        self.colony.selectedAntID = id
+                        self.redrawAll()
+                    }
                 }
+                self.roster.refreshIfVisible()
                 if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: command \(command.kind): \(answer.message)") }
             case .failure(let error):
                 self.applyBooksToCamp()
-                if ["craft", "repair"].contains(command.kind) { self.workshopWindow?.show(error.message) } else if command.kind != "story" { self.say(error.message) }
+                if Self.gearCommands.contains(command.kind) { self.workshopWindow?.show(error.message) } else if command.kind != "story" { self.say(error.message) }
+                self.roster.refreshIfVisible()
                 if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: command \(command.kind) refused: \(error.code) \(error.message)") }
             }
         }

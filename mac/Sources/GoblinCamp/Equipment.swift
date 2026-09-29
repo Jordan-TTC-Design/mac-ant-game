@@ -73,9 +73,18 @@ struct Gear {
 struct GearItem {
     let id: String
     var left: Double
+    /// On a goblin: put there by hand (the handing out never takes it off or replaces it).
+    var pinned = false
+    /// In the stock: taken off by hand (the handing out leaves it there).
+    var held = false
 
     init(_ gear: Gear) { id = gear.id; left = gear.durability }
-    init(id: String, left: Double?) { self.id = id; self.left = left ?? Gears.by(id: id)?.durability ?? 1 }
+    init(id: String, left: Double?, pinned: Bool = false, held: Bool = false) {
+        self.id = id
+        self.left = left ?? Gears.by(id: id)?.durability ?? 1
+        self.pinned = pinned
+        self.held = held
+    }
 
     var gear: Gear? { Gears.by(id: id) }
     /// 1 = new, 0 = about to break.
