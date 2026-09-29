@@ -11,6 +11,8 @@ import {
   buildTown,
   cellDetail,
   cellsAround,
+  landmarksAround,
+  LANDMARK_RADIUS,
   expeditionList,
   expeditionReport,
   leaderboard,
@@ -78,6 +80,17 @@ export function worldRoutes(deps: AppDeps) {
     if (!isCellId(cell)) return apiError(c, 404, "not_found", "沒有這一格。");
     const userId = c.get("session").user.id;
     return respond(c, await run(c, () => db.transaction((tx) => cellDetail(tx, userId, cell, now()))));
+  });
+
+  /** The landmarks around a point (`lat`, `lng`; `radius` in metres, up to LANDMARK_RADIUS), the nearest first. */
+  app.get("/landmarks", async (c) => {
+    const lat = Number(c.req.query("lat"));
+    const lng = Number(c.req.query("lng"));
+    const radius = Number(c.req.query("radius") ?? String(LANDMARK_RADIUS));
+    if (!(Math.abs(lat) <= 85) || !(Math.abs(lng) <= 180) || !(radius > 0 && radius <= LANDMARK_RADIUS)) {
+      return apiError(c, 400, "invalid_input", `lat、lng 要是座標，radius 是 1～${LANDMARK_RADIUS} 公尺。`);
+    }
+    return respond(c, await run(c, async () => ({ landmarks: await db.transaction((tx) => landmarksAround(tx, { lat, lng }, radius)) })));
   });
 
   app.post("/expeditions", async (c) => {

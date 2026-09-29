@@ -181,6 +181,22 @@ describe("a building on a cell", () => {
 });
 
 describe("landmarks", () => {
+  it("can be looked for around a point: the nearest first, with who holds each", async () => {
+    const a = await ready();
+    const res = await t.call("GET", `/world/landmarks?lat=${DAAN.lat}&lng=${DAAN.lng}`, undefined, a);
+    expect(res.status).toBe(200);
+    const list = res.body.landmarks as { cell: string; kind: string; km: number; owner: unknown }[];
+    expect(list.length).toBeGreaterThan(0);
+    for (const l of list) expect(standInLandmark(l.cell)).toEqual(expect.objectContaining({ kind: l.kind }));
+    expect(list.map((l) => l.km)).toEqual([...list.map((l) => l.km)].sort((x, y) => x - y));
+    expect(list.every((l) => l.km <= 3.1)).toBe(true);
+    expect((await t.call("GET", `/world/landmarks?lat=${DAAN.lat}&lng=${DAAN.lng}&radius=9000`, undefined, a)).status).toBe(400);
+    // one taken shows its holder
+    const cell = await settle(a, 20, [], (c) => !!c.landmark);
+    const again = (await t.call("GET", `/world/landmarks?lat=${DAAN.lat}&lng=${DAAN.lng}`, undefined, a)).body.landmarks as { cell: string; owner: { name: string } | null }[];
+    expect(again.find((l) => l.cell === cell)!.owner?.name).toBe("咕嚕");
+  });
+
   it("show on the map, and whoever holds one gets what it gives", async () => {
     const a = await ready();
     const cells = await map(a);

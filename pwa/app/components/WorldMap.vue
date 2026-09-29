@@ -325,8 +325,8 @@ watch(
 .map :deep(.map-label) { margin-top: -2px; font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; line-height: 1; }
 .map :deep(.map-label.mine) { color: #ffe27a; }
 .map :deep(.map-label.theirs) { color: #ff9a8a; }
-.map :deep(.map-cell) { position: relative; }
 .map :deep(.map-landmark) { font-size: 15px; line-height: 1; filter: drop-shadow(0 0 1px #fff); }
+/* (the marker itself is absolutely placed by the map, so the corner mark sits against it) */
 .map :deep(.map-landmark.corner) { position: absolute; top: -8px; right: -12px; font-size: 12px; }
 .map :deep(.map-hp) { display: block; width: 44px; height: 6px; margin-top: 1px; background: rgba(0, 0, 0, 0.55); border-radius: 3px; overflow: hidden; }
 .map :deep(.map-hp i) { display: block; height: 100%; background: #ff4a3a; }

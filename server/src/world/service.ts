@@ -24,6 +24,7 @@ import {
   cellCapacity,
   cellCenter,
   cellsWithin,
+  metersBetween,
   checkAttack,
   combatPower,
   garrisonMin,
@@ -92,6 +93,7 @@ import {
   type CellDetail,
   type CellHappening,
   type CellView,
+  type NearbyLandmark,
   type ExpeditionReport,
   type ExpeditionSummary,
   type Lair,
@@ -1517,6 +1519,28 @@ function lairWith(lair: Lair | null, wounds: { hp: number[]; at: number } | null
     lair: lairView(lair, woundedLairFighters(lair, wounds, now.getTime())),
     lairWounds: { standing: view.standing, total: view.total, hpShare: Math.round(view.hpShare * 100) / 100, healedAt: new Date(view.healedAt).toISOString() },
   };
+}
+
+/** How far around a point landmarks may be looked for, and how many are given back at most. */
+export const LANDMARK_RADIUS = 3000;
+const LANDMARKS_SHOWN = 40;
+
+/** The landmarks within `radius` of a point, the nearest first, with who holds each. */
+export async function landmarksAround(tx: Tx, point: LatLng, radius: number): Promise<NearbyLandmark[]> {
+  const ids = cellsWithin(point, Math.min(radius, LANDMARK_RADIUS));
+  const found = [...(await landmarksFor(tx, ids))].filter((e): e is [string, NonNullable<(typeof e)[1]>] => !!e[1]);
+  const near = found
+    .map(([cell, l]) => {
+      const at = cellCenter(cell);
+      return { cell, lat: at.lat, lng: at.lng, kind: l.kind, name: l.name, km: Math.round(metersBetween(point, at) / 100) / 10 };
+    })
+    .sort((a, b) => a.km - b.km)
+    .slice(0, LANDMARKS_SHOWN);
+  const rows = near.length ? await tx.select({ cell: worldCells.cell, owner: worldCells.owner }).from(worldCells).where(inArray(worldCells.cell, near.map((n) => n.cell))) : [];
+  const owners = new Map<string, WorldOwner>();
+  for (const r of rows) if (r.owner && !owners.has(r.owner)) owners.set(r.owner, await ownerOf(tx, r.owner));
+  const ownerOfCell = new Map(rows.map((r) => [r.cell, r.owner ? owners.get(r.owner)! : null]));
+  return near.map((n) => ({ ...n, owner: ownerOfCell.get(n.cell) ?? null }));
 }
 
 export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date): Promise<CellView[]> {

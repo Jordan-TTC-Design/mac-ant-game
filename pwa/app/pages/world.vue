@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, LANDMARKS, type NearbyLandmark, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
-import { api } from "~/utils/api";
+import { ApiError, api } from "~/utils/api";
 
 // 大世界: the real map with the lairs and camps on it. Tapping a cell brings up a card from the bottom (what is there, and
 // what can be done: attack, settle, send more, build, recall); an action that sends a party opens the dispatch dialog.
@@ -194,6 +194,30 @@ const title = computed(() => {
   return TERRAIN_NAMES[c.terrain];
 });
 const canAct = computed(() => !!s.me?.open && spare.value > 0);
+
+// 附近地標: the landmarks around where the map is looking (3 km), the nearest first; tapping one goes there
+const landmarkList = ref<NearbyLandmark[] | null>(null);
+const landmarkKind = ref("");
+const landmarkBusy = ref(false);
+const landmarkProblem = ref("");
+async function findLandmarks() {
+  landmarkBusy.value = true;
+  landmarkProblem.value = "";
+  try {
+    const at = center.value;
+    landmarkList.value = (await api<{ landmarks: NearbyLandmark[] }>("GET", `world/landmarks?lat=${at.lat.toFixed(6)}&lng=${at.lng.toFixed(6)}`)).landmarks;
+  } catch (e) {
+    landmarkProblem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    landmarkBusy.value = false;
+  }
+}
+const shownLandmarks = computed(() => (landmarkList.value ?? []).filter((l) => !landmarkKind.value || l.kind === landmarkKind.value));
+async function goToLandmark(l: NearbyLandmark) {
+  landmarkList.value = null;
+  await world.moveTo({ lat: l.lat, lng: l.lng });
+  pick(l.cell);
+}
 </script>
 
 <template>
@@ -240,6 +264,30 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
         <p v-if="locateProblem" class="places-note">{{ locateProblem }}</p>
         <p v-else-if="nearby?.length" class="places-note">挑一個公園或地標當營地吧——地圖是真的，別選你家。</p>
       </div>
+
+      <div class="map-tools">
+        <button class="chip" :disabled="landmarkBusy" @click="landmarkList ? (landmarkList = null) : findLandmarks()">
+          {{ landmarkBusy ? "找地標中…" : landmarkList ? "收起地標" : "🏛️ 附近地標" }}
+        </button>
+      </div>
+      <section v-if="landmarkList" class="panel landmarks">
+        <div class="kinds">
+          <button :class="{ on: !landmarkKind }" @click="landmarkKind = ''">全部 {{ landmarkList.length }}</button>
+          <button v-for="k in LANDMARKS.filter((k) => landmarkList!.some((l) => l.kind === k.kind))" :key="k.kind" :class="{ on: landmarkKind === k.kind }" @click="landmarkKind = k.kind">
+            {{ k.icon }} {{ k.name }}
+          </button>
+        </div>
+        <p v-if="!shownLandmarks.length" class="muted small">地圖中心 3 公里內沒有地標，拖到別的地方再找一次。</p>
+        <button v-for="l in shownLandmarks" :key="l.cell" class="landmark-row" @click="goToLandmark(l)">
+          <span class="icon">{{ landmarkRule(l.kind)?.icon }}</span>
+          <span class="grow"><b>{{ l.name }}</b><small>{{ landmarkRule(l.kind)?.name }}・{{ landmarkRule(l.kind)?.blurb }}</small></span>
+          <span class="side">
+            <small>{{ distance(l.km) }}</small>
+            <small :class="l.owner ? (l.owner.id === myId ? 'mine' : 'taken') : 'free'">{{ l.owner ? (l.owner.id === myId ? "你的" : `${l.owner.name}的`) : "沒人佔" }}</small>
+          </span>
+        </button>
+      </section>
+      <p v-if="landmarkProblem" class="status error">{{ landmarkProblem }}</p>
 
       <WorldMap
         ref="mapView"
@@ -440,4 +488,17 @@ p { margin: 6px 0; line-height: 1.55; }
 .landmark { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: #7a5a00; }
 .landmark small { display: block; font-weight: 500; color: var(--muted); }
 .hungry { color: #ffb3a6; font-weight: 700; }
+.map-tools { display: flex; gap: 6px; margin: 0 0 8px; }
+.landmarks { margin-bottom: 10px; padding: 12px; max-height: 50vh; overflow-y: auto; }
+.landmarks .kinds { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
+.landmarks .kinds button { flex: none; border: 0; border-radius: 999px; padding: 5px 10px; background: #f0efe8; font-weight: 700; font-size: 12px; cursor: pointer; }
+.landmarks .kinds button.on { background: var(--green); color: #fff; }
+.landmark-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 2px; border: 0; border-top: 1px solid var(--line); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.landmark-row .icon { font-size: 22px; }
+.landmark-row .grow { flex: 1; min-width: 0; display: grid; }
+.landmark-row .grow small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.landmark-row .side { display: grid; justify-items: end; font-size: 11px; white-space: nowrap; }
+.landmark-row .free { color: var(--green); font-weight: 700; }
+.landmark-row .mine { color: #8a6a00; font-weight: 700; }
+.landmark-row .taken { color: #b3412c; }
 </style>

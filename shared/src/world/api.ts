@@ -276,3 +276,15 @@ export interface CellDetail {
 
 /** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
 export const buildInput = z.object({ kind: z.string().max(40) });
+
+/** `GET /api/world/landmarks?lat=&lng=`: the landmarks around a point (holdings.ts), the nearest first, and who holds each. */
+export interface NearbyLandmark {
+  cell: string;
+  lat: number;
+  lng: number;
+  kind: string;
+  name: string;
+  /** From the point asked about. */
+  km: number;
+  owner: WorldOwner | null;
+}
