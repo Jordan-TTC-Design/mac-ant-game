@@ -172,12 +172,12 @@ function happening(h: CellHappening): string {
         <h2>糧食</h2>
         <p v-if="!d.upkeep.pays">這一格不用吃乾糧（營地和最早佔的 {{ d.upkeep.freeCells }} 格免費）。</p>
         <template v-else>
-          <p>這一格每 3 小時吃 <b>{{ d.upkeep.perYield }}</b> 份乾糧。</p>
+          <p>這一格每 {{ d.upkeep.everyHours }} 小時吃 <b>{{ d.upkeep.perYield }}</b> 份乾糧。</p>
           <p :class="d.upkeep.rations < d.upkeep.paying ? 'warn' : 'muted'">
-            倉庫有 {{ d.upkeep.rations }} 份，{{ d.upkeep.paying }} 格要吃{{ d.upkeep.rations < d.upkeep.paying ? "：不夠了，下次產出會減半" : `，大約夠 ${Math.floor(d.upkeep.rations / d.upkeep.paying) * 3} 小時` }}。
+            倉庫有 {{ d.upkeep.rations }} 份，{{ d.upkeep.paying }} 格要吃{{ d.upkeep.rations < d.upkeep.paying ? "：不夠了，下次產出會減半" : `，大約夠 ${Math.floor(d.upkeep.rations / d.upkeep.paying) * d.upkeep.everyHours} 小時` }}。
           </p>
         </template>
-        <p class="muted small">第 {{ d.upkeep.freeCells + 1 }} 格起，每格每 3 小時吃 1 份乾糧（麵包、魚乾、莓果乾、肉乾都可以）；沒得吃不會死，只是那次產出減半。</p>
+        <p class="muted small">第 {{ d.upkeep.freeCells + 1 }} 格起，每格每 {{ d.upkeep.everyHours }} 小時吃 1 份乾糧（麵包、魚乾、莓果乾、肉乾都可以）；沒得吃不會死，只是那次產出減半。</p>
       </section>
 
       <section v-if="d.guests.length" class="panel">

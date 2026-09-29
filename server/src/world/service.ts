@@ -80,6 +80,8 @@ import {
   RATIONS,
   UPKEEP_FREE_CELLS,
   UPKEEP_RATIONS,
+  UPKEEP_EVERY,
+  upkeepDue,
   GUESTS_MAX,
   type Fighter,
   type CellSurroundings,
@@ -456,10 +458,10 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       if (n >= garrisonMin(camp.race)) {
         for (const [mat, k] of Object.entries(buildingYield(bonus, times, seeded(WORLD_SEED, cell.cell, since.getTime(), "building")))) got[mat] = (got[mat] ?? 0) + k;
       }
-      // a cell beyond the free ones eats rations every yield; hungry, it yields less
+      // a cell beyond the free ones eats a ration every other yield; hungry, it yields less
       let fed = got;
-      if (paying.has(cell.cell)) {
-        const need = times * UPKEEP_RATIONS;
+      const need = paying.has(cell.cell) ? upkeepDue(Math.round((since.getTime() - (cell.heldSince ?? since).getTime()) / (YIELD_HOURS * HOUR)), times) : 0;
+      if (need > 0) {
         const { eaten, paid } = eatRations(camp.materials, need);
         for (const [id, k] of Object.entries(eaten)) {
           camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) - k };
@@ -1358,7 +1360,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
     })),
     atHome,
     guarding: guardingRows.map((g) => ({ cell: g.place.slice(6), holder: g.holder ?? "？", count: g.n })),
-    upkeep: { paying: paying.size, perYield: paying.size * UPKEEP_RATIONS, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS },
+    upkeep: { paying: paying.size, perYield: paying.size * UPKEEP_RATIONS, everyHours: UPKEEP_EVERY * YIELD_HOURS, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS },
     partyCap: partyCap(camp.race, level),
     food: Object.fromEntries(Object.entries(camp.materials).filter(([id, n]) => isFood(id) && n > 0)),
     walking: walking.map((w) => summary(w, userId)),
@@ -1536,7 +1538,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     neighbours: around.neighbours ?? 0,
     region: connectedCells(cell, new Set(mine)).length,
     guests: guestRows.map((g) => ({ owner: g.owner, name: g.name ?? "？", count: g.n })),
-    upkeep: { pays: paying.has(cell), paying: paying.size, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS, perYield: UPKEEP_RATIONS },
+    upkeep: { pays: paying.has(cell), paying: paying.size, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS, perYield: UPKEEP_RATIONS, everyHours: UPKEEP_EVERY * YIELD_HOURS },
     history,
   };
 }

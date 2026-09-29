@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, connectedCells, eatRations, fedYield, heldNeighbours, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
+import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, connectedCells, eatRations, fedYield, upkeepDue, heldNeighbours, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
 import { cellId, neighbors } from "./grid.ts";
 import { materialName } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
@@ -82,6 +82,9 @@ describe("keeping many cells", () => {
     expect(eatRations({ ration_bread: 1, ration_fish: 3, scrap_wood: 9 }, 3)).toEqual({ eaten: { ration_fish: 2, ration_bread: 1 }, paid: 3 });
     expect(eatRations({ ration_berry: 1 }, 3)).toEqual({ eaten: { ration_berry: 1 }, paid: 1 });
     expect(eatRations({}, 2)).toEqual({ eaten: {}, paid: 0 });
+  });
+  it("owes a ration every other yield, counted from when the cell was taken", () => {
+    expect([upkeepDue(0, 1), upkeepDue(1, 1), upkeepDue(0, 2), upkeepDue(3, 5)]).toEqual([0, 1, 1, 3]);
   });
   it("halves a hungry cell's yield, in proportion to how hungry", () => {
     expect(fedYield({ scrap_wood: 8, amber: 1 }, 1)).toEqual({ scrap_wood: 8, amber: 1 });

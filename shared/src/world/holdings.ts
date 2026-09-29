@@ -200,11 +200,18 @@ export function heldNeighbours(cell: string, held: ReadonlySet<string>): number 
 
 /**
  * Holding many cells costs food (server/WORLD.md §20): the camp's own cell and the first UPKEEP_FREE_CELLS others (the
- * longest held) are free; every other one eats UPKEEP_RATIONS of the camp's rations at every yield. A cell that goes
+ * longest held) are free; every other one eats one of the camp's rations every UPKEEP_EVERY yields (every 6 hours; at
+ * every yield was too much: only a cell by water fed itself, balance:territory). A cell that goes
  * hungry is not lost: its yield that time is HUNGRY_YIELD of what it would be.
  */
 export const UPKEEP_FREE_CELLS = 3;
 export const UPKEEP_RATIONS = 1;
+export const UPKEEP_EVERY = 2;
+
+/** How many rations a paying cell owes for `times` yields after the `done` it has had since it was taken. */
+export function upkeepDue(done: number, times: number): number {
+  return (Math.floor((done + times) / UPKEEP_EVERY) - Math.floor(done / UPKEEP_EVERY)) * UPKEEP_RATIONS;
+}
 export const HUNGRY_YIELD = 0.5;
 
 /** Eats `need` rations from the store (the kind there is most of first): what was eaten, and how many. */

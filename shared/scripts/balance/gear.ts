@@ -7,7 +7,7 @@
  *   cd shared && ../server/node_modules/.bin/tsx scripts/balance/gear.ts
  */
 import { CAMP_MONSTERS, campPerHour, GEAR, MONSTER_DROPS, RACE_RANGE, raceRules, residentAsFighter, SCRAP_DROPS, sitePerHour, type Site } from "../../src/camp/index.ts";
-import { FOE_DROPS, LAIRS, MATERIALS, residentFighter, TERRAIN_YIELD, type Fighter } from "../../src/world/index.ts";
+import { BOSSES, BOSSES_BY_DEFAULT, FOE_DROPS, ITEMS, LAIRS, MATERIALS, residentFighter, STRAY_LAIRS, TERRAIN_YIELD, type Fighter } from "../../src/world/index.ts";
 
 const CAMP_SIZE = 150;
 const avg = (d: { chance: number; min: number; max: number }) => (d.chance * (d.min + d.max)) / 2;
@@ -24,10 +24,15 @@ const SITES: Site[] = (["farm", "lumber", "quarry", "mine", "traps", "scrapyard"
 for (const [id, n] of Object.entries(campPerHour("goblin", SITES, 1))) if (!id.startsWith("food_") && !id.startsWith("ration_")) add("營地生產", id, n * 24);
 for (const m of campMonsters) for (const d of [...(MONSTER_DROPS[m.id] ?? []), ...SCRAP_DROPS]) add("來襲", d.id, (avg(d) * perRaid * raidsPerDay) / campMonsters.length);
 for (const [t, list] of Object.entries(TERRAIN_YIELD)) for (const y of list) add(`領地(${t})/天`, y.id, (8 * y.chance * (y.min + y.max)) / 2);
-const open = new Set(LAIRS.filter((l) => l.tier === 1).flatMap((l) => l.members.map((m) => m.foe)));
+// the open lairs: the first tier's (with its 初期魔王 leaders) and the next tier's that stray in (contents.ts)
+const strays = new Set(STRAY_LAIRS.map((s) => s.kind));
+const openLairs = LAIRS.filter((l) => l.tier === 1 || strays.has(l.id));
+const open = new Set(openLairs.flatMap((l) => [...l.members.map((m) => m.foe), ...(l.leader ? [l.leader] : [])]));
 for (const f of open) for (const d of FOE_DROPS[f] ?? []) add(`打${f}/隻`, d.id, avg(d));
-for (const l of LAIRS.filter((l) => l.tier === 1)) for (const d of l.loot) add(`清${l.id}`, d.id, avg(d));
-for (const l of LAIRS.filter((l) => l.tier > 1)) for (const m of l.members) if (!open.has(m.foe)) for (const d of FOE_DROPS[m.foe] ?? []) add(`（未開放）${m.foe}`, d.id, avg(d));
+for (const l of openLairs) for (const d of l.loot) add(`清${l.id}`, d.id, avg(d));
+for (const l of LAIRS.filter((l) => !openLairs.includes(l))) for (const m of l.members) if (!open.has(m.foe)) for (const d of FOE_DROPS[m.foe] ?? []) add(`（未開放）${m.foe}`, d.id, avg(d));
+// the world's great monsters: only while they are out (WORLD_BOSSES=on); off, they count as not open
+for (const b of BOSSES) for (const d of b.drops) add(BOSSES_BY_DEFAULT ? `世界魔王${b.name}` : `（未開放）世界魔王${b.name}（目前關著）`, d.id, avg(d));
 
 /** √(attack × hp) of one plain resident (common breed), unrounded, with `gear` on. */
 function strength(race: string, gear: object | null): number {
@@ -54,16 +59,25 @@ for (const g of GEAR) {
   console.log(`${g.id}\t${g.name}\t${g.slot}\t${g.durability}\t×${gob.toFixed(2)}\t×${elf.toFixed(2)}\t${stats}\t${cost.join(" ")}`);
 }
 
-const used = new Set(GEAR.flatMap((g) => Object.keys(g.cost)));
+const used = new Set([...GEAR.flatMap((g) => Object.keys(g.cost)), ...ITEMS.flatMap((i) => Object.keys(i.cost))]);
 console.log("\n## 裝備要用、但現在拿不到的材料");
 for (const id of used) {
   const s = income[id] ?? {};
-  if (!Object.keys(s).some((k) => !k.startsWith("（未開放）"))) console.log(`${MATERIALS[id]?.name ?? id}（${id}）：${Object.keys(s).join("，") || "完全沒有來源（世界魔王？）"}`);
+  if (!Object.keys(s).some((k) => !k.startsWith("（未開放）"))) console.log(`${MATERIALS[id]?.name ?? id}（${id}）：${Object.keys(s).map((k) => k.replace("（未開放）", "")).join("，") || "完全沒有來源"}`);
 }
-console.log("\n## 沒有任何裝備要用的材料");
-console.log(Object.keys(MATERIALS).filter((id) => !used.has(id) && !id.startsWith("ration_") && !id.startsWith("food_")).map((id) => `${MATERIALS[id]!.name}（${id}）`).join("、"));
+console.log("\n## 沒有任何裝備或道具要用的材料");
+console.log(Object.keys(MATERIALS).filter((id) => !used.has(id) && !id.startsWith("ration_") && !id.startsWith("food_") && !id.startsWith("item_")).map((id) => `${MATERIALS[id]!.name}（${id}）`).join("、"));
 console.log(`\n## 來襲的材料收入（哥布林 ${CAMP_SIZE} 隻，每天 ${raidsPerDay} 次，每次約 ${perRaid} 隻魔獸）`);
 console.log(Object.entries(income).filter(([, s]) => s["來襲"]).sort((a, b) => b[1]["來襲"]! - a[1]["來襲"]!).map(([id, s]) => `${MATERIALS[id]?.name ?? id} ${s["來襲"]!.toFixed(1)}`).join("、"));
+// (BALANCE.md §4.1: a live camp got about half of this — it grows into its size, and not every raid is beaten to the last)
+console.log("\n## 來襲收入照營地大小（每天；假設每隻都打倒，線上實際大約一半）");
+for (const size of [40, 90, 150, 250]) {
+  const monsters = CAMP_MONSTERS.filter((m) => m.level <= (size >= 60 ? 2 : 1));
+  const each = Math.min(12, 2 + Math.floor(size / 30) + 1);
+  const got: Record<string, number> = {};
+  for (const m of monsters) for (const d of [...(MONSTER_DROPS[m.id] ?? []), ...SCRAP_DROPS]) got[d.id] = (got[d.id] ?? 0) + (avg(d) * each * raidsPerDay) / monsters.length;
+  console.log(`${size} 隻：` + Object.entries(got).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id, v]) => `${MATERIALS[id]?.name ?? id} ${v.toFixed(0)}`).join("、"));
+}
 console.log(`\n## 每種場地每天的產量（人手滿；碎晶是期望值）`);
 console.log("種族\t場地\tLv1\tLv2\tLv3");
 for (const race of ["goblin", "elf", "undead"]) {

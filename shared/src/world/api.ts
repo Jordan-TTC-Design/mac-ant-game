@@ -192,7 +192,7 @@ export interface WorldMe {
   /** Where this camp's residents guard friends' cells. */
   guarding: { cell: string; holder: string; count: number }[];
   /** Holding many cells eats rations (holdings.ts): how many cells pay, how many rations every yield, how many are in the store. */
-  upkeep: { paying: number; perYield: number; rations: number; freeCells: number };
+  upkeep: { paying: number; perYield: number; everyHours: number; rations: number; freeCells: number };
   /** How many may go on one expedition now (by race and level), before rations. */
   partyCap: number;
   /** The food in the store for expeditions (supplies.ts), by id. */
@@ -272,7 +272,7 @@ export interface CellDetail {
   /** Friends' residents guarding it, by friend. */
   guests: { owner: string; name: string; count: number }[];
   /** Whether it eats rations (beyond the free cells), and how the store stands against all that do. */
-  upkeep: { pays: boolean; paying: number; rations: number; freeCells: number; perYield: number };
+  upkeep: { pays: boolean; paying: number; rations: number; freeCells: number; perYield: number; everyHours: number };
   history: CellHappening[];
 }
 

@@ -318,13 +318,13 @@ describe("keeping many cells", () => {
     await database.sql`update camps set materials = '{}'::jsonb`;
     const later = new Date(t.now().getTime() + 24 * HOUR).toISOString();
     await database.sql`update world_cells set yielded_to = ${later}::timestamptz where cell in ${database.sql([home, cells[0]!, cells[1]!, cells[2]!])}`;
-    t.advance(3 * HOUR);
+    t.advance(6 * HOUR); // (a ration every other yield)
     const hungry = (await detail(a, cells[3]!)).body.history.find((h) => h.kind === "yield");
     expect(hungry?.hungry).toBe(true);
 
     // with rations: one is eaten every yield
     await database.sql`update camps set materials = '{"ration_fish": 5}'::jsonb`;
-    t.advance(3 * HOUR);
+    t.advance(6 * HOUR);
     w = await me(a);
     const events = (await t.call("GET", "/camp/events?since=0", undefined, a)).body.events as { data: { upkeep?: Record<string, number>; hungry?: string[] } }[];
     expect(events.filter((e) => e.data.upkeep).at(-1)!.data.upkeep).toEqual({ ration_fish: 1 });

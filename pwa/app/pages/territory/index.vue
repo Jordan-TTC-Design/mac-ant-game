@@ -68,7 +68,7 @@ const NEST: Record<TerritoryItem["nest"], string> = { none: "沒有巢", buildin
     <template v-else>
       <div class="tools">
         <p v-if="list.paying" class="food" :class="{ hungry: list.rations < list.paying }">
-          🍞 乾糧 {{ list.rations }}・{{ list.paying }} 格要吃（每 3 小時 {{ list.paying }} 份）
+          🍞 乾糧 {{ list.rations }}・{{ list.paying }} 格要吃（每 6 小時 {{ list.paying }} 份）
         </p>
         <select v-model="sort" aria-label="排序">
           <option value="held">佔領順序</option>

@@ -226,7 +226,7 @@ async function goToLandmark(l: NearbyLandmark) {
       <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
       <div style="flex: 1">
         <h1>大世界</h1>
-        <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}<template v-if="s.me.upkeep?.paying">・<span :class="{ hungry: s.me.upkeep.rations < s.me.upkeep.perYield }">乾糧 {{ s.me.upkeep.rations }}（每 3 小時吃 {{ s.me.upkeep.perYield }}）</span></template></div>
+        <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}<template v-if="s.me.upkeep?.paying">・<span :class="{ hungry: s.me.upkeep.rations < s.me.upkeep.perYield }">乾糧 {{ s.me.upkeep.rations }}（每 {{ s.me.upkeep.everyHours }} 小時吃 {{ s.me.upkeep.perYield }}）</span></template></div>
       </div>
       <NuxtLink to="/leaderboard" class="icon-btn">排行</NuxtLink>
     </header>

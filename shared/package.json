@@ -14,7 +14,8 @@
     "balance:gear": "../server/node_modules/.bin/tsx scripts/balance/gear.ts",
     "balance:lairs": "../server/node_modules/.bin/tsx scripts/balance/lairs.ts",
     "balance:sites": "../server/node_modules/.bin/tsx scripts/balance/sites.ts",
-    "balance:bosses": "../server/node_modules/.bin/tsx scripts/balance/bosses.ts"
+    "balance:bosses": "../server/node_modules/.bin/tsx scripts/balance/bosses.ts",
+    "balance:territory": "../server/node_modules/.bin/tsx scripts/balance/territory.ts"
   },
   "dependencies": {
     "zod": "^4.6.5"
