@@ -65,6 +65,8 @@ function advance() {
   } else if (e.kind === "down") {
     hp[e.target] = 0;
     log.value.unshift(`${t} 倒下了`);
+  } else if (e.kind === "rage") {
+    log.value.unshift(`🩸 ${a} 狂化了！眼睛發紅，攻擊變得更兇猛`);
   }
   if (log.value.length > 6) log.value.length = 6;
 }

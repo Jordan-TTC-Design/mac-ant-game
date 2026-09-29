@@ -207,7 +207,16 @@ export function lairHere(cell: string, row: Pick<CellRow, "clearedAt" | "owner">
 export function lairView(lair: Lair, standing?: ReturnType<typeof lairFighters>): LairView {
   const foes: Record<string, number> = {};
   for (const f of lair.foes) foes[f] = (foes[f] ?? 0) + 1;
-  return { kind: lair.kind, name: lair.name, faction: lair.faction, level: lair.level, count: lair.foes.length, foes, power: Math.round(combatPower(standing ?? lairFighters(lair))) };
+  return {
+    kind: lair.kind,
+    name: lair.name,
+    faction: lair.faction,
+    level: lair.level,
+    count: lair.foes.length,
+    foes,
+    power: Math.round(combatPower(standing ?? lairFighters(lair))),
+    ...(lair.boss ? { boss: true } : {}),
+  };
 }
 
 const bossKey = (b: BossSighting) => `${b.region}@${b.window}`;

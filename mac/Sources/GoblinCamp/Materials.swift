@@ -131,6 +131,16 @@ enum Materials {
         DropSpec(id: "orc_tusk", name: "強獸人獠牙", chance: 0.25, min: 1, max: 1, color: "#e8e0c0"), // 強獸人弓手
         DropSpec(id: "crude_blade", name: "粗鐵刀刃", chance: 0.3, min: 1, max: 1, color: "#7a7a80"), // 強獸人步兵
         DropSpec(id: "war_banner", name: "軍團旗幟", chance: 0.5, min: 1, max: 1, color: "#a02a2a"), // 強獸人隊長
+        DropSpec(id: "giant_bat_wing", name: "巨蝠膜", chance: 1, min: 1, max: 2, color: "#4a3a6a"), // 巨大蝙蝠（初期魔王）
+        DropSpec(id: "echo_fang", name: "回音牙", chance: 0.7, min: 1, max: 2, color: "#d8d0f0"), // 巨大蝙蝠
+        DropSpec(id: "dire_pelt", name: "巨狼皮", chance: 1, min: 1, max: 2, color: "#6a6a78"), // 巨狼
+        DropSpec(id: "dire_fang", name: "巨狼獠牙", chance: 0.7, min: 1, max: 2, color: "#f4f0e4"), // 巨狼
+        DropSpec(id: "royal_gel", name: "王者凝膠", chance: 1, min: 2, max: 3, color: "#58c8e8"), // 史萊姆王
+        DropSpec(id: "slime_crown", name: "史萊姆王冠", chance: 0.35, min: 1, max: 1, color: "#f0c840"), // 史萊姆王
+        DropSpec(id: "lord_tusk", name: "野豬王獠牙", chance: 0.8, min: 1, max: 2, color: "#f4e4c0"), // 野豬王
+        DropSpec(id: "thick_hide", name: "厚野豬皮", chance: 1, min: 1, max: 2, color: "#7a5038"), // 野豬王
+        DropSpec(id: "toad_skin", name: "蛙王皮", chance: 1, min: 1, max: 2, color: "#4a8a3a"), // 蛙王
+        DropSpec(id: "toad_gem", name: "蛙王寶石", chance: 0.35, min: 1, max: 1, color: "#40f0a0"), // 蛙王
         DropSpec(id: "dragon_scale", name: "龍鱗", chance: 0.3, min: 1, max: 1, color: "#c83a2a"), // 小飛龍
         DropSpec(id: "dragon_heart", name: "龍心", chance: 0.25, min: 1, max: 1, color: "#ff5a3a"), // 古龍
         DropSpec(id: "soul_gem", name: "靈魂寶石", chance: 0.8, min: 1, max: 1, color: "#8a5aff"), // 巫妖王

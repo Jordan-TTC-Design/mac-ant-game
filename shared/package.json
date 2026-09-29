@@ -13,7 +13,8 @@
     "fixtures": "node --experimental-strip-types scripts/write-camp-fixtures.ts",
     "balance:gear": "../server/node_modules/.bin/tsx scripts/balance/gear.ts",
     "balance:lairs": "../server/node_modules/.bin/tsx scripts/balance/lairs.ts",
-    "balance:sites": "../server/node_modules/.bin/tsx scripts/balance/sites.ts"
+    "balance:sites": "../server/node_modules/.bin/tsx scripts/balance/sites.ts",
+    "balance:bosses": "../server/node_modules/.bin/tsx scripts/balance/bosses.ts"
   },
   "dependencies": {
     "zod": "^4.6.5"

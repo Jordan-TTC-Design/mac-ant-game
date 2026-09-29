@@ -258,6 +258,27 @@ enum Gears {
              blurb: "蝸牛殼上鑲著河珍珠，閃閃發亮。"),
         Gear(id: "lucky_boots", name: "兔腳靴", slot: .feet, health: 0.2, speed: 0.12, cost: [("rabbit_foot", 1), ("rabbit_fur", 2)], look: .boots, color: rgb(236, 226, 214),
              blurb: "靴子上掛著幸運兔腳，跑起來特別快。"),
+        // 中等 (2026-09-29): from what the 初期魔王 leave (shared/src/world/contents.ts)
+        Gear(id: "dire_fang_blade", name: "巨狼牙刀", slot: .weapon, might: 2.6, cost: [("dire_fang", 2), ("scrap_iron", 5), ("leather_strap", 1)], look: .longSword, color: rgb(244, 240, 228),
+             blurb: "巨狼的獠牙嵌在刀背上，砍下去又深又狠。中等。"),
+        Gear(id: "echo_bow", name: "回音弓", slot: .weapon, grip: .two, might: 2.2, reach: 46, cost: [("echo_fang", 2), ("giant_bat_wing", 1), ("scrap_wood", 5)], look: .bow, color: rgb(90, 70, 130),
+             blurb: "巨大蝙蝠的膜做弓弦，箭飛出去沒有聲音。中等。"),
+        Gear(id: "tusk_maul", name: "野豬王戰鎚", slot: .weapon, grip: .two, might: 3.0, speed: -0.03, cost: [("lord_tusk", 2), ("scrap_iron", 6), ("thick_hide", 1)], look: .greatSword, color: rgb(236, 220, 180),
+             blurb: "野豬王的獠牙綁成的大鎚，很重，但一下就夠。中等。"),
+        Gear(id: "royal_gel_shield", name: "王者凝膠盾", slot: .shield, block: 0.32, cost: [("royal_gel", 3), ("slime_goo", 4)], look: .roundShield, color: rgb(88, 200, 232),
+             blurb: "史萊姆王的凝膠抹成的盾，打上去會彈回去。中等。"),
+        Gear(id: "crown_helm", name: "王冠頭盔", slot: .head, might: 0.2, health: 1.4, cost: [("slime_crown", 1), ("royal_gel", 1)], look: .helm, color: rgb(240, 200, 64),
+             blurb: "史萊姆王頭上的冠，戴起來有點黏，但很神氣。中等。"),
+        Gear(id: "dire_pelt_armor", name: "巨狼皮甲", slot: .chest, health: 2.3, speed: 0.02, cost: [("dire_pelt", 3), ("leather_strap", 1)], look: .cloak, color: rgb(106, 106, 120),
+             blurb: "整張巨狼皮披在身上，又暖又輕。中等。"),
+        Gear(id: "thick_hide_greaves", name: "厚皮護腿", slot: .legs, health: 1.4, cost: [("thick_hide", 3), ("leather_strap", 1)], look: .pants, color: rgb(122, 80, 56),
+             blurb: "野豬王的厚皮做的護腿，荊棘也刺不穿。中等。"),
+        Gear(id: "bat_lord_boots", name: "蝠翼靴", slot: .feet, health: 0.3, speed: 0.14, cost: [("giant_bat_wing", 2), ("frog_skin", 2)], look: .boots, color: rgb(74, 58, 106),
+             blurb: "靴子兩邊縫著蝠翼，走起路來像在飛。中等。"),
+        Gear(id: "toad_gloves", name: "蛙王手套", slot: .hands, might: 0.5, health: 0.6, cost: [("toad_skin", 2), ("toad_gem", 1)], look: .gloves, color: rgb(74, 138, 58),
+             blurb: "蛙王的皮做的手套，手背鑲著一顆寶石。中等。"),
+        Gear(id: "commander_bracer", name: "隊長臂章", slot: .hands, might: 0.6, health: 0.4, cost: [("captain_badge", 1), ("leather_strap", 2)], look: .gauntlet, color: rgb(224, 176, 48),
+             blurb: "強盜頭目的隊長徽章縫在護臂上，一戴就想帶頭衝。中等。"),
         // legendary: from the world's great monsters (shared/src/world/bosses.ts)
         Gear(id: "dragon_scale_armor", name: "龍鱗甲", slot: .chest, health: 4.0, cost: [("dragon_scale", 4), ("leather_strap", 2)], look: .plate, color: rgb(200, 58, 42),
              blurb: "世界魔王古龍的鱗片一片片釘起來，火燒不穿。傳說級。"),
@@ -282,13 +303,14 @@ enum Gears {
         "wolf_fang_spear": 170, "venom_dagger": 140, "silk_bow": 170, "heartwood_staff": 300, "troll_greatsword": 260, "cursed_blade": 220, "knife_pair": 170, "crab_shield": 30, "kappa_shield": 28, "gargoyle_shield": 40, "alpha_helm": 28, "mushroom_hat": 18, "rat_crown_hat": 24, "wolf_cloak": 24, "bear_armor": 32, "bark_armor": 40, "silk_robe": 22, "troll_armor": 44, "boar_leggings": 20, "scale_pants": 22, "tusk_boots": 20, "naiad_slippers": 18, "bear_claws": 30, "golem_gauntlets": 40,
         "tusk_axe": 180, "stinger_rapier": 130, "coin_mail": 30, "horn_helm": 26, "squirrel_hat": 16, "pearl_shield": 24, "lucky_boots": 18,
         "slingshot": 100, "rabbit_cap": 14, "fox_cap": 18, "snail_shield": 20, "beetle_armor": 24, "feather_cloak": 18, "spine_gloves": 16, "goose_boots": 14,
+        "dire_fang_blade": 200, "echo_bow": 170, "tusk_maul": 220, "royal_gel_shield": 30, "crown_helm": 26, "dire_pelt_armor": 30, "thick_hide_greaves": 24, "bat_lord_boots": 22, "toad_gloves": 24, "commander_bracer": 26,
         "dragon_scale_armor": 60, "lich_staff": 320, "giant_hammer": 300, "hydra_bow": 220, "minotaur_helm": 40,
     ]
 
     /// Pieces that cannot be made yet: something they need comes only from big-world places not open yet (or the great
     /// monsters, while they are away). The same as shared/src/world/availability.ts `unopenedGear()` (mac-sync.test.ts checks).
     static let unopened: Set<String> = [
-        "venom_dagger", "silk_bow", "heartwood_staff", "troll_greatsword", "cursed_blade", "knife_pair", "crab_shield", "kappa_shield", "gargoyle_shield", "bear_armor", "bark_armor", "silk_robe", "troll_armor", "naiad_slippers", "bear_claws", "golem_gauntlets", "dragon_scale_armor", "lich_staff", "giant_hammer", "hydra_bow", "minotaur_helm",
+        "heartwood_staff", "troll_greatsword", "cursed_blade", "gargoyle_shield", "bark_armor", "troll_armor", "golem_gauntlets", "dragon_scale_armor", "lich_staff", "giant_hammer", "hydra_bow", "minotaur_helm",
     ]
 
     static func by(id: String) -> Gear? { byID[id] }

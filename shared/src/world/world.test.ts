@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { combatPower, lairFighters, residentFighter, simulateBattle, type Fighter, type Resident } from "./battle.ts";
 import { BOSS_HOURS, BOSS_ROUNDS, bossAt, bossFighters, bossIn, bossKind, bossMaxHp, bossShares, bossWindow, regionOf } from "./bosses.ts";
-import { FOES, LAIRS, lairAt, lootFor, OPEN_TIERS, type Lair } from "./contents.ts";
+import { FOES, LAIRS, lairAt, lairKindsFor, lootFor, OPEN_TIERS, type Lair } from "./contents.ts";
 import { dropsOf, lairDrops, MATERIALS } from "./drops.ts";
 import { WORLD_SEED, expeditionInput } from "./api.ts";
 import { terrainAt } from "./terrain.ts";
@@ -70,21 +70,51 @@ describe("what lives in a cell", () => {
     const share = forest.length / cells.length;
     expect(share).toBeGreaterThan(0.3);
     expect(share).toBeLessThan(0.6);
-    const allowed = new Set(LAIRS.filter((l) => l.tier <= OPEN_TIERS && (l.terrain.forest ?? 0) > 0).map((l) => l.id));
+    const kinds = lairKindsFor("forest");
+    const allowed = new Set([...kinds.usual, ...kinds.rare]);
     for (const l of forest) {
       expect(allowed.has(l.kind)).toBe(true);
       expect(l.foes.length).toBeGreaterThan(0);
     }
-    // water only ever has what lives by water (and every one of those turns up)
-    const byWater = new Set(LAIRS.filter((l) => l.tier <= OPEN_TIERS && (l.terrain.water ?? 0) > 0).map((l) => l.id));
+    // water only ever has what lives by water (and every usual one of those turns up)
+    const water = lairKindsFor("water");
     const seen = new Set<string>();
     for (const c of cells) {
       const l = lairAt(1, c, "water");
       if (!l) continue;
-      expect(byWater.has(l.kind)).toBe(true);
+      expect([...water.usual, ...water.rare]).toContain(l.kind);
       seen.add(l.kind);
     }
-    expect([...seen].sort()).toEqual([...byWater].sort());
+    for (const k of water.usual) expect(seen.has(k), k).toBe(true);
+  });
+
+  it("puts a 初期魔王 or a stray of the next tier in a few of the cells that would be empty, and leaves the others be", () => {
+    const cells = cellsWithin(DAAN.middle, 3000);
+    let bosses = 0, strays = 0, empty = 0;
+    for (const c of cells) {
+      const l = lairAt(1, c, "forest");
+      if (!l) {
+        empty++;
+        continue;
+      }
+      const kind = LAIRS.find((k) => k.id === l.kind)!;
+      if (kind.boss) {
+        bosses++;
+        expect(l.boss).toBe(true);
+        expect(l.foes[0]).toBe(kind.leader); // (the big one leads)
+        expect(l.foes.filter((f) => f === kind.leader)).toHaveLength(1);
+      } else if (kind.tier > OPEN_TIERS) {
+        strays++;
+        expect(l.level).toBeLessThanOrEqual(2);
+      }
+    }
+    const free = empty + bosses + strays;
+    expect(bosses / free).toBeGreaterThan(0.005);
+    expect(bosses / free).toBeLessThan(0.05);
+    expect(strays / free).toBeGreaterThan(0.02);
+    expect(strays / free).toBeLessThan(0.12);
+    // the leader drops the middle gear's makings
+    for (const k of LAIRS.filter((l) => l.boss)) expect(dropsOf(k.leader!).length, k.id).toBeGreaterThan(0);
   });
 
   it("gives every kind of place its own foes, and every foe something to drop", () => {

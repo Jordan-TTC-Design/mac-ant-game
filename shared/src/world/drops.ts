@@ -110,6 +110,17 @@ export const MATERIALS: Record<string, MaterialInfo> = {
   orc_tusk: { name: "強獸人獠牙", color: "#e8e0c0" },
   crude_blade: { name: "粗鐵刀刃", color: "#7a7a80" },
   war_banner: { name: "軍團旗幟", color: "#a02a2a" },
+  // what the 初期魔王 leave (2026-09-29): the middle gear is made of them (camp/gear.ts)
+  giant_bat_wing: { name: "巨蝠膜", color: "#4a3a6a" },
+  echo_fang: { name: "回音牙", color: "#d8d0f0" },
+  dire_pelt: { name: "巨狼皮", color: "#6a6a78" },
+  dire_fang: { name: "巨狼獠牙", color: "#f4f0e4" },
+  royal_gel: { name: "王者凝膠", color: "#58c8e8" },
+  slime_crown: { name: "史萊姆王冠", color: "#f0c840" },
+  lord_tusk: { name: "野豬王獠牙", color: "#f4e4c0" },
+  thick_hide: { name: "厚野豬皮", color: "#7a5038" },
+  toad_skin: { name: "蛙王皮", color: "#4a8a3a" },
+  toad_gem: { name: "蛙王寶石", color: "#40f0a0" },
   // what the world's great monsters leave (bosses.ts)
   dragon_scale: { name: "龍鱗", color: "#c83a2a" },
   dragon_heart: { name: "龍心", color: "#ff5a3a" },
@@ -179,6 +190,12 @@ export const FOE_DROPS: Record<string, DropRule[]> = {
   orc_grunt: [d("orc_tusk", 0.45), d("crude_blade", 0.3), d("ration_jerky", 0.4)],
   orc_archer: [d("feather", 0.5, 1, 2), d("orc_tusk", 0.25)],
   orc_chief: [d("war_banner", 0.5), d("orc_tusk", 1, 1, 2), d("crude_blade", 0.6)],
+  // 初期魔王 (contents.ts)
+  giant_bat: [d("giant_bat_wing", 1, 1, 2), d("echo_fang", 0.7, 1, 2), d("night_heart", 0.15)],
+  dire_wolf: [d("dire_pelt", 1, 1, 2), d("dire_fang", 0.7, 1, 2), d("alpha_mane", 0.3)],
+  slime_king: [d("royal_gel", 1, 2, 3), d("slime_crown", 0.35), d("shiny_bead", 0.3)],
+  boar_lord: [d("lord_tusk", 0.8, 1, 2), d("thick_hide", 1, 1, 2)],
+  toad_king: [d("toad_skin", 1, 1, 2), d("toad_gem", 0.35), d("golden_frog_eye", 0.2)],
 };
 
 /** The drops of one foe kind (the big world's, or the camp's own monsters'). */

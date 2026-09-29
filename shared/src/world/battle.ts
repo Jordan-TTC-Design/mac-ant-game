@@ -33,7 +33,13 @@ export interface Fighter {
   lead: number;
   /** Attack × this at night (the dark ones). */
   night: number;
+  /** 狂化: once it is down to RAGE_BELOW of its hit points it goes berserk — attack +this share, and quicker (a 初期魔王). */
+  rage?: number;
 }
+
+/** A berserker goes wild below this share of its hit points, and acts this much quicker then. */
+export const RAGE_BELOW = 0.5;
+export const RAGE_SPEED = 1.25;
 
 /** A resident as the camp knows it (the numbers are its breed's stats; see RACES.md and the Mac's manifests). */
 export interface Resident {
@@ -126,6 +132,7 @@ export function lairFighters(lair: Lair): Fighter[] {
       hp: Math.round(foe.hp * hpScale),
       maxHp: Math.round(foe.hp * hpScale),
       attack: foe.attack * attackScale,
+      ...(foe.rage ? { rage: foe.rage } : {}),
       range: foe.range,
       speed: foe.speed,
       heal: Math.round((foe.heal ?? 0) * attackScale),
@@ -175,7 +182,7 @@ export function lairWoundsView(lair: Lair, wounds: LairWounds, now: number): { h
   return { healedAt: last, standing: now_.length, total: fresh.length, hpShare: now_.reduce((s, f) => s + f.hp, 0) / Math.max(1, max) };
 }
 
-export type BattleEventKind = "hit" | "miss" | "heal" | "down";
+export type BattleEventKind = "hit" | "miss" | "heal" | "down" | "rage";
 
 /** One thing that happened, for the replay: in round `round`, `actor` did `kind` to `target`. */
 export interface BattleEvent {
@@ -223,16 +230,24 @@ function pickTarget(actor: Fighter, enemies: Fighter[], random: Random): Fighter
 export function simulateBattle(attackers: Fighter[], defenders: Fighter[], options: BattleOptions): BattleResult {
   const random = randomFrom(options.seed);
   const maxRounds = options.maxRounds ?? MAX_ROUNDS;
-  const all = [...attackers, ...defenders].map((f) => ({ ...f }));
+  const all = [...attackers, ...defenders].map((f) => ({ ...f, raging: false }));
   const events: BattleEvent[] = [];
   const alive = (side: Side) => all.some((f) => f.side === side && f.hp > 0);
   let round = 0;
   while (round < maxRounds && alive("attack") && alive("defend")) {
     round++;
     // the quickest act first; a little luck breaks ties and keeps it from being the same every round
-    const order = all.filter((f) => f.hp > 0).map((f) => ({ f, key: f.speed + random() * 0.2 })).sort((a, b) => b.key - a.key);
+    const order = all
+      .filter((f) => f.hp > 0)
+      .map((f) => ({ f, key: f.speed * (f.raging ? RAGE_SPEED : 1) + random() * 0.2 }))
+      .sort((a, b) => b.key - a.key);
     for (const { f: actor } of order) {
       if (actor.hp <= 0) continue;
+      // a berserker, badly hurt, goes wild
+      if (actor.rage && !actor.raging && actor.hp < actor.maxHp * RAGE_BELOW) {
+        actor.raging = true;
+        events.push({ round, actor: actor.id, target: actor.id, kind: "rage" });
+      }
       const own = all.filter((f) => f.side === actor.side);
       const enemies = all.filter((f) => f.side !== actor.side);
       if (enemies.every((f) => f.hp <= 0)) break;
@@ -251,7 +266,7 @@ export function simulateBattle(attackers: Fighter[], defenders: Fighter[], optio
         events.push({ round, actor: actor.id, target: target.id, kind: "miss" });
         continue;
       }
-      const power = actor.attack * (1 + leadOf(all, actor.side)) * (options.night ? actor.night : 1) * (0.8 + random() * 0.4);
+      const power = actor.attack * (actor.raging ? 1 + (actor.rage ?? 0) : 1) * (1 + leadOf(all, actor.side)) * (options.night ? actor.night : 1) * (0.8 + random() * 0.4);
       const amount = Math.max(1, Math.round(power * (1 - target.guard)));
       target.hp = Math.max(0, target.hp - amount);
       events.push({ round, actor: actor.id, target: target.id, kind: "hit", amount });
@@ -280,7 +295,8 @@ export function combatPower(fighters: Fighter[]): number {
   if (fighters.length === 0) return 0;
   const lead = 1 + Math.min(LEAD_CAP, fighters.reduce((sum, f) => sum + f.lead, 0));
   // (quicker ones strike first and more often before they fall; a share of blows turned aside makes hit points last longer)
-  const hitting = fighters.reduce((total, f) => total + (f.attack * lead + f.heal) * (f.range > 0 ? 1.1 : 1) * (1 + 0.3 * (f.speed - 1)), 0);
+  // (a berserker is wild for about half the fight)
+  const hitting = fighters.reduce((total, f) => total + (f.attack * (1 + (f.rage ?? 0) / 2) * lead + f.heal) * (f.range > 0 ? 1.1 : 1) * (1 + 0.3 * (f.speed - 1)), 0);
   const lasting = fighters.reduce((total, f) => total + f.hp / (1 - Math.min(0.6, f.guard)), 0);
   return Math.round(Math.sqrt(hitting * lasting));
 }

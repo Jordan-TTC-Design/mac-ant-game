@@ -1120,6 +1120,69 @@ ICONS["orc_chief"] = Icon(sym([
 ]), dict(ORC, r=(170, 40, 40), I=(96, 100, 110)))
 
 
+# --- 初期魔王 (2026-09-29): the big one of a beginners' kind — its kind's icon in its own colours, with a crown ----------
+class Crowned:
+    """Another icon's pixels, tinted, with a little gold crown on top (a 初期魔王 of that kind). It has gone berserk (狂化):
+    its eyes glow red, and there is blood on it and dripping from it."""
+
+    EYES = {(24, 22, 30), (250, 214, 70)}
+    BLOOD, DARK_BLOOD, GLOW = (176, 18, 28), (110, 10, 18), (255, 48, 40)
+
+    CROWN = [(6, 0), (9, 0), (6, 1), (7, 1), (8, 1), (9, 1), (5, 2), (6, 2), (7, 2), (8, 2), (9, 2), (10, 2)]
+    GEMS = [(7, 2), (8, 2)]
+
+    def __init__(self, base, tint):
+        self.base, self.tint = base, tint
+
+    def pixels(self):
+        out = []
+        for row in self.base.pixels():
+            line = []
+            for (r, g, b, a) in row:
+                if a and (r, g, b) in self.EYES:
+                    line.append(self.GLOW + (255,))  # (eyes gone red)
+                elif a and (r, g, b) != (34, 28, 34):
+                    tr, tg, tb = self.tint
+                    line.append((min(255, int(r * tr)), min(255, int(g * tg)), min(255, int(b * tb)), a))
+                else:
+                    line.append((r, g, b, a))
+            out.append(line)
+        # blood on its lower half, and a few drops falling from it
+        body = lambda x, y: out[y][x][3] and out[y][x][:3] != (34, 28, 34) and out[y][x][:3] != self.GLOW
+        for y in range(8, SIZE):
+            for x in range(SIZE):
+                if body(x, y) and (x * 7 + y * 3) % 9 == 0:
+                    out[y][x] = (self.BLOOD if (x + y) % 2 else self.DARK_BLOOD) + (255,)
+        for x, length in ((5, 2), (9, 1), (11, 2)):
+            bottom = max((y for y in range(SIZE) if out[y][x][3]), default=None)
+            if bottom is None:
+                continue
+            for k in range(1, length + 1):
+                if bottom + k < SIZE and out[bottom + k][x][3] == 0:
+                    out[bottom + k][x] = self.BLOOD + (255,)
+        # the crown sits on the head: its lowest row one below the creature's top (a short one, like the frog, is lower)
+        top = min((y for y in range(SIZE) for x in range(5, 11) if out[y][x][3]), default=2)
+        down = max(0, top - 1)
+        for (x, y) in self.CROWN:
+            out[y + down][x] = (250, 214, 70, 255)
+        for (x, y) in self.GEMS:
+            out[y + down][x] = (220, 50, 60, 255)
+        # a dark edge round the crown, where it stands clear of the creature
+        for (x, y) in self.CROWN:
+            for dx, dy in ((0, -1), (-1, 0), (1, 0)):
+                nx, ny = x + dx, y + down + dy
+                if 0 <= nx < SIZE and 0 <= ny < SIZE and out[ny][nx][3] == 0:
+                    out[ny][nx] = (34, 28, 34, 255)
+        return out
+
+
+ICONS["giant_bat"] = Crowned(ICONS["vampire_bat"], (1.0, 0.55, 0.9))
+ICONS["dire_wolf"] = Crowned(ICONS["alpha_wolf"], (0.8, 0.62, 0.66))
+ICONS["slime_king"] = Crowned(ICONS["big_slime"], (1.1, 0.8, 1.0))
+ICONS["boar_lord"] = Crowned(ICONS["boar"], (1.25, 0.7, 0.6))
+ICONS["toad_king"] = Crowned(ICONS["frog"], (1.0, 0.95, 0.6))
+
+
 def sheet():
     ids = list(ICONS)
     rows = (len(ids) + COLS - 1) // COLS

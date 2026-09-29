@@ -9,7 +9,7 @@ import { GEAR } from "../camp/gear.ts";
 import { GATHERING, SITE_RULES } from "../camp/sites.ts";
 import { CAMP_MONSTERS } from "../camp/raids.ts";
 import { BOSSES, BOSSES_BY_DEFAULT } from "./bosses.ts";
-import { LAIRS, OPEN_TIERS } from "./contents.ts";
+import { LAIRS, OPEN_TIERS, STRAY_LAIRS } from "./contents.ts";
 import { FOE_DROPS } from "./drops.ts";
 import { TERRAIN_YIELD } from "./territory.ts";
 
@@ -20,9 +20,11 @@ export function openMaterials(bosses = BOSSES_BY_DEFAULT): Set<string> {
   for (const rule of SITE_RULES) for (const v of [rule.base, ...Object.values(rule.races ?? {})]) for (const id of [...Object.keys(v.makes ?? {}), ...Object.keys(v.finds ?? {})]) out.add(id);
   for (const m of CAMP_MONSTERS) for (const d of MONSTER_DROPS[m.id] ?? []) out.add(d.id);
   for (const list of Object.values(TERRAIN_YIELD)) for (const y of list) out.add(y.id);
-  for (const lair of LAIRS.filter((l) => l.tier <= OPEN_TIERS)) {
+  // the open tiers' lairs (their 初期魔王 too), and the next tier's that stray in
+  const strays = new Set(STRAY_LAIRS.map((s) => s.kind));
+  for (const lair of LAIRS.filter((l) => l.tier <= OPEN_TIERS || strays.has(l.id))) {
     for (const d of lair.loot) out.add(d.id);
-    for (const m of lair.members) for (const d of FOE_DROPS[m.foe] ?? []) out.add(d.id);
+    for (const foe of [...lair.members.map((m) => m.foe), ...(lair.leader ? [lair.leader] : [])]) for (const d of FOE_DROPS[foe] ?? []) out.add(d.id);
   }
   if (bosses) for (const kind of BOSSES) for (const d of kind.drops) out.add(d.id);
   return out;

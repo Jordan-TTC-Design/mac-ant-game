@@ -349,6 +349,7 @@ async function goToLandmark(l: NearbyLandmark) {
         </span>
         <div class="grow">
           <h2>{{ title }}<small v-if="cell.lair"> {{ cell.lair.level }} 級</small></h2>
+          <p v-if="cell.lair?.boss" class="boss-tag">👑 初期魔王：比一般巢穴強很多，會掉做中等裝備的材料。打輸了傷會留著，可以找朋友接著打。</p>
           <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && !mine ? `・從營地走約 ${minutesTo} 分鐘` : "" }}</p>
           <p v-if="cell.landmark" class="landmark">{{ landmarkRule(cell.landmark.kind)?.icon }} {{ cell.landmark.name }}（{{ landmarkRule(cell.landmark.kind)?.name }}）<small>{{ landmarkRule(cell.landmark.kind)?.blurb }}</small></p>
         </div>
@@ -501,4 +502,5 @@ p { margin: 6px 0; line-height: 1.55; }
 .landmark-row .free { color: var(--green); font-weight: 700; }
 .landmark-row .mine { color: #8a6a00; font-weight: 700; }
 .landmark-row .taken { color: #b3412c; }
+.boss-tag { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a5a00; }
 </style>

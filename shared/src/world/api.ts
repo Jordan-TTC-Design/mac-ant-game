@@ -55,7 +55,7 @@ export const battleEventSchema = z.object({
   round: z.number().int(),
   actor: z.string(),
   target: z.string(),
-  kind: z.enum(["hit", "miss", "heal", "down"]),
+  kind: z.enum(["hit", "miss", "heal", "down", "rage"]),
   amount: z.number().optional(),
 });
 
@@ -76,6 +76,8 @@ export interface LairView {
   foes: Record<string, number>;
   /** The number to compare with a party's (combatPower). */
   power: number;
+  /** A 初期魔王's lair (contents.ts): rare, tough, and it leaves the middle gear's makings. */
+  boss?: boolean;
 }
 
 /** A great monster of the world as the map shows it (bosses.ts). */

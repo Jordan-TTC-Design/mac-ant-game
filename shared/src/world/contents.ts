@@ -27,6 +27,8 @@ export interface FoeTemplate {
   heal?: number;
   /** Stronger at night (the dark ones): attack × this at night. */
   night?: number;
+  /** 狂化 (battle.ts): goes berserk when badly hurt — a 初期魔王, a beast of little wit grown big and wild. */
+  rage?: number;
 }
 
 export interface LairKind {
@@ -47,6 +49,12 @@ export interface LairKind {
   levels: [number, number];
   /** 1 新手, 2 中級, 3 高級: only tiers up to OPEN_TIERS turn up (the world opens up bit by bit, as in RO or MapleStory). */
   tier: 1 | 2 | 3;
+  /**
+   * 初期魔王 (server/WORLD.md §21): a big one of its kind (`leader`, always there, first) with a few of its kind round it.
+   * Turns up only now and then, in cells that would otherwise be empty (see lairAt), so the lairs already there stay put.
+   */
+  boss?: boolean;
+  leader?: string;
 }
 
 /**
@@ -119,6 +127,14 @@ export const FOES: Record<string, FoeTemplate> = {
   hydra: { id: "hydra", name: "九頭蛇", hp: 8500, attack: 16, range: 0, speed: 1.2, row: "front" },
   minotaur: { id: "minotaur", name: "牛頭人", hp: 7500, attack: 30, range: 0, speed: 1.0, row: "front" },
   drake: { id: "drake", name: "小飛龍", hp: 60, attack: 10, range: 0, speed: 1.4, row: "front" },
+  // 初期魔王 (2026-09-29): one big one of a beginners' kind, leading a few of its kind; a party of the first gear and a
+  // second wave (its wounds stay) can take it, and it leaves what the middle gear is made of (camp/gear.ts). A beast of
+  // little wit grown this big has gone wild: hurt badly, it goes berserk (狂化, battle.ts)
+  giant_bat: { id: "giant_bat", name: "嗜血巨蝠", hp: 230, attack: 13, range: 0, speed: 1.8, row: "front", night: 1.4, rage: 0.5 },
+  dire_wolf: { id: "dire_wolf", name: "狂暴巨狼", hp: 220, attack: 14, range: 0, speed: 1.5, row: "front", rage: 0.5 },
+  slime_king: { id: "slime_king", name: "狂化史萊姆王", hp: 420, attack: 17, range: 0, speed: 0.5, row: "front", heal: 10, rage: 0.5 },
+  boar_lord: { id: "boar_lord", name: "暴怒野豬王", hp: 230, attack: 15, range: 0, speed: 1.0, row: "front", rage: 0.5 },
+  toad_king: { id: "toad_king", name: "狂化蛙王", hp: 300, attack: 13, range: 20, speed: 0.8, row: "back", rage: 0.5 },
 };
 
 const SCRAP = [
@@ -314,7 +330,70 @@ export const LAIRS: LairKind[] = [
     terrain: { road: 1, open: 1 },
     loot: [...SCRAP.map((x) => ({ ...x, min: x.min * 2, max: x.max * 2 }))], respawnHours: 12, levels: [3, 7], tier: 2,
   },
+  // 初期魔王 (2026-09-29): rare, in cells that would otherwise be empty (lairAt); their loot is the camp's odds and ends,
+  // what they are after is what the big ones drop (world/drops.ts)
+  {
+    id: "giant_bat_roost", name: "巨大蝙蝠洞", faction: "dark", group: [3, 5], boss: true, leader: "giant_bat",
+    members: [{ foe: "bat", weight: 1 }],
+    terrain: { urban: 2, forest: 1, open: 1 },
+    loot: [...SCRAP, { id: "crystal_shard", min: 1, max: 1, chance: 0.3 }], respawnHours: 24, levels: [2, 4], tier: 1,
+  },
+  {
+    id: "dire_wolf_den", name: "巨狼巢", faction: "beast", group: [3, 4], boss: true, leader: "dire_wolf",
+    members: [{ foe: "wolf", weight: 1 }],
+    terrain: { forest: 3, park: 2 },
+    loot: [{ id: "scrap_rag", min: 2, max: 4, chance: 1 }, { id: "crystal_shard", min: 1, max: 1, chance: 0.3 }], respawnHours: 24, levels: [2, 4], tier: 1,
+  },
+  {
+    id: "slime_king_pool", name: "史萊姆王池", faction: "monster", group: [4, 6], boss: true, leader: "slime_king",
+    members: [{ foe: "big_slime", weight: 2 }, { foe: "slime", weight: 1 }],
+    terrain: { park: 2, water: 2, open: 1 },
+    loot: [...SCRAP, { id: "crystal_shard", min: 1, max: 2, chance: 0.3 }], respawnHours: 24, levels: [2, 4], tier: 1,
+  },
+  {
+    id: "boar_lord_thicket", name: "野豬王林", faction: "beast", group: [2, 3], boss: true, leader: "boar_lord",
+    members: [{ foe: "boar", weight: 1 }],
+    terrain: { forest: 2, open: 2 },
+    loot: [{ id: "scrap_rag", min: 2, max: 4, chance: 1 }, { id: "crystal_shard", min: 1, max: 1, chance: 0.3 }], respawnHours: 24, levels: [2, 4], tier: 1,
+  },
+  {
+    id: "toad_king_marsh", name: "蛙王沼澤", faction: "beast", group: [3, 5], boss: true, leader: "toad_king",
+    members: [{ foe: "frog", weight: 3 }, { foe: "water_snake", weight: 1 }],
+    terrain: { water: 3 },
+    loot: [...SCRAP, { id: "crystal_shard", min: 1, max: 1, chance: 0.3 }], respawnHours: 24, levels: [2, 4], tier: 1,
+  },
+  {
+    id: "robber_chief_camp", name: "強盜頭目營", faction: "barbarian", group: [4, 6], boss: true, leader: "bandit_boss",
+    members: [{ foe: "bandit", weight: 2 }, { foe: "robber", weight: 1 }],
+    terrain: { road: 3, urban: 1 },
+    loot: [...SCRAP, { id: "stolen_coin", min: 2, max: 4, chance: 1 }], respawnHours: 24, levels: [2, 4], tier: 1,
+  },
 ];
+
+/**
+ * 中級的巢穴 that stray into the beginners' world (2026-09-29): now and then, in a cell that would otherwise be empty, one of
+ * these at low levels, so what the next tier's gear is made of can be had a little before that tier opens.
+ */
+export const STRAY_LAIRS: { kind: string; levels: [number, number] }[] = [
+  { kind: "spider_nest", levels: [1, 2] },
+  { kind: "bat_cave", levels: [1, 2] },
+  { kind: "kappa_pond", levels: [1, 2] },
+  { kind: "crab_shore", levels: [1, 2] },
+  { kind: "bear_cave", levels: [1, 2] },
+  { kind: "bandit_hideout", levels: [1, 2] },
+];
+/** Of the cells that would be empty: how many hold a 初期魔王, and how many a stray lair of the next tier. */
+export const BOSS_LAIR_CHANCE = 0.02;
+export const STRAY_LAIR_CHANCE = 0.06;
+
+/** Every kind that may turn up on this ground now: the usual ones, the 初期魔王 and the strays. */
+export function lairKindsFor(terrain: Terrain): { usual: string[]; rare: string[] } {
+  const here = (l: LairKind) => (l.terrain[terrain] ?? 0) > 0;
+  return {
+    usual: LAIRS.filter((l) => l.tier <= OPEN_TIERS && !l.boss && here(l)).map((l) => l.id),
+    rare: [...LAIRS.filter((l) => l.tier <= OPEN_TIERS && l.boss && here(l)), ...STRAY_LAIRS.map((s) => LAIRS.find((l) => l.id === s.kind)!).filter(here)].map((l) => l.id),
+  };
+}
 
 /** How likely a free cell is to hold anything at all, by terrain. */
 const OCCUPIED: Record<Terrain, number> = { forest: 0.45, park: 0.4, water: 0.2, urban: 0.35, open: 0.3, road: 0.4 };
@@ -327,21 +406,49 @@ export interface Lair {
   level: number;
   /** The foes, in order; the battle scales each by `level`. */
   foes: string[];
+  /** A 初期魔王's lair (its leader first in `foes`). */
+  boss?: boolean;
 }
 
 /** What is in a free cell (nil = nothing). The same seed and cell always give the same answer. */
 export function lairAt(worldSeed: number, cell: CellId, terrain: Terrain = "open"): Lair | null {
   const random = seeded(worldSeed, cell, "lair");
-  if (random() >= OCCUPIED[terrain]) return null;
-  const candidates = LAIRS.filter((l) => l.tier <= OPEN_TIERS && (l.terrain[terrain] ?? 0) > 0);
+  if (random() >= OCCUPIED[terrain]) return rareLairAt(worldSeed, cell, terrain);
+  const candidates = LAIRS.filter((l) => l.tier <= OPEN_TIERS && !l.boss && (l.terrain[terrain] ?? 0) > 0);
   if (candidates.length === 0) return null;
   const kind = pickWeighted(random, candidates, (l) => l.terrain[terrain] ?? 0);
+  return makeLair(cell, kind, kind.levels, random);
+}
+
+/**
+ * What a cell that would be empty may hold now and then: a 初期魔王 or a stray lair of the next tier (their own random
+ * numbers, so the ordinary lairs are where they always were).
+ */
+function rareLairAt(worldSeed: number, cell: CellId, terrain: Terrain): Lair | null {
+  const random = seeded(worldSeed, cell, "rare-lair");
+  const roll = random();
+  if (roll < BOSS_LAIR_CHANCE) {
+    const bosses = LAIRS.filter((l) => l.tier <= OPEN_TIERS && l.boss && (l.terrain[terrain] ?? 0) > 0);
+    if (bosses.length === 0) return null;
+    const kind = pickWeighted(random, bosses, (l) => l.terrain[terrain] ?? 0);
+    return makeLair(cell, kind, kind.levels, random);
+  }
+  if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE) {
+    const strays = STRAY_LAIRS.map((s) => ({ kind: LAIRS.find((l) => l.id === s.kind)!, levels: s.levels })).filter((s) => (s.kind.terrain[terrain] ?? 0) > 0);
+    if (strays.length === 0) return null;
+    const pick = pickWeighted(random, strays, (s) => s.kind.terrain[terrain] ?? 0);
+    return makeLair(cell, pick.kind, pick.levels, random);
+  }
+  return null;
+}
+
+function makeLair(cell: CellId, kind: LairKind, levels: [number, number], random: Random): Lair {
   // low levels are common, high ones rare
-  const [lo, hi] = kind.levels;
+  const [lo, hi] = levels;
   const level = lo + Math.floor((hi - lo + 1) * random() ** 2);
   const count = between(random, kind.group[0], kind.group[1]);
-  const foes = Array.from({ length: count }, () => pickWeighted(random, kind.members, (m) => m.weight).foe);
-  return { cell, kind: kind.id, name: kind.name, faction: kind.faction, level, foes };
+  const foes = Array.from({ length: kind.leader ? count - 1 : count }, () => pickWeighted(random, kind.members, (m) => m.weight).foe);
+  return { cell, kind: kind.id, name: kind.name, faction: kind.faction, level, foes: kind.leader ? [kind.leader, ...foes] : foes, ...(kind.boss ? { boss: true } : {}) };
 }
 
 /** What clearing a lair drops (for the winner to carry home). */

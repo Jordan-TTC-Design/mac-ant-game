@@ -105,6 +105,17 @@ export const GEAR: readonly GearRule[] = [
   g("squirrel_hat", "松鼠尾帽", "head", 16, { squirrel_tail: 2, scrap_rag: 1 }, { health: 0.8, speed: 0.04 }),
   g("pearl_shield", "珍珠貝盾", "shield", 24, { river_pearl: 1, snail_shell: 2 }, { block: 0.22 }),
   g("lucky_boots", "兔腳靴", "feet", 18, { rabbit_foot: 1, rabbit_fur: 2 }, { health: 0.2, speed: 0.12 }),
+  // 中等 (2026-09-29): from what the 初期魔王 leave (world/contents.ts); a step above the first lairs' gear
+  g("dire_fang_blade", "巨狼牙刀", "weapon", 200, { dire_fang: 2, scrap_iron: 5, leather_strap: 1 }, { might: 2.6 }),
+  g("echo_bow", "回音弓", "weapon", 170, { echo_fang: 2, giant_bat_wing: 1, scrap_wood: 5 }, { might: 2.2, reach: 46, twoHanded: true }),
+  g("tusk_maul", "野豬王戰鎚", "weapon", 220, { lord_tusk: 2, scrap_iron: 6, thick_hide: 1 }, { might: 3.0, speed: -0.03, twoHanded: true }),
+  g("royal_gel_shield", "王者凝膠盾", "shield", 30, { royal_gel: 3, slime_goo: 4 }, { block: 0.32 }),
+  g("crown_helm", "王冠頭盔", "head", 26, { slime_crown: 1, royal_gel: 1 }, { might: 0.2, health: 1.4 }),
+  g("dire_pelt_armor", "巨狼皮甲", "chest", 30, { dire_pelt: 3, leather_strap: 1 }, { health: 2.3, speed: 0.02 }),
+  g("thick_hide_greaves", "厚皮護腿", "legs", 24, { thick_hide: 3, leather_strap: 1 }, { health: 1.4 }),
+  g("bat_lord_boots", "蝠翼靴", "feet", 22, { giant_bat_wing: 2, frog_skin: 2 }, { health: 0.3, speed: 0.14 }),
+  g("toad_gloves", "蛙王手套", "hands", 24, { toad_skin: 2, toad_gem: 1 }, { might: 0.5, health: 0.6 }),
+  g("commander_bracer", "隊長臂章", "hands", 26, { captain_badge: 1, leather_strap: 2 }, { might: 0.6, health: 0.4 }),
   // legendary: from the world's great monsters (world/bosses.ts)
   g("dragon_scale_armor", "龍鱗甲", "chest", 60, { dragon_scale: 4, leather_strap: 2 }, { health: 4.0 }),
   g("lich_staff", "巫妖法杖", "weapon", 320, { soul_gem: 2, cursed_steel: 2 }, { might: 3.6, reach: 34 }),

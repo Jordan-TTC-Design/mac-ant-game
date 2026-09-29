@@ -59,6 +59,11 @@
   "robber": 54,
   "orc_grunt": 55,
   "orc_archer": 56,
-  "orc_chief": 57
+  "orc_chief": 57,
+  "giant_bat": 58,
+  "dire_wolf": 59,
+  "slime_king": 60,
+  "boar_lord": 61,
+  "toad_king": 62
  }
 }
