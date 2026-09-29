@@ -101,7 +101,6 @@ async function signOut() {
       <p><strong>{{ user?.displayName }}</strong>（{{ user?.email }}）</p>
       <p>好友代碼：<code>{{ user?.friendCode }}</code> <button class="btn small" @click="copyCode">{{ copied ? "複製了" : "複製" }}</button></p>
       <p v-if="admin"><NuxtLink to="/admin" class="btn">後台（邀請碼、帳號、大世界）</NuxtLink></p>
-      <p><NuxtLink to="/feedback" class="btn">回報問題・建議{{ admin ? "（處理回報）" : "" }}</NuxtLink></p>
     </section>
 
     <section class="panel">
