@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellCenter, FOES, HOME_MOVE_DAYS, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellCenter, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { api } from "~/utils/api";
 
@@ -12,9 +12,16 @@ void ensure();
 const s = world.state;
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
-onMounted(() => {
+const route = useRoute();
+onMounted(async () => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
-  void world.open();
+  await world.open();
+  // (?cell=…: come from a cell's own page, open the map on it)
+  const asked = String(route.query.cell ?? "");
+  if (asked && isCellId(asked)) {
+    await world.moveTo(cellCenter(asked));
+    pick(asked);
+  }
 });
 onUnmounted(() => {
   clearInterval(clock);
@@ -329,7 +336,9 @@ const canAct = computed(() => !!s.me?.open && spare.value > 0);
           </template>
         </template>
         <template v-else-if="mine">
-          <button v-if="!isHome" class="btn primary" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
+          <NuxtLink v-if="!isHome" :to="`/territory/${cell.cell}`" class="btn primary">進去看看</NuxtLink>
+          <NuxtLink v-else to="/camp" class="btn primary">看營地</NuxtLink>
+          <button v-if="!isHome" class="btn" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
           <button v-if="!isHome && cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
           <button v-if="!cell.town && s.me.cells.length >= s.me.rules.townMinCells" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
           <button v-if="!isHome" class="btn" :disabled="busy" @click="recall">撤回</button>

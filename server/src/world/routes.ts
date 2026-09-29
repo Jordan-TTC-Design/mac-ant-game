@@ -6,6 +6,7 @@ import { apiError, readJson } from "../http.ts";
 import {
   buildNest,
   buildTown,
+  cellDetail,
   cellsAround,
   expeditionList,
   expeditionReport,
@@ -66,6 +67,14 @@ export function worldRoutes(deps: AppDeps) {
       return apiError(c, 400, "invalid_input", `lat、lng 要是座標，radius 是 1～${MAX_MAP_RADIUS} 公尺。`);
     }
     return respond(c, await run(c, () => db.transaction((tx) => cellsAround(tx, { lat, lng }, radius, now()))));
+  });
+
+  /** One of your own cells from inside (world/cell/[cell] on the phone). */
+  app.get("/cells/:cell", async (c) => {
+    const cell = c.req.param("cell");
+    if (!isCellId(cell)) return apiError(c, 404, "not_found", "沒有這一格。");
+    const userId = c.get("session").user.id;
+    return respond(c, await run(c, () => db.transaction((tx) => cellDetail(tx, userId, cell, now()))));
   });
 
   app.post("/expeditions", async (c) => {

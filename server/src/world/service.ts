@@ -55,6 +55,7 @@ import {
   terrainAt,
   TOWN_COST,
   TOWN_MIN_CELLS,
+  TERRAIN_YIELD,
   travelMinutes,
   cellYield,
   seeded,
@@ -65,6 +66,8 @@ import {
   xpForLevel,
   type BossSighting,
   type BossView,
+  type CellDetail,
+  type CellHappening,
   type CellView,
   type ExpeditionReport,
   type ExpeditionSummary,
@@ -269,6 +272,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
 
   const held = await tx.select().from(worldCells).where(eq(worldCells.owner, camp.userId)).for("update");
   const yields: Record<string, number> = {};
+  const yieldsByCell: Record<string, Record<string, number>> = {};
   const [home] = await tx.select({ cell: worldPlayers.homeCell }).from(worldPlayers).where(eq(worldPlayers.userId, camp.userId));
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
   for (const cell of held) {
@@ -321,11 +325,14 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
         yields[mat] = (yields[mat] ?? 0) + k;
       }
       await tx.update(worldCells).set({ yieldedTo: new Date(since.getTime() + times * YIELD_HOURS * HOUR) }).where(eq(worldCells.cell, cell.cell));
-      if (Object.keys(got).length) changed = true;
+      if (Object.keys(got).length) {
+        yieldsByCell[cell.cell] = got;
+        changed = true;
+      }
     }
   }
 
-  if (Object.keys(yields).length) await addEvent(tx, camp.userId, now, "world", { yields });
+  if (Object.keys(yields).length) await addEvent(tx, camp.userId, now, "world", { yields, cells: yieldsByCell });
   // spoils of great monsters this camp helped beat
   const rewards = await tx.select().from(worldRewards).where(and(eq(worldRewards.userId, camp.userId), isNull(worldRewards.claimedAt))).for("update");
   let rewardXp = 0;
@@ -747,7 +754,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         await shield(tx, camp.userId, now);
         if (defenderPlayer) await tx.update(worldPlayers).set({ xp: defenderPlayer.xp + result.xp.defender }).where(eq(worldPlayers.userId, defenderCamp.userId));
       }
-      await addEvent(tx, defenderCamp.userId, at, "expedition", { id: exp.id, defended: true, by: attacker.name, won: !result.won, fallen: fallenD.size });
+      await addEvent(tx, defenderCamp.userId, at, "expedition", { id: exp.id, cell: exp.toCell, defended: true, by: attacker.name, won: !result.won, fallen: fallenD.size });
       await bumpVersion(tx, defenderCamp);
     }
   } else if (await bossHere(tx, exp.toCell, at, false).then((b) => b && !b.row.defeatedAt)) {
@@ -854,7 +861,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   }
   if (outcome.xp && player) await tx.update(worldPlayers).set({ xp: player.xp + outcome.xp }).where(eq(worldPlayers.userId, camp.userId));
   await tx.update(expeditions).set({ status: "done", result: report }).where(eq(expeditions.id, exp.id));
-  await addEvent(tx, camp.userId, at, "expedition", { id: exp.id, arrived: true, ...outcome });
+  await addEvent(tx, camp.userId, at, "expedition", { id: exp.id, to: exp.toCell, arrived: true, ...outcome });
   await bumpVersion(tx, camp);
 
   // the phones' news: the party's camp, the camp it attacked, and everybody who shared a great monster's spoils
@@ -1039,6 +1046,73 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       townCost: TOWN_COST,
       townMinCells: TOWN_MIN_CELLS,
     },
+  };
+}
+
+/** One held cell from inside: how many live there and how it grows, what the ground gives, and what happened there lately. */
+export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date): Promise<CellDetail> {
+  const camp = await lockCamp(tx, userId);
+  if (!camp) throw new WorldError(404, "no_camp", "這個帳號還沒有營地。");
+  await advanceWorld(tx, camp, now);
+  const [row] = await tx.select().from(worldCells).where(eq(worldCells.cell, cell));
+  if (row?.owner !== userId) throw new WorldError(403, "not_yours", "這不是你的格子。");
+  const homeCell = await homeCellOf(tx, userId);
+  const isHome = cell === homeCell;
+  const terrain = await terrainOf(tx, cell);
+  const garrison = (await dwellers(tx, userId, cell, homeCell)).length;
+  const capacity = cellCapacity(camp.race, row.town);
+  const nest = nestState(row, now);
+  const readyAt = row.nestStartedAt ? new Date(row.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
+  const birthMinutes = row.nestStartedAt && !isHome ? nestBirthMinutes(camp.race, row.town) : null;
+  let nextBirthAt: Date | null = null;
+  if (readyAt && birthMinutes && garrison < capacity) {
+    nextBirthAt = nest === "ready" ? new Date(Math.max(now.getTime(), readyAt.getTime() + row.nextSlot * birthMinutes * MINUTE)) : readyAt;
+  }
+  // what happened here: the camp's events that name this cell (kept 30 days), the newest 20
+  const events = await tx
+    .select({ at: campEvents.at, kind: campEvents.kind, data: campEvents.data })
+    .from(campEvents)
+    .where(
+      and(
+        eq(campEvents.userId, userId),
+        sql`(${campEvents.data} -> 'cells' ? ${cell} or ${campEvents.data} -> 'lairBack' ->> 'cell' = ${cell} or ${campEvents.data} ->> 'cell' = ${cell}
+          or ${campEvents.data} ->> 'nest' = ${cell} or ${campEvents.data} ->> 'town' = ${cell} or ${campEvents.data} ->> 'recalled' = ${cell}
+          or (${campEvents.data} ->> 'to' = ${cell} and ${campEvents.data} ? 'arrived'))`,
+      ),
+    )
+    .orderBy(desc(campEvents.seq))
+    .limit(20);
+  const history: CellHappening[] = [];
+  for (const e of events) {
+    const d = e.data as Record<string, any>;
+    const at = e.at.toISOString();
+    if (d.cells?.[cell]) history.push({ at, kind: "yield", loot: d.cells[cell] });
+    else if (d.lairBack) history.push({ at, kind: "lairBack", name: d.lairBack.name, held: d.lairBack.held, fallen: d.lairBack.fallen, killed: d.lairBack.killed, loot: d.lairBack.loot });
+    else if (d.defended) history.push({ at, kind: "attacked", by: d.by, held: d.won, fallen: d.fallen, expedition: d.id });
+    else if (d.arrived && (d.cell === "settled" || d.cell === "taken")) history.push({ at, kind: "settled", fallen: d.fallen, killed: d.killed, expedition: d.id });
+    else if (d.nest) history.push({ at, kind: "nest" });
+    else if (d.town) history.push({ at, kind: "town" });
+    else if (d.recalled) history.push({ at, kind: "recalled", residents: d.residents });
+  }
+  const center = cellCenter(cell);
+  return {
+    cell,
+    lat: center.lat,
+    lng: center.lng,
+    terrain,
+    home: isHome,
+    town: row.town,
+    garrison,
+    capacity,
+    garrisonMin: garrisonMin(camp.race),
+    nest,
+    nestReadyAt: nest === "building" && readyAt ? readyAt.toISOString() : null,
+    nextBirthAt: nextBirthAt?.toISOString() ?? null,
+    birthMinutes,
+    heldSince: row.heldSince?.toISOString() ?? null,
+    nextYieldAt: new Date((row.yieldedTo ?? row.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
+    yields: (TERRAIN_YIELD[terrain] ?? []).map((y) => y.id),
+    history,
   };
 }
 

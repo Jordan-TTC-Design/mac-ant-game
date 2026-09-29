@@ -181,3 +181,43 @@ export interface WorldMe {
   bosses: { cell: string; kind: string; name: string; lat: number; lng: number; km: number; hp: number; maxHp: number; endsAt: string }[];
   rules: { garrisonMin: number; cellCapacity: number; nestCost: Record<string, number>; nestHours: number; nestBirthMinutes: number; townCost: Record<string, number>; townMinCells: number };
 }
+
+/** One thing that happened on a held cell (newest first in `CellDetail.history`). */
+export interface CellHappening {
+  at: string;
+  /** yield: the ground gave; lairBack: the lair came back for it; attacked: another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home. */
+  kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled";
+  loot?: Record<string, number>;
+  held?: boolean;
+  fallen?: number;
+  killed?: number;
+  by?: string;
+  name?: string;
+  residents?: number;
+  expedition?: string;
+}
+
+/** `GET /api/world/cells/:cell`: a cell of one's own, looked at from inside (its residents are the camp's, place `cell:<id>`). */
+export interface CellDetail {
+  cell: string;
+  lat: number;
+  lng: number;
+  terrain: Terrain;
+  /** The camp's own cell (everybody at home lives there: see the camp page). */
+  home: boolean;
+  town: boolean;
+  garrison: number;
+  capacity: number;
+  garrisonMin: number;
+  nest: "none" | "building" | "ready";
+  /** When a nest being built is done. */
+  nestReadyAt: string | null;
+  /** The nest's next birth (null: no nest yet, or the cell is full). */
+  nextBirthAt: string | null;
+  birthMinutes: number | null;
+  heldSince: string | null;
+  nextYieldAt: string;
+  /** What the ground may give every YIELD_HOURS (material ids). */
+  yields: string[];
+  history: CellHappening[];
+}
