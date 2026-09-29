@@ -101,6 +101,7 @@ function bonusText(b: CellBonus): string[] {
   if (b.travel < 1) out.push(`從這裡出發走路時間 −${Math.round((1 - b.travel) * 100)}%`);
   if (b.room) out.push(`最多可以多住 ${b.room} 隻`);
   if (b.party) out.push(`從這裡出發的隊伍可以多 ${b.party} 隻`);
+  if (b.xp) out.push(`每天多 ${b.xp} 經驗值`);
   return out;
 }
 
@@ -108,7 +109,10 @@ const lootText = (loot: Record<string, number> = {}) => Object.entries(loot).sor
 function happening(h: CellHappening): string {
   switch (h.kind) {
     case "yield": return `產出了 ${lootText(h.loot)}`;
-    case "lairBack": return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}）`;
+    case "lairBack": {
+      const help = h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : "";
+      return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}${help}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}${help}）`;
+    }
     case "attacked": return h.held ? `${h.by}來打，守住了（倒下 ${h.fallen}）` : `${h.by}來打，被搶走了（倒下 ${h.fallen}）`;
     case "settled": return h.killed ? `打下這一格，住了進來（倒下 ${h.fallen}）` : "有居民搬進來了";
     case "nest": return "開始蓋繁殖巢";
@@ -160,6 +164,16 @@ function happening(h: CellHappening): string {
         <p v-else class="muted">住滿了，要等有居民離開或老死才會再生。</p>
         <p>下次產出 <b>{{ until(d.nextYieldAt) }}</b>：{{ d.yields.map((id) => materialName(id)).join("、") }}</p>
         <p class="muted small">住越多產越多，住滿是兩倍{{ d.town ? "；城鎮再兩倍" : "" }}。至少要住 {{ d.garrisonMin }} 隻才有產出。</p>
+      </section>
+
+      <section class="panel">
+        <h2>相連的領地</h2>
+        <p>旁邊有 <b>{{ d.neighbours }}</b> 格是你的・這一區連著 <b>{{ d.region }}</b> 格</p>
+        <p v-if="d.bonus.yieldBoost" class="good">地形產出 +{{ Math.round(d.bonus.yieldBoost * 100) }}%</p>
+        <p class="muted small">
+          旁邊每有一格自己的，產出多 10%（最多 30%）；被打時旁邊的格子各派最多 5 隻來幫忙守。
+          {{ d.town ? "" : d.region >= 4 ? "這一區夠大，可以蓋城鎮了。" : `城鎮要蓋在 4 格相連的地方（還差 ${4 - d.region} 格）。` }}
+        </p>
       </section>
 
       <section class="panel">
@@ -240,6 +254,7 @@ p { margin: 6px 0; }
 .power { min-width: 2.2em; text-align: right; }
 .icon { flex: none; width: 32px; height: 32px; background-size: 128px 96px; background-position: 0 0; }
 .more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 10px 0 0; cursor: pointer; }
+.good { color: var(--green); font-weight: 700; }
 .landmark p { margin: 0; }
 .landmark .big { font-size: 22px; }
 .landmark small { color: var(--muted); }

@@ -70,6 +70,9 @@ import {
   workingLevel,
   landmarkRule,
   neighbors,
+  connectedCells,
+  heldNeighbours,
+  REINFORCE_PER_CELL,
   type CellSurroundings,
   seeded,
   YIELD_HOURS,
@@ -273,7 +276,27 @@ async function bumpVersion(tx: Tx, camp: CampRow) {
 async function surroundings(tx: Tx, held: string[]): Promise<(cell: string) => CellSurroundings> {
   const landmarks = await landmarksFor(tx, held);
   const mine = new Set(held);
-  return (cell) => ({ landmark: landmarks.get(cell) ?? null, templeNear: neighbors(cell).some((n) => mine.has(n) && landmarks.get(n)?.kind === "temple") });
+  return (cell) => ({
+    landmark: landmarks.get(cell) ?? null,
+    templeNear: neighbors(cell).some((n) => mine.has(n) && landmarks.get(n)?.kind === "temple"),
+    neighbours: heldNeighbours(cell, mine),
+  });
+}
+
+/**
+ * Those the camp's held cells next to `cell` can spare to help defend it: up to REINFORCE_PER_CELL from each, the
+ * strongest, keeping what each must keep (the camp's own cell: those at home).
+ */
+async function reinforcements(tx: Tx, camp: CampRow, cell: string, homeCell: string | null): Promise<ResidentRow[]> {
+  const held = new Set(await heldCells(tx, camp.userId));
+  const out: ResidentRow[] = [];
+  for (const n of neighbors(cell)) {
+    if (!held.has(n)) continue;
+    const there = n === homeCell ? await aliveAt(tx, camp.userId, "home") : await aliveAt(tx, camp.userId, cellPlace(n));
+    const spare = Math.min(REINFORCE_PER_CELL, there.length - (n === homeCell ? HOME_KEEP : garrisonMin(camp.race)));
+    if (spare > 0) out.push(...pickParty(camp.race, there, undefined, spare, true));
+  }
+  return out;
 }
 const heldCells = async (tx: Tx, userId: string) => (await tx.select({ cell: worldCells.cell }).from(worldCells).where(eq(worldCells.owner, userId))).map((r) => r.cell);
 
@@ -345,7 +368,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     const since = cell.yieldedTo ?? cell.heldSince ?? now;
     const times = Math.floor((now.getTime() - since.getTime()) / (YIELD_HOURS * HOUR));
     if (times > 0) {
-      const got = cellYield(camp.race, terrain, Math.min(n, room), times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town);
+      const got = cellYield(camp.race, terrain, Math.min(n, room), times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town, bonus.yieldBoost);
       // and what its building adds (worked only by a garrison big enough to work the ground)
       if (n >= garrisonMin(camp.race)) {
         for (const [mat, k] of Object.entries(buildingYield(bonus, times, seeded(WORLD_SEED, cell.cell, since.getTime(), "building")))) got[mat] = (got[mat] ?? 0) + k;
@@ -422,10 +445,12 @@ async function lairReturns(
     const at = new Date(t);
     const foes = lairFighters(lair).map((f) => ({ ...f, side: "attack" as const }));
     const fort = cellBonus(camp.race, cell.building, t, around).fort;
-    const defending = guards.map((r) => residentFighter(fighterOf(camp.race, r), "defend", traitsOf(camp.race), { ...fightBoosts(camp.race, camp.boosts, t), fort }));
+    // (the held cells next to it send help)
+    const helpers = await reinforcements(tx, camp, cell.cell, homeCell);
+    const defending = [...guards, ...helpers].map((r) => residentFighter(fighterOf(camp.race, r), "defend", traitsOf(camp.race), { ...fightBoosts(camp.race, camp.boosts, t), fort }));
     const battle = simulateBattle(foes, defending, { seed: hashString(`${cell.cell}|lair-back|${t}`), night: nightAt(cell.cell, at) });
     const fallen = new Set(battle.fallen.defend);
-    await bury(tx, camp, guards.filter((r) => fallen.has(String(r.id))), at);
+    await bury(tx, camp, [...guards, ...helpers].filter((r) => fallen.has(String(r.id))), at);
     const held = battle.winner === "defend";
     const loot: Record<string, number> = {};
     if (held) {
@@ -439,7 +464,9 @@ async function lairReturns(
       }
       await tx.update(worldCells).set({ clearedAt: at }).where(eq(worldCells.cell, cell.cell));
     }
-    await addEvent(tx, camp.userId, at, "world", { lairBack: { cell: cell.cell, name: lair.name, level: lair.level, held, fallen: fallen.size, killed: battle.fallen.attack.length, loot } });
+    await addEvent(tx, camp.userId, at, "world", {
+      lairBack: { cell: cell.cell, name: lair.name, level: lair.level, held, fallen: fallen.size, killed: battle.fallen.attack.length, loot, helped: helpers.length },
+    });
     if (!held) {
       await releaseCell(tx, cell.cell);
       await tx.update(worldCells).set({ clearedAt: null }).where(eq(worldCells.cell, cell.cell)); // (the lair is there again)
@@ -753,7 +780,11 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       await advanceWorld(tx, defenderCamp, now);
       // (a camp's own cell is defended by everybody at home as well)
       const campCell = defenderPlayer?.homeCell === exp.toCell;
-      const defenders = await dwellers(tx, defenderCamp.userId, exp.toCell, defenderPlayer?.homeCell ?? null);
+      // (a cell of its own besides: the held cells next to it send help)
+      const defenders = [
+        ...(await dwellers(tx, defenderCamp.userId, exp.toCell, defenderPlayer?.homeCell ?? null)),
+        ...(campCell ? [] : await reinforcements(tx, defenderCamp, exp.toCell, defenderPlayer?.homeCell ?? null)),
+      ];
       report.defender = await ownerOf(tx, defenderCamp.userId);
       outcome.against = `${report.defender.name}的${campCell ? "營地" : "領地"}`;
       const result = resolveExpedition({
@@ -1004,8 +1035,9 @@ export async function buildTown(tx: Tx, userId: string, cell: string, now: Date)
   await advanceWorld(tx, camp, now);
   const row = await ownedRow(tx, userId, cell);
   if (row.town) throw new WorldError(409, "exists", "這一格已經是城鎮了。");
-  const [{ held }] = (await tx.select({ held: sql<number>`count(*)::int` }).from(worldCells).where(eq(worldCells.owner, userId))) as [{ held: number }];
-  if (held < TOWN_MIN_CELLS) throw new WorldError(409, "too_few", `要先佔 ${TOWN_MIN_CELLS} 格才能蓋城鎮。`);
+  // a town stands in a region of its holder's: TOWN_MIN_CELLS held cells joined side by side (this one among them)
+  const region = connectedCells(cell, new Set(await heldCells(tx, userId))).length;
+  if (region < TOWN_MIN_CELLS) throw new WorldError(409, "too_few", `城鎮要蓋在至少 ${TOWN_MIN_CELLS} 格相連的領地裡（這裡連著 ${region} 格）。`);
   if (!canAfford(camp.materials, TOWN_COST)) throw new WorldError(409, "cannot_afford", `素材不夠：城鎮要 ${costText(TOWN_COST)}。`);
   camp.materials = spend(camp.materials, TOWN_COST);
   // a town has a nest of its own (it raises residents as fast as the home camp)
@@ -1112,6 +1144,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       town: c.town,
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
+      region: connectedCells(c.cell, new Set(held.map((h) => h.cell))).length,
       party: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).party,
       travel: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).travel,
     })),
@@ -1180,7 +1213,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     const d = e.data as Record<string, any>;
     const at = e.at.toISOString();
     if (d.cells?.[cell]) history.push({ at, kind: "yield", loot: d.cells[cell] });
-    else if (d.lairBack) history.push({ at, kind: "lairBack", name: d.lairBack.name, held: d.lairBack.held, fallen: d.lairBack.fallen, killed: d.lairBack.killed, loot: d.lairBack.loot });
+    else if (d.lairBack) history.push({ at, kind: "lairBack", name: d.lairBack.name, held: d.lairBack.held, fallen: d.lairBack.fallen, killed: d.lairBack.killed, loot: d.lairBack.loot, helped: d.lairBack.helped });
     else if (d.defended) history.push({ at, kind: "attacked", by: d.by, held: d.won, fallen: d.fallen, expedition: d.id });
     else if (d.arrived && (d.cell === "settled" || d.cell === "taken")) history.push({ at, kind: "settled", fallen: d.fallen, killed: d.killed, expedition: d.id });
     else if (d.nest) history.push({ at, kind: "nest" });
@@ -1191,7 +1224,8 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   }
   const center = cellCenter(cell);
   const b = isHome ? null : row.building;
-  const around = (await surroundings(tx, await heldCells(tx, userId)))(cell);
+  const mine = await heldCells(tx, userId);
+  const around = (await surroundings(tx, mine))(cell);
   const landmark = around.landmark ? landmarkRule(around.landmark.kind) : undefined;
   const top = (b?.level ?? 0) >= CELL_BUILDING_MAX;
   return {
@@ -1227,6 +1261,8 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     bonus: cellBonus(camp.race, b, now.getTime(), around),
     landmark: around.landmark && landmark ? { ...around.landmark, icon: landmark.icon, label: landmark.name, blurb: landmark.blurb } : null,
     templeNear: !!around.templeNear,
+    neighbours: around.neighbours ?? 0,
+    region: connectedCells(cell, new Set(mine)).length,
     history,
   };
 }

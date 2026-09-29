@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, type CellDetail, type CellView, type WorldMe } from "@goblincamp/shared/world";
+import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -192,5 +192,55 @@ describe("landmarks", () => {
     expect(d.landmark).toEqual(expect.objectContaining(standInLandmark(cell)!));
     expect(d.landmark!.blurb.length).toBeGreaterThan(0);
     expect(d.bonus).toEqual(cellBonus("goblin", null, t.now().getTime(), { landmark: standInLandmark(cell) }));
+  });
+});
+
+describe("cells held side by side", () => {
+  /** The lairs on these cells were just beaten (so they are free to settle, and none comes back for a while). */
+  async function clear(cells: string[]) {
+    const at = t.now().toISOString();
+    for (const c of cells) await database.sql`insert into world_cells (cell, cleared_at) values (${c}, ${at}::timestamptz) on conflict (cell) do update set cleared_at = ${at}::timestamptz`;
+  }
+
+  it("each held neighbour adds to the yield; a town needs four joined together", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const around = neighbors(home);
+    await clear(around);
+    const first = await settle(a, 20, [], (c) => c.cell === around[0]);
+    let d = (await detail(a, first)).body;
+    expect(d.neighbours).toBeGreaterThanOrEqual(1); // (the camp's own cell)
+    expect(d.region).toBe(2);
+    expect(d.bonus.yieldBoost).toBeCloseTo(0.1 * Math.min(3, d.neighbours));
+
+    await give("a@example.com", { scrap_wood: 500, scrap_iron: 200, scrap_rag: 100, crystal_shard: 5 });
+    expect((await t.call("POST", `/world/cells/${first}/town`, undefined, a)).body.error).toBe("too_few");
+    await settle(a, 20, [], (c) => c.cell === around[1]);
+    await settle(a, 20, [], (c) => c.cell === around[2]);
+    d = (await detail(a, first)).body;
+    expect(d.region).toBe(4);
+    expect((await me(a)).cells.find((c) => c.cell === first)!.region).toBe(4);
+    expect((await t.call("POST", `/world/cells/${first}/town`, undefined, a)).status).toBe(200);
+  });
+
+  it("send help when a cell is attacked: the camp next to it lends its strongest", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    await clear(neighbors(home));
+    const cell = await settle(a, 10, [], (c) => neighbors(home).includes(c.cell));
+    const garrison = (await detail(a, cell)).body.garrison;
+    // someone else opens the big world a little way off and attacks it
+    const b = await account("b@example.com");
+    t.advance(16 * HOUR);
+    const far = neighbors(neighbors(neighbors(home)[3]!)[3]!)[3]!;
+    await clear([far]);
+    expect((await t.call("POST", "/world/open", { cell: far }, b)).status).toBe(201);
+    await database.sql`update world_players set xp = 18050 where user_id = (select id from users where email = 'b@example.com')`;
+    const res = await t.call("POST", "/world/expeditions", { to: cell, count: 25 }, b);
+    expect(res.status).toBe(201);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, b)).body as ExpeditionReport;
+    const defending = report.fighters.filter((f) => f.side === "defend").length;
+    expect(defending).toBe(garrison + 5);
   });
 });

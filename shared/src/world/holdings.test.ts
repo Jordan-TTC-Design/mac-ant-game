@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
+import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, connectedCells, heldNeighbours, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
+import { cellId, neighbors } from "./grid.ts";
 import { materialName } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 
@@ -22,7 +23,7 @@ describe("buildings on held cells", () => {
     expect(cellBonus("goblin", { kind: "watchtower", level: 1, busyUntil: later }, at).fort).toBe(0);
     expect(cellBonus("goblin", { kind: "watchtower", level: 3 }, at).fort).toBe(0.35);
     expect(cellBonus("goblin", { kind: "dock", level: 2 }, at).travel).toBe(0.75);
-    expect(cellBonus("goblin", null, at)).toEqual({ makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0 });
+    expect(cellBonus("goblin", null, at)).toEqual({ makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0, yieldBoost: 0 });
   });
 
   it("has each race's own version where it differs", () => {
@@ -58,5 +59,20 @@ describe("landmarks", () => {
     expect(found.length / cells.length).toBeLessThan(0.07);
     expect(new Set(found.map((l) => l!.kind)).size).toBe(LANDMARKS.length);
     expect(standInLandmark(cells[7]!)).toEqual(standInLandmark(cells[7]!));
+  });
+});
+
+describe("cells held side by side", () => {
+  it("are one region when joined through neighbours, and each neighbour adds to the yield (up to three)", () => {
+    const a = cellId(100, 100);
+    const [b, c] = neighbors(a) as [string, string];
+    const far = cellId(120, 120);
+    const held = new Set([a, b, c, far]);
+    expect(new Set(connectedCells(a, held))).toEqual(new Set([a, b, c]));
+    expect(connectedCells(far, held)).toEqual([far]);
+    expect(connectedCells(cellId(1, 1), held)).toEqual([]);
+    expect(heldNeighbours(a, held)).toBe(2);
+    expect(cellBonus("goblin", null, 0, { neighbours: 2 }).yieldBoost).toBeCloseTo(0.2);
+    expect(cellBonus("goblin", null, 0, { neighbours: 6 }).yieldBoost).toBeCloseTo(0.3);
   });
 });

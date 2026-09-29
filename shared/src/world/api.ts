@@ -173,6 +173,8 @@ export interface WorldMe {
     town: boolean;
     terrain: Terrain;
     nextYieldAt: string;
+    /** How many held cells are joined to it side by side (itself included): a town needs TOWN_MIN_CELLS. */
+    region: number;
     /** Parties setting out from it may be this many bigger, and walk this share of the time (its building). */
     party: number;
     travel: number;
@@ -188,7 +190,7 @@ export interface WorldMe {
   /** What happened in the big world lately (a lair coming back for a cell, a great monster's spoils, what the cells gave), newest first. */
   happenings: {
     at: string;
-    lairBack?: { cell: string; name: string; level: number; held: boolean; fallen: number; killed: number; loot: Record<string, number> };
+    lairBack?: { cell: string; name: string; level: number; held: boolean; fallen: number; killed: number; loot: Record<string, number>; helped?: number };
     bossReward?: { name: string; loot: Record<string, number>; xp: number; share: number };
     yields?: Record<string, number>;
   }[];
@@ -204,6 +206,8 @@ export interface CellHappening {
   kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished";
   loot?: Record<string, number>;
   held?: boolean;
+  /** Came from the held cells next to it to help defend it. */
+  helped?: number;
   fallen?: number;
   killed?: number;
   by?: string;
@@ -246,6 +250,9 @@ export interface CellDetail {
   landmark: (Landmark & { icon: string; label: string; blurb: string }) | null;
   /** One of the holder's temples is next to it. */
   templeNear: boolean;
+  /** Held cells next to it (they add to its yield, and send help when it is fought over), and how many are joined to it. */
+  neighbours: number;
+  region: number;
   history: CellHappening[];
 }
 

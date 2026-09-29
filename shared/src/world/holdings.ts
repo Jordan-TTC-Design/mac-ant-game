@@ -5,6 +5,7 @@
  * cell has none (the camp has its sites: shared/src/camp/sites.ts).
  */
 import type { Terrain } from "./contents.ts";
+import { neighbors } from "./grid.ts";
 import { hashString } from "./random.ts";
 
 export type CellBuildingKind =
@@ -165,6 +166,35 @@ export function standInLandmark(cell: string): Landmark | null {
   return { kind: rule.kind, name: rule.name };
 }
 
+// --- cells held side by side ---------------------------------------------------------------------------------------
+
+/** Every held cell next to it adds this share to what the ground yields (up to NEIGHBOUR_YIELD_MAX of them). */
+export const NEIGHBOUR_YIELD = 0.1;
+export const NEIGHBOUR_YIELD_MAX = 3;
+/** When a cell is fought over, each held cell next to it sends up to this many to help (those it can spare). */
+export const REINFORCE_PER_CELL = 5;
+
+/** The held cells joined to `cell` through held cells next to each other (itself included; empty if it is not held). */
+export function connectedCells(cell: string, held: ReadonlySet<string>): string[] {
+  if (!held.has(cell)) return [];
+  const seen = new Set([cell]);
+  const queue = [cell];
+  while (queue.length) {
+    for (const n of neighbors(queue.shift()!)) {
+      if (held.has(n) && !seen.has(n)) {
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+  }
+  return [...seen];
+}
+
+/** How many of the cells next to `cell` are held. */
+export function heldNeighbours(cell: string, held: ReadonlySet<string>): number {
+  return neighbors(cell).filter((n) => held.has(n)).length;
+}
+
 // --- what a cell gets ---------------------------------------------------------------------------------------------
 
 /** What a held cell gets from what is on it. */
@@ -180,16 +210,20 @@ export interface CellBonus {
   party: number;
   /** Experience a day for holding it, beyond every cell's own. */
   xp: number;
+  /** The ground yields this share more (held cells next to it). */
+  yieldBoost: number;
 }
 
 /** Besides its building: the landmark on the cell, and whether a temple of the same holder stands next to it. */
 export interface CellSurroundings {
   landmark?: Landmark | null;
   templeNear?: boolean;
+  /** How many held cells are next to it. */
+  neighbours?: number;
 }
 
 export function cellBonus(race: string, building: CellBuilding | null | undefined, now: number, around: CellSurroundings = {}): CellBonus {
-  const out: CellBonus = { makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0 };
+  const out: CellBonus = { makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0, yieldBoost: NEIGHBOUR_YIELD * Math.min(NEIGHBOUR_YIELD_MAX, around.neighbours ?? 0) };
   switch (around.landmark?.kind) {
     case "station": out.travel *= 0.7; break;
     case "temple": out.fort += 0.2; break;

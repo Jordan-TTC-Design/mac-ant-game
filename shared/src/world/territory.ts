@@ -189,10 +189,10 @@ export const TERRAIN_YIELD: Record<string, { id: string; min: number; max: numbe
  * What a held cell yields for `times` yields with `garrison` living there: nothing below the race's minimum (nobody to
  * work it), then more the more live there, up to double at the cell's full room; a town twice that again.
  */
-export function cellYield(race: string, terrain: string, garrison: number, times: number, random: () => number, town = false): Record<string, number> {
+export function cellYield(race: string, terrain: string, garrison: number, times: number, random: () => number, town = false, boost = 0): Record<string, number> {
   const min = garrisonMin(race);
   if (garrison < min || times <= 0) return {};
-  const scale = Math.min(2, 1 + (garrison - min) / Math.max(1, cellCapacity(race) - min)) * (town ? 2 : 1);
+  const scale = Math.min(2, 1 + (garrison - min) / Math.max(1, cellCapacity(race) - min)) * (town ? 2 : 1) * (1 + boost);
   const out: Record<string, number> = {};
   for (let k = 0; k < times; k++) {
     for (const y of TERRAIN_YIELD[terrain] ?? TERRAIN_YIELD.open!) {
