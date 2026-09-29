@@ -318,3 +318,15 @@ Mac 上已經有的便利貼全部上傳，伺服器上已經有的（例如另�
 - 訊息**立刻送到**（使者走進來的動畫之後在 Mac 上做），最多 200 字、一天最多 300 則，對方手機收到推播，打開對話就算已讀。訊息 180 天後刪除。
 - `GET /api/friends`、`POST /api/friends/asks {code | userId}`、`POST /api/friends/:id/accept`、`DELETE /api/friends/:id`、`POST /api/friends/:id/block`、`GET|POST /api/friends/:id/messages`。有變化時 WebSocket 送 `friends.changed`。
 - 手機網頁多了首頁（每個功能一張卡片）和底部分頁：首頁、便利貼、番茄鐘、營地、好友。
+
+## 17. 資料庫備份（2026-09-30）
+
+使用者：「每天備份兩次，晚上半夜 1:30 一次、下午 1:30 一次，保留七天份，自動的。後台也要能看到備份列表，也要有手動備份。」
+
+- 伺服器自己做（`src/backup.ts`），不靠主機的 cron：server 映像檔裝了 `postgresql16-client`（和資料庫同一版），`pg_dump --clean --if-exists` 壓成 `.sql.gz`，放在 `BACKUP_DIR`（compose 裡是 `/backups`，自己的卷 `db_backups`，重新部署不會不見）。沒設 `BACKUP_DIR` 就不備份，後台會說。
+- **自動**：台灣時間 01:30、13:30（`/backups/auto`），保留 7 天，做完新的才刪舊的。每分鐘看一次：上一個備份時間之後還沒有自動備份就做，所以伺服器剛好在那時重啟或部署，起來後會馬上補。同一個時間只試一次，失敗記在 `failures.json`，後台顯示最近 5 次失敗。
+- **手動**：後台「立即備份」（`/backups/manual`），一直留著直到管理員刪掉，最多 20 份。
+- 一次只做一份。檔名是台灣時間：`goblin-20261001-013000.sql.gz`。
+- 後台：`GET /api/admin/backups`（列表、下一次時間、失敗）、`POST /api/admin/backups`（手動）、`GET /api/admin/backups/:kind/:name`（下載）、`DELETE /api/admin/backups/:kind/:name`。做、下載、刪除都記在管理紀錄。
+- **還原不在後台做**（會蓋掉整個資料庫，按錯回不來）：`make backups` 列出、`make backup-copy file=auto/…` 複製出來，`make restore-db file=backups/….sql.gz`（要打 yes）。
+- 備份和資料庫在同一台主機上；要留一份在外面，就從後台下載。

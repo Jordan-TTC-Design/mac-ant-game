@@ -4,6 +4,10 @@ import { z } from "zod";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { adminLog, campResidents, camps, devices, expeditions, invites, notes, sessions, users, worldCells, worldPlayers } from "../db/schema.ts";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { BackupError, KEEP_AUTO_DAYS, MANUAL_MAX, nextSlot } from "../backup.ts";
 import { apiError, readJson } from "../http.ts";
 import { hashSecret, newInviteCode, normalizeCode } from "../lib/tokens.ts";
 
@@ -260,6 +264,58 @@ export function adminRoutes(deps: AppDeps) {
     if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
     await db.update(users).set({ deletingAt: null }).where(eq(users.id, u.id));
     await log(me.id, u.id, "restore");
+    return c.json({ ok: true });
+  });
+
+  // --- database backups (backup.ts) ---
+
+  /** The backups there are (auto and manual, newest first), the latest failures, and when the next auto one is due. */
+  app.get("/backups", async (c) => {
+    const b = deps.backups;
+    if (!b) return c.json({ enabled: false });
+    const [auto, manual, failures] = await Promise.all([b.files("auto"), b.files("manual"), b.failures()]);
+    return c.json({ enabled: true, running: b.running, next: nextSlot(now()).toISOString(), keepDays: KEEP_AUTO_DAYS, manualMax: MANUAL_MAX, auto, manual, failures: failures.slice(0, 5) });
+  });
+
+  /** A manual backup, now (answers when it is done). */
+  app.post("/backups", async (c) => {
+    const me = c.get("session").user;
+    if (!deps.backups) return apiError(c, 503, "unavailable", "伺服器沒有設定備份資料夾（BACKUP_DIR）。");
+    try {
+      const made = await deps.backups.make("manual");
+      await log(me.id, null, "backup", { name: made.name });
+      return c.json(made, 201);
+    } catch (err) {
+      if (err instanceof BackupError) return apiError(c, 409, "conflict", err.message);
+      return apiError(c, 500, "backup_failed", `備份失敗：${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.get("/backups/:kind/:name", async (c) => {
+    const me = c.get("session").user;
+    const { kind, name } = c.req.param();
+    const file = deps.backups?.file(kind, name);
+    const size = file ? await stat(file).then((s) => s.size).catch(() => null) : null;
+    if (!file || size === null) return apiError(c, 404, "not_found", "沒有這份備份。");
+    await log(me.id, null, "backup-download", { kind, name });
+    return c.body(Readable.toWeb(createReadStream(file)) as ReadableStream, 200, {
+      "content-type": "application/gzip",
+      "content-length": String(size),
+      "content-disposition": `attachment; filename="${name}"`,
+    });
+  });
+
+  app.delete("/backups/:kind/:name", async (c) => {
+    const me = c.get("session").user;
+    const { kind, name } = c.req.param();
+    if (!deps.backups) return apiError(c, 404, "not_found", "沒有這份備份。");
+    try {
+      await deps.backups.remove(kind, name);
+    } catch (err) {
+      if (err instanceof BackupError) return apiError(c, 404, "not_found", err.message);
+      throw err;
+    }
+    await log(me.id, null, "backup-delete", { kind, name });
     return c.json({ ok: true });
   });
 

@@ -34,6 +34,9 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY}
       MAIL_FROM: ${MAIL_FROM}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      BACKUP_DIR: /backups
+    volumes:
+      - db_backups_dev:/backups
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,3 +67,4 @@ networks:
 
 volumes:
   db_data_dev:
+  db_backups_dev:

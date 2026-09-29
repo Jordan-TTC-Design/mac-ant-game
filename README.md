@@ -593,6 +593,8 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 主機的反向代理把網域轉到 `127.0.0.1:WEB_PORT`，**要帶 `Upgrade`／`Connection` 標頭**（WebSocket），`X-Forwarded-For`、`X-Forwarded-Proto` 也帶上。更新：`git pull && make deploy`（資料庫 migration 在伺服器啟動時自動套用）。其他：`make logs`（沒設 Resend 時確認信印在這裡）、`make invites`、`make dump-db`／`make restore-db file=…`、`make shell-db`。
 
+**資料庫備份**：伺服器每天台灣時間 01:30、13:30 自動備份（保留 7 天），後台可以看列表、下載、刪除，也能「立即備份」（手動的留到你刪，最多 20 份）。備份在 server 容器的 `/backups`（卷 `db_backups`）。還原：`make backups` 看有哪些 → `make backup-copy file=auto/goblin-XXXX.sql.gz` → `make restore-db file=backups/goblin-XXXX.sql.gz`（會蓋掉整個資料庫，要輸入 yes）。詳見 [server/DESIGN.md](server/DESIGN.md) §17。
+
 **`.env` 和任何 `.env.*` 都不能進 git**（裡面有資料庫密碼、推播私鑰、Resend 金鑰）；`.gitignore` 已經排除，只有 `.env.template` 在 git 裡。
 
 ## 版本紀錄

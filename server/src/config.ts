@@ -14,6 +14,8 @@ const schema = z.object({
   /** Resend for the confirmation and reset mails. Without a key the mails go to the log (`make logs`) instead. */
   RESEND_API_KEY: z.string().optional().transform((v) => v || undefined),
   MAIL_FROM: z.string().default("哥布林營地 <noreply@goblincamp.invalid>"),
+  /** Where the database backups go (backup.ts): twice a day and from the admin page. Empty: no backups (pg_dump must be installed). */
+  BACKUP_DIR: z.string().default(""),
   /** Who may open the admin page (後台): addresses separated by commas. Empty: nobody. */
   ADMIN_EMAILS: z.string().default(""),
   TRUST_PROXY: z

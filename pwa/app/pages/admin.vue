@@ -41,6 +41,10 @@ interface UserDetail {
 }
 interface LogRow { at: string; action: string; admin: string | null; target: string | null; detail: Record<string, unknown> | null }
 interface InviteRow { createdAt: string; expiresAt: string; usedAt: string | null; usedBy: string | null; state: "free" | "used" | "expired" }
+interface BackupFile { kind: "auto" | "manual"; name: string; size: number; at: string }
+type BackupList =
+  | { enabled: false }
+  | { enabled: true; running: string | null; next: string; keepDays: number; manualMax: number; auto: BackupFile[]; manual: BackupFile[]; failures: { at: string; kind: string; error: string }[] };
 
 const overview = ref<Overview | null>(null);
 const users = ref<UserRow[]>([]);
@@ -53,13 +57,15 @@ const copied = ref(false);
 const busy = ref(false);
 
 const log = ref<LogRow[]>([]);
+const backups = ref<BackupList | null>(null);
 async function load() {
   try {
-    [overview.value, users.value, invites.value, log.value] = await Promise.all([
+    [overview.value, users.value, invites.value, log.value, backups.value] = await Promise.all([
       api<Overview>("GET", "admin/overview"),
       api<{ users: UserRow[] }>("GET", "admin/users").then((r) => r.users),
       api<{ invites: InviteRow[] }>("GET", "admin/invites").then((r) => r.invites),
       api<{ log: LogRow[] }>("GET", "admin/log").then((r) => r.log),
+      api<BackupList>("GET", "admin/backups"),
     ]);
   } catch (e) {
     problem.value = e instanceof ApiError ? e.message : String(e);
@@ -79,6 +85,33 @@ async function makeInvites() {
     busy.value = false;
   }
 }
+// database backups: twice a day by themselves (kept 7 days), and by hand from here (kept until deleted)
+const backingUp = ref(false);
+const backupNote = ref("");
+async function backUpNow() {
+  backingUp.value = true;
+  backupNote.value = "";
+  try {
+    const made = await api<BackupFile>("POST", "admin/backups");
+    backupNote.value = `備份好了：${made.name}（${size(made.size)}）`;
+    await load();
+  } catch (e) {
+    backupNote.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    backingUp.value = false;
+  }
+}
+async function deleteBackup(f: BackupFile) {
+  if (!confirm(`刪除備份 ${f.name}？刪掉就找不回來了。`)) return;
+  try {
+    await api("DELETE", `admin/backups/${f.kind}/${f.name}`);
+    await load();
+  } catch (e) {
+    alert(e instanceof ApiError ? e.message : String(e));
+  }
+}
+const size = (bytes: number) => (bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
 async function copyAll() {
   await navigator.clipboard.writeText(fresh.value.join("\n"));
   copied.value = true;
@@ -113,6 +146,7 @@ function remove() {
 }
 const ACTIONS: Record<string, string> = {
   disable: "停用", enable: "恢復", "sign-out": "強制登出", verify: "標記已驗證", role: "改角色", delete: "刪除", restore: "復原", invites: "產生邀請碼",
+  backup: "手動備份", "backup-download": "下載備份", "backup-delete": "刪除備份",
 };
 
 const RACES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
@@ -192,11 +226,42 @@ const STATE: Record<string, string> = { free: "可以用", used: "用掉了", ex
         </div>
       </section>
 
+      <section v-if="backups" class="panel">
+        <h2>資料庫備份</h2>
+        <p v-if="!backups.enabled" class="muted">伺服器沒有設定備份資料夾（BACKUP_DIR），目前沒有備份。</p>
+        <template v-else>
+          <p class="muted small">每天 01:30、13:30 自動備份，保留 {{ backups.keepDays }} 天。下一次：{{ noteTime(backups.next) }}<span v-if="backups.running">・正在備份中…</span></p>
+          <div v-if="backups.failures.length" class="fails">
+            <b>最近備份失敗</b>
+            <p v-for="(f, k) in backups.failures" :key="k" class="small">{{ noteTime(f.at) }}（{{ f.kind === "auto" ? "自動" : "手動" }}）{{ f.error }}</p>
+          </div>
+          <h3>自動備份（{{ backups.auto.length }}）</h3>
+          <p v-if="!backups.auto.length" class="muted small">還沒有。</p>
+          <div v-for="f in backups.auto" :key="f.name" class="backup">
+            <span>{{ noteTime(f.at) }}<small class="muted">　{{ size(f.size) }}</small></span>
+            <a class="btn" :href="`/api/admin/backups/auto/${f.name}`" download>下載</a>
+            <button class="btn" @click="deleteBackup(f)">刪除</button>
+          </div>
+          <h3>手動備份（{{ backups.manual.length }}／{{ backups.manualMax }}）</h3>
+          <div class="row">
+            <button class="btn primary" :disabled="backingUp || !!backups.running || backups.manual.length >= backups.manualMax" @click="backUpNow">{{ backingUp ? "備份中…" : "立即備份" }}</button>
+          </div>
+          <p v-if="backupNote" class="small">{{ backupNote }}</p>
+          <p v-if="!backups.manual.length" class="muted small">還沒有。手動備份會一直留著，直到你刪掉。</p>
+          <div v-for="f in backups.manual" :key="f.name" class="backup">
+            <span>{{ noteTime(f.at) }}<small class="muted">　{{ size(f.size) }}</small></span>
+            <a class="btn" :href="`/api/admin/backups/manual/${f.name}`" download>下載</a>
+            <button class="btn" @click="deleteBackup(f)">刪除</button>
+          </div>
+          <p class="muted small">還原要在伺服器上做（會蓋掉整個資料庫）：<code>make backup-copy file=auto/檔名</code>，再 <code>make restore-db file=backups/檔名</code>。詳見 README。</p>
+        </template>
+      </section>
+
       <section class="panel">
         <h2>管理紀錄</h2>
         <p v-if="!log.length" class="muted">還沒有。</p>
         <p v-for="(l, k) in log.slice(0, 30)" :key="k" class="small">
-          <span class="muted">{{ noteTime(l.at) }}</span>　{{ l.admin ?? "伺服器指令" }} {{ ACTIONS[l.action] ?? l.action }}{{ l.target ? ` ${l.target}` : "" }}{{ l.detail && "count" in l.detail ? ` ${l.detail.count} 組` : "" }}
+          <span class="muted">{{ noteTime(l.at) }}</span>　{{ l.admin ?? "伺服器指令" }} {{ ACTIONS[l.action] ?? l.action }}{{ l.target ? ` ${l.target}` : "" }}{{ l.detail && "count" in l.detail ? ` ${l.detail.count} 組` : "" }}{{ l.detail && "name" in l.detail ? ` ${l.detail.name}` : "" }}
         </p>
       </section>
 
@@ -243,6 +308,12 @@ h2 { font-size: 16px; margin: 0 0 10px; }
 .invite > span { white-space: nowrap; }
 .invite small { text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .free { color: var(--green); font-weight: 700; }
+h3 { font-size: 13px; margin: 14px 0 4px; }
+.backup { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid var(--line); }
+.backup > span { flex: 1; min-width: 0; font-size: 14px; }
+.backup .btn { font-size: 13px; min-height: 32px; padding: 4px 10px; text-decoration: none; }
+.fails { background: #fbd9d6; color: var(--red); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+.fails p { margin: 4px 0 0; overflow-wrap: anywhere; }
 .used { color: var(--muted); font-weight: 700; }
 .expired { color: var(--red); font-weight: 700; }
 </style>

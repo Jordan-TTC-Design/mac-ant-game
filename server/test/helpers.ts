@@ -1,5 +1,6 @@
 import type { DeviceInput } from "@goblincamp/shared";
 import { createApp } from "../src/app.ts";
+import type { Backups } from "../src/backup.ts";
 import { createDatabase, type Database } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import { invites } from "../src/db/schema.ts";
@@ -23,7 +24,7 @@ export async function emptyTables(database: Database) {
 }
 
 /** An app with its own clock, mailbox and rate limits, plus shortcuts for requests. */
-export function testApp(database: Database) {
+export function testApp(database: Database, extra: { backups?: Backups } = {}) {
   const mailer = new MemoryMailer();
   const push = new MemoryPushSender();
   let clock = new Date("2026-10-01T09:00:00Z");
@@ -34,6 +35,7 @@ export function testApp(database: Database) {
     config: { APP_URL, TRUST_PROXY: false, ADMIN_EMAILS: "boss@example.com, Admin2@Example.com" },
     now: () => clock,
     limiter: new RateLimiter(() => clock.getTime()),
+    ...extra,
   });
 
   async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {

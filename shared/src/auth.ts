@@ -69,7 +69,9 @@ export interface ApiError {
     | "not_found"
     | "conflict"
     | "rate_limited"
-    | "unsupported_media_type";
+    | "unsupported_media_type"
+    | "unavailable"
+    | "backup_failed";
   message: string;
   fields?: Record<string, string>;
   retryAfter?: number;

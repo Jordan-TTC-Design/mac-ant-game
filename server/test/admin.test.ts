@@ -109,3 +109,47 @@ describe("後台: looking after accounts", () => {
     expect(log.find((l) => l.action === "delete")?.target).toBe("a@example.com");
   });
 });
+
+describe("後台: database backups", () => {
+  it("lists, makes, downloads and deletes backups (admins only), and logs it", async () => {
+    const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { Backups } = await import("../src/backup.ts");
+    const dir = await mkdtemp(join(tmpdir(), "goblin-admin-backups-"));
+    try {
+      t = testApp(database, { backups: new Backups(dir, (out) => writeFile(out, "-- dump\n"), () => t.now()) });
+      const boss = await account("boss@example.com");
+      const other = await account("a@example.com");
+      expect((await t.call("GET", "/admin/backups", undefined, other)).status).toBe(403);
+      expect((await t.call("POST", "/admin/backups", undefined, other)).status).toBe(403);
+
+      const empty = (await t.call("GET", "/admin/backups", undefined, boss)).body;
+      expect(empty).toMatchObject({ enabled: true, running: null, auto: [], manual: [], failures: [], next: "2026-10-01T17:30:00.000Z" });
+      const made = await t.call("POST", "/admin/backups", undefined, boss);
+      expect(made.status).toBe(201);
+      expect(made.body.name).toBe("goblin-20261001-170000.sql.gz");
+      expect((await t.call("GET", "/admin/backups", undefined, boss)).body.manual).toHaveLength(1);
+
+      const file = await t.app.request(`/api/admin/backups/manual/${made.body.name}`, { headers: boss });
+      expect(file.status).toBe(200);
+      expect(file.headers.get("content-disposition")).toContain(made.body.name);
+      expect(await file.text()).toBe("-- dump\n");
+      expect((await t.app.request(`/api/admin/backups/manual/${made.body.name}`, { headers: other })).status).toBe(403);
+      expect((await t.app.request("/api/admin/backups/manual/..%2Ffailures.json", { headers: boss })).status).toBe(404);
+
+      expect((await t.call("DELETE", `/admin/backups/manual/${made.body.name}`, undefined, boss)).status).toBe(200);
+      expect((await t.call("DELETE", `/admin/backups/manual/${made.body.name}`, undefined, boss)).status).toBe(404);
+      const log = (await t.call("GET", "/admin/log", undefined, boss)).body.log as { action: string }[];
+      expect(log.map((l) => l.action)).toEqual(expect.arrayContaining(["backup", "backup-download", "backup-delete"]));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("says so when the server has no backup folder", async () => {
+    const boss = await account("boss@example.com");
+    expect((await t.call("GET", "/admin/backups", undefined, boss)).body).toEqual({ enabled: false });
+    expect((await t.call("POST", "/admin/backups", undefined, boss)).status).toBe(503);
+  });
+});
