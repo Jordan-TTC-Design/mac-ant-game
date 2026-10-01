@@ -14,8 +14,25 @@ const sending = ref(false);
 const problem = ref("");
 const list = ref<HTMLElement>();
 
-onMounted(() => void live.openChat(id));
-onUnmounted(() => live.closeChat());
+// the line to write in sits on the tab bar, and the newest message just above both (measured: their heights vary by phone)
+const form = ref<HTMLElement>();
+const tabHeight = ref(62);
+const formHeight = ref(64);
+let sizes: ResizeObserver | undefined;
+onMounted(() => {
+  void live.openChat(id);
+  sizes = new ResizeObserver(() => {
+    tabHeight.value = document.querySelector<HTMLElement>(".tabbar")?.offsetHeight ?? 0;
+    formHeight.value = form.value?.offsetHeight ?? 64;
+  });
+  const bar = document.querySelector<HTMLElement>(".tabbar");
+  if (bar) sizes.observe(bar);
+  if (form.value) sizes.observe(form.value);
+});
+onUnmounted(() => {
+  live.closeChat();
+  sizes?.disconnect();
+});
 // keep the newest in sight
 watch(
   () => chat.value?.messages.length,
@@ -59,7 +76,7 @@ const showTime = (k: number) => {
 </script>
 
 <template>
-  <main v-if="ok" class="page chat-page">
+  <main v-if="ok" class="page chat-page" :style="{ paddingBottom: `${tabHeight + formHeight + 12}px` }">
     <header class="topbar">
       <NuxtLink to="/friends" class="icon-btn">← 好友</NuxtLink>
       <img v-if="chat" :src="`/sprites/${chat.friend.race}/icon.png`" class="pixel face" alt="" />
@@ -85,7 +102,7 @@ const showTime = (k: number) => {
       </template>
     </div>
 
-    <form class="write" @submit.prevent="send">
+    <form ref="form" class="write" :style="{ bottom: `${tabHeight}px` }" @submit.prevent="send">
       <p v-if="problem" class="problem">{{ problem }}</p>
       <div class="line">
         <input v-model="text" :maxlength="MESSAGE_MAX" placeholder="寫點什麼…" enterkeyhint="send" />
@@ -97,7 +114,6 @@ const showTime = (k: number) => {
 </template>
 
 <style scoped>
-.chat-page { padding-bottom: calc(env(safe-area-inset-bottom) + 90px); }
 .face { width: 30px; height: 30px; image-rendering: pixelated; }
 .grow { flex: 1; font-size: 18px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .more { position: relative; }
@@ -116,7 +132,7 @@ const showTime = (k: number) => {
 .bubble.mine { align-self: flex-end; background: var(--paper-yellow); border-radius: 14px 14px 4px 14px; }
 .bubble small { display: block; text-align: right; font-size: 10px; color: #777; margin-top: 2px; }
 .write {
-  position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 62px); z-index: 15; padding: 8px 12px;
+  position: fixed; left: 0; right: 0; z-index: 15; padding: 8px 12px;
   background: rgba(24, 38, 22, 0.96);
 }
 .line { display: flex; gap: 8px; max-width: 560px; margin: 0 auto; }
