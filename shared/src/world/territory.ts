@@ -124,8 +124,12 @@ export const MAX_TRAVEL_MINUTES = 180;
 
 /** How long a party takes between two cells; `speed` is the slowest member's pace (carrots help). */
 export function travelMinutes(from: CellId, to: CellId, speed = 1): number {
-  const km = cellDistance(from, to) / 1000;
-  const minutes = Math.min(MAX_TRAVEL_MINUTES, SETOUT_MINUTES + km * MINUTES_PER_KM);
+  return walkMinutes(cellDistance(from, to), speed);
+}
+
+/** How long a walk of `meters` takes (a route round other camps' land is longer than the straight line: route.ts). */
+export function walkMinutes(meters: number, speed = 1): number {
+  const minutes = Math.min(MAX_TRAVEL_MINUTES, SETOUT_MINUTES + (meters / 1000) * MINUTES_PER_KM);
   return Math.max(1, Math.round(minutes / Math.max(0.2, speed)));
 }
 

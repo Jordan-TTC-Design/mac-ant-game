@@ -261,6 +261,8 @@ export const expeditions = pgTable(
     settle: boolean("settle").notNull().default(false),
     /** The food boosts the party carries (shared/src/world/supplies.ts). */
     boosts: jsonb("boosts").$type<FightBoosts>(),
+    /** The cells it walks between round other camps' land (shared/src/world/route.ts); null: straight there. */
+    route: jsonb("route").$type<string[]>(),
     setOutAt: timestamp("set_out_at", { withTimezone: true, precision: 3 }).notNull(),
     arriveAt: timestamp("arrive_at", { withTimezone: true, precision: 3 }).notNull(),
     status: text("status", { enum: ["walking", "done"] }).notNull().default("walking"),

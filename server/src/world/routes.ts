@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { buildInput, expeditionInput, isCellId, openWorldInput, recallInput } from "@goblincamp/shared/world";
+import { buildInput, expeditionInput, isCellId, openWorldInput, recallInput, routeInput } from "@goblincamp/shared/world";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -8,6 +8,7 @@ import {
   buildOnCell,
   demolishOnCell,
   estimateExpedition,
+  previewRoute,
   unguard,
   buildTown,
   cellDetail,
@@ -73,7 +74,7 @@ export function worldRoutes(deps: AppDeps) {
     if (!(Math.abs(lat) <= 85) || !(Math.abs(lng) <= 180) || !(radius > 0 && radius <= MAX_MAP_RADIUS)) {
       return apiError(c, 400, "invalid_input", `lat、lng 要是座標，radius 是 1～${MAX_MAP_RADIUS} 公尺。`);
     }
-    return respond(c, await run(c, () => db.transaction((tx) => cellsAround(tx, { lat, lng }, radius, now()))));
+    return respond(c, await run(c, () => db.transaction((tx) => cellsAround(tx, { lat, lng }, radius, now(), c.get("session").user.id))));
   });
 
   /** All your cells at a glance (the phone's territory list). */
@@ -107,6 +108,14 @@ export function worldRoutes(deps: AppDeps) {
     if ("response" in body) return body.response;
     const userId = c.get("session").user.id;
     return respond(c, await run(c, () => db.transaction((tx) => estimateExpedition(tx, userId, body.data, now()))));
+  });
+
+  /** The way a party would walk round other camps' land (nothing is sent). */
+  app.post("/expeditions/route", async (c) => {
+    const body = await readJson(c, routeInput);
+    if ("response" in body) return body.response;
+    const userId = c.get("session").user.id;
+    return respond(c, await run(c, () => db.transaction((tx) => previewRoute(tx, userId, body.data))));
   });
 
   app.post("/expeditions", async (c) => {

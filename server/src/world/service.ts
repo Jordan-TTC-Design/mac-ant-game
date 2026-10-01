@@ -61,7 +61,11 @@ import {
   TOWN_COST,
   TOWN_MIN_CELLS,
   TERRAIN_YIELD,
-  travelMinutes,
+  walkMinutes,
+  findRoute,
+  inTheWay,
+  type Route,
+  type RoutePreview,
   cellYield,
   buildingYield,
   buildingsFor,
@@ -867,9 +871,12 @@ export async function sendExpedition(
     if (refusal === "target_shielded" || refusal === "target_closed") throw new WorldError(409, refusal, "對方正在龜縮，現在打不了。");
   }
 
+  // round other camps' built-up land; no way round, no going
+  const way = await routeFor(tx, userId, fromCell!, input.to);
+  if (!way.route) throw new WorldError(409, "no_way", `${way.blockedBy?.name ?? "別人"}的領地擋在路上，繞不過去：先把擋路的那一格打下來，或從別的地方出發。`);
   const boosts = withCarried(fightBoosts(camp.race, camp.boosts, now.getTime()), carried);
   const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
-  const minutes = Math.max(1, Math.round(travelMinutes(fromCell, input.to, slowest) * fromBonus.travel));
+  const minutes = Math.max(1, Math.round(walkMinutes(way.route.meters, slowest) * fromBonus.travel));
   const [row] = await tx
     .insert(expeditions)
     .values({
@@ -879,6 +886,7 @@ export async function sendExpedition(
       toCell: input.to,
       party: party.map((r) => r.id),
       boosts: carried,
+      route: routeColumn(way.route),
       setOutAt: now,
       arriveAt: new Date(now.getTime() + minutes * MINUTE),
       defender: !moving && target?.owner ? target.owner : null,
@@ -891,6 +899,50 @@ export async function sendExpedition(
   await addEvent(tx, userId, now, "expedition", { id: row!.id, setOut: true, to: input.to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
   await bumpVersion(tx, camp);
   return summary(row!);
+}
+
+// --- the way there ---------------------------------------------------------------------------------------------------
+
+/**
+ * The cells `userId`'s parties cannot walk through (shared/src/world/route.ts), with whose they are: other camps' cells
+ * with a nest, a building or a town on them, and their camps' own cells; never a friend's.
+ */
+async function blockedFor(tx: Tx, userId: string): Promise<Map<string, string>> {
+  const pairs = await tx
+    .select({ a: friendships.userA, b: friendships.userB })
+    .from(friendships)
+    .where(and(or(eq(friendships.userA, userId), eq(friendships.userB, userId)), isNotNull(friendships.acceptedAt)));
+  const friends = new Set(pairs.map((p) => (p.a === userId ? p.b : p.a)));
+  const out = new Map<string, string>();
+  const built = await tx
+    .select({ cell: worldCells.cell, owner: worldCells.owner })
+    .from(worldCells)
+    .where(and(isNotNull(worldCells.owner), ne(worldCells.owner, userId), or(isNotNull(worldCells.nestStartedAt), isNotNull(worldCells.building), eq(worldCells.town, true))));
+  for (const c of built) if (c.owner && !friends.has(c.owner)) out.set(c.cell, c.owner);
+  const homes = await tx.select({ cell: worldPlayers.homeCell, owner: worldPlayers.userId }).from(worldPlayers).where(and(isNotNull(worldPlayers.homeCell), ne(worldPlayers.userId, userId)));
+  for (const h of homes) if (h.cell && !friends.has(h.owner)) out.set(h.cell, h.owner);
+  return out;
+}
+
+/** The way from one cell to another for `userId`'s parties, or (null) whose land is in the way. */
+async function routeFor(tx: Tx, userId: string, from: string, to: string): Promise<{ route: Route | null; blockedBy: { cell: string; name: string } | null }> {
+  const blocked = await blockedFor(tx, userId);
+  const route = findRoute(from, to, new Set(blocked.keys()));
+  if (route) return { route, blockedBy: null };
+  const cell = inTheWay(from, to, blocked.keys());
+  return { route: null, blockedBy: cell ? { cell, name: (await ownerOf(tx, blocked.get(cell)!)).name } : null };
+}
+
+/** As stored on the expedition: the turns, or null when it walks straight there. */
+const routeColumn = (route: Route | null): string[] | null => (route && route.waypoints.length > 2 ? route.waypoints : null);
+
+/** The way a party would walk from `from` ("home" or a held cell) to `to` (the dispatch dialog shows it; nothing is sent). */
+export async function previewRoute(tx: Tx, userId: string, input: { from: string; to: string }): Promise<RoutePreview> {
+  const [player] = await tx.select().from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  const from = input.from === "home" ? player?.homeCell : input.from;
+  if (!from) throw new WorldError(403, "not_open", "還沒開啟大世界。");
+  const { route, blockedBy } = await routeFor(tx, userId, from, input.to);
+  return route ? { waypoints: route.waypoints, meters: route.meters, straight: route.straight, blockedBy: null } : { waypoints: [], meters: 0, straight: cellDistance(from, input.to), blockedBy };
 }
 
 /** How many may go into the lair on a free cell (null: no lair there, or a great monster: as many as can go). */
@@ -958,6 +1010,7 @@ function summary(row: ExpeditionRow, viewer?: string): ExpeditionSummary {
     party: row.party.length,
     setOutAt: row.setOutAt.toISOString(),
     arriveAt: row.arriveAt.toISOString(),
+    ...(row.route ? { route: row.route } : {}),
     status: row.status,
     outcome: result?.outcome ?? null,
     ...(viewer && row.defender === viewer && row.userId !== viewer ? { defending: true } : {}),
@@ -1501,10 +1554,12 @@ export async function recall(tx: Tx, userId: string, cell: string, input: { coun
 async function walk(tx: Tx, camp: CampRow, party: ResidentRow[], from: string, to: string, kind: "recall" | "reroute", at: Date): Promise<ExpeditionRow> {
   const boosts = fightBoosts(camp.race, camp.boosts, at.getTime());
   const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
-  const minutes = travelMinutes(from, to, slowest);
+  // (between its own cells: round other camps' land if it can be, straight on if not; nobody is left stranded)
+  const way = (await routeFor(tx, camp.userId, from, to)).route;
+  const minutes = walkMinutes(way?.meters ?? cellDistance(from, to), slowest);
   const [row] = await tx
     .insert(expeditions)
-    .values({ userId: camp.userId, kind, fromPlace: from, toCell: to, party: party.map((r) => r.id), setOutAt: at, arriveAt: new Date(at.getTime() + minutes * MINUTE), settle: false })
+    .values({ userId: camp.userId, kind, fromPlace: from, toCell: to, party: party.map((r) => r.id), route: routeColumn(way), setOutAt: at, arriveAt: new Date(at.getTime() + minutes * MINUTE), settle: false })
     .returning();
   await tx.update(campResidents).set({ place: walkingPlace(row!.id) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, party.map((r) => r.id))));
   await addEvent(tx, camp.userId, at, "expedition", { id: row!.id, setOut: true, to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
@@ -1874,8 +1929,9 @@ export async function landmarksAround(tx: Tx, point: LatLng, radius: number): Pr
   return near.map((n) => ({ ...n, owner: ownerOfCell.get(n.cell) ?? null }));
 }
 
-export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date): Promise<CellView[]> {
+export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date, viewer?: string): Promise<CellView[]> {
   const ids = cellsWithin(point, Math.min(radius, MAX_MAP_RADIUS));
+  const blocked = viewer ? await blockedFor(tx, viewer) : new Map<string, string>();
   const ground = await terrainsFor(tx, ids);
   const landmarks = await landmarksFor(tx, ids);
   const rows = ids.length ? await tx.select().from(worldCells).where(inArray(worldCells.cell, ids)) : [];
@@ -1924,6 +1980,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       ...lairWith(lair, row?.lairWounds, now),
       lairBackAt: backAt?.toISOString() ?? null,
       boss,
+      ...(blocked.has(cell) ? { blocks: true } : {}),
     };
   });
 }

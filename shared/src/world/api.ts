@@ -48,6 +48,18 @@ export const expeditionInput = z
   .refine((v) => v.residents || v.count, "residents or count");
 export type ExpeditionInput = z.infer<typeof expeditionInput>;
 
+export const routeInput = z.object({ from: z.union([z.literal("home"), cell]).default("home"), to: cell });
+
+/** The way a party would walk (POST world/expeditions/route): round other camps' built-up land (route.ts). */
+export interface RoutePreview {
+  /** The cells walked between, or empty when there is no way round. */
+  waypoints: string[];
+  meters: number;
+  straight: number;
+  /** When there is no way: the first cell in the way and whose it is. */
+  blockedBy: { cell: string; name: string } | null;
+}
+
 /**
  * `POST /api/world/cells/:cell/recall`: residents on a held cell (or, with `campers`, those camping beside it) walk to the camp
  * or to another held cell (`to`: "home" or a cell). No count, or too few left behind: all go and the cell is given up.
@@ -123,6 +135,8 @@ export interface CellView {
   lairWounds?: { standing: number; total: number; hpShare: number; healedAt: string } | null;
   /** A great monster standing here (a lair here is hidden while it is). */
   boss: BossView | null;
+  /** Someone else's built-up land the viewer's parties must walk round (route.ts); not sent when it does not. */
+  blocks?: boolean;
 }
 
 export interface ExpeditionSummary {
@@ -134,6 +148,8 @@ export interface ExpeditionSummary {
   party: number;
   setOutAt: string;
   arriveAt: string;
+  /** The cells it walks between round other camps' land (route.ts); absent: straight there. */
+  route?: string[];
   status: "walking" | "done";
   /** Filled in when it arrived. */
   outcome: null | {
