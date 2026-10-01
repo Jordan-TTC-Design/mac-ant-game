@@ -243,9 +243,9 @@ final class Settings {
         get { defaults.string(forKey: "scenery") ?? "forest" }
         set { defaults.set(newValue, forKey: "scenery") }
     }
-    /// The camp window stays above other windows.
+    /// The camp window stays above other windows (off by default since 2026-10-02: an ordinary window, in front when picked).
     var mapOnTop: Bool {
-        get { defaults.object(forKey: "mapOnTop") as? Bool ?? true }
+        get { defaults.object(forKey: "mapOnTop") as? Bool ?? false }
         set { defaults.set(newValue, forKey: "mapOnTop") }
     }
     /// While the camp window is used, the app also has a Dock icon (and is in ⌘Tab), like any other app.

@@ -22,6 +22,8 @@ enum Diagnostics {
         }
         out.append("settings: range \(settings.rangeMode)/\(Int(settings.rangeSize)) scenery \(settings.scenery) screens \(settings.screenMode) \(settings.screenNames) desktops \(settings.desktopsAll ? "all" : "\(settings.desktops)") fullscreenFocus \(settings.fullscreenFocus)")
         out += extra
+        out.append("--- how the last runs ended (exits.log)")
+        out += ExitLog.tail()
         out.append("--- recent changes")
         out += lines.suffix(80)
         return out.joined(separator: "\n")

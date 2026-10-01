@@ -1268,8 +1268,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        ExitLog.quitting()
+        return .terminateNow
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         persist()
+        ExitLog.ended()
     }
 
     // MARK: Menu
@@ -2568,6 +2574,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch type {
         case "pomodoro.changed":
             pullPomodoro()
+        case "friends.changed":
+            // (with `from`: a message from that friend)
+            if let from = event["from"] as? String { tellMessage(from: from) }
         case "claude.answer":
             guard let id = event["id"] as? String, event["device"] as? String == sync.account.deviceID, relayedAsks[id] != nil else { return }
             relayedAsks[id] = nil
@@ -2579,6 +2588,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         default:
             break
+        }
+    }
+
+    /// The last message from each friend already told (by its time), so a second "changed" for the same one says nothing.
+    private var toldMessages: [String: String] = [:]
+
+    /// A friend wrote: the princess says who and what (the reply is on the phone, or in the 大世界 window's 好友).
+    private func tellMessage(from friend: String) {
+        struct Last: Decodable { let text: String; let at: String; let mine: Bool }
+        struct Friend: Decodable { let id: String; let name: String; let unread: Int; let last: Last? }
+        struct Friends: Decodable { let friends: [Friend] }
+        Task { @MainActor in
+            guard let list = try? await self.sync.api.request("GET", "friends", as: Friends.self),
+                  let who = list.friends.first(where: { $0.id == friend }), let last = who.last, !last.mine, who.unread > 0,
+                  self.toldMessages[friend] != last.at else { return }
+            self.toldMessages[friend] = last.at
+            let text = last.text.count > 60 ? String(last.text.prefix(60)) + "…" : last.text
+            self.say("\(who.name) 傳來訊息：「\(text)」\(who.unread > 1 ? "（還有 \(who.unread - 1) 則沒看）" : "")")
         }
     }
 
