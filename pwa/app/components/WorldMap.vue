@@ -3,7 +3,7 @@ import { Map as MapLibre, Marker, setWorkerUrl, type GeoJSONSource } from "mapli
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { FeatureCollection } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { cellAt, HEX_RADIUS, landmarkRule, type CellView } from "@goblincamp/shared/world";
+import { alongRoute, cellAt, HEX_RADIUS, landmarkRule, type CellView } from "@goblincamp/shared/world";
 
 // The big world on the real map (OpenStreetMap, in the game's colours: utils/mapStyle.ts), drawn at a low resolution and
 // scaled up with sharp pixels. Only the cell picked and the held ones are outlined (yours yellow, others' red); each lair
@@ -15,10 +15,12 @@ const props = defineProps<{
   mine: string | null;
   selected: string | null;
   walkingTo: string[];
-  /** Parties on the road (from and to as cell centres, and when): drawn as a dashed line with the party moving along it. */
-  parties?: { id: string; from: { lat: number; lng: number }; to: { lat: number; lng: number }; setOutAt: string; arriveAt: string; race: string }[];
+  /** Parties on the road (the cell centres it walks between, round other camps' land, and when): a dashed line with the party moving along it. */
+  parties?: { id: string; path: { lat: number; lng: number }[]; setOutAt: string; arriveAt: string; race: string }[];
   /** The race whose face is on the "back to my camp" button (none: no camp yet, no button). */
   home?: string | null;
+  /** The way a party would walk to the cell picked (before it is sent): a yellow dotted line. */
+  plan?: { lat: number; lng: number }[] | null;
 }>();
 const emit = defineEmits<{ select: [cell: string]; pan: [center: { lat: number; lng: number }]; home: [] }>();
 
@@ -58,6 +60,7 @@ function cellsGeoJson(): FeatureCollection {
         cell: c.cell,
         state: c.owner ? (c.owner.id === props.mine ? "mine" : "theirs") : c.boss ? "boss" : "free",
         selected: c.cell === props.selected,
+        blocks: !!c.blocks,
         target: props.walkingTo.includes(c.cell),
       },
       geometry: { type: "Polygon", coordinates: [hexRing(c.lat, c.lng)] },
@@ -71,7 +74,7 @@ function partiesGeoJson(): FeatureCollection {
     features: (props.parties ?? []).map((p) => ({
       type: "Feature",
       properties: { id: p.id },
-      geometry: { type: "LineString", coordinates: [[p.from.lng, p.from.lat], [p.to.lng, p.to.lat]] },
+      geometry: { type: "LineString", coordinates: p.path.map((q) => [q.lng, q.lat]) },
     })),
   };
 }
@@ -137,8 +140,17 @@ function drawMarkers() {
   }
 }
 
+function planGeoJson(): FeatureCollection {
+  const path = props.plan ?? [];
+  return {
+    type: "FeatureCollection",
+    features: path.length > 1 ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: path.map((q) => [q.lng, q.lat]) } }] : [],
+  };
+}
+
 function refresh() {
   if (!map || !ready) return;
+  (map.getSource("plan") as GeoJSONSource | undefined)?.setData(planGeoJson());
   (map.getSource("cells") as GeoJSONSource | undefined)?.setData(cellsGeoJson());
   (map.getSource("parties") as GeoJSONSource | undefined)?.setData(partiesGeoJson());
   drawMarkers();
@@ -154,7 +166,8 @@ function moveParties() {
     live.add(p.id);
     const t0 = Date.parse(p.setOutAt), t1 = Date.parse(p.arriveAt);
     const k = Math.min(1, Math.max(0, (now - t0) / Math.max(1, t1 - t0)));
-    const at: [number, number] = [p.from.lng + (p.to.lng - p.from.lng) * k, p.from.lat + (p.to.lat - p.from.lat) * k];
+    const here = alongRoute(p.path, k);
+    const at: [number, number] = [here.lng, here.lat];
     const known = partyMarkers.get(p.id);
     if (known) {
       known.setLngLat(at);
@@ -249,6 +262,7 @@ onMounted(() => {
   m.on("load", () => {
     m.addSource("cells", { type: "geojson", data: cellsGeoJson() });
     m.addSource("parties", { type: "geojson", data: partiesGeoJson() });
+    m.addSource("plan", { type: "geojson", data: planGeoJson() });
     m.addLayer({
       id: "cell-fill",
       type: "fill",
@@ -269,8 +283,12 @@ onMounted(() => {
         "line-width": ["case", ["get", "selected"], 3, 2.5],
       },
     });
+    // someone else's built-up land: parties must walk round it (shared/src/world/route.ts), so it reads as a wall
+    m.addLayer({ id: "cell-wall", type: "fill", source: "cells", filter: ["get", "blocks"], paint: { "fill-color": "#7a1a10", "fill-opacity": 0.32 } });
+    m.addLayer({ id: "cell-wall-line", type: "line", source: "cells", filter: ["get", "blocks"], paint: { "line-color": "#5a0f08", "line-width": 4 } });
     m.addLayer({ id: "cell-target", type: "line", source: "cells", filter: ["get", "target"], paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.5] } });
     m.addLayer({ id: "party-road", type: "line", source: "parties", paint: { "line-color": "#ffffff", "line-width": 3, "line-dasharray": [2, 1.5], "line-opacity": 0.9 } });
+    m.addLayer({ id: "plan-road", type: "line", source: "plan", layout: { "line-cap": "round" }, paint: { "line-color": "#f3d36b", "line-width": 4, "line-dasharray": [0.1, 2] } });
     ready = true;
     refresh();
     // the credits (OpenStreetMap's licence asks for them) start folded into the little (i), so they do not cover the map
@@ -289,7 +307,7 @@ onUnmounted(() => {
   map = null;
 });
 
-watch(() => [props.cells, props.selected, props.mine, props.walkingTo, props.parties, foeSheet.value], refresh);
+watch(() => [props.cells, props.selected, props.mine, props.walkingTo, props.parties, props.plan, foeSheet.value], refresh);
 // the page moves the map (to the camp, to a great monster): fly there if it is not where we are looking already
 watch(
   () => props.center,

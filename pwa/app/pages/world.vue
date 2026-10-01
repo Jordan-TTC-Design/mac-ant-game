@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, LANDMARKS, type NearbyLandmark, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, LANDMARKS, type NearbyLandmark, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
+import { loadLastAttack, saveLastAttack, type LastAttack } from "~/utils/again";
 
 // 大世界: the real map with the lairs and camps on it. Tapping a cell brings up a card from the bottom (what is there, and
 // what can be done: attack, settle, send more, build, recall); an action that sends a party opens the dispatch dialog.
@@ -21,6 +22,8 @@ onMounted(async () => {
   if (asked && isCellId(asked)) {
     await world.moveTo(cellCenter(asked));
     pick(asked);
+    // (?again=1: from a report's 再派一次)
+    if (route.query.again && cell.value && !mine.value) attackAgain();
   }
 });
 onUnmounted(() => {
@@ -85,8 +88,31 @@ const message = ref("");
 const busy = ref(false);
 const spare = computed(() => Math.max(0, (s.me?.atHome ?? 0) - 2));
 function pick(c: string) {
+  if (launchFrom.value && c === (launchFrom.value === "home" ? s.me?.homeCell : launchFrom.value)) return; // (that is where it sets out)
   selected.value = c;
   message.value = "";
+  if (launchFrom.value) aimAt();
+}
+
+// 從這裡出征: pick one of your cells (or the camp), then the cell to go to; the dialog opens with it as the start
+const launchFrom = ref<string | null>(null);
+const launchName = computed(() => (launchFrom.value === "home" ? "營地" : "這塊領地"));
+/** Whether a party can set out from the cell picked: more living there than it must keep. */
+const canLaunch = computed(() => {
+  if (!s.me?.open || !cell.value || !mine.value) return false;
+  return isHome.value ? spare.value > 0 : (myCell.value?.garrison ?? 0) > s.me.rules.garrisonMin;
+});
+function launchHere() {
+  launchFrom.value = isHome.value ? "home" : selected.value;
+  selected.value = null;
+  message.value = "";
+}
+/** With a start picked: open the dialog for what the cell tapped calls for (a friend's: the card, to pick help or attack). */
+function aimAt() {
+  const c = cell.value;
+  if (!c) return;
+  if ((c.owner && isFriend.value) || c.cell === s.me?.homeCell) return;
+  dispatch.value = mine.value ? "move" : c.boss || c.lair || c.owner ? "attack" : "settle";
 }
 
 async function doIt(work: () => Promise<string | null>, done: string) {
@@ -154,8 +180,18 @@ const dispatch = ref<"attack" | "settle" | "move" | "guard" | null>(null);
 async function sent(party: number[], settle: boolean, from: string, supplies: Record<string, number>) {
   const to = selected.value!;
   const guard = dispatch.value === "guard";
+  if (dispatch.value === "attack") saveLastAttack(to, { from, party, supplies, settle });
+  again.value = null;
   dispatch.value = null;
+  launchFrom.value = null;
   await doIt(() => world.send(to, party, settle, from, supplies, guard), `出發了！${party.length} 隻上路。`);
+}
+// 再派一次: the last attack on the cell picked, sent again (who went, from where, the food) in one tap
+const again = ref<LastAttack | null>(null);
+const lastHere = computed(() => (selected.value && cell.value && (cell.value.lair || cell.value.boss || (cell.value.owner && !mine.value)) ? loadLastAttack(selected.value) : null));
+function attackAgain() {
+  again.value = loadLastAttack(selected.value!);
+  dispatch.value = "attack";
 }
 /** My residents guarding the cell picked (a friend's). */
 const myGuests = computed(() => s.me?.guarding.find((g) => g.cell === selected.value)?.count ?? 0);
@@ -166,7 +202,7 @@ const parties = computed(() =>
   (s.me?.walking ?? []).flatMap((w) => {
     const from = w.from === "home" ? s.me?.homeCell : w.from;
     if (!from) return [];
-    return [{ id: w.id, from: cellCenter(from), to: cellCenter(w.to), setOutAt: w.setOutAt, arriveAt: w.arriveAt, race: race.value }];
+    return [{ id: w.id, path: (w.route ?? [from, w.to]).map(cellCenter), setOutAt: w.setOutAt, arriveAt: w.arriveAt, race: race.value }];
   }),
 );
 const goHome = () => s.me?.home && world.moveTo(s.me.home);
@@ -179,7 +215,33 @@ const hoursLeft = (iso: string) => {
   const m = Math.max(0, Math.round((Date.parse(iso) - now.value) / 60_000));
   return m >= 60 ? `${Math.floor(m / 60)} 小時 ${m % 60} 分` : `${m} 分鐘`;
 };
-const minutesTo = computed(() => (s.me?.homeCell && selected.value ? travelMinutes(s.me.homeCell, selected.value) : null));
+// the way there from the camp (or the cell picked to set out from), drawn on the map before anybody goes; the dialog
+// redraws it when another start is picked there
+const way = ref<RoutePreview | null>(null);
+const wayFrom = computed(() => launchFrom.value ?? "home");
+let wayAsked = 0;
+async function loadWay() {
+  way.value = null;
+  const asked = ++wayAsked;
+  const start = wayFrom.value === "home" ? s.me?.homeCell : wayFrom.value;
+  if (!selected.value || !start || !s.me?.open || selected.value === start) return;
+  try {
+    const got = await api<RoutePreview>("POST", "world/expeditions/route", { from: wayFrom.value, to: selected.value });
+    if (asked === wayAsked) way.value = got;
+  } catch {
+    // (no line: the card just says less)
+  }
+}
+watch([selected, wayFrom, () => s.me?.open], loadWay, { immediate: true });
+// (the dialog may have shown another start's way: back to the card's own when it closes)
+watch(dispatch, (d) => {
+  if (d) wayAsked++; // (the dialog draws from now on)
+  else void loadWay();
+});
+const plan = computed(() => (way.value?.waypoints.length ? way.value.waypoints.map(cellCenter) : null));
+/** About how long the walk is from where it would set out (the slowest goblin and food make it differ a little). */
+const minutesTo = computed(() => (way.value?.waypoints.length ? walkMinutes(way.value.meters) : null));
+const detourTo = computed(() => (way.value && way.value.waypoints.length > 2 ? walkMinutes(way.value.meters) - walkMinutes(way.value.straight) : 0));
 const lootText = (loot: Record<string, number>) => Object.entries(loot).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 const costList = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 const left = (iso: string) => {
@@ -199,7 +261,7 @@ const title = computed(() => {
   if (c.lair) return c.lair.name;
   return TERRAIN_NAMES[c.terrain];
 });
-const canAct = computed(() => !!s.me?.open && spare.value > 0);
+const canAct = computed(() => !!s.me?.open && (spare.value > 0 || !!launchFrom.value || (s.me.cells.some((c) => c.garrison > s.me!.rules.garrisonMin && c.cell !== s.me!.homeCell))));
 
 // 附近地標: the landmarks around where the map is looking (3 km), the nearest first; tapping one goes there
 const landmarkList = ref<NearbyLandmark[] | null>(null);
@@ -295,6 +357,10 @@ async function goToLandmark(l: NearbyLandmark) {
       </section>
       <p v-if="landmarkProblem" class="status error">{{ landmarkProblem }}</p>
 
+      <div v-if="launchFrom" class="launch">
+        <span>從{{ launchName }}出征：點地圖上要去的格子</span>
+        <button class="btn" @click="launchFrom = null">取消</button>
+      </div>
       <WorldMap
         ref="mapView"
         :cells="s.cells"
@@ -303,12 +369,13 @@ async function goToLandmark(l: NearbyLandmark) {
         :selected="selected"
         :walking-to="s.me.walking.map((w) => w.to)"
         :parties="parties"
+        :plan="plan"
         :home="s.me.homeCell ? race : null"
         @select="pick"
         @pan="world.moveTo"
         @home="goHome"
       />
-      <p class="legend">真實世界的地圖（OpenStreetMap）。格子裡是那裡最強的怪物與等級，大馬路邊有強盜與強獸人；黃框是你的，紅框是別人的。點一格看看。</p>
+      <p class="legend">真實世界的地圖（OpenStreetMap）。格子裡是那裡最強的怪物與等級，大馬路邊有強盜與強獸人；黃框是你的，紅框是別人的，深紅粗框是別人蓋了東西的領地（隊伍要繞過去）；黃色點點是點的那一格要走的路。點一格看看。</p>
 
       <section v-if="s.me.walking.length" class="panel">
         <h2>在路上</h2>
@@ -356,7 +423,9 @@ async function goToLandmark(l: NearbyLandmark) {
         <div class="grow">
           <h2>{{ title }}<small v-if="cell.lair"> {{ cell.lair.level }} 級</small></h2>
           <p v-if="cell.lair?.boss" class="boss-tag">👑 初期魔王：比一般巢穴強很多，會掉做中等裝備的材料。打輸了傷會留著，可以找朋友接著打。</p>
-          <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && !mine ? `・從營地走約 ${minutesTo} 分鐘` : "" }}</p>
+          <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && (!mine || launchFrom) ? `・從${launchFrom ? launchName : "營地"}走約 ${minutesTo} 分鐘${detourTo ? `（繞路 +${detourTo}）` : ""}` : "" }}</p>
+          <p v-if="way && !way.waypoints.length" class="wall">🧱 {{ way.blockedBy?.name ?? "別人" }}的領地擋在路上，從{{ launchFrom ? launchName : "營地" }}過不去</p>
+          <p v-if="cell.blocks" class="wall">🧱 有蓋東西的領地：你的隊伍不能穿過去，要繞路（打下來就通了）</p>
           <p v-if="cell.landmark" class="landmark">{{ landmarkRule(cell.landmark.kind)?.icon }} {{ cell.landmark.name }}（{{ landmarkRule(cell.landmark.kind)?.name }}）<small>{{ landmarkRule(cell.landmark.kind)?.blurb }}</small></p>
         </div>
       </div>
@@ -401,6 +470,7 @@ async function goToLandmark(l: NearbyLandmark) {
         <template v-else-if="mine">
           <NuxtLink v-if="!isHome" :to="`/territory/${cell.cell}`" class="btn primary">進去看看</NuxtLink>
           <NuxtLink v-else to="/camp" class="btn primary">看營地</NuxtLink>
+          <button class="btn" :disabled="!canLaunch" @click="launchHere">從這裡出征</button>
           <button v-if="!isHome" class="btn" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
           <button v-if="!isHome && cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
           <button v-if="!cell.town && (myCell?.region ?? 0) >= s.me.rules.townCellsEach * ((myCell?.regionTowns ?? 0) + 1)" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
@@ -411,7 +481,8 @@ async function goToLandmark(l: NearbyLandmark) {
         <template v-else>
           <button v-if="cell.owner && isFriend" class="btn primary" :disabled="!canAct || (cell.guests ?? 0) >= GUESTS_MAX" @click="dispatch = 'guard'">派兵幫守</button>
           <button v-if="myGuests" class="btn" :disabled="busy" @click="unguard">叫幫守的 {{ myGuests }} 隻回來</button>
-          <button v-if="(cell.boss || cell.lair || cell.owner) && !myGuests" class="btn" :class="{ primary: !(cell.owner && isFriend) }" :disabled="!canAct" @click="dispatch = 'attack'">{{ cell.boss ? "攻擊魔王" : "攻擊" }}</button>
+          <button v-if="(cell.boss || cell.lair || cell.owner) && !myGuests && lastHere" class="btn primary" :disabled="!canAct" @click="attackAgain">再派一次（{{ lastHere.party.length }} 隻）</button>
+          <button v-if="(cell.boss || cell.lair || cell.owner) && !myGuests" class="btn" :class="{ primary: !(cell.owner && isFriend) && !lastHere }" :disabled="!canAct" @click="dispatch = 'attack'">{{ cell.boss ? "攻擊魔王" : "攻擊" }}</button>
           <button v-else class="btn primary" :disabled="!canAct" @click="dispatch = 'settle'">派人佔領</button>
           <NuxtLink v-if="cell.owner && isFriend" :to="`/friends/${cell.owner.id}`" class="btn">傳訊息</NuxtLink>
           <button v-else-if="cell.owner" class="btn" :disabled="busy || askedFriend" @click="addFriend">{{ askedFriend ? "等對方答應好友" : "加好友" }}</button>
@@ -428,7 +499,7 @@ async function goToLandmark(l: NearbyLandmark) {
       <p v-if="message" class="status">{{ message }}</p>
     </aside>
 
-    <DispatchDialog v-if="dispatch && cell && s.me" :target="cell" :kind="dispatch" :me="s.me" :race="race" @close="dispatch = null" @sent="sent" />
+    <DispatchDialog v-if="dispatch && cell && s.me" :target="cell" :kind="dispatch" :me="s.me" :race="race" :start="launchFrom ?? undefined" :again="again" @close="dispatch = null; again = null" @sent="sent" @route="(w) => (way = w)" />
     <RecallDialog
       v-if="recalling && cell && s.me && myCell"
       :from="cell.cell"
@@ -520,5 +591,9 @@ p { margin: 6px 0; line-height: 1.55; }
 .landmark-row .free { color: var(--green); font-weight: 700; }
 .landmark-row .mine { color: #8a6a00; font-weight: 700; }
 .landmark-row .taken { color: #b3412c; }
+.launch { position: sticky; top: 8px; z-index: 30; display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 8px 10px 8px 14px; border: 3px solid #1f1f1f; border-radius: 12px; background: #f3d36b; color: #1f1f1f; font-weight: 700; box-shadow: 3px 3px 0 #1f1f1f; }
+.launch span { flex: 1; }
+.launch .btn { min-height: 36px; }
+.wall { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a2a1a; }
 .boss-tag { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a5a00; }
 </style>
