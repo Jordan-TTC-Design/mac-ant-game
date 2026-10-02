@@ -147,6 +147,8 @@ export const camps = pgTable("camps", {
   autoGear: boolean("auto_gear").notNull().default(true),
   /** 任務 claimed (shared/src/camp/quests.ts): quest id → when (ISO). */
   quests: jsonb("quests").$type<Record<string, string>>().notNull().default({}),
+  /** Decorations the player put down in the camp window (shared/src/camp/decor.ts): kind, offset from the land's anchor, turned. */
+  decor: jsonb("decor").$type<{ kind: string; x: number; y: number; flip?: boolean }[]>().notNull().default([]),
   /** Food boosts still running and food cooldowns: food id → the time it ends (ISO). */
   boosts: jsonb("boosts").$type<Record<string, string>>().notNull().default({}),
   foodCooldowns: jsonb("food_cooldowns").$type<Record<string, string>>().notNull().default({}),

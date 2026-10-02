@@ -353,6 +353,18 @@ final class Settings {
     }
 
     /// Which character is on screen ("goblin", "ants", or a user-made one).
+    /// The day (yyyy-MM-dd) the camp last said which holiday it is (Holidays.swift): said once a day, not at every start.
+    var holidayAnnounced: String? {
+        get { defaults.string(forKey: "holidayAnnounced") }
+        set { defaults.set(newValue, forKey: "holidayAnnounced") }
+    }
+
+    /// The merchant's visits so far today (Merchant.swift), as "yyyy-MM-dd:count".
+    var merchantVisits: String? {
+        get { defaults.string(forKey: "merchantVisits") }
+        set { defaults.set(newValue, forKey: "merchantVisits") }
+    }
+
     var characterID: String {
         get { defaults.string(forKey: "character") ?? "goblin" }
         set { defaults.set(newValue, forKey: "character") }

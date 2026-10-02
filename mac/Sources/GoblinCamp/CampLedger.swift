@@ -84,11 +84,15 @@ final class CampLedger {
             var farm: Site? { sites.first { $0.kind == "farm" } }
         }
         let production: Production?
+        /// The wandering merchant while it is at the camp (Merchant.swift); older servers leave it out.
+        let merchant: MerchantVisitInfo?
+        /// The decorations put down (Decor.swift); older servers leave it out.
+        let decor: [DecorPlaced]?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -114,6 +118,8 @@ final class CampLedger {
             delivered = try c.decode(Int.self, forKey: .delivered)
             sanctuary = try? c.decodeIfPresent(Sanctuary.self, forKey: .sanctuary)
             production = try? c.decodeIfPresent(Production.self, forKey: .production)
+            merchant = try? c.decodeIfPresent(MerchantVisitInfo.self, forKey: .merchant)
+            decor = try? c.decodeIfPresent([DecorPlaced].self, forKey: .decor)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }

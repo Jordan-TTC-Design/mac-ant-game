@@ -201,6 +201,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.applyWalkable() // the home screen follows the camp when it is moved
             if self?.colony.needsPrincessName == true { DispatchQueue.main.async { self?.nameThePrincess(firstTime: true) } }
         }
+        colony.onAnnounce = { [weak self] text in // a holiday, said by the princess (not in focus mode: it waits)
+            guard let self, !self.isSilenced else { return false }
+            self.say(text)
+            return true
+        }
+        colony.onMerchant = { [weak self] request, done in // the wandering merchant asks the books (Merchant.swift)
+            guard let self else { return }
+            struct Arrive: Encodable { let kind = "merchant-arrive" }
+            struct Trade: Encodable { let kind = "merchant-trade"; let visit: String; let offer: Int }
+            Task { @MainActor in
+                do {
+                    let answer: CampLedger.CommandAnswer
+                    switch request {
+                    case .arrive: answer = try await self.ledger.command(Arrive())
+                    case .trade(let visit, let offer): answer = try await self.ledger.command(Trade(visit: visit, offer: offer))
+                    }
+                    self.applyBooksToCamp()
+                    done(.success(answer.message))
+                } catch {
+                    done(.failure((error as? APIError)?.message ?? error.localizedDescription))
+                }
+            }
+        }
+        colony.onDecorChanged = { [weak self] list in // the decorations go to the books a second after the last change
+            guard let self else { return }
+            self.decorToSend = list
+            self.decorTimer?.invalidate()
+            self.decorTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in self?.sendDecor() }
+        }
         colony.onAntsChanged = { [weak self] in
             self?.updateCount()
             self?.persist()
@@ -2031,6 +2060,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyBooksToCamp() {
         guard campReady, let stores = ledger.bookStores() else { return }
         colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
+        colony.booksMerchant = ledger.view?.merchant
+        colony.booksStage = ledger.view?.stage
+        colony.applyBooksDecor(ledger.view?.decor)
         updateCount()
     }
 
@@ -2250,6 +2282,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard !got.isEmpty else { return }
         say("今天收了 \(got.joined(separator: "、"))。")
+    }
+
+    /// The decorations as last arranged, waiting a moment before they go to the books (Decor.swift).
+    private var decorToSend: [DecorPlaced]?
+    private var decorTimer: Timer?
+
+    private func sendDecor() {
+        guard let list = decorToSend else { return }
+        decorToSend = nil
+        struct Body: Encodable { let kind = "decor-set"; let items: [DecorPlaced] }
+        Task { @MainActor in
+            do {
+                _ = try await self.ledger.command(Body(items: list))
+            } catch {
+                DecorPalette.shared.refresh("沒存到伺服器：\((error as? APIError)?.message ?? error.localizedDescription)")
+            }
+        }
     }
 
     /// Something the player did that the books must do: queued (it waits while offline) and sent in order.

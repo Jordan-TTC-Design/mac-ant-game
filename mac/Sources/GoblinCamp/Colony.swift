@@ -130,6 +130,35 @@ final class Colony {
     var romanceRuntime = RomanceRuntime()
     /// The individual highlighted from the roster, if any.
     var selectedAntID: Int?
+    /// The player's hand in the camp window: what the pointer is over, what it holds, and the little shows at the pointer (Touch.swift).
+    let hand = Hand()
+    /// Holiday fireworks over the camp, and the timer for the day's goings-on (Holidays.swift).
+    let fireworks = Fireworks()
+    /// Claude Code's sessions at work, for the scribes at their desks (Scribe.swift).
+    let claudeDesk = ClaudeDesk()
+    /// The wandering merchant (Merchant.swift): at the camp or away; the visit on the books (set by the app); how to ask the server.
+    let merchant = MerchantDesk()
+    var booksMerchant: MerchantVisitInfo?
+    var onMerchant: ((MerchantRequest, @escaping (MerchantAnswer) -> Void) -> Void)?
+    /// The decorations put down (Decor.swift), and the decoration mode: on, the one picked, the kind being put down.
+    var decor: [DecorPlaced] = []
+    var decorating = false
+    var decorSelected: Int?
+    var decorPlacing: String?
+    /// A decoration being dragged: which, from where the pointer took hold of it, and where it stood before.
+    var decorDrag: (index: Int, offset: CGSize, from: DecorPlaced)?
+    var decorObstacles: [Obstacle] = []
+    var decorTimer = 2.0
+    var decorSentOnce = false
+    var decorLoaded = false
+    /// The camp's look as the books have it (nil: not signed in), and how to keep the decorations on the books.
+    var booksStage: Int?
+    var onDecorChanged: (([DecorPlaced]) -> Void)?
+    var holidayTimer = 5.0
+    /// Says something to the player in a popup (the princess); false when it cannot now (focus mode). Set by the app.
+    var onAnnounce: ((String) -> Bool)?
+    /// The day the holiday was last said in this run (yyyy-MM-dd).
+    var holidaySaid = ""
     private var nextFoodID = 1
     private var nextAntID = 1
     /// The two goblins carrying the princess in at the start, and how many have arrived.
@@ -533,6 +562,7 @@ final class Colony {
         floaters = []
         outfitIndex = Int(ProcessInfo.processInfo.environment["CAMP_OUTFIT"] ?? "") ?? 0
         selectedAntID = nil
+        hand.reset()
         lives = [:]
         savedLives = [:]
         life = nil
@@ -827,7 +857,7 @@ final class Colony {
     private func attack(creature id: Int, by index: Int) {
         guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
         let rules = Characters.current.rules
-        creatures[ci].hp -= ants[index].might * (1 + 0.2 * boost(.meat)) * (Colony.isNight ? rules.nightMight ?? 1 : 1)
+        creatures[ci].hp -= ants[index].might * (1 + 0.2 * boost(.meat)) * (Colony.isNight ? rules.nightMight ?? 1 : 1) * decorMight
         wear(.weapon, of: index, by: 1)
         ants[index].swing = Ant.swingTime
         ants[index].swingHeading = atan2(creatures[ci].pos.y - ants[index].pos.y, creatures[ci].pos.x - ants[index].pos.x)
@@ -847,6 +877,31 @@ final class Colony {
             creatures[ci].state = .fleeing(remaining: 2.5, angle: away)
         }
     }
+
+    /// The player's hand hits a monster (Touch.swift): a light blow, about half a plain goblin's. False when it is not a monster.
+    func handStrike(creature id: Int) -> Bool {
+        guard let ci = creatures.firstIndex(where: { $0.id == id }), creatures[ci].kind.hostile else { return false }
+        creatures[ci].hp -= 0.5
+        creatures[ci].hurt = 0.35
+        creatures[ci].engaged = max(creatures[ci].engaged, 2)
+        hits.append((pos: creatures[ci].pos, age: 0))
+        if creatures[ci].hp <= 0 { kill(creatureAt: ci) }
+        return true
+    }
+
+    /// The merchant's present or swap on a camp that keeps its own books (not signed in: Merchant.swift). False when it cannot pay.
+    func exchangeLocally(give: [String: Int], get: [String: Int]) -> Bool {
+        guard give.allSatisfy({ materials[$0.key, default: 0] >= $0.value }) else { return false }
+        for (id, n) in give {
+            materials[id, default: 0] -= n
+            if materials[id] == 0 { materials[id] = nil }
+        }
+        for (id, n) in get { materials[id, default: 0] += n }
+        return true
+    }
+
+    /// A puff where something was hit or landed hard.
+    func addHit(at pos: CGPoint) { hits.append((pos: pos, age: 0)) }
 
     /// The animal bites: the goblin loses health, limps home when it is nearly done for, and may be killed.
     private func hurt(ant index: Int) {
@@ -971,12 +1026,13 @@ final class Colony {
             if larder[key] == 0 { larder[key] = nil }
             if key == "fish" { fish += 1 } else { veg += 1 }
         }
-        let name = fish > 0 && veg > 0 ? "魚菜燉鍋" : fish > 0 ? "魚湯" : "蔬菜燉菜"
+        let name = Holidays.today == Holidays.dongzhi ? "湯圓" : fish > 0 && veg > 0 ? "魚菜燉鍋" : fish > 0 ? "魚湯" : "蔬菜燉菜" // (on 冬至 the pot is 湯圓)
         var pieces = (fish + veg) * 2 + Int.random(in: 0...3)
         let roll = Double.random(in: 0..<1)
         let message: String
-        if roll < 0.05 { pieces = 0; message = "打翻了鍋子…" }
-        else if roll < 0.22 { pieces = max(1, pieces / 2); message = "\(name)燒焦了" }
+        let bigPot = decorHas("cook") // (a big cauldron put down: nothing burns or tips over)
+        if roll < 0.05, !bigPot { pieces = 0; message = "打翻了鍋子…" }
+        else if roll < 0.22, !bigPot { pieces = max(1, pieces / 2); message = "\(name)燒焦了" }
         else if roll > 0.85 { pieces = pieces * 3 / 2; message = "香噴噴的\(name)！" }
         else { message = "煮好了\(name)" }
         addFloater(message, roll > 0.85 ? .uncommon : .common, at: pot)
@@ -1052,7 +1108,7 @@ final class Colony {
             }
         }
         // the soul fire draws the plain souls in
-        let pull = 3.0 * dt * settings.pace * (1 + boost(.honey) / 2)
+        let pull = 3.0 * dt * settings.pace * (1 + boost(.honey) / 2) * (hand.wispBoost > 0 ? 3 : 1) * (decorHas("souls") ? 1.1 : 1) // (a will-o'-wisp dropped into the fire; a soul pot)
         var arrived: [Int] = []
         for i in foods.indices where foods[i].kind == .soul {
             let dx = nest.x - foods[i].pos.x, dy = nest.y - foods[i].pos.y, d = hypot(dx, dy)
@@ -1186,7 +1242,7 @@ final class Colony {
             life.setPlot(index) { $0 = PlotState(state: 2, crop: crop, density: thin ? Int.random(in: 3...4) : Int.random(in: 5...8), changed: now, progress: 0, pace: Double.random(in: 0.8...1.3)) }
             message = thin ? "種子撒得稀稀的" : "播下了種子"
         case 3:
-            if life.state.plots[index].state == 3, Double.random(in: 0..<1) < 0.8 {
+            if life.state.plots[index].state == 3, Double.random(in: 0..<1) < (decorHas("well") ? 1 : 0.8) { // (a well: watering always takes)
                 life.setPlot(index) { $0.progress += Double.random(in: 1...3) * 3600 }
                 message = "澆了水"
             }
@@ -1211,7 +1267,7 @@ final class Colony {
     // MARK: Working the land (felling and mining)
 
     /// The trees and rocks that may be worked, refreshed every couple of seconds.
-    private var resourceCache: [TerrainScene.ResourceSpot] = []
+    private(set) var resourceCache: [TerrainScene.ResourceSpot] = []
     private var resourceTimer = 0.0
 
     /// A goblin has finished at a tree or a rock. What comes of it is a matter of chance: a tree may fall, give only some branches, or turn
@@ -1325,6 +1381,22 @@ final class Colony {
                     let a = ants[starter].id, b = ants[other].id
                     ants[starter].begin(.scuffle(partner: b), world: world, seconds: seconds)
                     ants[other].begin(.scuffle(partner: a), world: world, seconds: seconds)
+                }
+            }
+        }
+
+        // two near each other stop for a chat (by day and of an evening; in the small hours they are abed)
+        let hour = Scenery.currentHour
+        let chatting = ants.filter { if case .activity(.chat, _) = $0.mode { return true } else { return false } }.count / 2
+        if !(1..<6).contains(hour), chatting < max(1, ants.count / 15), Double.random(in: 0..<1) < 0.6 {
+            let talkers = idle.filter { !ants[$0].isChild && isIdle($0) }
+            if let starter = talkers.randomElement() {
+                let near = talkers.filter { $0 != starter && hypot(ants[$0].pos.x - ants[starter].pos.x, ants[$0].pos.y - ants[starter].pos.y) < 70 }
+                if let other = near.randomElement() {
+                    let seconds = Double.random(in: 8...16)
+                    let a = ants[starter].id, b = ants[other].id
+                    ants[starter].begin(.chat(partner: b), world: world, seconds: seconds)
+                    ants[other].begin(.chat(partner: a), world: world, seconds: seconds)
                 }
             }
         }
@@ -1868,7 +1940,7 @@ final class Colony {
     }
 
     /// The closest point inside any screen (kept 12pt away from the edge).
-    private func nearestWalkable(to p: CGPoint) -> CGPoint {
+    func nearestWalkable(to p: CGPoint) -> CGPoint {
         func distance(_ r: CGRect) -> CGFloat {
             hypot(max(r.minX - p.x, 0, p.x - r.maxX), max(r.minY - p.y, 0, p.y - r.maxY))
         }
@@ -1969,10 +2041,21 @@ final class Colony {
         world.pace = pace
         world.raining = isRaining
         world.fire = fire
-        world.obstacles = obstacles
+        world.obstacles = obstacles + decorObstacles
         world.ponds = scene?.visiblePonds ?? []
         world.crowd = Double(visibleCount) / Double(visibleCap)
         world.night = Colony.isNight
+        world.hour = Scenery.currentHour
+        var watching = 0, fireside = 0
+        for ant in ants {
+            switch ant.mode {
+            case .activity(.patrol, _): watching += 1
+            case .activity(.fireside, _): fireside += 1
+            default: break
+            }
+        }
+        world.patrolSlots = world.night ? max(0, min(4, max(1, ants.count / 35)) - watching) : 0
+        world.firesideSlots = max(0, min(10, 3 + ants.count / 20) - fireside)
         world.pit = peakAnts >= 5 && fire == nil ? scene?.firePit : nil
         world.tents = entranceCache
         world.race = Characters.current.id
@@ -1983,7 +2066,7 @@ final class Colony {
         if resourceTimer <= 0 {
             resourceTimer = 2
             resourceCache = scene?.resourceSpots() ?? []
-            entranceCache = (scene?.tentEntrances() ?? []).filter { p in walkable.contains { $0.contains(p) } }
+            entranceCache = ((scene?.tentEntrances() ?? []) + decorDoors).filter { p in walkable.contains { $0.contains(p) } }
             plotCache = scene?.plotInfos() ?? []
         }
         var minded = Set<Int>()
@@ -2018,14 +2101,14 @@ final class Colony {
         }
         for ant in ants { // (after matchmaking, so a new pair or court finds each other on its very first step)
             switch ant.mode {
-            case .activity(.scuffle, _): world.partners[ant.id] = ant.pos
+            case .activity(.scuffle, _), .activity(.chat, _): world.partners[ant.id] = ant.pos
             case .activity(.stroll, _): world.bosses[ant.id] = ant.pos
             default: break
             }
         }
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
-        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water))
+        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") ? 1.2 : 1)
         let raceRules = Characters.current.rules
         world.speedBoost = (1 + 0.15 * boost(.carrot)) * (Colony.isNight ? raceRules.nightSpeed ?? 1 : raceRules.daySpeed ?? 1)
         world.workBoost = 1 + 0.3 * boost(.bread)
@@ -2042,6 +2125,12 @@ final class Colony {
             if let event = ants[i].update(dt: antDt, ageDt: ageDt, world: world) { events.append((i, event)) }
         }
         for (index, event) in events { handle(event, from: index) }
+        updateHand(dt: dt)
+        updateHoliday(dt: dt)
+        updateScribes(dt: dt)
+        updateMerchant(dt: dt)
+        if !decorLoaded, !followsBooks { decorLoaded = true; decor = Colony.loadLocalDecor(); rebuildDecorObstacles() }
+        updateDecorEffects(dt: dt)
         moveCarriedPrincess()
         updateWildlife(dt: dt)
         if followsBooks { finishRaidIfOver() }

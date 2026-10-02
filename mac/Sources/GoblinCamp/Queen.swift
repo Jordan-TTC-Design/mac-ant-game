@@ -545,6 +545,13 @@ struct Queen {
         state = .enteringHole
     }
 
+    /// The player took her by the hand (Touch.swift): she walks over to where she was led. False when she is busy (in the hole, in a scene).
+    mutating func lead(to point: CGPoint) -> Bool {
+        guard canBeInterrupted, scene == nil else { return false }
+        state = .wandering(to: point)
+        return true
+    }
+
     /// Somebody clicked on the nest: duck into the hole and peek out.
     mutating func poke() {
         switch state {

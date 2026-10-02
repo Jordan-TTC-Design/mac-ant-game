@@ -75,22 +75,132 @@ final class AntView: NSView {
                 dragOffset = CGSize(width: nest.x - mouse.x, height: nest.y - mouse.y)
                 NSCursor.closedHand.set()
             }
+        case .running where isMap && colony.decorating:
+            decorDown(at: screenLocation(of: event), shift: event.modifierFlags.contains(.shift))
+        case .running where isMap:
+            let p = screenLocation(of: event)
+            colony.handDown(at: p, on: handTarget(at: p))
+            needsDisplay = true
         default:
             break
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if colony.phase == .running, isMap, colony.decorating {
+            decorDragged(to: screenLocation(of: event))
+            return
+        }
+        if colony.phase == .running, isMap, colony.hand.press != nil {
+            colony.handDragged(to: screenLocation(of: event))
+            return
+        }
         guard draggingNest else { return }
         let mouse = screenLocation(of: event)
         colony.moveNest(to: CGPoint(x: mouse.x + dragOffset.width, y: mouse.y + dragOffset.height))
     }
 
     override func mouseUp(with event: NSEvent) {
+        if colony.phase == .running, isMap, colony.decorating {
+            decorUp()
+            return
+        }
+        if colony.phase == .running, isMap, colony.hand.press != nil {
+            colony.handUp(at: screenLocation(of: event))
+            return
+        }
         guard draggingNest else { return }
         draggingNest = false
         NSCursor.openHand.set()
         colony.nestDragEnded()
+    }
+
+    // MARK: The hand (Touch.swift)
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        guard isMap else { return }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isMap, colony.phase == .running else { return }
+        let p = screenLocation(of: event)
+        if colony.decorating { colony.hand.track(p); colony.hand.hover = nil; return }
+        colony.handMoved(to: p, over: handTarget(at: p))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard isMap else { return }
+        colony.handMoved(to: nil, over: nil)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard isMap, colony.phase == .running else { return super.rightMouseDown(with: event) }
+        let p = screenLocation(of: event)
+        guard case .ant(let id)? = handTarget(at: p), let ant = colony.ants.first(where: { $0.id == id }) else { return }
+        let orders = colony.orders(for: id)
+        guard !orders.isEmpty else { return }
+        let breeds = Characters.current.breeds
+        let breed = breeds.isEmpty ? "" : breeds[min(ant.breedIndex, breeds.count - 1)].name
+        let menu = NSMenu()
+        let title = NSMenuItem(title: "\(ant.name)（\(breed)）", action: nil, keyEquivalent: "")
+        title.isEnabled = false
+        menu.addItem(title)
+        menu.addItem(.separator())
+        for (order, label) in orders {
+            let item = NSMenuItem(title: label, action: #selector(orderPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = OrderPick(id: id, order: order)
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private final class OrderPick {
+        let id: Int
+        let order: HandOrder
+        init(id: Int, order: HandOrder) { self.id = id; self.order = order }
+    }
+
+    @objc private func orderPicked(_ sender: NSMenuItem) {
+        guard let pick = sender.representedObject as? OrderPick else { return }
+        colony.order(pick.id, pick.order)
+    }
+
+    /// The sprite box of a goblin (camp coordinates): what a click must land in.
+    private func spriteBox(_ ant: Ant, role: SpriteRole, scale: CGFloat) -> CGRect {
+        let pixel = role.pixelSize(scale: Double(scale)) * (ant.isChild ? 0.62 : 1)
+        let size = CGFloat(role.frameSize) * pixel
+        let lift = CGFloat(ant.touch?.lift ?? 0)
+        // the drawn figure fills only the middle of its frame: a little narrower than the frame, from the feet to the top of the head
+        return CGRect(x: ant.pos.x - size * 0.32, y: ant.pos.y - size * 0.2 + lift, width: size * 0.64, height: size * 0.85)
+    }
+
+    /// What is under the pointer: a goblin (the one drawn on top), the princess, or an animal.
+    func handTarget(at p: CGPoint) -> HandTarget? {
+        let character = Characters.current
+        let scale = CGFloat(Settings.shared.antScale)
+        if let held = colony.hand.press?.target { if case .ant = held { return held } }
+        if colony.merchant.visit != nil, colony.merchant.phase != .away,
+           CGRect(x: colony.merchant.pos.x - 26, y: colony.merchant.pos.y - 4, width: 52, height: 42).contains(p) { return .merchant }
+        let breeds = character.breeds
+        if !breeds.isEmpty {
+            for ant in colony.ants.reversed() where colony.canTouch(ant) {
+                guard let role = breeds[min(ant.breedIndex, breeds.count - 1)].sprites else { continue }
+                if spriteBox(ant, role: role, scale: scale).insetBy(dx: -2, dy: -2).contains(p) { return .ant(ant.id) }
+            }
+        }
+        if let q = colony.queen, q.arrived, q.alpha > 0.5, !q.isCarried, let role = character.queenRole(outfit: colony.outfitIndex) {
+            let size = CGFloat(role.frameSize) * role.pixelSize(scale: Double(scale))
+            if CGRect(x: q.pos.x - size * 0.3, y: q.pos.y - size * 0.2, width: size * 0.6, height: size * 0.9).contains(p) { return .queen }
+        }
+        for c in colony.creatures.reversed() {
+            let r = c.kind.radius * c.scale + 6
+            if hypot(c.pos.x - p.x, c.pos.y + r * 0.4 - p.y) < r { return .creature(c.id) }
+        }
+        return nil
     }
 
     // MARK: Drawing
@@ -109,6 +219,9 @@ final class AntView: NSView {
             return
         }
         if isMap {
+            if colony.hand.shake > 0, let ctx = NSGraphicsContext.current?.cgContext { // a punch or a heavy landing shakes the window
+                ctx.translateBy(x: .random(in: -2.5...2.5), y: .random(in: -2...2))
+            }
             drawMapBackground()
             drawAtmosphere()
         }
@@ -541,7 +654,12 @@ final class AntView: NSView {
         if let nest = colony.nest {
             drawNest(at: CGPoint(x: nest.x - origin.x, y: nest.y - origin.y), antCount: colony.ants.count)
         }
+        if isMap, Holidays.today == Holidays.christmas, let nest = colony.nest { drawChristmasTree(at: local(colony.nearestWalkable(to: CGPoint(x: nest.x - 70, y: nest.y + 30)))) }
         if let fire = colony.fire { drawFire(at: CGPoint(x: fire.x - origin.x, y: fire.y - origin.y)) }
+        else if let pit = colony.ants.lazy.compactMap({ ant -> CGPoint? in // somebody sits round the fire pit: it is lit
+            if case .activity(.fireside(let spot, let fire), _) = ant.mode, hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 40 { return fire }
+            return nil
+        }).first { drawFire(at: local(pit)) }
         let scale = CGFloat(Settings.shared.antScale)
         let onScreen = bounds.insetBy(dx: -20, dy: -20)
         let foodScale = CGFloat(Colony.foodScale(Settings.shared.antScale))
@@ -558,6 +676,7 @@ final class AntView: NSView {
 
         let character = Characters.current
         drawGraves(scale: scale, onScreen: onScreen)
+        if isMap { drawDecor() }
         if character.worker != nil {
             drawSpriteWorkers(character, scale: scale, onScreen: onScreen)
         } else {
@@ -568,6 +687,8 @@ final class AntView: NSView {
             }
         }
 
+        if isMap { drawDesks() } // (in front of the scribes sitting behind them)
+        if isMap, colony.merchant.visit != nil, colony.merchant.phase != .away { drawMerchant() }
         drawHealPulses()
         drawFloaters()
 
@@ -577,6 +698,31 @@ final class AntView: NSView {
                 drawSelectionRing(at: p)
                 let gearText = ant.wornGear.map(\.name).joined(separator: "、")
                 drawPill(gearText.isEmpty ? ant.name : "\(ant.name)　\(gearText)", center: NSPoint(x: p.x, y: p.y + 34), fontSize: 11)
+            }
+        }
+
+        drawHandEffects()
+        if isMap { drawHoliday() }
+        if isMap, colony.decorating { drawDecorMode() }
+        if colony.hand.press == nil, let target = colony.hand.hover {
+            switch target {
+            case .ant(let id):
+                if id != colony.selectedAntID, let ant = colony.ants.first(where: { $0.id == id }), ant.touch == nil {
+                    let p = local(ant.pos)
+                    drawPill("\(ant.name)・\(ant.stateLabel)", center: NSPoint(x: p.x, y: p.y + 30 * scale), fontSize: 10)
+                }
+            case .queen:
+                if let q = colony.queen { drawPill(colony.princessName.isEmpty ? "公主" : colony.princessName, center: NSPoint(x: local(q.pos).x, y: local(q.pos).y + 36 * scale), fontSize: 10) }
+            case .creature(let id):
+                if let c = colony.creatures.first(where: { $0.id == id }) {
+                    let p = local(c.pos)
+                    drawPill(c.kind.name, center: NSPoint(x: p.x, y: p.y + CGFloat(c.kind.radius * c.scale) + 16), fontSize: 10)
+                }
+            case .merchant:
+                if let visit = colony.merchant.visit {
+                    let p = local(colony.merchant.pos)
+                    drawPill("\(visit.merchant)・點一下交易", center: NSPoint(x: p.x, y: p.y + 46), fontSize: 10)
+                }
             }
         }
 
@@ -675,6 +821,8 @@ final class AntView: NSView {
         ctx.interpolationQuality = .none // keep the pixels sharp
         var minded = Set<Int>() // young ones being minded (they get a heart)
         for other in colony.ants { if case .activity(.mind(let child), _) = other.mode { minded.insert(child) } }
+        var said: [(text: String, at: CGPoint)] = [] // what the touched ones say, drawn over everything
+        defer { drawSaid(said) }
         for ant in colony.ants where !ant.isHidden {
             var p = local(ant.pos)
             guard onScreen.contains(p), let role = character.breeds[min(ant.breedIndex, lastBreed)].sprites else { continue }
@@ -690,7 +838,34 @@ final class AntView: NSView {
             let activity = ant.activity
             if case .play? = activity { p.y += CGFloat(abs(sin(ant.activityClock * 7))) * 4 } // hops about
             if ant.lying || ant.inGrave { continue } // (in bed beside the princess: drawn with the bed; in a grave: the grave shows it)
-            if activity == .sleep { // lying on its side, and turning over now and then; nothing else to draw
+            if let touch = ant.touch {
+                if touch.lift > 0.5 { // its shadow stays on the ground
+                    NSColor.black.withAlphaComponent(0.22).setFill()
+                    NSBezierPath(ovalIn: NSRect(x: p.x - size * 0.22, y: p.y - size * 0.2, width: size * 0.44, height: size * 0.14)).fill()
+                }
+                p.y += CGFloat(touch.lift)
+                if touch.anim == .shake { p.x += CGFloat(sin(touch.clock * 40)) * 1.3 }
+                if touch.anim == .punch, let cursor = colony.hand.cursor { // a lunge at the pointer
+                    let a = atan2(cursor.y - ant.pos.y, cursor.x - ant.pos.x), k = CGFloat(sin(min(1, touch.clock / 0.3) * .pi)) * 6
+                    p.x += CGFloat(cos(a)) * k
+                    p.y += CGFloat(sin(a)) * k
+                }
+                if let line = touch.line, touch.isHeld || touch.isFlying || touch.clock < 2.6 { said.append((line, CGPoint(x: p.x, y: p.y + size * 0.95))) }
+                if touch.kind == .react, touch.anim == .collapse {
+                    drawCollapse(touch, at: p, size: size, pixel: pixel)
+                    continue
+                }
+                if touch.kind == .react, touch.anim == .dizzy, let lying = role.image(direction: .down, phase: 0) {
+                    ctx.saveGState()
+                    ctx.translateBy(x: p.x, y: p.y + size * 0.05)
+                    ctx.rotate(by: .pi / 2)
+                    ctx.draw(lying, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
+                    ctx.restoreGState()
+                    drawTouchMarks(ant, touch, at: p, size: size, pixel: pixel)
+                    continue
+                }
+            }
+            if activity == .sleep, ant.touch == nil { // lying on its side, and turning over now and then; nothing else to draw
                 guard let lying = role.image(direction: .down, phase: 0) else { continue }
                 ctx.saveGState()
                 ctx.translateBy(x: p.x, y: p.y + size * 0.05)
@@ -702,9 +877,22 @@ final class AntView: NSView {
             // the walk cycle advances with distance walked; standing still shows the first frame
             let phase = ant.moving ? ant.legPhase / 4 : 0
             guard let image = role.image(direction: ant.facing, phase: phase) else { continue }
-            ctx.setAlpha(CGFloat(ant.fadeAlpha)) // the dying fade out
-            ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size))
+            ctx.setAlpha(CGFloat(ant.fadeAlpha) * touchAlpha(ant)) // the dying fade out
+            if let touch = ant.touch, touch.spin != 0 || touch.anim == .proud || touch.anim == .bow {
+                // turned in the air, puffed up or bowing: drawn about its middle
+                let sx: CGFloat = touch.anim == .proud ? 1.12 : 1, sy: CGFloat = touch.anim == .proud ? 1.12 : touch.anim == .bow ? 0.86 : 1
+                ctx.saveGState()
+                ctx.translateBy(x: p.x, y: p.y + size * 0.3)
+                ctx.rotate(by: CGFloat(touch.spin))
+                ctx.scaleBy(x: sx, y: sy)
+                ctx.draw(image, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
+                ctx.restoreGState()
+            } else {
+                ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2, width: size, height: size))
+            }
             ctx.setAlpha(1)
+            if let touch = ant.touch { drawTouchMarks(ant, touch, at: p, size: size, pixel: pixel) }
+            if ant.wet > 0 { drawDrips(ant, at: p, size: size) }
             if ant.female, ant.fadeAlpha > 0.5 { // a little pink bow at the top of the head
                 let bx = p.x + size * 0.14, by = p.y + size * (ant.isChild ? 0.62 : 0.66)
                 NSColor(calibratedRed: 0.96, green: 0.45, blue: 0.62, alpha: 1).setFill()
@@ -946,6 +1134,79 @@ final class AntView: NSView {
             rect(crown.x, crown.y, 6, 1.6, gold)
             for dx: CGFloat in [-2, 0, 2] { rect(crown.x + dx * u, crown.y + 1.6 * u, 1, 1.6, gold) }
             rect(crown.x, crown.y + 0.4 * u, 1, 1, NSColor(calibratedRed: 0.85, green: 0.15, blue: 0.2, alpha: 1))
+        case .haul(let load, _)?:
+            // carried on the shoulder: a log (or a bundle of twigs, for elves), a stone, a bone
+            let top = CGPoint(x: p.x, y: p.y + size * 0.78)
+            switch load {
+            case 0 where Characters.current.rules.fellsTrees == false:
+                for k in -1...1 { rect(top.x + CGFloat(k) * 1.2 * u, top.y + CGFloat(abs(k)) * 0.4 * u, 7, 0.8, NSColor(calibratedRed: 0.55, green: 0.38, blue: 0.2, alpha: 1)) }
+                rect(top.x, top.y - 0.2 * u, 1.2, 1.6, NSColor(calibratedRed: 0.35, green: 0.6, blue: 0.3, alpha: 1)) // the tie
+            case 0:
+                rect(top.x, top.y, 10, 2.4, NSColor(calibratedRed: 0.5, green: 0.32, blue: 0.17, alpha: 1))
+                rect(top.x + 4.4 * u, top.y + 0.3 * u, 1.4, 1.8, NSColor(calibratedRed: 0.86, green: 0.7, blue: 0.45, alpha: 1)) // the cut end
+            case 1:
+                rect(top.x, top.y, 5, 3.4, NSColor(calibratedRed: 0.55, green: 0.56, blue: 0.6, alpha: 1))
+                rect(top.x - 0.6 * u, top.y + 2.2 * u, 2.4, 1, NSColor(calibratedRed: 0.72, green: 0.73, blue: 0.76, alpha: 1))
+            case 2:
+                let bone = NSColor(calibratedRed: 0.93, green: 0.91, blue: 0.84, alpha: 1)
+                rect(top.x, top.y + 0.4 * u, 6, 1, bone)
+                rect(top.x - 3 * u, top.y, 1.6, 1.8, bone)
+                rect(top.x + 3 * u, top.y, 1.6, 1.8, bone)
+            default: // a scroll from the scribe's desk
+                rect(top.x, top.y, 6, 2, NSColor(calibratedRed: 0.97, green: 0.93, blue: 0.8, alpha: 1))
+                rect(top.x - 3.2 * u, top.y - 0.2 * u, 1, 2.4, NSColor(calibratedRed: 0.55, green: 0.35, blue: 0.2, alpha: 1))
+                rect(top.x + 3.2 * u, top.y - 0.2 * u, 1, 2.4, NSColor(calibratedRed: 0.55, green: 0.35, blue: 0.2, alpha: 1))
+                rect(top.x, top.y + 0.6 * u, 1, 0.8, NSColor(calibratedRed: 0.8, green: 0.2, blue: 0.2, alpha: 1)) // the seal
+            }
+        case .patrol?:
+            // a light held out: a torch (goblins), a lantern (elves), a soul-lamp (the undead); it lights the ground round it
+            let race = Characters.current.id
+            let side = dirSign(ant)
+            let hand = CGPoint(x: p.x + side * size * 0.32, y: p.y + size * 0.42)
+            let flicker = CGFloat(sin(Date().timeIntervalSinceReferenceDate * 9 + Double(ant.id))) * 0.06
+            let glow = race == "undead" ? NSColor(calibratedRed: 0.4, green: 0.95, blue: 0.85, alpha: 1) : race == "elf" ? NSColor(calibratedRed: 0.85, green: 1, blue: 0.75, alpha: 1) : NSColor(calibratedRed: 1, green: 0.66, blue: 0.25, alpha: 1)
+            for (r, a) in [(30.0, 0.07), (18.0, 0.11)] {
+                glow.withAlphaComponent(CGFloat(a) + flicker * 0.5).setFill()
+                let rr = CGFloat(r) * (1 + flicker)
+                NSBezierPath(ovalIn: NSRect(x: hand.x - rr, y: hand.y - rr * 0.8, width: rr * 2, height: rr * 1.6)).fill()
+            }
+            if race == "goblin" {
+                rect(hand.x, hand.y - 3 * u, 1, 4, NSColor(calibratedRed: 0.45, green: 0.3, blue: 0.16, alpha: 1))
+                rect(hand.x, hand.y + u, 2, 2 + flicker * 10, NSColor(calibratedRed: 0.98, green: 0.6, blue: 0.15, alpha: 1))
+                rect(hand.x, hand.y + 1.6 * u, 1, 1.2, NSColor(calibratedRed: 1, green: 0.92, blue: 0.55, alpha: 1))
+            } else {
+                rect(hand.x, hand.y + 2 * u, 0.6, 1.4, NSColor(calibratedWhite: 0.3, alpha: 1))
+                rect(hand.x, hand.y - 0.4 * u, 2.4, 2.6, NSColor(calibratedWhite: 0.25, alpha: 1))
+                rect(hand.x, hand.y, 1.6, 1.8, glow)
+            }
+        case .fireside(let spot, _)? where hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 6:
+            // sat by the fire: a goblin holds something over it on a stick, an elf sings now and then
+            if Characters.current.id == "elf" {
+                if Int(t / 3 + Double(ant.id)) % 3 == 0 {
+                    let rise = CGFloat((t / 3).truncatingRemainder(dividingBy: 1))
+                    ("♪" as NSString).draw(at: NSPoint(x: p.x + 4, y: p.y + size * 0.8 + rise * 10), withAttributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor(calibratedWhite: 1, alpha: 1 - rise)])
+                }
+            } else if ant.id % 2 == 0 {
+                let side = dirSign(ant)
+                let from = CGPoint(x: p.x + side * size * 0.25, y: p.y + size * 0.35)
+                let tip = CGPoint(x: from.x + side * 10, y: from.y + 3)
+                let stick = NSBezierPath()
+                stick.move(to: from)
+                stick.line(to: tip)
+                stick.lineWidth = 1
+                NSColor(calibratedRed: 0.45, green: 0.3, blue: 0.16, alpha: 1).setStroke()
+                stick.stroke()
+                NSColor(calibratedRed: 0.62, green: 0.3, blue: 0.2, alpha: 1).setFill()
+                NSBezierPath(ovalIn: NSRect(x: tip.x - 2, y: tip.y - 1.5, width: 4, height: 3)).fill()
+            }
+        case .scribe(_, let dozing)? where dozing:
+            if Int(Date().timeIntervalSinceReferenceDate) % 3 != 0 {
+                ("z" as NSString).draw(at: NSPoint(x: p.x + size * 0.3, y: p.y + size * 0.8), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 9), .foregroundColor: NSColor.white])
+            }
+        case .chat(let partner)?:
+            // the two take turns: a bubble over whoever is talking now
+            let turn = Int(t / 2.2) % 2 == (ant.id < partner ? 0 : 1)
+            if turn { drawBubble(at: CGPoint(x: p.x + 3, y: p.y + size * 0.82), size: max(1.6, u * 0.9), dots: 1 + Int(t * 2) % 3, heart: false) }
         default: break
         }
         if ant.catchShow > 0 { // a fish held up
@@ -1800,4 +2061,504 @@ final class AntView: NSView {
         NSBezierPath(ovalIn: NSRect(x: p.x - petal * 0.45, y: p.y - petal * 0.45, width: petal * 0.9, height: petal * 0.9)).fill()
     }
 
+}
+
+// MARK: - The hand's marks (Touch.swift)
+
+extension AntView {
+    /// See-through while the pointer goes through it (a shade), or while a shade follows the pointer.
+    fileprivate func touchAlpha(_ ant: Ant) -> CGFloat {
+        guard let touch = ant.touch else { return 1 }
+        if touch.anim == .fade { return 0.35 }
+        if touch.anim == .chase, Characters.current.id == "undead" { return 0.55 + 0.2 * CGFloat(sin(touch.clock * 6)) }
+        return 1
+    }
+
+    private func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: NSColor) {
+        color.setFill()
+        NSRect(x: x, y: y, width: w, height: h).fill()
+    }
+
+    /// What goes with a reaction: hearts, pink cheeks, stars, a flower on the head, red eyes, a flame, little lights, a book, roots, tears, a sign.
+    fileprivate func drawTouchMarks(_ ant: Ant, _ touch: Touch, at p: CGPoint, size: CGFloat, pixel u: CGFloat) {
+        let t = touch.clock
+        let head = CGPoint(x: p.x, y: p.y + size * 0.62)
+        switch touch.anim {
+        case .hearts:
+            for k in 0..<2 {
+                let rise = CGFloat((t * 0.9 + Double(k) * 0.5).truncatingRemainder(dividingBy: 1))
+                drawHeart(at: CGPoint(x: p.x + (k == 0 ? -5 : 6), y: head.y + 6 + rise * 14), size: max(1, u * 0.8), alpha: 1 - rise)
+            }
+        case .blush:
+            let pink = NSColor(calibratedRed: 1, green: 0.45, blue: 0.55, alpha: 0.75)
+            px(head.x - size * 0.2, head.y - u * 1.5, u * 1.6, u, pink)
+            px(head.x + size * 0.2 - u * 1.6, head.y - u * 1.5, u * 1.6, u, pink)
+        case .dizzy:
+            for k in 0..<3 {
+                let a = t * 5 + Double(k) * 2.1
+                px(p.x + CGFloat(cos(a)) * size * 0.3 - u / 2, p.y + size * 0.3 + CGFloat(sin(a)) * size * 0.1, u * 1.2, u * 1.2, NSColor(calibratedRed: 1, green: 0.9, blue: 0.3, alpha: 1))
+            }
+        case .flower:
+            drawFlower(at: CGPoint(x: head.x + u, y: head.y + size * 0.22), alpha: min(1, t * 3), scale: u / 2)
+        case .leaf:
+            let green = NSColor(calibratedRed: 0.35, green: 0.75, blue: 0.3, alpha: 1)
+            px(head.x, head.y + size * 0.2, u, u * 2, NSColor(calibratedRed: 0.4, green: 0.3, blue: 0.2, alpha: 1))
+            px(head.x + u, head.y + size * 0.2 + u * 1.5, u * 2.5, u * 1.5, green)
+        case .glowEyes:
+            let red = NSColor(calibratedRed: 1, green: 0.15, blue: 0.1, alpha: 0.6 + 0.4 * CGFloat(sin(t * 8)))
+            NSColor(calibratedRed: 1, green: 0.1, blue: 0.1, alpha: 0.18).setFill()
+            NSBezierPath(ovalIn: NSRect(x: head.x - size * 0.25, y: head.y - size * 0.12, width: size * 0.5, height: size * 0.24)).fill()
+            px(head.x - u * 2.5, head.y - u * 0.5, u * 1.2, u, red)
+            px(head.x + u * 1.3, head.y - u * 0.5, u * 1.2, u, red)
+        case .flare:
+            let r = size * (0.45 + 0.08 * CGFloat(sin(t * 10)))
+            NSColor(calibratedRed: 0.35, green: 0.6, blue: 1, alpha: 0.28).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x - r, y: p.y + size * 0.3 - r, width: r * 2, height: r * 2)).fill()
+        case .sparkle:
+            for k in 0..<5 {
+                let a = t * 2 + Double(k) * 1.26, r = size * (0.35 + 0.1 * CGFloat(sin(t * 3 + Double(k))))
+                px(p.x + CGFloat(cos(a)) * r, p.y + size * 0.35 + CGFloat(sin(a)) * r, u, u, NSColor(calibratedRed: 1, green: 0.95, blue: 0.6, alpha: 0.9))
+            }
+        case .cover: // a book (or a hood's edge) held in front of the face
+            let brown = Characters.current.id == "elf" ? NSColor(calibratedRed: 0.25, green: 0.5, blue: 0.3, alpha: 1) : NSColor(calibratedRed: 0.55, green: 0.3, blue: 0.2, alpha: 1)
+            px(head.x - u * 3, head.y - u * 2, u * 6, u * 4, brown)
+            px(head.x - u * 0.3, head.y - u * 2, u * 0.6, u * 4, NSColor(calibratedWhite: 0.95, alpha: 1))
+        case .rooted:
+            let root = NSColor(calibratedRed: 0.45, green: 0.32, blue: 0.2, alpha: 1)
+            for k in -2...2 {
+                px(p.x + CGFloat(k) * u * 2, p.y - size * 0.2 - u * CGFloat(abs(k) + 1), u, u * CGFloat(abs(k) + 2), root)
+            }
+        case .cry:
+            for k in 0..<2 {
+                let fall = CGFloat((t * 2 + Double(k) * 0.5).truncatingRemainder(dividingBy: 1))
+                px(head.x + (k == 0 ? -size * 0.18 : size * 0.15), head.y - fall * size * 0.3, u, u * 1.5, NSColor(calibratedRed: 0.5, green: 0.75, blue: 1, alpha: 1 - fall))
+            }
+        case .think where t < 1.2:
+            drawPill("?", center: NSPoint(x: p.x + size * 0.35, y: head.y + size * 0.3), fontSize: 10)
+        default: break
+        }
+        if let emote = touch.emote, t < 2.2 {
+            let text = emote as NSString
+            text.draw(at: NSPoint(x: p.x + size * 0.3, y: head.y + size * 0.15), withAttributes: [.font: NSFont.systemFont(ofSize: 11)])
+        }
+    }
+
+    /// A skeleton in pieces: bones scattered on the ground that crawl back together toward the end.
+    fileprivate func drawCollapse(_ touch: Touch, at p: CGPoint, size: CGFloat, pixel u: CGFloat) {
+        let whole = touch.clock + touch.left
+        let apart = touch.clock < 0.25 ? touch.clock / 0.25 : max(0, min(1, touch.left / max(0.1, whole * 0.4)))
+        let bone = NSColor(calibratedRed: 0.93, green: 0.91, blue: 0.84, alpha: 1)
+        for k in 0..<6 {
+            let a = Double(k) * 1.05 + 0.4
+            let r = size * 0.42 * CGFloat(apart)
+            let x = p.x + CGFloat(cos(a)) * r, y = p.y + CGFloat(sin(a)) * r * 0.5
+            if k == 0 { // the skull
+                px(x - u * 2, y, u * 4, u * 3, bone)
+                px(x - u * 1.2, y + u, u, u, .black)
+                px(x + u * 0.2, y + u, u, u, .black)
+            } else {
+                px(x - u * 2, y, u * 4, u, bone)
+                px(x - u * 2.5, y - u * 0.4, u, u * 1.8, bone)
+                px(x + u * 1.5, y - u * 0.4, u, u * 1.8, bone)
+            }
+        }
+    }
+
+    /// What the touched ones say: pills over their heads, moved up out of each other's way when the camp is crowded.
+    fileprivate func drawSaid(_ said: [(text: String, at: CGPoint)]) {
+        let font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        var placed: [CGRect] = []
+        for note in said {
+            let size = (note.text as NSString).size(withAttributes: [.font: font])
+            var box = CGRect(x: note.at.x - size.width / 2 - 9, y: note.at.y - size.height / 2 - 4.5, width: size.width + 18, height: size.height + 9)
+            for _ in 0..<4 where placed.contains(where: { $0.intersects(box) }) { box.origin.y += box.height + 2 }
+            placed.append(box)
+            drawPill(note.text, center: NSPoint(x: box.midX, y: box.midY), fontSize: 10)
+        }
+    }
+
+    /// Wet from the pond: drops falling off it.
+    fileprivate func drawDrips(_ ant: Ant, at p: CGPoint, size: CGFloat) {
+        let t = Date().timeIntervalSinceReferenceDate
+        for k in 0..<3 {
+            let fall = CGFloat((t * 1.5 + Double(k) * 0.33 + Double(ant.id) * 0.1).truncatingRemainder(dividingBy: 1))
+            px(p.x + CGFloat(k - 1) * size * 0.2, p.y + size * 0.4 - fall * size * 0.5, 1.5, 2.5, NSColor(calibratedRed: 0.55, green: 0.8, blue: 1, alpha: 0.9 * (1 - fall)))
+        }
+    }
+
+    /// The shows at the pointer and on the ground: a fist, an arrow, little lights, a bony hand, a coin, a splash, grass, flowers, a healing ring.
+    fileprivate func drawHandEffects() {
+        for e in colony.hand.effects {
+            let p = CGPoint(x: e.pos.x - (originOverride ?? .zero).x, y: e.pos.y - (originOverride ?? .zero).y)
+            let k = CGFloat(e.age / e.life), fade = 1 - k
+            switch e.kind {
+            case .fist:
+                let s = 16 + 10 * CGFloat(sin(min(1, e.age / 0.2) * .pi / 2))
+                ("👊" as NSString).draw(at: NSPoint(x: p.x - s / 2, y: p.y - s / 2), withAttributes: [.font: NSFont.systemFont(ofSize: s)])
+            case .arrow(let from):
+                let start = CGPoint(x: from.x - (originOverride ?? .zero).x, y: from.y - (originOverride ?? .zero).y)
+                let flight = min(1, CGFloat(e.age / 0.15))
+                let tip = CGPoint(x: start.x + (p.x - start.x) * flight, y: start.y + (p.y - start.y) * flight)
+                let a = atan2(p.y - start.y, p.x - start.x)
+                let tail = CGPoint(x: tip.x - cos(a) * 12, y: tip.y - sin(a) * 12)
+                let shaft = NSBezierPath()
+                shaft.move(to: tail)
+                shaft.line(to: tip)
+                shaft.lineWidth = 1.5
+                NSColor(calibratedRed: 0.55, green: 0.38, blue: 0.2, alpha: fade + 0.2).setStroke()
+                shaft.stroke()
+                px(tail.x - 2, tail.y - 1, 3, 3, NSColor(calibratedWhite: 0.95, alpha: fade + 0.2)) // the feathers
+                if flight >= 1 { px(tip.x - 1, tip.y - 1, 2, 2, NSColor(calibratedWhite: 0.3, alpha: 1)) }
+            case .sparkles:
+                for j in 0..<6 {
+                    let a = e.age * 3 + Double(j) * 1.05, r = 10 + 4 * sin(e.age * 5 + Double(j))
+                    px(p.x + CGFloat(cos(a) * r), p.y + CGFloat(sin(a) * r), 2, 2, NSColor(calibratedRed: 1, green: 0.95, blue: 0.6, alpha: fade))
+                }
+            case .boneHand:
+                let bone = NSColor(calibratedRed: 0.93, green: 0.91, blue: 0.84, alpha: 1)
+                px(p.x - 5, p.y - 12, 10, 6, bone) // the palm, fingers closed over the pointer
+                for j in 0..<4 { px(p.x - 5 + CGFloat(j) * 2.6, p.y - 6, 2, 7, bone) }
+                px(p.x - 8, p.y - 10, 3, 5, bone) // the thumb
+            case .coin:
+                let hop = CGFloat(abs(sin(e.age * 6))) * 8 * fade
+                NSColor(calibratedRed: 1, green: 0.82, blue: 0.2, alpha: 1).setFill()
+                NSBezierPath(ovalIn: NSRect(x: p.x - 3, y: p.y + hop, width: 6, height: 6)).fill()
+                px(p.x - 0.5, p.y + hop + 1.5, 1, 3, NSColor(calibratedRed: 0.8, green: 0.6, blue: 0.1, alpha: 1))
+            case .splash:
+                for j in 0..<8 {
+                    let a = Double(j) * .pi / 4, r = 4 + 16 * k
+                    px(p.x + CGFloat(cos(a)) * r, p.y + CGFloat(sin(a)) * r * 0.6 + 10 * sin(k * .pi), 2, 2, NSColor(calibratedRed: 0.6, green: 0.85, blue: 1, alpha: fade))
+                }
+            case .grass:
+                for j in 0..<7 {
+                    let a = Double(j) * 0.9, r: CGFloat = 12
+                    let x = p.x + CGFloat(cos(a)) * r, y = p.y + CGFloat(sin(a)) * r * 0.5
+                    let h = 4 * min(1, CGFloat(e.age * 3))
+                    px(x, y, 1.5, h, NSColor(calibratedRed: 0.35, green: 0.7, blue: 0.3, alpha: min(1, fade * 3)))
+                    px(x + 2, y, 1.5, h * 0.7, NSColor(calibratedRed: 0.45, green: 0.8, blue: 0.35, alpha: min(1, fade * 3)))
+                }
+            case .bloom:
+                for j in 0..<5 {
+                    let a = Double(j) * 1.26
+                    drawFlower(at: CGPoint(x: p.x + CGFloat(cos(a)) * 14, y: p.y + CGFloat(sin(a)) * 7), alpha: Double(min(1, fade * 3)), scale: 0.8)
+                }
+            case .heal:
+                let r = 10 + 50 * k
+                let ring = NSBezierPath(ovalIn: NSRect(x: p.x - r, y: p.y - r * 0.5, width: r * 2, height: r))
+                ring.lineWidth = 2
+                NSColor(calibratedRed: 0.5, green: 1, blue: 0.6, alpha: fade * 0.8).setStroke()
+                ring.stroke()
+            }
+        }
+    }
+}
+
+// MARK: - Holidays (Holidays.swift)
+
+extension AntView {
+    fileprivate static let holidayIcons: [String: String] = [
+        "new_years_eve": "🎆", "new_year": "🎉", "lunar_eve": "🧧", "spring_festival": "🧧", "lantern": "🏮", "children": "🎈",
+        "qingming": "🌿", "children_qingming": "🎈", "labor": "🛠", "dragon_boat": "🐉", "qixi": "💕", "ghost": "🏮", "mid_autumn": "🌕",
+        "teachers": "📚", "double_ninth": "⛰", "national": "🎆", "dongzhi": "🥣", "weiya": "🍻", "christmas": "🎄",
+    ]
+
+    /// The day's name in the corner of the camp window, and the fireworks over the camp on a fireworks night.
+    fileprivate func drawHoliday() {
+        for shell in colony.fireworks.shells { drawShell(shell) }
+        guard let day = Holidays.today else { return }
+        let text = day.quiet ? "\(day.name)・放假" : "\(AntView.holidayIcons[day.id] ?? "🎉") \(day.name)"
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        drawPill(text, center: NSPoint(x: bounds.minX + 22 + width / 2, y: bounds.maxY - 16), fontSize: 11,
+                 tint: day.quiet ? nil : NSColor(calibratedRed: 0.85, green: 0.3, blue: 0.25, alpha: 1))
+    }
+
+    /// One firework: a trail going up, then a ring of sparks that spreads, droops and fades.
+    private func drawShell(_ shell: Fireworks.Shell) {
+        let from = local(shell.from), to = local(shell.to)
+        if shell.age < shell.rise {
+            let k = CGFloat(shell.age / shell.rise)
+            let head = CGPoint(x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * (1 - (1 - k) * (1 - k)))
+            NSColor(calibratedRed: 1, green: 0.9, blue: 0.7, alpha: 0.9).setFill()
+            NSRect(x: head.x - 1, y: head.y - 1, width: 2, height: 3).fill()
+            NSColor(calibratedRed: 1, green: 0.8, blue: 0.5, alpha: 0.35).setFill()
+            NSRect(x: head.x - 0.5, y: head.y - 10, width: 1, height: 9).fill()
+            return
+        }
+        let k = CGFloat((shell.age - shell.rise) / Fireworks.burstTime)
+        let r = CGFloat(shell.size) * (1 - (1 - min(1, k * 1.6)) * (1 - min(1, k * 1.6)))
+        let fade = max(0, 1 - k)
+        if k < 0.15 { // the flash
+            shell.color.withAlphaComponent(0.25 * (1 - k / 0.15)).setFill()
+            NSBezierPath(ovalIn: NSRect(x: to.x - r * 1.2, y: to.y - r * 1.2, width: r * 2.4, height: r * 2.4)).fill()
+        }
+        for j in 0..<shell.sparks {
+            let a = Double(j) / Double(shell.sparks) * 2 * .pi
+            let x = to.x + CGFloat(cos(a)) * r, y = to.y + CGFloat(sin(a)) * r - k * k * 14 // they droop as they fade
+            shell.color.withAlphaComponent(fade).setFill()
+            NSRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3).fill()
+            if k < 0.6 { // a tail toward the middle
+                shell.color.withAlphaComponent(fade * 0.45).setFill()
+                NSRect(x: x - CGFloat(cos(a)) * 5 - 1, y: y - CGFloat(sin(a)) * 5 - 1, width: 2, height: 2).fill()
+                NSRect(x: x - CGFloat(cos(a)) * 10 - 0.5, y: y - CGFloat(sin(a)) * 10 - 0.5, width: 1, height: 1).fill()
+            }
+            if j % 2 == 0, k < 0.8 { // an inner ring, half as far
+                NSColor.white.withAlphaComponent(fade * 0.7).setFill()
+                NSRect(x: to.x + CGFloat(cos(a + 0.2)) * r * 0.5 - 1, y: to.y + CGFloat(sin(a + 0.2)) * r * 0.5 - k * k * 8 - 1, width: 2, height: 2).fill()
+            }
+        }
+    }
+
+    /// A Christmas tree beside the camp: a pixel fir with baubles that twinkle, a star on top, and presents under it.
+    fileprivate func drawChristmasTree(at p: CGPoint) {
+        guard bounds.insetBy(dx: -40, dy: -40).contains(p) else { return }
+        let u: CGFloat = 2
+        func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) { c.setFill(); NSRect(x: p.x + x * u, y: p.y + y * u, width: w * u, height: h * u).fill() }
+        let dark = NSColor(calibratedRed: 0.1, green: 0.38, blue: 0.2, alpha: 1), light = NSColor(calibratedRed: 0.18, green: 0.52, blue: 0.27, alpha: 1)
+        px(-1, 0, 2, 3, NSColor(calibratedRed: 0.42, green: 0.27, blue: 0.14, alpha: 1)) // the trunk
+        for (row, half) in [(3, 7), (5, 6), (7, 5), (9, 5), (11, 4), (13, 3), (15, 2), (17, 1)] as [(CGFloat, CGFloat)] {
+            px(-half, row, half * 2, 2, row.truncatingRemainder(dividingBy: 4) == 3 ? dark : light)
+        }
+        let t = Date().timeIntervalSinceReferenceDate
+        let baubles: [(CGFloat, CGFloat)] = [(-5, 4), (3, 5), (-2, 7), (4, 9), (-4, 10), (1, 12), (-1, 15), (2, 3)]
+        for (k, b) in baubles.enumerated() {
+            let on = Int(t * 2 + Double(k)) % 3 != 0
+            let color = [NSColor.systemRed, NSColor.systemYellow, NSColor(calibratedRed: 0.4, green: 0.7, blue: 1, alpha: 1)][k % 3]
+            px(b.0, b.1, 1, 1, on ? color : color.blended(withFraction: 0.5, of: .black) ?? color)
+        }
+        px(-1, 19, 2, 1, .systemYellow); px(-0.5, 18.5, 1, 2, .systemYellow) // the star
+        px(-9, -1, 4, 3, NSColor(calibratedRed: 0.85, green: 0.2, blue: 0.25, alpha: 1)); px(-7.5, -1, 1, 3, .systemYellow)
+        px(5, -1, 3, 2, NSColor(calibratedRed: 0.25, green: 0.5, blue: 0.9, alpha: 1)); px(6, -1, 1, 2, .white)
+    }
+}
+
+// MARK: - The scribe's desks (Scribe.swift)
+
+extension AntView {
+    /// A desk for each of Claude Code's sessions at work: a goblin's has papers and an ink pot, an elf's an open book and a quill,
+    /// the undead's a typewriter; the project's name on a little card in front.
+    fileprivate func drawDesks() {
+        let u: CGFloat = 1.5
+        let race = Characters.current.id
+        for session in colony.claudeDesk.sessions.values where session.desk != .zero {
+            let p = local(session.desk)
+            guard bounds.insetBy(dx: -30, dy: -30).contains(p) else { continue }
+            func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) { c.setFill(); NSRect(x: p.x + x * u, y: p.y + y * u, width: w * u, height: h * u).fill() }
+            let wood = NSColor(calibratedRed: 0.55, green: 0.36, blue: 0.2, alpha: 1), top = NSColor(calibratedRed: 0.68, green: 0.47, blue: 0.27, alpha: 1)
+            px(-7, -1, 1, 4, wood); px(6, -1, 1, 4, wood) // legs
+            px(-8, 3, 16, 2, top); px(-8, 3, 16, 0.6, wood)
+            switch race {
+            case "elf":
+                px(-4, 5, 4, 1.2, NSColor(calibratedWhite: 0.97, alpha: 1)); px(0, 5, 4, 1.2, NSColor(calibratedWhite: 0.92, alpha: 1)) // the open book
+                px(4.5, 5, 0.6, 4, NSColor(calibratedWhite: 0.95, alpha: 1)); px(5, 8, 1, 1.4, NSColor(calibratedRed: 0.4, green: 0.7, blue: 0.5, alpha: 1)) // the quill
+            case "undead":
+                px(-4, 5, 8, 2.5, NSColor(calibratedWhite: 0.22, alpha: 1)); px(-3, 7.5, 6, 2, NSColor(calibratedWhite: 0.95, alpha: 1)) // typewriter and its sheet
+                for k in 0..<4 { px(-3 + CGFloat(k) * 1.8, 5.6, 1, 0.8, NSColor(calibratedWhite: 0.7, alpha: 1)) }
+            default:
+                px(-5, 5, 6, 1, NSColor(calibratedRed: 0.96, green: 0.92, blue: 0.8, alpha: 1)); px(-4.5, 6, 5, 0.8, NSColor(calibratedRed: 0.9, green: 0.85, blue: 0.72, alpha: 1)) // papers
+                px(3, 5, 2, 2, NSColor(calibratedWhite: 0.15, alpha: 1)); px(3.6, 7, 0.6, 2.5, NSColor(calibratedRed: 0.9, green: 0.9, blue: 0.85, alpha: 1)) // ink and pen
+            }
+            if !session.project.isEmpty {
+                drawPill(session.project, center: NSPoint(x: p.x, y: p.y - 9), fontSize: 8)
+            }
+        }
+    }
+}
+
+// MARK: - The wandering merchant (Merchant.swift)
+
+extension AntView {
+    /// The merchant, drawn in pixels: a kobold peddler leading a donkey with packs (goblins), a big squirrel in a hat with three
+    /// little ones (elves), a hooded ferryman with a lantern and an oar (the undead). At its stall a sign and a cloth with wares.
+    fileprivate func drawMerchant() {
+        let desk = colony.merchant
+        let p = local(desk.pos)
+        guard bounds.insetBy(dx: -60, dy: -60).contains(p) else { return }
+        let u: CGFloat = 2
+        let flip: CGFloat = desk.facingRight ? 1 : -1
+        let step = desk.phase == .here ? 0 : CGFloat(Int(desk.legPhase) % 2)
+        func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) {
+            c.setFill()
+            let left = flip > 0 ? x : -x - w
+            NSRect(x: p.x + left * u, y: p.y + y * u, width: w * u, height: h * u).fill()
+        }
+        func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> NSColor { NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: 1) }
+        if desk.phase == .here { // the stall: a cloth on the ground with wares, and a little sign
+            px(-16, -3, 12, 2, rgb(180, 60, 60)); px(-15, -1, 2, 2, rgb(240, 200, 60)); px(-11, -1, 2, 1, rgb(110, 200, 230)); px(-8, -1, 2, 2, rgb(200, 200, 210))
+            px(10, 0, 1, 9, rgb(120, 80, 45)); px(7, 8, 8, 4, rgb(225, 200, 150)); px(8, 9, 6, 1, rgb(120, 80, 45)); px(8, 10.5, 4, 0.8, rgb(120, 80, 45))
+        }
+        NSColor.black.withAlphaComponent(0.2).setFill()
+        NSBezierPath(ovalIn: NSRect(x: p.x - 14 * u, y: p.y - 2 * u, width: 28 * u, height: 4 * u)).fill()
+        switch Characters.current.id {
+        case "elf": // a squirrel caravan (drawn facing left, so mirrored: it looks the way it walks)
+            func pm(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) { px(-x - w, y, w, h, c) }
+            let fur = rgb(196, 112, 52), light = rgb(240, 200, 150), dark = rgb(120, 62, 28)
+            pm(1, 2, 4, 7, fur); pm(3, 6, 5, 9, fur); pm(4, 14, 6, 6, fur); pm(2, 19, 6, 3, fur); pm(5, 9, 1.5, 9, dark) // the big tail curling up behind
+            pm(1, 20, 3, 2, light) // its tip
+            pm(-6, 0 + step, 2, 3, dark); pm(-1, 0, 2, 3, dark)
+            pm(-7, 2, 8, 9, fur); pm(-6, 3, 5, 6, light) // body and belly
+            pm(-8, 11, 8, 6, fur); pm(-7, 16, 2, 2, fur); pm(-3, 16, 2, 2, fur) // head and ears
+            pm(-7, 13, 1, 1, .black); pm(-8.5, 12, 1.5, 1, dark) // eye, nose
+            pm(-9, 17, 10, 1.4, rgb(70, 110, 60)); pm(-7, 18.4, 6, 2.5, rgb(70, 110, 60)); pm(-6.5, 18.5, 5, 0.8, rgb(230, 190, 70)) // the hat
+            pm(1, 5, 4, 4, rgb(150, 110, 70)); pm(1.5, 8, 3, 1, rgb(120, 80, 45)) // a sack of nuts
+            for k in 0..<3 { // the little ones behind
+                let x = -20 - CGFloat(k) * 7, b = CGFloat((Int(desk.legPhase) + k) % 2)
+                px(x, 0 + b, 4, 4, fur); px(x + 3, 3 + b, 3, 3, fur); px(x - 2, 3 + b, 2, 4, fur); px(x + 4.7, 4.5 + b, 0.8, 0.8, .black) // (head forward, tail behind)
+            }
+        case "undead": // the ferryman
+            let cloak = rgb(40, 38, 58), edge = rgb(70, 66, 96)
+            px(-6, 0, 12, 20, cloak); px(-5, 0, 1, 18, edge); px(-4, 20, 8, 4, cloak); px(-3, 18, 6, 4, rgb(18, 16, 26)) // the hood's dark
+            px(-2, 19.5, 1, 1, rgb(140, 255, 220)); px(1, 19.5, 1, 1, rgb(140, 255, 220)) // eyes in the dark
+            px(8, -2, 1, 26, rgb(110, 80, 50)); px(7, -3, 3, 4, rgb(110, 80, 50)) // the oar
+            let glow = rgb(120, 255, 220)
+            glow.withAlphaComponent(0.18).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x + flip * (-14) * u - 8 * u, y: p.y + 2 * u, width: 16 * u, height: 16 * u)).fill()
+            px(-15, 13, 1, 3, rgb(60, 60, 60)); px(-16, 8, 3, 5, rgb(40, 40, 40)); px(-15.5, 9, 2, 3, glow) // the lantern
+            px(-8, 10, 2, 3, cloak)
+        default: // a kobold peddler and its donkey
+            let hide = rgb(170, 110, 60), snout = rgb(210, 160, 110), pack = rgb(150, 100, 60)
+            // the donkey behind
+            let grey = rgb(150, 145, 150)
+            px(-26, 2, 14, 7, grey); px(-28, 7, 4, 8, grey); px(-30, 13, 4, 3, grey); px(-27, 15, 1, 3, grey); px(-25, 15, 1, 3, grey) // body, neck, head, ears
+            px(-25, 0 + step, 2, 3, rgb(90, 85, 90)); px(-15, 0, 2, 3, rgb(90, 85, 90)); px(-20, 0 + (1 - step), 2, 3, rgb(90, 85, 90))
+            px(-24, 9, 10, 5, pack); px(-22, 14, 6, 3, rgb(120, 80, 45)); px(-21, 17, 2, 2, rgb(240, 200, 60)); px(-17, 16, 2, 3, rgb(110, 200, 230)) // packs and shiny things
+            px(-29, 14.5, 0.8, 0.8, .black)
+            // the kobold
+            px(-3, 0 + step, 2, 3, rgb(110, 70, 40)); px(1, 0, 2, 3, rgb(110, 70, 40))
+            px(-4, 3, 8, 8, hide); px(-3, 4, 6, 2, rgb(120, 60, 50)) // body and belt
+            px(-4, 11, 7, 6, hide); px(2, 12, 4, 3, snout); px(5, 13.5, 1, 1, .black); px(1, 14, 1, 1, .black) // head, snout, nose, eye
+            px(-4, 17, 2, 3, hide); px(0, 17, 2, 2, hide) // ears
+            px(-8, 5, 4, 9, pack); px(-8, 14, 4, 2, rgb(200, 60, 60)) // the backpack, a red bedroll on top
+            px(4, 7, 3, 1.2, hide) // an arm, waving the goods
+        }
+    }
+}
+
+// MARK: - Decorations (Decor.swift)
+
+extension AntView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard isMap, subviews.first(where: { $0.identifier?.rawValue == "decor-button" }) == nil else { return }
+        let button = NSButton(title: "🏡 裝飾", target: self, action: #selector(decorButton(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier("decor-button")
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.font = .systemFont(ofSize: 11)
+        button.sizeToFit()
+        button.frame.origin = NSPoint(x: bounds.maxX - button.frame.width - 10, y: bounds.maxY - button.frame.height - 8)
+        button.autoresizingMask = [.minXMargin, .minYMargin]
+        button.toolTip = "自己擺營地的裝飾"
+        addSubview(button)
+    }
+
+    @objc private func decorButton(_ sender: NSButton) {
+        guard colony.phase == .running else { return }
+        DecorPalette.shared.toggle(colony: colony, near: window)
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard isMap, colony.decorating else { return super.keyDown(with: event) }
+        switch event.keyCode {
+        case 53: // Esc: stop putting down, then leave the mode
+            if colony.decorPlacing != nil { colony.decorPlacing = nil; DecorPalette.shared.refresh("") }
+            else if colony.decorSelected != nil { colony.decorSelected = nil }
+            else { DecorPalette.shared.close() }
+        case 51, 117: // Delete
+            if let i = colony.decorSelected { colony.removeDecor(i); DecorPalette.shared.refresh("收回了。") }
+        case 3: // F
+            if let i = colony.decorSelected { colony.flipDecor(i) }
+        default: super.keyDown(with: event)
+        }
+        needsDisplay = true
+    }
+
+    fileprivate func decorDown(at p: CGPoint, shift: Bool) {
+        window?.makeFirstResponder(self)
+        if let kind = colony.decorPlacing {
+            if let problem = colony.placeDecor(kind, at: p) {
+                DecorPalette.shared.refresh(problem)
+            } else {
+                if !shift { colony.decorPlacing = nil }
+                DecorPalette.shared.refresh("放好了。")
+            }
+        } else if let i = colony.decorAt(p) {
+            colony.decorSelected = i
+            let at = colony.decorPoint(colony.decor[i])
+            colony.decorDrag = (i, CGSize(width: at.x - p.x, height: at.y - p.y), colony.decor[i])
+        } else {
+            colony.decorSelected = nil
+        }
+        needsDisplay = true
+    }
+
+    fileprivate func decorDragged(to p: CGPoint) {
+        colony.hand.track(p)
+        guard let drag = colony.decorDrag else { return }
+        _ = colony.moveDecor(drag.index, to: CGPoint(x: p.x + drag.offset.width, y: p.y + drag.offset.height))
+        needsDisplay = true
+    }
+
+    fileprivate func decorUp() {
+        if let drag = colony.decorDrag, colony.decor.indices.contains(drag.index), colony.decor[drag.index] != drag.from { colony.decorChanged() }
+        colony.decorDrag = nil
+    }
+
+    /// The decorations put down, each standing on its spot; the ones that move change frame twice a second.
+    fileprivate func drawDecor() {
+        guard !colony.decor.isEmpty, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let tick = Int(Date().timeIntervalSinceReferenceDate * 2)
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        for (k, d) in colony.decor.enumerated() {
+            let box = colony.decorBox(d)
+            let r = CGRect(x: box.minX - (originOverride ?? .zero).x, y: box.minY - (originOverride ?? .zero).y, width: box.width, height: box.height)
+            guard bounds.insetBy(dx: -60, dy: -60).intersects(r) else { continue }
+            let frames = DecorCatalog.frames(d.kind)
+            guard !frames.isEmpty else { continue }
+            let image = frames[(tick + k) % frames.count]
+            ctx.saveGState()
+            if d.flip == true {
+                ctx.translateBy(x: r.midX, y: 0)
+                ctx.scaleBy(x: -1, y: 1)
+                ctx.translateBy(x: -r.midX, y: 0)
+            }
+            ctx.draw(image, in: r)
+            ctx.restoreGState()
+        }
+        ctx.restoreGState()
+    }
+
+    /// In decoration mode: a banner, the picked decoration ringed, and the one being put down under the pointer (red where it cannot go).
+    fileprivate func drawDecorMode() {
+        drawPill("裝飾模式・點右邊的目錄挑一樣，再點營地放下", center: NSPoint(x: bounds.midX, y: bounds.maxY - 16), fontSize: 11,
+                 tint: NSColor(calibratedRed: 0.3, green: 0.55, blue: 0.85, alpha: 1))
+        let o = originOverride ?? .zero
+        if let i = colony.decorSelected, colony.decor.indices.contains(i) {
+            let box = colony.decorBox(colony.decor[i]).offsetBy(dx: -o.x, dy: -o.y).insetBy(dx: -3, dy: -3)
+            let path = NSBezierPath(rect: box)
+            path.lineWidth = 1.5
+            path.setLineDash([4, 3], count: 2, phase: 0)
+            NSColor(calibratedRed: 1, green: 0.9, blue: 0.3, alpha: 1).setStroke()
+            path.stroke()
+            drawPill((DecorCatalog.kind(colony.decor[i].kind)?.name ?? "") + "・F 翻面・Delete 收回", center: NSPoint(x: box.midX, y: box.maxY + 10), fontSize: 10)
+        }
+        guard let kind = colony.decorPlacing, let cursor = colony.hand.cursor, let image = DecorCatalog.frames(kind).first,
+              let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let size = DecorCatalog.size(kind)
+        let r = CGRect(x: cursor.x - o.x - size.width / 2, y: cursor.y - o.y, width: size.width, height: size.height)
+        let ok = colony.decorProblem(kind, at: cursor) == nil
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        ctx.setAlpha(0.65)
+        ctx.draw(image, in: r)
+        ctx.restoreGState()
+        if !ok {
+            NSColor(calibratedRed: 1, green: 0.2, blue: 0.2, alpha: 0.3).setFill()
+            NSBezierPath(rect: r).fill()
+            if let why = colony.decorProblem(kind, at: cursor) { drawPill(why, center: NSPoint(x: r.midX, y: r.maxY + 10), fontSize: 10) }
+        }
+    }
 }

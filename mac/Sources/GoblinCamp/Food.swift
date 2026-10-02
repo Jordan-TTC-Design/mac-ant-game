@@ -583,6 +583,11 @@ struct AntWorld {
     var rangedReach = 0.0
     /// Night time (goblins sleep more), and whether they may start something to pass the time (not while it rains, in a crowd, or at the campfire party).
     var night = false
+    /// The hour of the day (0…23), for what goes on of an evening.
+    var hour = 12
+    /// How many more may take up the night watch, and sit round the fire pit.
+    var patrolSlots = 0
+    var firesideSlots = 0
     var activitiesOn = true
     /// The stone ring where the goblins cook (once the camp has one), and whether a cook may start now (something in the larder, nobody at the pot).
     var pit: CGPoint?

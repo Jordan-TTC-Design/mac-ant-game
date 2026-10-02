@@ -543,3 +543,103 @@ describe("commands", () => {
   });
 });
 
+
+describe("the wandering merchant (DESKTOP.md §2)", () => {
+  async function campWith(materials: Record<string, number>, race = "goblin") {
+    const me = await account();
+    const goblins = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, breed: "common", age: 100, seed: String(i + 1) }));
+    await t.call("POST", "/camp/migrate", { race, save: { goblins, materials } }, me);
+    return me;
+  }
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+  const MINUTE = 60_000;
+
+  it("comes with a present and stays a quarter of an hour; a second Mac finds it already there", async () => {
+    const me = await campWith({});
+    expect((await view(me)).merchant).toBeNull();
+    const res = await cmd(me, { kind: "merchant-arrive" });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toContain("狗頭人行商來了");
+    const camp = res.body.camp as CampView;
+    const visit = camp.merchant!;
+    expect(visit.merchant).toBe("狗頭人行商");
+    expect(visit.stock.length).toBeGreaterThanOrEqual(4);
+    expect(visit.stock.length).toBeLessThanOrEqual(6);
+    expect(visit.bought).toEqual([]);
+    expect(camp.materials).toEqual(visit.gift);
+    expect(Date.parse(visit.leavesAt) - Date.parse(visit.arrivedAt)).toBe(15 * MINUTE);
+    const again = await cmd(me, { kind: "merchant-arrive" });
+    expect(again.status).toBe(200);
+    expect((again.body.camp as CampView).materials).toEqual(visit.gift); // (no second present)
+    t.advance(15 * MINUTE);
+    expect((await view(me)).merchant).toBeNull();
+  });
+
+  it("swaps each offer once while it is here, for what the camp has", async () => {
+    const plenty = Object.fromEntries(["log", "stone", "scrap_rag", "scrap_wood", "scrap_iron", "rat_pelt", "rat_fang", "rat_tail", "slime_goo", "feather"].map((id) => [id, 500]));
+    const me = await campWith(plenty);
+    const visit = ((await cmd(me, { kind: "merchant-arrive" })).body.camp as CampView).merchant!;
+    const k = visit.stock.findIndex((o) => Object.entries(o.give).every(([id, n]) => (plenty[id] ?? 0) + (visit.gift[id] ?? 0) >= n));
+    expect(k).toBeGreaterThanOrEqual(0);
+    const offer = visit.stock[k]!;
+    const before = (await view(me)).materials;
+    const res = await cmd(me, { kind: "merchant-trade", visit: visit.id, offer: k });
+    expect(res.status).toBe(200);
+    const after = (res.body.camp as CampView).materials;
+    for (const [id, n] of Object.entries(offer.give)) expect(after[id] ?? 0).toBe((before[id] ?? 0) - n + (offer.get[id] ?? 0));
+    for (const [id, n] of Object.entries(offer.get)) expect(after[id]).toBe((before[id] ?? 0) + n - (offer.give[id] ?? 0));
+    expect((res.body.camp as CampView).merchant!.bought).toEqual([k]);
+    expect((await cmd(me, { kind: "merchant-trade", visit: visit.id, offer: k })).body.error).toBe("not_allowed");
+    expect((await cmd(me, { kind: "merchant-trade", visit: visit.id, offer: 9 })).body.error).toBe("not_found");
+    t.advance(16 * MINUTE);
+    const other = (k + 1) % visit.stock.length;
+    expect((await cmd(me, { kind: "merchant-trade", visit: visit.id, offer: other })).body.error).toBe("not_found");
+  });
+
+  it("will not swap without the materials", async () => {
+    const me = await campWith({});
+    const visit = ((await cmd(me, { kind: "merchant-arrive" })).body.camp as CampView).merchant!;
+    const k = visit.stock.findIndex((o) => Object.entries(o.give).some(([id, n]) => (visit.gift[id] ?? 0) < n));
+    expect((await cmd(me, { kind: "merchant-trade", visit: visit.id, offer: k })).body.error).toBe("not_enough");
+  });
+
+  it("comes at most three times a day, an hour apart at least", async () => {
+    const me = await campWith({});
+    expect((await cmd(me, { kind: "merchant-arrive" })).status).toBe(200);
+    t.advance(30 * MINUTE);
+    expect((await cmd(me, { kind: "merchant-arrive" })).body.error).toBe("too_soon");
+    t.advance(31 * MINUTE);
+    expect((await cmd(me, { kind: "merchant-arrive" })).status).toBe(200);
+    t.advance(61 * MINUTE);
+    expect((await cmd(me, { kind: "merchant-arrive" })).status).toBe(200);
+    t.advance(61 * MINUTE);
+    expect((await cmd(me, { kind: "merchant-arrive" })).body.error).toBe("not_allowed"); // (still the same day in Taipei)
+    t.advance(10 * 60 * MINUTE);
+    expect((await cmd(me, { kind: "merchant-arrive" })).status).toBe(200); // (the next day)
+  });
+
+  it("is each race's own merchant", async () => {
+    const me = await campWith({}, "undead");
+    const res = await cmd(me, { kind: "merchant-arrive" });
+    expect((res.body.camp as CampView).merchant!.merchant).toBe("冥河擺渡人");
+  });
+});
+
+describe("decorations (DESKTOP.md §5)", () => {
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+
+  it("keeps the camp's own race's decorations, as many as its room holds", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    expect((await view(me)).decor).toEqual([]);
+    const items = [{ kind: "g_hut", x: 12.4, y: -40, flip: true }, { kind: "g_daisies", x: 0, y: 30 }];
+    const res = await cmd(me, { kind: "decor-set", items });
+    expect(res.status).toBe(200);
+    expect((res.body.camp as CampView).decor).toEqual([{ kind: "g_hut", x: 12, y: -40, flip: true }, { kind: "g_daisies", x: 0, y: 30 }]);
+    expect((await cmd(me, { kind: "decor-set", items: [{ kind: "e_treehouse", x: 0, y: 0 }] })).body.error).toBe("not_allowed");
+    const tooMany = Array.from({ length: 6 }, (_, i) => ({ kind: "g_hut", x: i * 40, y: 0 })); // (4 each: 24 > 20 for a new camp)
+    expect((await cmd(me, { kind: "decor-set", items: tooMany })).body.error).toBe("no_room");
+    expect((await cmd(me, { kind: "decor-set", items: [] })).status).toBe(200);
+    expect((await view(me)).decor).toEqual([]);
+  });
+});

@@ -18,7 +18,7 @@ enum HookInstaller {
     }
 
     private static let markers = ["goblincamp-hook.sh", "goblin-notify.sh", "goblin-ask.sh"]
-    private static let events = ["Notification", "Stop", "PermissionRequest"]
+    private static let events = ["Notification", "Stop", "PermissionRequest", "UserPromptSubmit", "PreToolUse"]
 
     /// `CAMP_CLAUDE_DIR` points tests at another folder, so the real settings are never touched.
     static var claudeDir: URL {
@@ -35,6 +35,25 @@ enum HookInstaller {
         """
         #!/bin/sh
         # Written by GoblinCamp (menu: 連接 Claude Code). Hands Claude Code's hook events to the game; does nothing if the game is gone.
+        # "pulse": Claude is at work (start / a tool / stop) for the camp's scribe. Shell built-ins only (no program is started), so it
+        # costs Claude Code nothing: one small file per session in the game's folder, which the game looks at.
+        if [ "$1" = "pulse" ]; then
+          D="$HOME/Library/Application Support/GoblinCamp/claude"
+          [ -d "$D" ] || exit 0
+          IFS= read -r line
+          q='"'
+          s=${line#*${q}session_id${q}:${q}}
+          [ "$s" = "$line" ] && s=${line#*${q}session_id${q}: ${q}}
+          [ "$s" = "$line" ] && exit 0
+          s=${s%%${q}*}
+          case "$s" in ""|*/*|*" "*|.*) exit 0 ;; esac
+          case "$2" in
+            start) echo "$PWD" > "$D/$s" ;;
+            tool) [ -f "$D/$s" ] || echo "$PWD" > "$D/$s"; : > "$D/$s.tool" ;;
+            stop) [ -f "$D/$s" ] && : > "$D/$s.done" ;;
+          esac
+          exit 0
+        fi
         APP=\(shellQuote(executable))
         [ -x "$APP" ] || exit 0
         exec "$APP" --hook "$@"
@@ -85,7 +104,7 @@ enum HookInstaller {
         var hooks = (root["hooks"] as? [String: Any]) ?? [:]
         stripOurs(&hooks)
         let wrapper = shellQuote(wrapperURL.path)
-        let plan: [(event: String, matcher: String?, command: String, timeout: Int?)]
+        var plan: [(event: String, matcher: String?, command: String, timeout: Int?)]
         switch style {
         case .interactive:
             // (a question may be passed to the phone and wait up to 10 minutes: AppDelegate.relayWait)
@@ -94,6 +113,8 @@ enum HookInstaller {
         case .simple:
             plan = [("Notification", nil, "\(wrapper) notify permission", nil), ("Stop", nil, "\(wrapper) notify done", nil)]
         }
+        // the scribe at its desk in the camp (Scribe.swift): quick, waits for nothing
+        plan += [("UserPromptSubmit", nil, "\(wrapper) pulse start", 5), ("PreToolUse", nil, "\(wrapper) pulse tool", 5), ("Stop", nil, "\(wrapper) pulse stop", 5)]
         for item in plan {
             var hook: [String: Any] = ["type": "command", "command": item.command]
             if let timeout = item.timeout { hook["timeout"] = timeout }
@@ -147,7 +168,7 @@ enum HookInstaller {
         guard commands.allSatisfy({ $0.command.contains("goblincamp-hook.sh") }) else { return .needsUpdate }
         let exe = executable ?? Bundle.main.executablePath ?? ""
         let wrapper = (try? String(contentsOf: wrapperURL, encoding: .utf8)) ?? ""
-        guard wrapper.contains(shellQuote(exe)) else { return .needsUpdate }
+        guard wrapper.contains(shellQuote(exe)), wrapper.contains("pulse"), commands.contains(where: { $0.command.hasSuffix("pulse tool") }) else { return .needsUpdate } // (the scribe came later)
         return commands.contains { $0.event == "PermissionRequest" } ? .interactive : .simple
     }
 }
