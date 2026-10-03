@@ -224,6 +224,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        colony.onRanchSync = { [weak self] report, done in // the ranch tells the books its herd and how long the camp was open (Ranch.swift)
+            guard let self else { return }
+            struct Body: Encodable { let kind = "ranch-sync"; let animals: [RanchReport.Animal]; let minutes: Double; let butchered: [Int] }
+            Task { @MainActor in
+                do {
+                    let answer = try await self.ledger.command(Body(animals: report.animals, minutes: report.minutes, butchered: report.butchered))
+                    done(.success(answer.message))
+                    self.applyBooksToCamp()
+                } catch {
+                    done(.failure((error as? APIError)?.message ?? error.localizedDescription))
+                }
+            }
+        }
         colony.onDecorChanged = { [weak self] list in // the decorations go to the books a second after the last change
             guard let self else { return }
             self.decorToSend = list
@@ -2063,6 +2076,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.booksMerchant = ledger.view?.merchant
         colony.booksStage = ledger.view?.stage
         colony.applyBooksDecor(ledger.view?.decor)
+        colony.applyBooksRanch(ledger.view?.ranch?.animals.map { ($0.id, $0.kind, MerchantVisitInfo.date($0.bornAt), $0.caught == true, $0.name ?? "") })
         updateCount()
     }
 

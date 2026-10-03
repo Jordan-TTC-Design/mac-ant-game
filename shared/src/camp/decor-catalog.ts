@@ -152,4 +152,9 @@ export const DECOR_KINDS: readonly DecorKind[] = [
   {"id": "e_crystals", "race": "elf", "name": "水晶簇", "category": "scene", "size": 2, "frames": 2, "fn": null, "blocks": true},
   {"id": "u_gargoyle", "race": "undead", "name": "石像鬼雕像", "category": "building", "size": 2, "frames": 2, "fn": null, "blocks": true},
   {"id": "u_shipwreck", "race": "undead", "name": "幽靈船殘骸", "category": "scene", "size": 4, "frames": 2, "fn": null, "blocks": true},
+  {"id": "e_eagleperch", "race": "elf", "name": "鷹架", "category": "creature", "size": 2, "frames": 1, "fn": "eagle", "blocks": false},
+  {"id": "u_soullamp", "race": "undead", "name": "養魂燈", "category": "creature", "size": 2, "frames": 2, "fn": "soulpen", "blocks": false},
+  {"id": "g_fence", "race": "goblin", "name": "木樁柵欄", "category": "fence", "size": 0, "frames": 1, "fn": null, "blocks": true},
+  {"id": "e_fence", "race": "elf", "name": "花籬", "category": "fence", "size": 0, "frames": 1, "fn": null, "blocks": true},
+  {"id": "u_fence", "race": "undead", "name": "鐵柵", "category": "fence", "size": 0, "frames": 1, "fn": null, "blocks": true},
 ];

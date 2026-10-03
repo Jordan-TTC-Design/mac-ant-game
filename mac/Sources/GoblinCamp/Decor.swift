@@ -28,12 +28,16 @@ struct DecorPlaced: Codable, Equatable {
 
 enum DecorCatalog {
     static let categories: [(id: String, name: String)] = [
-        ("building", "建築"), ("pen", "圍欄"), ("furniture", "家具"), ("scene", "場景"), ("tree", "樹"),
+        ("fence", "柵欄"), ("building", "建築"), ("pen", "圍欄"), ("furniture", "家具"), ("scene", "場景"), ("tree", "樹"),
         ("sign", "路牌"), ("bone", "骨頭"), ("flower", "花"), ("plant", "魔植"), ("creature", "活物"),
     ]
     /// Decoration room by the camp's look (shared DECOR_ROOM), and the most things whatever the room.
     static let room = [1: 20, 2: 45, 3: 80]
     static let maxItems = 120
+    /// Fence pieces take no room; this many at most. They sit on a grid of this many points, so rings close.
+    static let maxFences = 80
+    static let fenceCell = 20.0
+    static func isFence(_ id: String) -> Bool { byID[id]?.category == "fence" }
     static let reach = 1200.0
 
     private static var folder: URL? { Bundle.main.resourceURL?.appendingPathComponent("Decor") }
@@ -69,6 +73,12 @@ enum DecorCatalog {
     }
 }
 
+/// A cell of the fence grid (columns and rows from the land's anchor).
+struct GridCell: Hashable {
+    let x: Int
+    let y: Int
+}
+
 /// The ground a big decoration stands on: goblins walk round it.
 final class DecorObstacle: Obstacle {
     let rect: CGRect
@@ -86,7 +96,9 @@ extension Colony {
 
     /// The box a decoration is drawn in (camp coordinates): it stands on the middle of its bottom edge.
     func decorBox(_ d: DecorPlaced) -> CGRect {
-        let p = decorPoint(d), size = DecorCatalog.size(d.kind)
+        let p = decorPoint(d), cell = DecorCatalog.fenceCell
+        if DecorCatalog.isFence(d.kind) { return CGRect(x: p.x - cell / 2, y: p.y, width: cell, height: cell + 6) } // (a fence piece is its grid cell)
+        let size = DecorCatalog.size(d.kind)
         return CGRect(x: p.x - size.width / 2, y: p.y, width: size.width, height: size.height)
     }
 
@@ -100,10 +112,16 @@ extension Colony {
         guard let info = DecorCatalog.kind(kind) else { return "沒有這種裝飾" }
         let others = decor.enumerated().filter { $0.offset != ignoring }.map(\.element)
         let used = others.reduce(0) { $0 + (DecorCatalog.kind($1.kind)?.size ?? 0) }
+        let fences = others.filter { DecorCatalog.isFence($0.kind) }
+        if info.category == "fence" {
+            if ignoring == nil, fences.count >= DecorCatalog.maxFences { return "柵欄最多 \(DecorCatalog.maxFences) 段" }
+            if fences.contains(where: { hypot(decorPoint($0).x - p.x, decorPoint($0).y - p.y) < 2 }) { return "這裡已經有柵欄了" }
+        }
         if ignoring == nil, used + info.size > decorRoom { return "裝飾點數不夠" }
-        if ignoring == nil, others.count >= DecorCatalog.maxItems { return "放太多了" }
+        if ignoring == nil, others.count - fences.count >= DecorCatalog.maxItems { return "放太多了" }
         guard walkable.contains(where: { $0.contains(p) }) else { return "這裡放不下" }
         if scene?.visiblePonds.contains(where: { $0.blocks(p, margin: 4) }) == true { return "不能放在水裡" }
+        if obstacles.contains(where: { $0.blocks(p, margin: 2) }) { return "這裡有水或石頭，放不了" } // (streams, ledges, rocks and trees: where nobody walks)
         if let nest, hypot(p.x - nest.x, p.y - nest.y) < 36 { return "離營地洞口太近" }
         if info.blocks { // a big one needs its own ground
             let foot = footprint(kind, at: p)
@@ -113,6 +131,7 @@ extension Colony {
     }
 
     private func footprint(_ kind: String, at p: CGPoint) -> CGRect {
+        if DecorCatalog.isFence(kind) { let c = DecorCatalog.fenceCell; return CGRect(x: p.x - c / 2, y: p.y, width: c, height: c) } // (the whole cell: nobody squeezes between two posts)
         let size = DecorCatalog.size(kind)
         return CGRect(x: p.x - size.width * 0.4, y: p.y, width: size.width * 0.8, height: min(16, size.height * 0.35))
     }
@@ -183,10 +202,28 @@ extension Colony {
         return CGPoint(x: p.x + roam.x, y: p.y + roam.y)
     }
 
+    // MARK: Fences
+
+    /// The middle of the bottom edge of the grid cell a point is in (cells are counted from the land's anchor).
+    func fenceSnap(_ p: CGPoint) -> CGPoint {
+        let c = DecorCatalog.fenceCell, a = decorAnchor
+        return CGPoint(x: a.x + ((p.x - a.x) / c).rounded() * c, y: a.y + ((p.y - a.y) / c).rounded(.down) * c)
+    }
+
+    /// The grid cell (column, row from the anchor) of a fence piece.
+    func fenceCell(_ d: DecorPlaced) -> GridCell { GridCell(x: Int((d.x / DecorCatalog.fenceCell).rounded()), y: Int((d.y / DecorCatalog.fenceCell).rounded())) }
+
+    /// The rectangle of a grid cell, in camp coordinates.
+    func cellRect(_ cell: GridCell) -> CGRect {
+        let c = DecorCatalog.fenceCell, a = decorAnchor
+        return CGRect(x: a.x + (Double(cell.x) - 0.5) * c, y: a.y + Double(cell.y) * c, width: c, height: c)
+    }
+
     // MARK: Changing them
 
     @discardableResult
-    func placeDecor(_ kind: String, at p: CGPoint) -> String? {
+    func placeDecor(_ kind: String, at point: CGPoint) -> String? {
+        let p = DecorCatalog.isFence(kind) ? fenceSnap(point) : point
         if let problem = decorProblem(kind, at: p) { return problem }
         decor.append(DecorPlaced(kind: kind, x: (p.x - decorAnchor.x).rounded(), y: (p.y - decorAnchor.y).rounded(), flip: nil))
         decorChanged()
@@ -200,7 +237,7 @@ extension Colony {
         return true
     }
 
-    func flipDecor(_ i: Int) {
+    func flipDecor(_ i: Int) { // (a fence piece turned is a gate)
         guard decor.indices.contains(i) else { return }
         decor[i].flip = decor[i].flip == true ? nil : true
         decorChanged()
@@ -216,6 +253,7 @@ extension Colony {
     /// After any change: the goblins' paths, and the list kept (books or file).
     func decorChanged() {
         decorRoam = [:] // (the list moved: everyone back to its spot)
+        ranch.pensDirty = true
         rebuildDecorObstacles()
         if followsBooks { onDecorChanged?(decor) } else { Self.saveLocalDecor(decor) }
     }
@@ -231,6 +269,7 @@ extension Colony {
             return
         }
         decor = list
+        ranch.pensDirty = true
         decorRoam = [:]
         rebuildDecorObstacles()
     }
@@ -369,7 +408,8 @@ final class DecorPalette: NSObject, NSWindowDelegate {
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
 
-        let room = NSTextField(labelWithString: "裝飾點數 \(colony.decorUsed)／\(colony.decorRoom)　（營地長大會變多）")
+        let fences = colony.decor.filter { DecorCatalog.isFence($0.kind) }.count
+        let room = NSTextField(labelWithString: "裝飾點數 \(colony.decorUsed)／\(colony.decorRoom)　柵欄 \(fences)／\(DecorCatalog.maxFences)")
         room.font = .systemFont(ofSize: 12, weight: .semibold)
         stack.addArrangedSubview(room)
 
@@ -429,8 +469,10 @@ final class DecorPalette: NSObject, NSWindowDelegate {
         scroll.heightAnchor.constraint(equalToConstant: 300).isActive = true
         stack.addArrangedSubview(scroll)
 
-        let help = NSTextField(wrappingLabelWithString: colony.decorPlacing != nil
-            ? "在營地裡點一下放下（按住 ⇧ 可以連續放）。Esc 不放了。"
+        let help = NSTextField(wrappingLabelWithString: colony.decorPlacing.map(DecorCatalog.isFence) == true
+            ? "在營地裡按住拖一條線，就鋪一排柵欄。圍成一圈就是牧場：把走進營地的雞、羊、豬拎起來丟進去養。右鍵拆掉一段。Esc 不鋪了。"
+            : colony.decorPlacing != nil
+            ? "在營地裡點一下放下，可以一直點、連續放。Esc（或再按一次同一個按鈕）不放了。"
             : "點上面一樣，再點營地放下。點營地裡的裝飾可以拖著移動，F 翻面，Delete 收回。Esc 或關掉這個視窗結束。")
         help.preferredMaxLayoutWidth = 300
         help.font = .systemFont(ofSize: 11)

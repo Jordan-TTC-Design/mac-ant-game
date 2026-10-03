@@ -645,3 +645,52 @@ describe("decorations (DESKTOP.md §5)", () => {
     expect((await view(me)).decor).toEqual([]);
   });
 });
+
+describe("the ranch (DESKTOP.md §8)", () => {
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+  const MINUTE = 60_000;
+  // (chickens and feathers: the raids on a camp leave rags, never feathers, so nothing else moves the count)
+  const six = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, kind: "chicken", caught: true }));
+
+  it("keeps the herd, and gives its yield only for minutes the camp was open (never more than passed)", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    expect((await view(me)).ranch).toEqual({ animals: [] });
+    let res = await cmd(me, { kind: "ranch-sync", animals: six, minutes: 240 }); // (the first report only sets the clock)
+    expect(res.status).toBe(200);
+    expect((res.body.camp as CampView).ranch!.animals).toHaveLength(6);
+    expect((res.body.camp as CampView).materials.feather).toBeUndefined();
+    t.advance(40 * MINUTE);
+    res = await cmd(me, { kind: "ranch-sync", animals: six, minutes: 40 }); // six chickens, forty minutes: 1.2 feathers
+    expect((res.body.camp as CampView).materials.feather).toBe(1);
+    expect(res.body.message).toContain("牧場");
+    t.advance(10 * MINUTE);
+    res = await cmd(me, { kind: "ranch-sync", animals: six, minutes: 240 }); // (says four hours, ten minutes passed: 0.3 more)
+    expect((res.body.camp as CampView).materials.feather).toBe(1);
+    t.advance(60 * MINUTE);
+    res = await cmd(me, { kind: "ranch-sync", animals: six, minutes: 0 }); // (the Mac was shut: nothing)
+    expect((res.body.camp as CampView).materials.feather).toBe(1);
+  });
+
+  it("gives nothing for a young one until it has grown, and meat for a grown pig butchered", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    const herd = [{ id: 1, kind: "pig", caught: true }, { id: 2, kind: "pig", caught: true }, { id: 3, kind: "pig" }]; // (3 was born here)
+    await cmd(me, { kind: "ranch-sync", animals: herd, minutes: 0 });
+    let res = await cmd(me, { kind: "ranch-sync", animals: herd.filter((a) => a.id === 2), minutes: 0, butchered: [1, 3] });
+    expect((res.body.camp as CampView).materials.food_meat).toBe(3); // (the young one gave none)
+    expect((res.body.camp as CampView).ranch!.animals.map((a) => a.id)).toEqual([2]);
+    res = await cmd(me, { kind: "ranch-sync", animals: [{ id: 2, kind: "pig", name: "小花" }], minutes: 0 }); // (a name given)
+    expect((res.body.camp as CampView).ranch!.animals).toMatchObject([{ id: 2, kind: "pig", name: "小花", caught: true }]);
+    res = await cmd(me, { kind: "ranch-sync", animals: [], minutes: 0, butchered: [1, 2] }); // (1 is long gone)
+    expect((res.body.camp as CampView).materials.food_meat).toBe(6);
+  });
+
+  it("keeps no more than the camp's cap, and only animals it knows", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    const seven = Array.from({ length: 7 }, (_, i) => ({ id: i + 1, kind: "chicken", caught: true }));
+    expect((await cmd(me, { kind: "ranch-sync", animals: seven, minutes: 0 })).body.error).toBe("not_allowed");
+    expect((await cmd(me, { kind: "ranch-sync", animals: [{ id: 1, kind: "dragon" }], minutes: 0 })).body.error).toBe("not_allowed");
+  });
+});

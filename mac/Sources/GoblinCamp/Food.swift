@@ -614,6 +614,10 @@ struct AntWorld {
     var race = "goblin"
     /// The undead camp's graves (where they sleep).
     var graves: [CGPoint] = []
+    /// The ranch: where what is being caught is now (by its id; a soul's is negative), and the wild animals nobody may hunt
+    /// (they are being caught for the pens).
+    var herdTargets: [Int: CGPoint] = [:]
+    var spared: Set<Int> = []
     var crowded: Bool { crowd >= 1 }
 
     /// The way in nearest to `p`: the nest hole or a tent.

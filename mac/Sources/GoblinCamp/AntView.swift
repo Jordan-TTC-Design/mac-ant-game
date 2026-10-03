@@ -139,6 +139,33 @@ final class AntView: NSView {
     override func rightMouseDown(with event: NSEvent) {
         guard isMap, colony.phase == .running else { return super.rightMouseDown(with: event) }
         let p = screenLocation(of: event)
+        if colony.decorating { // a right-click takes a decoration (a fence piece) away
+            if let i = colony.decorAt(p) { colony.removeDecor(i); DecorPalette.shared.refresh("收回了。"); needsDisplay = true }
+            return
+        }
+        if case .beast(let id)? = handTarget(at: p), let beast = colony.ranch.beasts.first(where: { $0.id == id }) { // an animal of the ranch
+            let menu = NSMenu()
+            let title = NSMenuItem(title: colony.beastLine(id) ?? "", action: nil, keyEquivalent: "")
+            title.isEnabled = false
+            menu.addItem(title)
+            menu.addItem(.separator())
+            if colony.canButcher(id) {
+                let meat = NSMenuItem(title: "宰了（烤肉 ×3）", action: #selector(beastPicked(_:)), keyEquivalent: "")
+                meat.target = self
+                meat.representedObject = BeastPick(id: id, butcher: true)
+                menu.addItem(meat)
+            }
+            let call = NSMenuItem(title: beast.name.isEmpty ? "取名字…" : "改名字…（\(beast.name)）", action: #selector(beastNamed(_:)), keyEquivalent: "")
+            call.target = self
+            call.representedObject = BeastPick(id: beast.id, butcher: false)
+            menu.addItem(call)
+            let free = NSMenuItem(title: "放走", action: #selector(beastPicked(_:)), keyEquivalent: "")
+            free.target = self
+            free.representedObject = BeastPick(id: beast.id, butcher: false)
+            menu.addItem(free)
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
+        }
         guard case .ant(let id)? = handTarget(at: p), let ant = colony.ants.first(where: { $0.id == id }) else { return }
         let orders = colony.orders(for: id)
         guard !orders.isEmpty else { return }
@@ -156,6 +183,31 @@ final class AntView: NSView {
             menu.addItem(item)
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private final class BeastPick {
+        let id: Int
+        let butcher: Bool
+        init(id: Int, butcher: Bool) { self.id = id; self.butcher = butcher }
+    }
+
+    @objc private func beastNamed(_ sender: NSMenuItem) {
+        guard let pick = sender.representedObject as? BeastPick, let beast = colony.ranch.beasts.first(where: { $0.id == pick.id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "幫牠取個名字"
+        alert.informativeText = "最多 8 個字；留空白就是不取名。"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        field.stringValue = beast.name
+        alert.accessoryView = field
+        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: "取消")
+        alert.window.initialFirstResponder = field
+        if alert.runInFront() == .alertFirstButtonReturn { colony.name(beast: pick.id, field.stringValue) }
+    }
+
+    @objc private func beastPicked(_ sender: NSMenuItem) {
+        guard let pick = sender.representedObject as? BeastPick else { return }
+        if pick.butcher { colony.butcher(pick.id) } else { colony.release(beast: pick.id) }
     }
 
     private final class OrderPick {
@@ -192,6 +244,8 @@ final class AntView: NSView {
                 if spriteBox(ant, role: role, scale: scale).insetBy(dx: -2, dy: -2).contains(p) { return .ant(ant.id) }
             }
         }
+        if let id = colony.wispAt(p) { return .wisp(id) }
+        if let id = colony.beastAt(p) { return .beast(id) }
         if let q = colony.queen, q.arrived, q.alpha > 0.5, !q.isCarried, let role = character.queenRole(outfit: colony.outfitIndex) {
             let size = CGFloat(role.frameSize) * role.pixelSize(scale: Double(scale))
             if CGRect(x: q.pos.x - size * 0.3, y: q.pos.y - size * 0.2, width: size * 0.6, height: size * 0.9).contains(p) { return .queen }
@@ -689,6 +743,7 @@ final class AntView: NSView {
 
         if isMap { drawDesks() } // (in front of the scribes sitting behind them)
         if isMap, colony.merchant.visit != nil, colony.merchant.phase != .away { drawMerchant() }
+        if isMap { drawRanchAir() }
         drawHealPulses()
         drawFloaters()
 
@@ -716,7 +771,18 @@ final class AntView: NSView {
             case .creature(let id):
                 if let c = colony.creatures.first(where: { $0.id == id }) {
                     let p = local(c.pos)
-                    drawPill(c.kind.name, center: NSPoint(x: p.x, y: p.y + CGFloat(c.kind.radius * c.scale) + 16), fontSize: 10)
+                    let hint = colony.canCatch(c) ? (colony.ranch.pens.isEmpty ? "・圍一圈柵欄就能養" : "・拎起來丟進牧場") : ""
+                    drawPill(c.kind.name + hint, center: NSPoint(x: p.x, y: p.y + CGFloat(c.kind.radius * c.scale) + 16), fontSize: 10)
+                }
+            case .beast(let id):
+                if id == 0, let v = colony.ranch.visitor, let line = colony.beastLine(0) {
+                    drawPill(line, center: NSPoint(x: local(v.perch).x, y: local(v.perch).y + RanchRules.perchTop + 30), fontSize: 10)
+                } else if let b = colony.ranch.beasts.first(where: { $0.id == id }), let line = colony.beastLine(id) {
+                    drawPill(line, center: NSPoint(x: local(b.pos).x, y: local(b.pos).y + 28), fontSize: 10)
+                }
+            case .wisp(let id):
+                if let w = colony.ranch.wisps.first(where: { $0.id == id }) {
+                    drawPill("獸魂・拎起來放到養魂燈旁", center: NSPoint(x: local(w.pos).x, y: local(w.pos).y + 28), fontSize: 10)
                 }
             case .merchant:
                 if let visit = colony.merchant.visit {
@@ -824,11 +890,16 @@ final class AntView: NSView {
         var said: [(text: String, at: CGPoint)] = [] // what the touched ones say, drawn over everything
         defer { drawSaid(said) }
         // far to near (the lower on the screen, the later), with the standing decorations in between: nobody walks "over" a house behind them
-        var standing = isMap ? colony.decorStanding() : []
-        defer { for k in standing { drawDecorItem(k) } } // (those nearer than everybody)
+        var standing: [(y: CGFloat, draw: () -> Void)] = []
+        if isMap {
+            standing = colony.decorStanding().map { k in (colony.decorPoint(colony.decor[k]).y, { [unowned self] in self.drawDecorItem(k) }) }
+            standing += colony.ranch.beasts.filter { $0.pen >= 0 }.map { b in (b.pos.y, { [unowned self] in self.drawBeast(b) }) }
+            standing.sort { $0.y > $1.y }
+        }
+        defer { for item in standing { item.draw() } } // (those nearer than everybody)
         for ant in colony.ants.sorted(by: { $0.pos.y > $1.pos.y }) where !ant.isHidden {
-            while let k = standing.first, colony.decorPoint(colony.decor[k]).y >= ant.pos.y {
-                drawDecorItem(k)
+            while let item = standing.first, item.y >= ant.pos.y {
+                item.draw()
                 standing.removeFirst()
             }
             var p = local(ant.pos)
@@ -1160,6 +1231,9 @@ final class AntView: NSView {
                 rect(top.x, top.y + 0.4 * u, 6, 1, bone)
                 rect(top.x - 3 * u, top.y, 1.6, 1.8, bone)
                 rect(top.x + 3 * u, top.y, 1.6, 1.8, bone)
+            case 4: // a sack of what the ranch gave
+                rect(top.x, top.y, 6, 4, NSColor(calibratedRed: 0.8, green: 0.72, blue: 0.55, alpha: 1))
+                rect(top.x, top.y + 4 * u, 2, 1, NSColor(calibratedRed: 0.55, green: 0.4, blue: 0.25, alpha: 1))
             default: // a scroll from the scribe's desk
                 rect(top.x, top.y, 6, 2, NSColor(calibratedRed: 0.97, green: 0.93, blue: 0.8, alpha: 1))
                 rect(top.x - 3.2 * u, top.y - 0.2 * u, 1, 2.4, NSColor(calibratedRed: 0.55, green: 0.35, blue: 0.2, alpha: 1))
@@ -1220,6 +1294,27 @@ final class AntView: NSView {
                 ("！" as NSString).draw(at: NSPoint(x: hand.x + 4, y: hand.y + 2), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 10), .foregroundColor: NSColor(calibratedRed: 1, green: 0.75, blue: 0.2, alpha: 1)])
             } else if dozing, Int(Date().timeIntervalSinceReferenceDate) % 3 != 0 {
                 ("z" as NSString).draw(at: NSPoint(x: p.x + size * 0.3, y: p.y + size * 0.8), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 9), .foregroundColor: NSColor.white])
+            }
+        case .carryBeast(let kind, _, _)?:
+            // what it caught, held up over its head (kicking)
+            if let animal = Animals.all.first(where: { $0.id == kind }), let image = animal.image(facingRight: dirSign(ant) > 0, phase: t * 6),
+               let ctx = NSGraphicsContext.current?.cgContext {
+                let w = CGFloat(image.width) * 1.2, h = CGFloat(image.height) * 1.2
+                ctx.saveGState()
+                ctx.interpolationQuality = .none
+                if kind == "soul_beast" { ctx.setAlpha(0.7) }
+                ctx.draw(image, in: CGRect(x: p.x - w / 2, y: p.y + size * 0.72, width: w, height: h))
+                ctx.restoreGState()
+            }
+        case .herd?:
+            ("！" as NSString).draw(at: NSPoint(x: p.x + size * 0.25, y: p.y + size * 0.8), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 9), .foregroundColor: NSColor.white])
+        case .tend(let spot, let face)? where hypot(spot.x - ant.pos.x, spot.y - ant.pos.y) < 6:
+            // feed thrown over the fence: a few grains in the air toward the pen
+            let to = local(face)
+            for k in 0..<4 {
+                let f = CGFloat((t * 0.8 + Double(k) * 0.25).truncatingRemainder(dividingBy: 1))
+                let x = p.x + (to.x - p.x) * f, y = p.y + size * 0.5 + (to.y - p.y - size * 0.3) * f + sin(f * .pi) * 8
+                rect(x, y, 1, 1, NSColor(calibratedRed: 0.95, green: 0.85, blue: 0.45, alpha: 1 - f * 0.5))
             }
         case .chat(let partner)?:
             // the two take turns: a bubble over whoever is talking now
@@ -2496,12 +2591,14 @@ extension AntView {
 
     fileprivate func decorDown(at p: CGPoint, shift: Bool) {
         window?.makeFirstResponder(self)
-        if let kind = colony.decorPlacing {
+        if let kind = colony.decorPlacing, DecorCatalog.isFence(kind) { // a fence: this piece, and more as the pointer is dragged
+            colony.decorLaying = true
+            if let problem = colony.placeDecor(kind, at: p) { DecorPalette.shared.refresh(problem) } else { DecorPalette.shared.refresh("") }
+        } else if let kind = colony.decorPlacing {
             if let problem = colony.placeDecor(kind, at: p) {
                 DecorPalette.shared.refresh(problem)
             } else {
-                if !shift { colony.decorPlacing = nil }
-                DecorPalette.shared.refresh("放好了。")
+                DecorPalette.shared.refresh("放好了，可以繼續放。") // (it stays picked: click again for another; Esc, or its button again, to stop)
             }
         } else if let i = colony.decorAt(p) {
             colony.decorSelected = i
@@ -2515,12 +2612,21 @@ extension AntView {
 
     fileprivate func decorDragged(to p: CGPoint) {
         colony.hand.track(p)
+        if colony.decorLaying, let kind = colony.decorPlacing, DecorCatalog.isFence(kind) {
+            if colony.placeDecor(kind, at: p) == nil { DecorPalette.shared.refresh(""); needsDisplay = true }
+            return
+        }
         guard let drag = colony.decorDrag else { return }
         _ = colony.moveDecor(drag.index, to: CGPoint(x: p.x + drag.offset.width, y: p.y + drag.offset.height))
         needsDisplay = true
     }
 
     fileprivate func decorUp() {
+        if colony.decorLaying {
+            colony.decorLaying = false
+            let pens = colony.ranch.pensDirty ? nil : colony.ranch.pens.count
+            _ = pens
+        }
         if let drag = colony.decorDrag, colony.decor.indices.contains(drag.index), colony.decor[drag.index] != drag.from { colony.decorChanged() }
         colony.decorDrag = nil
     }
@@ -2529,6 +2635,7 @@ extension AntView {
     fileprivate func drawDecorItem(_ k: Int) {
         guard colony.decor.indices.contains(k), let ctx = NSGraphicsContext.current?.cgContext else { return }
         let d = colony.decor[k]
+        if DecorCatalog.isFence(d.kind) { return drawFence(d) }
         let roam = colony.decorating ? .zero : (colony.decorRoam[k]?.at ?? .zero)
         let box = colony.decorBox(d)
         let o = originOverride ?? .zero
@@ -2561,11 +2668,22 @@ extension AntView {
             path.setLineDash([4, 3], count: 2, phase: 0)
             NSColor(calibratedRed: 1, green: 0.9, blue: 0.3, alpha: 1).setStroke()
             path.stroke()
-            drawPill((DecorCatalog.kind(colony.decor[i].kind)?.name ?? "") + "・F 翻面・Delete 收回", center: NSPoint(x: box.midX, y: box.maxY + 10), fontSize: 10)
+            let fence = DecorCatalog.isFence(colony.decor[i].kind)
+            drawPill((DecorCatalog.kind(colony.decor[i].kind)?.name ?? "") + (fence ? (colony.decor[i].flip == true ? "（柵門）・F 改回柵欄" : "・F 改成柵門") : "・F 翻面") + "・Delete 收回", center: NSPoint(x: box.midX, y: box.maxY + 10), fontSize: 10)
         }
-        guard let kind = colony.decorPlacing, let cursor = colony.hand.cursor, let image = DecorCatalog.frames(kind).first,
+        for (k, pen) in colony.ranch.pens.enumerated() { // the pens: their ground tinted, and how many each holds
+            NSColor(calibratedRed: 0.5, green: 0.9, blue: 0.5, alpha: 0.18).setFill()
+            for cell in pen { colony.cellRect(cell).offsetBy(dx: -o.x, dy: -o.y).fill() }
+            if let first = pen.first {
+                let mid = pen.reduce(CGPoint.zero) { CGPoint(x: $0.x + colony.cellRect($1).midX, y: $0.y + colony.cellRect($1).midY) }
+                _ = first
+                drawPill("牧場 \(colony.penCount(k))／\(colony.penRoom(k))", center: NSPoint(x: mid.x / CGFloat(pen.count) - o.x, y: mid.y / CGFloat(pen.count) - o.y), fontSize: 9)
+            }
+        }
+        guard let kind = colony.decorPlacing, var cursor = colony.hand.cursor, let image = DecorCatalog.frames(kind).first,
               let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let size = DecorCatalog.size(kind)
+        if DecorCatalog.isFence(kind) { cursor = colony.fenceSnap(cursor) }
+        let size = DecorCatalog.isFence(kind) ? CGSize(width: DecorCatalog.fenceCell, height: DecorCatalog.fenceCell) : DecorCatalog.size(kind)
         let r = CGRect(x: cursor.x - o.x - size.width / 2, y: cursor.y - o.y, width: size.width, height: size.height)
         let ok = colony.decorProblem(kind, at: cursor) == nil
         ctx.saveGState()
@@ -2708,5 +2826,93 @@ extension AntView {
             }
         default: break
         }
+    }
+}
+
+// MARK: - The ranch (Ranch.swift)
+
+extension AntView {
+    /// A fence piece on its grid cell, joined to its neighbours: a post, rails to the pieces left and right, and a run up to the piece behind.
+    fileprivate func drawFence(_ d: DecorPlaced) {
+        let cell = colony.fenceCell(d), cells = colony.ranch.pensDirty ? Set(colony.decor.filter { DecorCatalog.isFence($0.kind) }.map(colony.fenceCell)) : colony.ranch.fenceCells
+        let o = originOverride ?? .zero
+        let r = colony.cellRect(cell).offsetBy(dx: -o.x, dy: -o.y)
+        guard bounds.insetBy(dx: -30, dy: -30).intersects(r) else { return }
+        let race = Characters.current.id
+        func c(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> NSColor { NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: 1) }
+        let post = race == "undead" ? c(60, 60, 72) : race == "elf" ? c(110, 150, 90) : c(110, 74, 40)
+        let rail = race == "undead" ? c(84, 84, 98) : race == "elf" ? c(140, 180, 110) : c(150, 104, 60)
+        let dark = c(40, 28, 20)
+        func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ col: NSColor) { col.setFill(); NSRect(x: x, y: y, width: w, height: h).fill() }
+        let mid = r.midX, base = r.minY + 2
+        let left = cells.contains(GridCell(x: cell.x - 1, y: cell.y)), right = cells.contains(GridCell(x: cell.x + 1, y: cell.y))
+        let up = cells.contains(GridCell(x: cell.x, y: cell.y + 1))
+        if up { // the run going back to the piece behind: two rails, seen from above
+            px(mid - 3, base + 8, 2, r.height, rail); px(mid + 1, base + 8, 2, r.height, rail)
+        }
+        for (on, x0, w) in [(left, r.minX, r.width / 2), (right, mid, r.width / 2)] as [(Bool, CGFloat, CGFloat)] where on {
+            px(x0, base + 5, w, 2, rail); px(x0, base + 11, w, 2, rail)
+            if race == "undead" { px(x0 + w / 2, base + 2, 1, 14, post) } // (iron bars between the posts)
+        }
+        if d.flip == true { // a gate: two taller posts, a bar across the top and a board hung between
+            for x in [r.minX + 1, r.maxX - 4] { px(x - 1, base - 1, 5, 23, dark); px(x, base, 3, 21, post) }
+            px(r.minX + 1, base + 19, r.width - 2, 2, rail)
+            px(r.minX + 4, base + 3, r.width - 8, 11, rail); px(r.minX + 5, base + 4, r.width - 10, 9, post)
+            px(r.maxX - 7, base + 8, 2, 2, c(240, 200, 70)) // the latch
+            return
+        }
+        px(mid - 2.5, base - 1, 5, 19, dark); px(mid - 1.5, base, 3, 17, post)
+        if race == "undead" { px(mid - 0.5, base + 17, 1, 3, c(110, 110, 124)) } // a spike
+        if race == "elf" { px(mid - 2, base + 15, 2, 2, c(246, 190, 210)); px(mid + 1, base + 9, 2, 2, c(250, 240, 150)) } // flowers in the hedge
+    }
+
+    /// What of the ranch is up in the air, over everybody: the eagle (on its perch, or on the wing), the wild one on a visit,
+    /// the souls round their lamps, and the beasts' souls drifting through.
+    fileprivate func drawRanchAir() {
+        for b in colony.ranch.beasts where b.pen < 0 { drawBeast(b) }
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        if let v = colony.ranch.visitor, let eagle = Animals.all.first(where: { $0.id == "eagle" }), let image = eagle.image(facingRight: true, phase: 0) {
+            let p = local(v.perch), s = CGFloat(eagle.pixelScale)
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.draw(image, in: CGRect(x: p.x - CGFloat(image.width) * s / 2, y: p.y + RanchRules.perchTop - 1, width: CGFloat(image.width) * s, height: CGFloat(image.height) * s))
+            ctx.restoreGState()
+        }
+        guard let soul = Animals.all.first(where: { $0.id == "soul_beast" }) else { return }
+        for w in colony.ranch.wisps {
+            guard let image = soul.image(facingRight: w.vel.dx >= 0, phase: w.life * 2) else { continue }
+            let p = local(w.pos), s = CGFloat(soul.pixelScale)
+            NSColor(calibratedRed: 0.5, green: 1, blue: 0.86, alpha: 0.18).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x - 14, y: p.y - 4, width: 28, height: 26)).fill()
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.setAlpha(0.65)
+            ctx.draw(image, in: CGRect(x: p.x - CGFloat(image.width) * s / 2, y: p.y - 1, width: CGFloat(image.width) * s, height: CGFloat(image.height) * s))
+            ctx.restoreGState()
+        }
+    }
+
+    /// A ranch animal: its own sprite (a young one smaller), with its shadow.
+    fileprivate func drawBeast(_ b: RanchBeast) {
+        let phase = b.kind == "eagle" ? (b.flight > 0 ? 1 : 0) : b.legPhase // (the eagle's two pictures: perched, and wings out)
+        guard let ctx = NSGraphicsContext.current?.cgContext, let kind = Animals.all.first(where: { $0.id == b.kind }),
+              let image = kind.image(facingRight: b.facingRight, phase: phase) else { return }
+        let p = local(b.pos)
+        guard bounds.insetBy(dx: -30, dy: -30).contains(p) else { return }
+        let s = CGFloat(kind.pixelScale) * (b.grown ? 1 : 0.6)
+        let w = CGFloat(image.width) * s, h = CGFloat(image.height) * s
+        if b.pen >= 0 {
+            NSColor(calibratedWhite: 0, alpha: 0.16).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.4, y: p.y - 2, width: w * 0.8, height: 4)).fill()
+        }
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        if b.kind == "soul_beast" { // a soul: its glow, and half there
+            NSColor(calibratedRed: 0.5, green: 1, blue: 0.86, alpha: 0.16).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x - w * 0.6, y: p.y - 2, width: w * 1.2, height: h * 1.1)).fill()
+            ctx.setAlpha(0.75)
+        }
+        ctx.draw(image, in: CGRect(x: p.x - w / 2, y: p.y - 1, width: w, height: h))
+        ctx.restoreGState()
     }
 }

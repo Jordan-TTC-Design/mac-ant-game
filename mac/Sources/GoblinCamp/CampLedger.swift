@@ -88,11 +88,17 @@ final class CampLedger {
         let merchant: MerchantVisitInfo?
         /// The decorations put down (Decor.swift); older servers leave it out.
         let decor: [DecorPlaced]?
+        /// The ranch's animals (Ranch.swift); older servers leave it out.
+        struct RanchView: Codable {
+            struct Animal: Codable { let id: Int; let kind: String; let bornAt: String; let caught: Bool?; let name: String? }
+            let animals: [Animal]
+        }
+        let ranch: RanchView?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, ranch, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -120,6 +126,7 @@ final class CampLedger {
             production = try? c.decodeIfPresent(Production.self, forKey: .production)
             merchant = try? c.decodeIfPresent(MerchantVisitInfo.self, forKey: .merchant)
             decor = try? c.decodeIfPresent([DecorPlaced].self, forKey: .decor)
+            ranch = try? c.decodeIfPresent(RanchView.self, forKey: .ranch)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }

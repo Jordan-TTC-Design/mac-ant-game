@@ -96,6 +96,8 @@ enum Gesture { case poke, pester, pet, lift, land, obey, refuse }
 /// An order from the right-click menu.
 enum HandOrder: CaseIterable {
     case fell, mine, fish, fight, play, sleep, home
+    /// Go and catch an animal that wandered in, for the ranch.
+    case herd
 }
 
 /// How a breed answers one gesture: what it shows, for how long, and what it might say.
@@ -355,6 +357,11 @@ enum Reactions {
         case "chicken": return ["咕咕！", "咕咕咕咕！"].randomElement()!
         case "frog": return ["呱", "呱呱"].randomElement()!
         case "bat": return "吱！"
+        case "deer": return "呦～"
+        case "rabbit": return "（動動鼻子）"
+        case "eagle": return "唳——"
+        case "bone_sheep", "bone_chicken", "bone_dog": return ["喀啦", "喀喀"].randomElement()!
+        case "soul_beast": return "（輕輕發亮）"
         default: return "？"
         }
     }
@@ -500,6 +507,10 @@ enum HandTarget: Equatable {
     case creature(Int)
     /// The wandering merchant: a click opens its stall (Merchant.swift).
     case merchant
+    /// An animal in a pen (Ranch.swift); 0 is the wild eagle on a visit.
+    case beast(Int)
+    /// A beast's soul drifting through an undead camp.
+    case wisp(Int)
 }
 
 extension Colony {
@@ -537,7 +548,14 @@ extension Colony {
     func handDown(at p: CGPoint, on target: HandTarget?) {
         hand.track(p)
         hand.press = Hand.Press(target: target, start: p)
-        if case .creature(let id)? = target { strikeOrPet(creature: id) }
+        if case .creature(let id)? = target {
+            if let c = creatures.first(where: { $0.id == id }), canCatch(c) { pickUp(creature: id) } else { strikeOrPet(creature: id) }
+        }
+        if target == .beast(0) { patVisitor() }
+        if case .wisp(let id)? = target { pickUp(wisp: id) }
+        if case .beast(let id)? = target, let b = ranch.beasts.first(where: { $0.id == id }) {
+            addFloater(Reactions.animal(b.kind), .common, at: CGPoint(x: b.pos.x, y: b.pos.y + 14))
+        }
         if target == .merchant { MerchantWindow.shared.show(colony: self) }
     }
 
@@ -556,6 +574,8 @@ extension Colony {
         hand.track(p)
         guard let press = hand.press else { return }
         hand.press = nil
+        if ranch.held != nil { dropCreature(at: p) }
+        if ranch.heldWisp != nil { dropWisp(at: p) }
         switch press.target {
         case .ant(let id)?:
             if press.lifted { release(id) }
@@ -800,6 +820,9 @@ extension Colony {
         if resourceCache.contains(where: { $0.kind == .rock }) { list.append((.mine, "去採石")) }
         if race != "undead", scene?.visiblePonds.isEmpty == false { list.append((.fish, "去釣魚")) }
         if creatures.contains(where: { $0.kind.hostile }) { list.append((.fight, "去打魔獸")) }
+        if herdTargets.contains(where: { target, p in roomFor(target < 0 ? "soul_beast" : creatures.first { $0.id == target }?.kind.id ?? "", near: p) != nil }) {
+            list.append((.herd, race == "undead" && herdTargets.keys.contains { $0 < 0 } ? "去把獸魂收進來" : "去抓動物回牧場"))
+        }
         list.append((.play, "去玩"))
         list.append((.sleep, race == "undead" && !graves.isEmpty ? "回墳墓睡覺" : "去睡覺"))
         list.append((.home, "回巢休息"))
@@ -841,6 +864,10 @@ extension Colony {
         case .fight:
             guard let monster = nearest(creatures.filter(\.kind.hostile), \.pos) else { return }
             ants[i].mode = .hunting(creature: monster.id, cooldown: 0)
+        case .herd:
+            guard let target = nearest(Array(herdTargets), \.value)?.key else { return }
+            ranch.herders[ants[i].id] = target
+            start(.herd(target: target), 40)
         case .play:
             start(.play, Double.random(in: 8...16))
         case .sleep:

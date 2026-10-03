@@ -46,6 +46,12 @@ struct Ant {
         case patrol(angle: Double, radius: Double)
         /// Sitting round the fire pit of an evening: at `spot`, facing the fire at `fire`.
         case fireside(spot: CGPoint, fire: CGPoint)
+        /// The ranch (Ranch.swift): going after an animal that wandered in (or a beast's soul) to catch it for the pens.
+        case herd(target: Int)
+        /// Carrying what it caught to its pen, perch or lamp: let go at `to`, it ends up at `home`.
+        case carryBeast(kind: String, to: CGPoint, home: CGPoint)
+        /// Feeding the animals over the fence: standing at `spot`, throwing feed toward `face`.
+        case tend(spot: CGPoint, face: CGPoint)
         /// At the scribe's desk while Claude Code works (Scribe.swift): typing (writing, for elves) at `desk`; nodding off after a long while.
         case scribe(desk: CGPoint, dozing: Bool)
 
@@ -68,10 +74,13 @@ struct Ant {
             case .dig: return "挖地"
             case .grave: return "睡在墳墓裡"
             case .chat: return "聊天"
-            case .haul(let load, _): return load == 0 ? (Characters.current.rules.fellsTrees == false ? "搬樹枝" : "搬木頭") : load == 1 ? "搬石頭" : load == 2 ? "搬骨頭" : "送文件"
+            case .haul(let load, _): return load == 0 ? (Characters.current.rules.fellsTrees == false ? "搬樹枝" : "搬木頭") : load == 1 ? "搬石頭" : load == 2 ? "搬骨頭" : load == 3 ? "送文件" : "搬牧場的東西"
             case .patrol: return "守夜"
             case .fireside: return "圍著火坑"
             case .scribe: return "幫 Claude 寫東西"
+            case .herd: return "抓動物"
+            case .carryBeast: return "把動物帶回牧場"
+            case .tend: return "餵牧場的動物"
             }
         }
     }
@@ -130,6 +139,10 @@ struct Ant {
         case farmed(plot: Int, action: Int)
         /// Finished felling (kind 0) or mining (1) the thing at `foot`, after `hits` blows.
         case gathered(kind: Int, id: Int, foot: CGPoint, hits: Int)
+        /// The ranch: reached the animal (or soul) it was after; brought one to its home; dug up a beast's bone.
+        case reached(target: Int)
+        case penned(kind: String, home: CGPoint)
+        case foundBeastBone
     }
 
     /// How fast the two carriers walk the princess in, in points per second.
@@ -267,6 +280,9 @@ struct Ant {
         default: return nil
         }
     }
+
+    /// How often a dig that turned up a bone turned up a beast's (`CAMP_BEAST_BONES=1` for tests: always).
+    static let beastBoneChance = ProcessInfo.processInfo.environment["CAMP_BEAST_BONES"] != nil ? 1.0 : 0.3
 
     /// Going home to sleep the night (or a long nap) indoors, not on the grass: it stays in a good while.
     var bedtime = false
@@ -729,6 +745,9 @@ struct Ant {
         case .patrol: return Double.random(in: 60...120)
         case .fireside: return Double.random(in: 25...60)
         case .scribe: return 1_000_000 // (the colony ends it when Claude stops)
+        case .herd: return 40
+        case .carryBeast: return 90
+        case .tend: return Double.random(in: 10...16)
         }
     }
 
@@ -939,6 +958,36 @@ struct Ant {
             } else {
                 walk(toward: target, distance: distance, speed: effectiveSpeed * 0.7 * world.pace, dt: dt)
             }
+        case .herd(let target):
+            guard let prey = world.herdTargets[target] else { return giveUp() }
+            let distance = hypot(prey.x - pos.x, prey.y - pos.y)
+            if distance < 11 {
+                mode = .wandering // (the colony says what next: it has it, or it got away)
+                return .reached(target: target)
+            }
+            walk(toward: prey, distance: distance, speed: effectiveSpeed * 1.5, dt: dt)
+        case .carryBeast(let beast, let door, let home):
+            let distance = hypot(door.x - pos.x, door.y - pos.y)
+            if distance < 4 {
+                mode = .wandering
+                heading = Double.random(in: 0..<(2 * .pi))
+                return .penned(kind: beast, home: home)
+            }
+            walk(toward: door, distance: distance, speed: effectiveSpeed * 0.8, dt: dt)
+        case .tend(let spot, let face):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed, dt: dt)
+                left = remaining
+            } else {
+                turn(toward: atan2(face.y - pos.y, face.x - pos.x), rate: 5, dt: dt)
+                gatherTimer -= dt
+                if gatherTimer <= 0 { // a handful of feed over the fence
+                    gatherTimer = Double.random(in: 1.2...2)
+                    swing = Ant.swingTime
+                    swingHeading = atan2(face.y - pos.y, face.x - pos.x)
+                }
+            }
         case .scribe(let desk, let dozing):
             let seat = CGPoint(x: desk.x, y: desk.y + 7) // behind the desk, facing out
             let distance = hypot(seat.x - pos.x, seat.y - pos.y)
@@ -967,7 +1016,7 @@ struct Ant {
             if case .dig = kind, world.race == "undead", Double.random(in: 0..<1) < 0.4 { // it turned up a bone: home with it
                 activityClock = 0
                 mode = .activity(.haul(load: 2, to: world.nearestEntrance(to: pos)), remaining: 90)
-                return event
+                return Double.random(in: 0..<1) < Ant.beastBoneChance ? .foundBeastBone : event // (now and then a beast's: three make a bone beast)
             }
             mode = .wandering
             heading = Double.random(in: 0..<(2 * .pi))
@@ -1019,7 +1068,7 @@ struct Ant {
             return .foundFood(food.id)
         }
         // Notice an animal only by walking into it (and not while hurt).
-        if !isWounded, let animal = world.creatures.first(where: { hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.radius + 20 * traits.sense }) {
+        if !isWounded, let animal = world.creatures.first(where: { !world.spared.contains($0.id) && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.radius + 20 * traits.sense }) { // (not the ones being caught for the pens)
             if animal.alerted {
                 mode = .hunting(creature: animal.id, cooldown: 0) // the others know already: join in
                 return nil

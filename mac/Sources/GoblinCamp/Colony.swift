@@ -147,12 +147,17 @@ final class Colony {
     var decorPlacing: String?
     /// A decoration being dragged: which, from where the pointer took hold of it, and where it stood before.
     var decorDrag: (index: Int, offset: CGSize, from: DecorPlaced)?
+    /// Fence pieces are being laid along a drag.
+    var decorLaying = false
     var decorObstacles: [Obstacle] = []
     /// The wandering decorations (a treant, a ghost, bats…): how far each has got from its spot, where it is going, which way it faces.
     var decorRoam: [Int: (at: CGPoint, to: CGPoint, left: Bool, wait: Double)] = [:]
     var decorTimer = 2.0
     var decorSentOnce = false
     var decorLoaded = false
+    /// The ranch (Ranch.swift): the pens the fences make, the animals in them, and how to tell the books.
+    let ranch = RanchState()
+    var onRanchSync: ((RanchReport, @escaping (MerchantAnswer) -> Void) -> Void)?
     /// The camp's look as the books have it (nil: not signed in), and how to keep the decorations on the books.
     var booksStage: Int?
     var onDecorChanged: (([DecorPlaced]) -> Void)?
@@ -515,6 +520,9 @@ final class Colony {
             recruitHunters(for: id, count: 5 + Int(creatures[i].hp / 3) + ants[index].traits.recruit)
         case .attack(let id):
             attack(creature: id, by: index)
+        case .reached(let target): herdReached(target, by: index)
+        case .penned(let kind, let home): herdPenned(kind, home: home)
+        case .foundBeastBone: beastBoneFound(at: ants[index].pos)
         case .gathered(let kind, let id, let face, _):
             finishGathering(kind: kind, id: id, foot: CGPoint(x: face.x, y: face.y - 6), by: index)
         case .caughtFish:
@@ -920,6 +928,38 @@ final class Colony {
         return news
     }
 
+    /// The undead's bone beasts and beast souls feed the soul tower (a camp of its own; a signed-in camp's births are the server's).
+    func nourishTower(_ lineage: String) {
+        guard !followsBooks, Characters.current.rules.lineage != nil else { return }
+        grow(lineage, pieces: 1)
+    }
+
+    /// A hen laid: an egg for the pot (Ranch.swift). False when the larder has all the eggs it holds.
+    func layEgg() -> Bool {
+        guard larder["egg", default: 0] < Colony.larderLimit else { return false }
+        larder["egg", default: 0] += 1
+        return true
+    }
+
+    /// A wild animal in the player's hand (Ranch.swift): it goes where the pointer goes.
+    func carryCreature(_ id: Int, to p: CGPoint) {
+        guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
+        creatures[ci].pos = p
+        creatures[ci].stay = max(creatures[ci].stay, 30)
+    }
+
+    /// Takes a wild animal out of the camp (into a pen); nil when it is gone already.
+    func takeCreature(_ id: Int) -> Creature? {
+        guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return nil }
+        return creatures.remove(at: ci)
+    }
+
+    /// Let go outside a pen: it bolts.
+    func startleCreature(_ id: Int) {
+        guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
+        creatures[ci].state = .fleeing(remaining: 3, angle: Double.random(in: 0..<(2 * .pi)))
+    }
+
     /// A monster wading through a bog: it stands where it is a moment (Decor.swift).
     func decorHold(creature id: Int, seconds: Double) {
         guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
@@ -1042,9 +1082,15 @@ final class Colony {
     private func finishCooking(at pot: CGPoint) {
         let used = min(larderTotal, Int.random(in: 2...4))
         guard used >= 2 else { return addFloater("沒有食材可以煮", .common, at: pot) }
-        var fish = 0, veg = 0
+        var fish = 0, veg = 0, egg = 0
         for _ in 0..<used {
-            // take from whichever there is more of (a mixed pot when both are stocked)
+            // an egg from the hens now and then; else from whichever of fish and vegetables there is more of (a mixed pot when both are stocked)
+            if larder["egg", default: 0] > 0, Double.random(in: 0..<1) < 0.4 || larder["fish", default: 0] + larder["veg", default: 0] == 0 {
+                larder["egg"]! -= 1
+                if larder["egg"] == 0 { larder["egg"] = nil }
+                egg += 1
+                continue
+            }
             let pick = (larder["fish", default: 0] > larder["veg", default: 0]) == (Double.random(in: 0..<1) < 0.75) ? "fish" : "veg"
             let key = larder[pick, default: 0] > 0 ? pick : (pick == "fish" ? "veg" : "fish")
             guard larder[key, default: 0] > 0 else { continue }
@@ -1053,8 +1099,9 @@ final class Colony {
             if key == "fish" { fish += 1 } else { veg += 1 }
         }
         // (the day's dish: 湯圓 on 冬至 and 元宵, 粽子 on 端午, 潤餅 on 清明, 火鍋 on 除夕)
-        let name = Holidays.dish ?? (fish > 0 && veg > 0 ? "魚菜燉鍋" : fish > 0 ? "魚湯" : "蔬菜燉菜")
-        var pieces = (fish + veg) * 2 + Int.random(in: 0...3)
+        let plain = egg > 0 && fish + veg == 0 ? "蒸蛋" : egg > 0 ? (fish > 0 ? "魚蛋燉鍋" : "蛋花菜湯") : fish > 0 && veg > 0 ? "魚菜燉鍋" : fish > 0 ? "魚湯" : "蔬菜燉菜"
+        let name = Holidays.dish ?? plain
+        var pieces = (fish + veg + egg) * 2 + Int.random(in: 0...3)
         let roll = Double.random(in: 0..<1)
         let message: String
         let bigPot = decorHas("cook") // (a big cauldron put down: nothing burns or tips over)
@@ -2073,6 +2120,8 @@ final class Colony {
         world.crowd = Double(visibleCount) / Double(visibleCap)
         world.night = Colony.isNight
         world.calm = decorHas("music") || decorHas("meditate") ? 2 : 1
+        world.herdTargets = herdTargets
+        world.spared = Set(ranch.herders.values.filter { $0 > 0 } + [ranch.held].compactMap { $0 })
         world.hour = Scenery.currentHour
         var watching = 0, fireside = 0
         for ant in ants {
@@ -2160,6 +2209,7 @@ final class Colony {
         if !decorLoaded, !followsBooks { decorLoaded = true; decor = Colony.loadLocalDecor(); rebuildDecorObstacles() }
         updateDecorEffects(dt: dt)
         updateDecorRoam(dt: dt)
+        updateRanch(dt: dt)
         moveCarriedPrincess()
         updateWildlife(dt: dt)
         if followsBooks { finishRaidIfOver() }
@@ -2290,7 +2340,9 @@ extension Colony {
         }
         materials = stores.materials
         kills = stores.kills
+        let eggs = larder["egg"] // (the hens' eggs are this Mac's own: the books do not count them)
         larder = stores.larder
+        larder["egg"] = eggs
         armory = stores.armory.filter { $0.gear != nil }
         autoGear = stores.autoGear
         foodDelivered = stores.delivered

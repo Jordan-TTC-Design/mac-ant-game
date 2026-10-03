@@ -183,6 +183,13 @@
       "when": 1790881577132,
       "tag": "0025_decor",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791037603241,
+      "tag": "0026_ranch",
+      "breakpoints": true
     }
   ]
 }

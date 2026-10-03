@@ -1,0 +1,13 @@
+{
+  "id": "deer",
+  "name": "鹿",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 8,
+  "speed": 22,
+  "meat": 14,
+  "aggressive": false,
+  "weight": 2,
+  "radius": 9
+}

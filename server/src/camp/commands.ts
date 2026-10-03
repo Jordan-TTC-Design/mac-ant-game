@@ -26,6 +26,12 @@ import {
   taipeiDay,
   decorProblem,
   decorKind,
+  RANCH_KINDS,
+  RANCH_MAX_MINUTES,
+  ranchGrown,
+  ranchProblem,
+  ranchYield,
+  type RanchAnimal,
   PRINCESS_CHILD_HOURS,
   placeableFoods,
   raceRules,
@@ -340,6 +346,34 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       spend(materials, offer.give);
       for (const [id, n] of Object.entries(offer.get)) materials[id] = (materials[id] ?? 0) + n;
       message = `用 ${cost(offer.give)} 換到了 ${cost(offer.get)}。`;
+      break;
+    }
+    case "ranch-sync": {
+      const ranch = camp.ranch ?? { animals: [] };
+      const known = new Map(ranch.animals.map((a) => [a.id, a]));
+      // (one already on the books keeps its birthday; a new one is born, or caught full-grown, now)
+      const next: RanchAnimal[] = command.animals.map((a) => {
+        const { name: _old, ...kept } = known.get(a.id) ?? { id: a.id, kind: a.kind, bornAt: now.toISOString(), ...(a.caught ? { caught: true } : {}) };
+        return a.name ? { ...kept, name: a.name } : kept; // (its name is the player's to give and change)
+      });
+      const problem = ranchProblem(next, campStage(camp.race, camp.peak));
+      if (problem) return { ok: false, code: "not_allowed", message: problem };
+      // what the herd on the books gave while the camp was open: never more minutes than really passed
+      const passed = ranch.syncedAt ? (now.getTime() - Date.parse(ranch.syncedAt)) / 60_000 : 0;
+      const minutes = Math.max(0, Math.min(command.minutes, RANCH_MAX_MINUTES, passed));
+      const { gain, carry } = ranchYield(ranch.animals, minutes, now, ranch.carry);
+      const kept = new Set(next.map((a) => a.id));
+      for (const id of command.butchered ?? []) {
+        const animal = known.get(id);
+        const meat = animal && RANCH_KINDS[animal.kind]?.butcher;
+        if (!animal || !meat || kept.has(id) || !ranchGrown(animal, now)) continue;
+        for (const [m, n] of Object.entries(meat)) gain[m] = (gain[m] ?? 0) + n;
+        known.delete(id); // (once)
+      }
+      for (const [id, n] of Object.entries(gain)) materials[id] = (materials[id] ?? 0) + n;
+      changes.ranch = { animals: next, syncedAt: now.toISOString(), carry };
+      extra = { gain };
+      message = Object.keys(gain).length ? `牧場：${cost(gain)}。` : "";
       break;
     }
     case "decor-set": {

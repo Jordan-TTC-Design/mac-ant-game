@@ -17,8 +17,10 @@ export interface DecorPlaced {
 
 /** Decoration room by the camp's look (stage 1–3): a small one takes 1, a middle one 2, a big one 4. */
 export const DECOR_ROOM: Record<1 | 2 | 3, number> = { 1: 20, 2: 45, 3: 80 };
-/** However much room there is, no more than this many things (the camp window has to draw them). */
+/** However much room there is, no more than this many things (the camp window has to draw them), fences apart. */
 export const DECOR_MAX_ITEMS = 120;
+/** Fence pieces (category "fence") take no room; this many at most. A closed ring of them is a pen (ranch.ts). */
+export const DECOR_MAX_FENCES = 80;
 /** How far from the anchor a decoration may stand (the land is 2200 × 1500 points round it). */
 export const DECOR_REACH = 1200;
 
@@ -34,7 +36,9 @@ export function decorRoomUsed(items: readonly DecorPlaced[]): number {
 
 /** Why this list cannot be the camp's (null: it can). */
 export function decorProblem(items: readonly DecorPlaced[], race: string, stage: 1 | 2 | 3): string | null {
-  if (items.length > DECOR_MAX_ITEMS) return `最多放 ${DECOR_MAX_ITEMS} 樣。`;
+  const fences = items.filter((d) => BY_ID.get(d.kind)?.category === "fence").length;
+  if (items.length - fences > DECOR_MAX_ITEMS) return `最多放 ${DECOR_MAX_ITEMS} 樣。`;
+  if (fences > DECOR_MAX_FENCES) return `柵欄最多 ${DECOR_MAX_FENCES} 段。`;
   for (const d of items) {
     const kind = BY_ID.get(d.kind);
     if (!kind) return "沒有這種裝飾。";

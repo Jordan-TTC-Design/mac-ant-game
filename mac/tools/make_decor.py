@@ -263,7 +263,7 @@ def chomper(w, h, head, frame, teeth=(250, 250, 240), stem=(70, 130, 60), inside
 # ---- the catalogue -------------------------------------------------------------------------------------------------
 CATALOG = []  # (id, race, name, category, size, frames, fn, blocks, draw)
 
-CATEGORIES = {"building": "建築", "pen": "圍欄", "furniture": "家具", "scene": "場景", "tree": "樹", "sign": "路牌", "bone": "骨頭",
+CATEGORIES = {"fence": "柵欄", "building": "建築", "pen": "圍欄", "furniture": "家具", "scene": "場景", "tree": "樹", "sign": "路牌", "bone": "骨頭",
               "flower": "花", "plant": "巨型魔植", "creature": "活物"}
 
 
@@ -1835,6 +1835,59 @@ def u_shipwreck(f):
     rect(img, 8, 15, 1, 5, (60, 60, 70)); disk(img, 8, 13 + f, 2, SOUL)      # a lantern still burning
     put(img, 36, 8 - f, (220, 240, 245, 180)); put(img, 37, 9 - f, (220, 240, 245, 120))
     return finish(img, (20, 16, 22))
+
+
+# ==== homes for what does not live in a pen (DESKTOP.md §8.2): the elves' eagle, the undead's beast souls ============
+@item("e_eagleperch", E, "鷹架", "creature", 2, fn="eagle", blocks=False)
+def e_eagleperch(f):
+    img = new(18, 40)
+    rect(img, 8, 8, 2, 32, BARK); rect(img, 8, 8, 1, 32, shade(BARK, 1.25))
+    rect(img, 2, 8, 14, 2, BARK); rect(img, 2, 8, 14, 1, shade(BARK, 1.25))      # the crossbar the eagle sits on
+    line(img, 9, 14, 4, 10, BARK); line(img, 9, 14, 14, 10, BARK)
+    for (x, y) in ((6, 30), (11, 24), (7, 18)):                                   # a vine up the post
+        put(img, x, y, (90, 160, 90)); put(img, x + 1, y + 1, (120, 196, 120))
+    rect(img, 5, 38, 8, 2, (120, 110, 100))
+    put(img, 3, 11, (250, 250, 250)); put(img, 13, 12, (250, 250, 250))           # a feather or two caught on it
+    return finish(img, (30, 50, 30))
+
+
+@item("u_soullamp", U, "養魂燈", "creature", 2, frames=2, fn="soulpen", blocks=False)
+def u_soullamp(f):
+    img = new(22, 34)
+    rect(img, 10, 14, 2, 20, (60, 60, 72)); rect(img, 6, 32, 10, 2, (60, 60, 72))
+    for d in (-1, 1):                                                            # three arms, a cage on each and one on top
+        line(img, 11, 18, 11 + d * 6, 14, (60, 60, 72))
+        rect(img, 11 + d * 6 - 2, 8, 4, 6, (40, 40, 50)); rect(img, 11 + d * 6 - 1, 9, 2, 4, SOUL if (f + d) % 2 else (90, 200, 180))
+    rect(img, 8, 2, 6, 9, (40, 40, 50)); rect(img, 9, 3, 4, 7, (200, 255, 244) if f else SOUL)
+    put(img, 11, 1, (110, 110, 124))
+    return finish(img, (20, 18, 26))
+
+
+# ==== fences (DESKTOP.md §8): laid a piece at a time on a grid; a closed ring is a pen. The game draws them joined up
+# (AntView.drawFence); these pictures are for the catalogue. They take no decoration room (their own limit instead). ====
+@item("g_fence", G, "木樁柵欄", "fence", 0, blocks=True)
+def g_fence(f):
+    img = new(22, 14)
+    post_fence(img, 0, 1, 22, WOOD, WOOD_LIGHT, step=10, h=13)
+    return finish(img, (60, 40, 22))
+
+
+@item("e_fence", E, "花籬", "fence", 0, blocks=True)
+def e_fence(f):
+    img = new(22, 14)
+    post_fence(img, 0, 1, 22, (110, 150, 90), (140, 180, 110), step=10, h=13)
+    for x in (4, 9, 15):
+        put(img, x, 3 + x % 2, PETAL); put(img, x + 2, 9, (250, 240, 150))
+    return finish(img, (30, 60, 40))
+
+
+@item("u_fence", U, "鐵柵", "fence", 0, blocks=True)
+def u_fence(f):
+    img = new(22, 14)
+    for x in range(0, 22, 5):
+        rect(img, x, 2, 1, 12, (60, 60, 72)); put(img, x, 1, (110, 110, 124))
+    rect(img, 0, 5, 22, 1, (80, 80, 94)); rect(img, 0, 10, 22, 1, (80, 80, 94))
+    return finish(img, (20, 18, 26))
 
 
 # ==== output ========================================================================================================

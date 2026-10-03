@@ -359,6 +359,22 @@ final class Settings {
         set { defaults.set(newValue, forKey: "holidayAnnounced") }
     }
 
+    /// Seconds the camp has been open that the books have not been told of yet (Ranch.swift): kept so a restart loses none.
+    var ranchOpenSeconds: Double {
+        get { defaults.double(forKey: "ranchOpenSeconds") }
+        set { defaults.set(newValue, forKey: "ranchOpenSeconds") }
+    }
+
+    /// Beasts' bones the undead have dug up and not yet put together, and how well the wild eagle knows the elves (Ranch.swift).
+    var ranchBones: Int {
+        get { defaults.integer(forKey: "ranchBones") }
+        set { defaults.set(newValue, forKey: "ranchBones") }
+    }
+    var ranchEagleTrust: Int {
+        get { defaults.integer(forKey: "ranchEagleTrust") }
+        set { defaults.set(newValue, forKey: "ranchEagleTrust") }
+    }
+
     /// The merchant's visits so far today (Merchant.swift), as "yyyy-MM-dd:count".
     var merchantVisits: String? {
         get { defaults.string(forKey: "merchantVisits") }

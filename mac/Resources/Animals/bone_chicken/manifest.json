@@ -1,0 +1,13 @@
+{
+  "id": "bone_chicken",
+  "name": "骨雞",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 3,
+  "speed": 20,
+  "meat": 0,
+  "aggressive": false,
+  "weight": 0,
+  "radius": 6
+}
