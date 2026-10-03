@@ -639,6 +639,8 @@ describe("decorations (DESKTOP.md §5)", () => {
     expect((await cmd(me, { kind: "decor-set", items: [{ kind: "e_treehouse", x: 0, y: 0 }] })).body.error).toBe("not_allowed");
     const tooMany = Array.from({ length: 6 }, (_, i) => ({ kind: "g_hut", x: i * 40, y: 0 })); // (4 each: 24 > 20 for a new camp)
     expect((await cmd(me, { kind: "decor-set", items: tooMany })).body.error).toBe("no_room");
+    const gone = await cmd(me, { kind: "decor-set", items: [{ kind: "g_sheeppen", x: 0, y: 0 }, { kind: "g_well", x: 5, y: 5 }] }); // (a pen taken out of the catalogue)
+    expect((gone.body.camp as CampView).decor).toEqual([{ kind: "g_well", x: 5, y: 5 }]);
     expect((await cmd(me, { kind: "decor-set", items: [] })).status).toBe(200);
     expect((await view(me)).decor).toEqual([]);
   });

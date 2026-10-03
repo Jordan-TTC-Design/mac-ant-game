@@ -187,7 +187,7 @@ final class AntView: NSView {
            CGRect(x: colony.merchant.pos.x - 26, y: colony.merchant.pos.y - 4, width: 52, height: 42).contains(p) { return .merchant }
         let breeds = character.breeds
         if !breeds.isEmpty {
-            for ant in colony.ants.reversed() where colony.canTouch(ant) {
+            for ant in colony.ants.sorted(by: { $0.pos.y < $1.pos.y }) where colony.canTouch(ant) { // (the nearest is drawn on top)
                 guard let role = breeds[min(ant.breedIndex, breeds.count - 1)].sprites else { continue }
                 if spriteBox(ant, role: role, scale: scale).insetBy(dx: -2, dy: -2).contains(p) { return .ant(ant.id) }
             }
@@ -676,7 +676,7 @@ final class AntView: NSView {
 
         let character = Characters.current
         drawGraves(scale: scale, onScreen: onScreen)
-        if isMap { drawDecor() }
+        if isMap { for k in colony.decorFlat() { drawDecorItem(k) } } // (what lies on the ground; the standing ones are drawn among the residents)
         if character.worker != nil {
             drawSpriteWorkers(character, scale: scale, onScreen: onScreen)
         } else {
@@ -823,7 +823,14 @@ final class AntView: NSView {
         for other in colony.ants { if case .activity(.mind(let child), _) = other.mode { minded.insert(child) } }
         var said: [(text: String, at: CGPoint)] = [] // what the touched ones say, drawn over everything
         defer { drawSaid(said) }
-        for ant in colony.ants where !ant.isHidden {
+        // far to near (the lower on the screen, the later), with the standing decorations in between: nobody walks "over" a house behind them
+        var standing = isMap ? colony.decorStanding() : []
+        defer { for k in standing { drawDecorItem(k) } } // (those nearer than everybody)
+        for ant in colony.ants.sorted(by: { $0.pos.y > $1.pos.y }) where !ant.isHidden {
+            while let k = standing.first, colony.decorPoint(colony.decor[k]).y >= ant.pos.y {
+                drawDecorItem(k)
+                standing.removeFirst()
+            }
             var p = local(ant.pos)
             guard onScreen.contains(p), let role = character.breeds[min(ant.breedIndex, lastBreed)].sprites else { continue }
             // an attack: it lunges toward what it hits, and a slash flashes there
@@ -893,6 +900,7 @@ final class AntView: NSView {
             ctx.setAlpha(1)
             if let touch = ant.touch { drawTouchMarks(ant, touch, at: p, size: size, pixel: pixel) }
             if ant.wet > 0 { drawDrips(ant, at: p, size: size) }
+            if isMap, let day = Holidays.today { drawHolidayWear(ant, day: day, at: p, size: size, pixel: pixel) }
             if ant.female, ant.fadeAlpha > 0.5 { // a little pink bow at the top of the head
                 let bx = p.x + size * 0.14, by = p.y + size * (ant.isChild ? 0.62 : 0.66)
                 NSColor(calibratedRed: 0.96, green: 0.45, blue: 0.62, alpha: 1).setFill()
@@ -1199,14 +1207,24 @@ final class AntView: NSView {
                 NSColor(calibratedRed: 0.62, green: 0.3, blue: 0.2, alpha: 1).setFill()
                 NSBezierPath(ovalIn: NSRect(x: tip.x - 2, y: tip.y - 1.5, width: 4, height: 3)).fill()
             }
-        case .scribe(_, let dozing)? where dozing:
-            if Int(Date().timeIntervalSinceReferenceDate) % 3 != 0 {
+        case .scribe(let desk, let dozing)?:
+            // Claude is waiting for the player's leave: the scribes at their desks hold a sheet up and wave it
+            let asking = colony.stage.current.map { $0.kind == .permission && $0.askID?.hasPrefix(AppDelegate.noteAskPrefix) != true } ?? false
+            if asking, hypot(desk.x - ant.pos.x, desk.y + 7 - ant.pos.y) < 6 {
+                let wave = CGFloat(sin(Date().timeIntervalSinceReferenceDate * 9)) * 2
+                let hand = CGPoint(x: p.x + size * 0.3 + wave, y: p.y + size * 0.92)
+                rect(hand.x, hand.y, 4, 5, NSColor(calibratedRed: 0.97, green: 0.94, blue: 0.84, alpha: 1))
+                rect(hand.x, hand.y + 1.5 * u, 2.4, 0.6, NSColor(calibratedWhite: 0.4, alpha: 1))
+                rect(hand.x, hand.y + 3 * u, 2.4, 0.6, NSColor(calibratedWhite: 0.4, alpha: 1))
+                rect(p.x + size * 0.24, p.y + size * 0.62, 1, 3.5, NSColor(calibratedRed: 0.5, green: 0.75, blue: 0.4, alpha: 1)) // the arm up
+                ("！" as NSString).draw(at: NSPoint(x: hand.x + 4, y: hand.y + 2), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 10), .foregroundColor: NSColor(calibratedRed: 1, green: 0.75, blue: 0.2, alpha: 1)])
+            } else if dozing, Int(Date().timeIntervalSinceReferenceDate) % 3 != 0 {
                 ("z" as NSString).draw(at: NSPoint(x: p.x + size * 0.3, y: p.y + size * 0.8), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 9), .foregroundColor: NSColor.white])
             }
         case .chat(let partner)?:
             // the two take turns: a bubble over whoever is talking now
             let turn = Int(t / 2.2) % 2 == (ant.id < partner ? 0 : 1)
-            if turn { drawBubble(at: CGPoint(x: p.x + 3, y: p.y + size * 0.82), size: max(1.6, u * 0.9), dots: 1 + Int(t * 2) % 3, heart: false) }
+            if turn { drawBubble(at: CGPoint(x: p.x + 3, y: p.y + size * 0.82), size: max(1.6, u * 0.9), dots: 1 + Int(t * 2) % 3, heart: Holidays.today == Holidays.qixi) } // (七夕: sweet nothings)
         default: break
         }
         if ant.catchShow > 0 { // a fish held up
@@ -2266,6 +2284,7 @@ extension AntView {
     fileprivate func drawHoliday() {
         for shell in colony.fireworks.shells { drawShell(shell) }
         guard let day = Holidays.today else { return }
+        drawHolidayScene(day)
         let text = day.quiet ? "\(day.name)・放假" : "\(AntView.holidayIcons[day.id] ?? "🎉") \(day.name)"
         let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         let width = (text as NSString).size(withAttributes: [.font: font]).width
@@ -2506,28 +2525,27 @@ extension AntView {
         colony.decorDrag = nil
     }
 
-    /// The decorations put down, each standing on its spot; the ones that move change frame twice a second.
-    fileprivate func drawDecor() {
-        guard !colony.decor.isEmpty, let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let tick = Int(Date().timeIntervalSinceReferenceDate * 2)
+    /// One decoration on its spot (the ones that move change frame twice a second; the roaming ones are where they have got to).
+    fileprivate func drawDecorItem(_ k: Int) {
+        guard colony.decor.indices.contains(k), let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let d = colony.decor[k]
+        let roam = colony.decorating ? .zero : (colony.decorRoam[k]?.at ?? .zero)
+        let box = colony.decorBox(d)
+        let o = originOverride ?? .zero
+        let r = CGRect(x: box.minX - o.x + roam.x, y: box.minY - o.y + roam.y, width: box.width, height: box.height)
+        guard bounds.insetBy(dx: -60, dy: -60).intersects(r) else { return }
+        let frames = DecorCatalog.frames(d.kind)
+        guard !frames.isEmpty else { return }
+        let image = frames[(Int(Date().timeIntervalSinceReferenceDate * 2) + k) % frames.count]
         ctx.saveGState()
         ctx.interpolationQuality = .none
-        for (k, d) in colony.decor.enumerated() {
-            let box = colony.decorBox(d)
-            let r = CGRect(x: box.minX - (originOverride ?? .zero).x, y: box.minY - (originOverride ?? .zero).y, width: box.width, height: box.height)
-            guard bounds.insetBy(dx: -60, dy: -60).intersects(r) else { continue }
-            let frames = DecorCatalog.frames(d.kind)
-            guard !frames.isEmpty else { continue }
-            let image = frames[(tick + k) % frames.count]
-            ctx.saveGState()
-            if d.flip == true {
-                ctx.translateBy(x: r.midX, y: 0)
-                ctx.scaleBy(x: -1, y: 1)
-                ctx.translateBy(x: -r.midX, y: 0)
-            }
-            ctx.draw(image, in: r)
-            ctx.restoreGState()
+        let turned = (d.flip == true) != (colony.decorRoam[k]?.left == true && !colony.decorating)
+        if turned {
+            ctx.translateBy(x: r.midX, y: 0)
+            ctx.scaleBy(x: -1, y: 1)
+            ctx.translateBy(x: -r.midX, y: 0)
         }
+        ctx.draw(image, in: r)
         ctx.restoreGState()
     }
 
@@ -2559,6 +2577,136 @@ extension AntView {
             NSColor(calibratedRed: 1, green: 0.2, blue: 0.2, alpha: 0.3).setFill()
             NSBezierPath(rect: r).fill()
             if let why = colony.decorProblem(kind, at: cursor) { drawPill(why, center: NSPoint(x: r.midX, y: r.maxY + 10), fontSize: 10) }
+        }
+    }
+}
+
+// MARK: - What the holidays look like (Holidays.swift)
+
+extension AntView {
+    private func hpx(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) {
+        c.setFill()
+        NSRect(x: x, y: y, width: w, height: h).fill()
+    }
+    private func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor { NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: a) }
+    private var holidayNight: Bool { Scenery.currentHour >= 18 || Scenery.currentHour < 5 }
+
+    /// What a resident wears or carries for the day: a pomelo-peel hat on 中秋, a little red lantern after dark on 元宵.
+    fileprivate func drawHolidayWear(_ ant: Ant, day: Holiday, at p: CGPoint, size: CGFloat, pixel u: CGFloat) {
+        guard ant.touch?.isHeld != true, !ant.isDying else { return }
+        switch day.id {
+        case "mid_autumn": // half a pomelo peel, cut into petals, upside down on the head
+            let top = p.y + size * (ant.isChild ? 0.68 : 0.72)
+            hpx(p.x - 3.5 * u, top, 7 * u, 2 * u, rgb(226, 214, 110))
+            hpx(p.x - 2.5 * u, top + 2 * u, 5 * u, 1.5 * u, rgb(206, 196, 96))
+            for k in -1...1 { hpx(p.x + CGFloat(k) * 2.4 * u - 0.6 * u, top - u, 1.2 * u, u, rgb(244, 236, 190)) } // the petals' white inside
+            hpx(p.x - 0.5 * u, top + 3.5 * u, u, u, rgb(120, 150, 70))
+        case "lantern" where holidayNight && ant.moving && !ant.isChild:
+            let side: CGFloat = cos(ant.heading) >= 0 ? 1 : -1
+            let hand = CGPoint(x: p.x + side * size * 0.34, y: p.y + size * 0.3)
+            rgb(255, 150, 60, 0.14).setFill()
+            NSBezierPath(ovalIn: NSRect(x: hand.x - 9, y: hand.y - 8, width: 18, height: 16)).fill()
+            hpx(hand.x - 0.3 * u, hand.y + 2 * u, 0.6 * u, 2 * u, rgb(90, 60, 40))
+            hpx(hand.x - 1.2 * u, hand.y - u, 2.4 * u, 3 * u, rgb(226, 60, 50))
+            hpx(hand.x - 0.4 * u, hand.y - 0.2 * u, 0.8 * u, 1.4 * u, rgb(255, 220, 120))
+        default: break
+        }
+    }
+
+    /// What the camp looks like for the day (drawn over the camp, under the day's name).
+    fileprivate func drawHolidayScene(_ day: Holiday) {
+        let t = Date().timeIntervalSinceReferenceDate
+        let o = originOverride ?? .zero
+        switch day.id {
+        case "mid_autumn" where holidayNight: // the full moon in the corner, the jade rabbit on it
+            let c = CGPoint(x: bounds.maxX - 130, y: bounds.maxY - 52)
+            rgb(255, 244, 190, 0.16).setFill()
+            NSBezierPath(ovalIn: NSRect(x: c.x - 30, y: c.y - 30, width: 60, height: 60)).fill()
+            rgb(250, 240, 200).setFill()
+            NSBezierPath(ovalIn: NSRect(x: c.x - 18, y: c.y - 18, width: 36, height: 36)).fill()
+            let grey = rgb(214, 204, 170)
+            hpx(c.x - 6, c.y - 6, 8, 6, grey); hpx(c.x, c.y, 5, 5, grey) // the rabbit: body, head
+            hpx(c.x + 1, c.y + 5, 1.5, 5, grey); hpx(c.x + 3.5, c.y + 5, 1.5, 4, grey) // ears
+            hpx(c.x - 9, c.y - 7, 4, 3, grey) // the mortar
+        case "lantern":
+            for l in colony.fireworks.lanterns { // sky lanterns: a paper box with a flame under it, smaller as it goes up
+                let p = CGPoint(x: l.pos.x - o.x, y: l.pos.y - o.y)
+                let fade = CGFloat(max(0.25, 1 - l.age / 90))
+                rgb(255, 170, 70, 0.16 * fade).setFill()
+                NSBezierPath(ovalIn: NSRect(x: p.x - 10, y: p.y - 8, width: 20, height: 20)).fill()
+                hpx(p.x - 3, p.y, 6, 8, rgb(250, 200, 120, fade)); hpx(p.x - 2, p.y + 8, 4, 1.5, rgb(240, 170, 90, fade))
+                hpx(p.x - 1, p.y - 1.5, 2, 2, rgb(255, 240, 160, fade))
+            }
+        case "dragon_boat": // a dragon boat rowed up and down the first pond
+            guard let pond = colony.scene?.visiblePonds.max(by: { $0.rect.width * $0.rect.height < $1.rect.width * $1.rect.height }) else { break } // (the biggest pond)
+            let r = pond.rect.insetBy(dx: 10, dy: 6)
+            guard r.width > 50 else { break }
+            let span = Double(r.width - 44), phase = (t * 14).truncatingRemainder(dividingBy: span * 2)
+            let going = phase < span, x = r.minX + 22 + CGFloat(going ? phase : span * 2 - phase) - o.x, y = r.midY - o.y
+            let dir: CGFloat = going ? 1 : -1
+            hpx(x - 20, y - 1, 40, 4, rgb(190, 50, 40)); hpx(x - 18, y - 2, 36, 1.5, rgb(240, 200, 70))
+            hpx(x + dir * 20 - 2, y + 2, 5, 5, rgb(60, 150, 80)); hpx(x + dir * 23 - 1, y + 5, 2, 2, rgb(240, 200, 70)) // the head
+            hpx(x - dir * 22 - 1, y + 2, 3, 4, rgb(60, 150, 80)) // the tail
+            for k in 0..<5 { // paddlers and their paddles, in time
+                let px = x - 14 + CGFloat(k) * 7
+                hpx(px, y + 3, 3, 4, rgb(110, 170, 80))
+                let dip = CGFloat(sin(t * 5 + Double(k) * 0.3)) * 2
+                hpx(px + 1 - dir * 3, y - 3 + dip, 1, 5, rgb(120, 80, 45))
+            }
+            hpx(x - 2, y + 3, 4, 5, rgb(200, 60, 50)); hpx(x - 1, y + 8, 2, 2, rgb(250, 240, 220)) // the drummer in the middle
+        case "ghost":
+            if let nest = colony.nest { // the offering table for 普渡: dishes, fruit, incense smoking
+                let p = CGPoint(x: nest.x + 78 - o.x, y: nest.y + 34 - o.y)
+                hpx(p.x - 14, p.y, 28, 3, rgb(170, 60, 50)); hpx(p.x - 13, p.y - 8, 2, 8, rgb(120, 80, 45)); hpx(p.x + 11, p.y - 8, 2, 8, rgb(120, 80, 45))
+                for (dx, c) in [(-10.0, rgb(240, 200, 60)), (-4, rgb(230, 120, 60)), (2, rgb(250, 250, 240)), (8, rgb(120, 190, 90))] as [(CGFloat, NSColor)] { hpx(p.x + dx, p.y + 3, 4, 3, c) }
+                for k in 0..<3 {
+                    hpx(p.x - 6 + CGFloat(k) * 6, p.y + 6, 1, 6, rgb(200, 60, 60))
+                    let rise = CGFloat((t * 0.5 + Double(k) * 0.3).truncatingRemainder(dividingBy: 1))
+                    hpx(p.x - 6 + CGFloat(k) * 6 + CGFloat(sin(t + Double(k))) * 2, p.y + 12 + rise * 10, 1.5, 1.5, rgb(230, 230, 230, 0.7 * (1 - rise)))
+                }
+            }
+            guard holidayNight, let ctx = NSGraphicsContext.current?.cgContext else { break } // the gate is open: ghosts drift across the camp
+            let frames = DecorCatalog.frames("u_ghost")
+            guard !frames.isEmpty else { break }
+            ctx.saveGState()
+            ctx.interpolationQuality = .none
+            ctx.setAlpha(0.55)
+            for k in 0..<5 {
+                let along = (t * (0.012 + Double(k) * 0.003) + Double(k) * 0.23).truncatingRemainder(dividingBy: 1)
+                let x = bounds.minX - 20 + CGFloat(along) * (bounds.width + 40)
+                let y = bounds.minY + bounds.height * (0.2 + 0.15 * CGFloat(k)) + CGFloat(sin(t * 0.8 + Double(k) * 2)) * 10
+                let image = frames[(Int(t * 2) + k) % frames.count]
+                ctx.draw(image, in: CGRect(x: x, y: y, width: CGFloat(image.width) * 2, height: CGFloat(image.height) * 2))
+            }
+            ctx.restoreGState()
+        case "spring_festival", "lunar_eve": // red lanterns strung by the camp, and couplets either side of the way in
+            guard let nest = colony.nest else { break }
+            let c = CGPoint(x: nest.x - o.x, y: nest.y - o.y)
+            for k in -2...2 {
+                let x = c.x + CGFloat(k) * 16, y = c.y + 44 - CGFloat(k * k) * 2 + CGFloat(sin(t * 2 + Double(k))) * 0.8
+                hpx(x - 0.5, y + 6, 1, 3, rgb(90, 60, 40))
+                hpx(x - 4, y - 1, 8, 7, rgb(214, 46, 40)); hpx(x - 3, y - 2, 6, 1, rgb(240, 200, 70)); hpx(x - 3, y + 6, 6, 1, rgb(240, 200, 70))
+                hpx(x - 0.5, y - 5, 1, 3, rgb(240, 200, 70))
+            }
+            for side: CGFloat in [-1, 1] {
+                let x = c.x + side * 30
+                hpx(x - 3, c.y - 6, 6, 26, rgb(206, 40, 36))
+                for k in 0..<4 { hpx(x - 1.5, c.y - 3 + CGFloat(k) * 6, 3, 3, rgb(40, 24, 20)) }
+            }
+        case "qixi": // magpies crossing the sky, one after another: the bridge
+            for k in 0..<6 {
+                let along = (t * 0.03 + Double(k) * 0.05).truncatingRemainder(dividingBy: 1.6)
+                guard along < 1 else { continue }
+                let x = bounds.minX + CGFloat(along) * bounds.width, y = bounds.maxY - 50 - CGFloat(sin(along * .pi)) * 24
+                let flap = Int(t * 6 + Double(k)) % 2 == 0
+                hpx(x - 3, y, 6, 3, rgb(30, 30, 44)); hpx(x - 1, y, 3, 1.5, rgb(240, 240, 250)); hpx(x + 3, y + 1, 2, 1, rgb(230, 170, 60))
+                hpx(x - 4, y + (flap ? 3 : -2), 5, 2, rgb(40, 50, 90))
+            }
+        case "qingming", "children_qingming": // the undead's graves, swept clean, shine
+            for (k, g) in colony.graves.enumerated() where Int(t * 2 + Double(k)) % 3 != 0 {
+                hpx(g.x - o.x - 5 + CGFloat(k % 3) * 4, g.y - o.y + 10 + CGFloat(k % 2) * 4, 2, 2, rgb(255, 255, 230, 0.9))
+            }
+        default: break
         }
     }
 }

@@ -38,6 +38,7 @@ import {
   type Population,
   type RaidReport,
   type Resident,
+  decorKind,
 } from "@goblincamp/shared/camp";
 import { hashString, raceLevel, randomFrom } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
@@ -270,7 +271,7 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     },
     production: productionView(camp, rows.filter((r) => r.place === "home").length, await campRaceLevel(tx, camp.userId)),
     merchant: await merchantNow(tx, camp, camp.advancedTo), // (the camp was just advanced to now)
-    decor: camp.decor,
+    decor: camp.decor.filter((d) => decorKind(d.kind)), // (kinds taken out of the catalogue since are gone)
     residents: rows.map((r) => ({
       id: r.id,
       breed: r.breed,

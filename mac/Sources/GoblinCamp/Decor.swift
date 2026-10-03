@@ -130,6 +130,59 @@ extension Colony {
         decor.indices.reversed().first { decorBox(decor[$0]).insetBy(dx: 2, dy: 0).contains(p) }
     }
 
+    // MARK: Drawing order, and the ones that wander
+
+    private static let flatCategories: Set<String> = ["scene", "flower"]
+    /// Kinds that move about near where they were put: how far they go and how fast (points, points a second).
+    static let roamers: [String: (reach: Double, speed: Double)] = [
+        "e_treant": (34, 5), "u_ghost": (46, 10), "u_bats": (40, 26), "u_crows": (26, 14), "u_crawlinghand": (30, 8), "e_butterflies": (0, 0),
+    ]
+
+    /// What lies on the ground (drawn under everybody), by index.
+    func decorFlat() -> [Int] {
+        decor.indices.filter { Colony.flatCategories.contains(DecorCatalog.kind(decor[$0].kind)?.category ?? "") || decor[$0].kind.hasSuffix("path") }
+    }
+
+    /// What stands up (drawn among the residents), far to near.
+    func decorStanding() -> [Int] {
+        let flat = Set(decorFlat())
+        return decor.indices.filter { !flat.contains($0) }.sorted { decorPoint(decor[$0]).y > decorPoint(decor[$1]).y }
+    }
+
+    /// Once a frame: the wandering ones drift toward a spot near home, then pick another.
+    func updateDecorRoam(dt: Double) {
+        guard !decorating else { return }
+        for (k, d) in decor.enumerated() {
+            guard let rule = Colony.roamers[d.kind], rule.reach > 0 else { continue }
+            var state = decorRoam[k] ?? (at: .zero, to: .zero, left: false, wait: 0)
+            if state.wait > 0 {
+                state.wait -= dt
+            } else {
+                let dx = state.to.x - state.at.x, dy = state.to.y - state.at.y, dist = hypot(dx, dy)
+                if dist < 1.5 { // there: a rest, then somewhere else (only where a goblin could walk)
+                    state.wait = Double.random(in: 1...5)
+                    for _ in 0..<6 {
+                        let to = CGPoint(x: Double.random(in: -rule.reach...rule.reach), y: Double.random(in: -rule.reach * 0.6...rule.reach * 0.6))
+                        let world = CGPoint(x: decorPoint(d).x + to.x, y: decorPoint(d).y + to.y)
+                        if walkable.contains(where: { $0.contains(world) }) { state.to = to; break }
+                    }
+                } else {
+                    let step = min(dist, rule.speed * dt)
+                    state.at.x += dx / dist * step
+                    state.at.y += dy / dist * step
+                    state.left = dx < 0
+                }
+            }
+            decorRoam[k] = state
+        }
+    }
+
+    /// Where a decoration is now (its spot, plus how far it has wandered).
+    func decorNow(_ k: Int) -> CGPoint {
+        let p = decorPoint(decor[k]), roam = decorRoam[k]?.at ?? .zero
+        return CGPoint(x: p.x + roam.x, y: p.y + roam.y)
+    }
+
     // MARK: Changing them
 
     @discardableResult
@@ -162,19 +215,23 @@ extension Colony {
 
     /// After any change: the goblins' paths, and the list kept (books or file).
     func decorChanged() {
+        decorRoam = [:] // (the list moved: everyone back to its spot)
         rebuildDecorObstacles()
         if followsBooks { onDecorChanged?(decor) } else { Self.saveLocalDecor(decor) }
     }
 
     /// The books' list arrived (another Mac changed it, or after signing in). A camp's own list moves to the books once.
     func applyBooksDecor(_ list: [DecorPlaced]?) {
-        guard let list, list != decor, decorSelected == nil, decorPlacing == nil else { return }
+        guard var list, decorSelected == nil, decorPlacing == nil else { return }
+        list.removeAll { DecorCatalog.kind($0.kind) == nil } // (a kind this version no longer has)
+        guard list != decor else { return }
         if list.isEmpty, !decor.isEmpty, !decorSentOnce { // signed in with decorations made here: they go up to the account
             decorSentOnce = true
             onDecorChanged?(decor)
             return
         }
         decor = list
+        decorRoam = [:]
         rebuildDecorObstacles()
     }
 
@@ -184,7 +241,7 @@ extension Colony {
 
     static func loadLocalDecor() -> [DecorPlaced] {
         guard ProcessInfo.processInfo.environment["CAMP_NO_SAVE"] == nil, let data = try? Data(contentsOf: localURL) else { return [] }
-        return (try? JSONDecoder().decode([DecorPlaced].self, from: data)) ?? []
+        return ((try? JSONDecoder().decode([DecorPlaced].self, from: data)) ?? []).filter { DecorCatalog.kind($0.kind) != nil }
     }
 
     static func saveLocalDecor(_ list: [DecorPlaced]) {
@@ -205,14 +262,35 @@ extension Colony {
         decorTimer -= dt
         guard decorTimer <= 0 else { return }
         decorTimer = 2
-        for d in decor where DecorCatalog.kind(d.kind)?.fn == "bite" {
-            let p = decorPoint(d)
-            if let monster = creatures.first(where: { $0.kind.hostile && hypot($0.pos.x - p.x, $0.pos.y - p.y) < 40 }) {
-                _ = handStrike(creature: monster.id)
-                addFloater("咬！", .common, at: p)
+        var seen = Set<String>() // (two of a kind do no more than one)
+        for (k, d) in decor.enumerated() {
+            guard let fn = DecorCatalog.kind(d.kind)?.fn else { continue }
+            let p = decorNow(k)
+            func monster(within reach: CGFloat) -> Creature? { creatures.first { $0.kind.hostile && hypot($0.pos.x - p.x, $0.pos.y - p.y) < reach } }
+            switch fn {
+            case "bite": // the biting plants
+                if let m = monster(within: 40) { _ = handStrike(creature: m.id); addFloater("咬！", .common, at: p) }
+            case "guard": // a treant swings at what comes near (twice a goblin's hand)
+                if let m = monster(within: 60) { _ = handStrike(creature: m.id); _ = handStrike(creature: m.id); addFloater("樹人揮了一拳", .common, at: p) }
+            case "wolfdog", "bonedog":
+                if let m = monster(within: 70) { _ = handStrike(creature: m.id); addFloater(fn == "bonedog" ? "喀！" : "汪！", .common, at: p) }
+            case "slow": // a bog: what wades in is held a moment
+                if let m = monster(within: 34) { decorHold(creature: m.id, seconds: 1.4) }
+            case "lullaby": // the young near a singing flower grow a little faster
+                for i in ants.indices where ants[i].isChild && !ants[i].isHidden && hypot(ants[i].pos.x - p.x, ants[i].pos.y - p.y) < 80 { ants[i].age += 0.4 }
+            case "watch", "forecast", "bell", "drum":
+                guard seen.insert("alarm").inserted else { break }
+                let drums = decorHas("drum"), bell = decorHas("bell")
+                if decorAlarm(extra: drums ? 4 : 0, retreat: bell) {
+                    addFloater(bell ? "噹！噹！魔獸來了！" : fn == "forecast" ? "星象台早就算到了：魔獸來了！" : drums && fn == "drum" ? "咚咚咚！集合！" : "瞭望台發現魔獸！", .uncommon, at: p, important: true)
+                }
+            default: break
             }
         }
     }
+
+    /// How fast gear wears: a whetstone and a smithy each take a tenth off.
+    var decorWear: Double { (decorHas("whet") ? 0.9 : 1) * (decorHas("smithy") ? 0.9 : 1) }
 
     /// Attack bonus from the totem, the archery target and (at night, the undead) the soul fire: +5% each kind.
     var decorMight: Double {

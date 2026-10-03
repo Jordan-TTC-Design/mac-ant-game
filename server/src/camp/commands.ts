@@ -25,6 +25,7 @@ import {
   merchantStock,
   taipeiDay,
   decorProblem,
+  decorKind,
   PRINCESS_CHILD_HOURS,
   placeableFoods,
   raceRules,
@@ -342,7 +343,8 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       break;
     }
     case "decor-set": {
-      const items = command.items.map((d) => ({ kind: d.kind, x: Math.round(d.x), y: Math.round(d.y), ...(d.flip ? { flip: true } : {}) }));
+      // (a kind that is no more, from a Mac with an older catalogue, is simply left out)
+      const items = command.items.filter((d) => decorKind(d.kind)).map((d) => ({ kind: d.kind, x: Math.round(d.x), y: Math.round(d.y), ...(d.flip ? { flip: true } : {}) }));
       const problem = decorProblem(items, camp.race, campStage(camp.race, camp.peak));
       if (problem) return { ok: false, code: problem.includes("點數") ? "no_room" : "not_allowed", message: problem };
       changes.decor = items;

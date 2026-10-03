@@ -595,7 +595,7 @@ struct Ant {
                 options.append((.fireside(spot: spot, fire: pit), personality == .boss ? 1 : personality == .lively ? 4 : 3))
             }
         }
-        if world.night, elf, personality != .boss { options.append((.meditate, 1.5)) } // (under the moon)
+        if world.night, elf, personality != .boss { options.append((.meditate, 1.5 * world.calm)) } // (under the moon)
         if world.night, undead, personality != .boss { // the night is theirs: they dig more than they rest
             let spot = CGPoint(x: pos.x + Double.random(in: -60...60), y: pos.y + Double.random(in: -30...30))
             if world.walkable.contains(where: { $0.contains(spot) }) { options.append((.dig(spot: spot), personality == .brute ? 3 : 2)) }
@@ -608,7 +608,7 @@ struct Ant {
                 let aim: Double = personality == .lively ? 2.5 : personality == .brute ? 1.2 : personality == .calm ? 0.6 : 1.6
                 options.append((.archery(spot: spot, target: CGPoint(x: mark.x, y: mark.y + 8)), aim))
             }
-            options.append((.meditate, personality == .calm ? 3 : personality == .plain ? 1 : 0.4))
+            options.append((.meditate, (personality == .calm ? 3 : personality == .plain ? 1 : 0.4) * world.calm))
         }
         if !world.night, undead, personality != .boss {
             let spot = CGPoint(x: pos.x + Double.random(in: -60...60), y: pos.y + Double.random(in: -30...30))

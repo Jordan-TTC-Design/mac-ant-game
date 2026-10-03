@@ -360,31 +360,6 @@ def g_tavern(f):
     return finish(img)
 
 
-@item("g_pigpen", G, "豬圈", "pen", 4, frames=2, fn="pigs")
-def g_pigpen(f):
-    return pen(40, 24, WOOD, WOOD_LIGHT, [pig(12, 14), pig(28, 15, -1)], f, ground=(110, 84, 50))
-
-
-@item("g_sheeppen", G, "羊圈", "pen", 4, frames=2, fn="sheep")
-def g_sheeppen(f):
-    return pen(40, 24, WOOD, WOOD_LIGHT, [sheep(12, 13), sheep(27, 14, -1)], f)
-
-
-@item("g_cowpen", G, "牛欄", "pen", 4, frames=2, fn="cows")
-def g_cowpen(f):
-    return pen(44, 26, WOOD, WOOD_LIGHT, [cow(15, 15), cow(31, 16, -1, ((140, 90, 60), (90, 60, 40)))], f)
-
-
-@item("g_coop", G, "雞籠", "pen", 2, frames=2, fn="eggs")
-def g_coop(f):
-    img = new(28, 22)
-    rect(img, 2, 4, 12, 12, (150, 110, 70)); tri_roof(img, 8, 0, 7, 5, (160, 70, 50))
-    rect(img, 6, 10, 4, 6, (40, 30, 20))
-    post_fence(img, 14, 10, 14, WOOD, WOOD_LIGHT, step=5, h=6)
-    chicken(19, 17)(img, f); chicken(24, 18, -1)(img, f + 1)
-    return finish(img)
-
-
 @item("g_kennel", G, "狼犬窩", "pen", 2, frames=2, fn="wolfdog")
 def g_kennel(f):
     img = new(30, 20)
@@ -582,7 +557,7 @@ def g_bonetree(f):
     return img
 
 
-@item("g_appletree", G, "蘋果樹", "tree", 2, frames=2, fn="apples")
+@item("g_appletree", G, "蘋果樹", "tree", 2, frames=2)
 def g_appletree(f):
     img = leafy(26, 34, T.TRUNK["meadow"], T.LEAF["meadow"], R(8), dots=[(-6, 8, (220, 40, 40)), (4, 6, (220, 40, 40)), (-2, 14, (220, 40, 40)), (7, 13, (220, 40, 40))])
     if f:
@@ -861,33 +836,7 @@ def e_library(f):
     return finish(img, (40, 30, 20))
 
 
-@item("e_deerpark", E, "鹿園", "pen", 4, frames=2, fn="antlers")
-def e_deerpark(f):
-    def deer(cx, cy, flip):
-        def draw(img, frame):
-            c = (170, 120, 80)
-            rect(img, cx - 4, cy - 2, 8, 4, c); rect(img, cx - 3, cy, 2, 1, (240, 230, 220))
-            for lx in (-3, 3):
-                rect(img, cx + lx, cy + 2, 1, 4, shade(c, 0.7))
-            hx = cx + 5 * flip
-            rect(img, hx - 1, cy - 6 + frame % 2, 3, 4, c)
-            line(img, hx - 1, cy - 7, hx - 3, cy - 10, (220, 200, 160)); line(img, hx + 1, cy - 7, hx + 3, cy - 10, (220, 200, 160))
-        return draw
-    return pen(42, 28, (180, 160, 120), (210, 190, 150), [deer(14, 17, 1), deer(30, 18, -1)], f)
-
-
-@item("e_rabbits", E, "兔籠", "pen", 2, frames=2, fn="fur")
-def e_rabbits(f):
-    def rabbit(cx, cy):
-        def draw(img, frame):
-            y = cy - (2 if (frame + cx) % 2 else 0)
-            disk(img, cx, y, 2, (240, 236, 230)); rect(img, cx + 1, y - 4, 1, 3, (240, 236, 230)); rect(img, cx + 2, y - 4, 1, 3, (230, 200, 200))
-            put(img, cx + 2, y - 1, (30, 20, 20))
-        return draw
-    return pen(28, 22, (180, 160, 120), (210, 190, 150), [rabbit(9, 13), rabbit(18, 14)], f, ground=(120, 170, 90))
-
-
-@item("e_beegarden", E, "蜂箱園", "pen", 2, frames=2, fn="honey")
+@item("e_beegarden", E, "蜂箱園", "pen", 2, frames=2)
 def e_beegarden(f):
     img = new(28, 22)
     for x in (4, 16):
@@ -895,22 +844,6 @@ def e_beegarden(f):
         img.alpha_composite(hive.crop((0, 0, min(hive.width, 12), hive.height)), (x, 22 - hive.height))
     for k in range(5):
         put(img, 3 + k * 5 + f * 2, 2 + (k * 3 + f) % 6, (240, 200, 40))
-    return img
-
-
-@item("e_sheep", E, "白羊花籬", "pen", 4, frames=2, fn="sheep")
-def e_sheep(f):
-    img = pen(40, 24, (110, 150, 90), (140, 180, 110), [sheep(12, 13), sheep(27, 14, -1)], f)
-    for x in range(2, 38, 5):
-        put(img, x, 18, PETAL); put(img, x + 2, 19, (250, 240, 150))
-    return img
-
-
-@item("e_cows", E, "花環牛欄", "pen", 4, frames=2, fn="cows")
-def e_cows(f):
-    img = pen(44, 26, (110, 150, 90), (140, 180, 110), [cow(15, 15, 1, ((240, 220, 180), (200, 150, 90))), cow(31, 16, -1)], f)
-    for x in range(1, 43, 4):
-        put(img, x, 3, PETAL)
     return img
 
 
@@ -933,11 +866,18 @@ def e_teatable(f):
 
 @item("e_leafhammock", E, "葉片吊床", "furniture", 2, frames=2)
 def e_leafhammock(f):
-    img = g_hammock(f)
-    for x in range(4, 26, 2):
-        y = 6 + int((3 + f) * math.sin(math.pi * (x - 3) / 24))
-        put(img, x, y + 1, (90, 170, 90))
-    return img
+    """One big leaf slung between two young trees."""
+    img = new(32, 24)
+    for x in (2, 27):
+        rect(img, x, 6, 2, 18, BARK)
+        blob(img, x + 1, 4, 3, 3, ELEAF, R(60 + x))
+    sag = 4 + f
+    for x in range(4, 28):
+        y = 11 + int(sag * math.sin(math.pi * (x - 4) / 23))
+        w = 1 + int(3 * math.sin(math.pi * (x - 4) / 23))
+        rect(img, x, y, 1, w + 1, (90, 170, 90) if x % 5 else (60, 130, 70))
+    line(img, 5, 12, 26, 12 + f, (50, 110, 60))  # the leaf's vein
+    return finish(img, (30, 60, 40))
 
 
 @item("e_harp", E, "豎琴", "furniture", 1, frames=2, fn="music")
@@ -1341,7 +1281,7 @@ def u_coffinstore(f):
     return finish(img, (30, 24, 24))
 
 
-@item("u_alchemy", U, "鍊金台", "building", 2, frames=2, fn="dust")
+@item("u_alchemy", U, "鍊金台", "building", 2, frames=2)
 def u_alchemy(f):
     img = new(26, 20)
     rect(img, 2, 10, 22, 3, DARKWOOD); rect(img, 3, 13, 2, 7, DARKWOOD); rect(img, 21, 13, 2, 7, DARKWOOD)
@@ -1376,18 +1316,7 @@ def u_bonedogs(f):
     return finish(img)
 
 
-@item("u_ghostsheep", U, "幽靈羊圈", "pen", 4, frames=2, fn="sheep")
-def u_ghostsheep(f):
-    pale = ((180, 230, 220), (210, 245, 240), (240, 255, 252))
-    return pen(40, 24, DARKWOOD, (100, 84, 76), [sheep(12, 13, wool=pale, face=(90, 160, 150)), sheep(27, 14, -1, wool=pale, face=(90, 160, 150))], f)
-
-
-@item("u_bonecows", U, "骨牛欄", "pen", 4, frames=2)
-def u_bonecows(f):
-    return pen(44, 26, DARKWOOD, (100, 84, 76), [cow(15, 15, 1, (BONE, (150, 140, 120))), cow(31, 16, -1, (BONE, (150, 140, 120)))], f)
-
-
-@item("u_batcave", U, "蝙蝠洞", "pen", 2, frames=2, fn="dust")
+@item("u_batcave", U, "蝙蝠洞", "pen", 2, frames=2)
 def u_batcave(f):
     img = new(30, 24)
     blob(img, 15, 15, 14, 9, GRAVE, R(40))
@@ -1449,12 +1378,19 @@ def u_organ(f):
 
 @item("u_soulpot", U, "煉魂鍋", "furniture", 2, frames=2, fn="souls")
 def u_soulpot(f):
-    img = g_cauldron(f)
-    for x in range(4, 16):
-        put(img, x, 9, (90, 240, 160))
-    for k in range(3):
-        put(img, 6 + k * 3 + f, 6 - (k + f) % 2, SOUL)
-    return img
+    """A bone urn on three skulls, souls rising out of it."""
+    img = new(22, 26)
+    for x in (4, 11, 18):
+        disk(img, x, 23, 2, BONE); put(img, x - 1, 23, INK); put(img, x + 1, 23, INK)
+    for y in range(10, 21):
+        half = 7 - abs(y - 15) // 2
+        rect(img, 11 - half, y, 2 * half + 1, 1, BONE if y % 4 else BONE_SHADE)
+    rect(img, 3, 9, 17, 2, (120, 110, 96)); rect(img, 5, 9, 13, 1, (90, 240, 190))
+    for k in range(3):  # souls
+        x = 7 + k * 4
+        y = 5 - (k + f) % 2 * 2
+        disk(img, x, y, 1, SOUL); put(img, x, y + 2 + f, (130, 250, 220, 150))
+    return finish(img)
 
 
 @item("u_mirror", U, "碎鏡子", "furniture", 1, frames=2)
@@ -1613,10 +1549,20 @@ def u_rustfence(f):
 
 @item("u_dragonbones", U, "龍骨", "bone", 4)
 def u_dragonbones(f):
-    img = e_fossil(f)
-    for x in range(14, 30, 4):
-        line(img, x, 12, x - 3, 4, BONE_SHADE)
-    return img
+    """A dragon's skull, jaws open, horns back, and two ribs standing behind it."""
+    img = new(44, 30)
+    for (x, h) in ((6, 22), (14, 26)):  # ribs arching up behind
+        for a in range(180, 300, 4):
+            put(img, round(x + 6 + 7 * math.cos(math.radians(a))), round(29 + h * math.sin(math.radians(a))), BONE_SHADE)
+    disk(img, 30, 14, 9, BONE, 6)                                  # the skull
+    rect(img, 34, 13, 9, 5, BONE); rect(img, 34, 20, 8, 3, BONE_SHADE)  # snout, lower jaw
+    for x in range(35, 43, 2):
+        put(img, x, 18, BONE); put(img, x, 19, (250, 250, 240)); put(img, x + 1, 20, (250, 250, 240))
+    disk(img, 28, 12, 2, (30, 26, 34)); put(img, 28, 12, SOUL)     # the eye, a soul-light in it
+    for k in range(8):                                             # horns sweeping back
+        put(img, 24 - k, 8 - k // 2, BONE); put(img, 26 - k, 6 - k // 2, BONE_SHADE)
+    rect(img, 0, 27, 44, 3, (90, 80, 70))
+    return finish(img)
 
 
 @item("u_bonepile", U, "骨堆", "bone", 2)
@@ -1670,10 +1616,18 @@ def u_skullflower(f):
 
 @item("u_soulvine", U, "吸魂藤", "plant", 2, frames=2, fn="soulharvest")
 def u_soulvine(f):
-    img = g_flyvine(f)
-    for y in range(4, 28, 6):
-        put(img, 11 + int(5 * math.sin(y / 3 + f)) - 2, y, SOUL)
-    return img
+    """Pale thorny tendrils coiled round a soul they have caught."""
+    img = new(24, 30)
+    pale = (150, 140, 170)
+    for k in range(3):
+        for t in range(26):
+            a = t / 4 + k * 2.1 + f * 0.4
+            x = round(12 + (9 - t / 4) * math.cos(a)); y = 29 - t
+            put(img, x, y, pale if t % 5 else VIOLET)
+            if t % 6 == 3:
+                put(img, x + (1 if math.cos(a) > 0 else -1), y, (220, 210, 230))  # a thorn
+    disk(img, 12, 6 + f, 3, SOUL); disk(img, 12, 6 + f, 1, (230, 255, 250))
+    return finish(img, (40, 30, 50))
 
 
 @item("u_glowshroom", U, "巨型夜光菇", "plant", 4, frames=2)
@@ -1722,6 +1676,165 @@ def u_crawlinghand(f):
         put(img, x + (f if k % 2 else 0), 6 + (k + f) % 2, (190, 200, 170)); put(img, x, 2, (170, 180, 150))
     rect(img, 9, 4, 4, 2, (150, 150, 130))
     return finish(img, (50, 60, 40))
+
+
+# ==== in place of the livestock pens (those come back as fences the player builds: DESKTOP.md §8) =================
+@item("g_catapult", G, "投石機", "scene", 4, frames=2)
+def g_catapult(f):
+    img = new(40, 30)
+    rect(img, 4, 24, 32, 3, WOOD); rect(img, 4, 24, 32, 1, WOOD_LIGHT)
+    for x in (8, 30):
+        disk(img, x, 26, 3, WOOD_DARK); put(img, x, 26, (160, 160, 170))
+    line(img, 16, 24, 20, 12, WOOD); line(img, 24, 24, 20, 12, WOOD)
+    if f == 0:  # the arm back, loaded
+        line(img, 20, 13, 34, 20, WOOD_LIGHT); line(img, 20, 12, 34, 19, WOOD)
+        disk(img, 34, 17, 2, STONE[1])
+        line(img, 20, 13, 9, 8, WOOD)
+    else:       # let fly
+        line(img, 20, 13, 30, 2, WOOD_LIGHT); line(img, 20, 12, 30, 1, WOOD)
+        disk(img, 36, 3, 2, STONE[1])
+        line(img, 20, 13, 12, 20, WOOD)
+    rect(img, 7, 6 if f == 0 else 19, 4, 4, STONE[0])  # the counterweight
+    return finish(img)
+
+
+@item("g_spit", G, "烤肉架", "furniture", 2, frames=2)
+def g_spit(f):
+    img = new(26, 20)
+    for x in (2, 22):
+        rect(img, x, 5, 2, 15, WOOD); put(img, x - 1, 5, WOOD); put(img, x + 2, 5, WOOD)
+    rect(img, 1, 7, 24, 1, (90, 90, 100))
+    for (x, w) in ((7, 5), (14, 5)):  # two joints turning
+        rect(img, x, 5 + f, w, 4, (170, 90, 50)); rect(img, x + 1, 5 + f, w - 2, 1, (210, 130, 70)); put(img, x + w, 7, BONE)
+    for k in range(4):
+        rect(img, 7 + k * 3, 17 - (k + f) % 2 * 2, 2, 3 + (k + f) % 2 * 2, (240, 130 + 40 * ((k + f) % 2), 40))
+    rect(img, 5, 19, 16, 1, (60, 50, 50))
+    return finish(img)
+
+
+@item("g_statue", G, "哥布林王雕像", "building", 2)
+def g_statue(f):
+    img = new(20, 34)
+    rect(img, 2, 26, 16, 8, STONE[0]); rect(img, 3, 24, 14, 3, STONE[1])
+    rect(img, 6, 12, 8, 12, STONE[1]); rect(img, 6, 12, 2, 12, STONE[2])       # the body
+    rect(img, 5, 5, 10, 8, STONE[1]); rect(img, 5, 5, 2, 8, STONE[2])          # the head
+    rect(img, 1, 7, 4, 2, STONE[1]); rect(img, 15, 7, 4, 2, STONE[1])          # ears
+    put(img, 8, 8, INK); put(img, 12, 8, INK); rect(img, 8, 11, 5, 1, INK)
+    for x in (6, 9, 12):                                                        # a crown
+        rect(img, x, 2, 2, 3, (220, 180, 60))
+    rect(img, 6, 4, 9, 1, (220, 180, 60))
+    rect(img, 15, 14, 1, 12, STONE[0]); rect(img, 14, 12, 3, 2, STONE[2])       # a club in its hand
+    put(img, 4, 30, (90, 150, 80)); put(img, 14, 28, (90, 150, 80))             # moss
+    return finish(img)
+
+
+@item("g_treasurecave", G, "藏寶洞", "building", 4, frames=2)
+def g_treasurecave(f):
+    img = new(40, 28)
+    blob(img, 20, 17, 19, 10, STONE, R(70))
+    disk(img, 20, 20, 8, (24, 18, 16), 7)
+    for (x, y, c) in ((15, 24, (240, 200, 60)), (19, 25, (240, 200, 60)), (23, 24, (240, 200, 60)), (21, 22, (110, 200, 230)), (17, 22, (220, 70, 80))):
+        rect(img, x, y, 2, 2, c)
+    for k in range(3):  # the glitter
+        put(img, 14 + k * 5 + f * 2, 20 + (k + f) % 2, (255, 255, 230))
+    rect(img, 28, 14, 1, 8, WOOD); rect(img, 26, 10, 5, 4, (190, 150, 100)); line(img, 27, 11, 29, 13, (180, 40, 40)); line(img, 29, 11, 27, 13, (180, 40, 40))
+    return finish(img)
+
+
+@item("e_fountain", E, "噴泉", "scene", 4, frames=2)
+def e_fountain(f):
+    img = new(34, 30)
+    disk(img, 17, 23, 15, (200, 204, 212), 6); disk(img, 17, 22, 13, (100, 160, 210), 4)
+    rect(img, 15, 10, 4, 12, (214, 218, 226)); disk(img, 17, 10, 5, (214, 218, 226), 2); disk(img, 17, 9, 3, (120, 180, 226), 1)
+    for d in (-1, 1):
+        for t in range(9):
+            x = 17 + d * (1 + t); y = 6 + (t * t) // 5 + f
+            put(img, x, min(y, 21), (220, 240, 255))
+    for t in range(4):
+        put(img, 17, 5 - t + f, (220, 240, 255))
+    for k in range(3):
+        put(img, 9 + k * 8, 22 + (k + f) % 2, (235, 248, 255))
+    return finish(img, (50, 60, 80))
+
+
+@item("e_statue", E, "女神像", "building", 2)
+def e_statue(f):
+    img = new(20, 36)
+    rect(img, 3, 30, 14, 6, (190, 196, 206)); rect(img, 5, 28, 10, 3, (214, 218, 226))
+    for y in range(12, 28):                                   # the robe, widening down
+        half = 2 + (y - 12) // 5
+        rect(img, 10 - half, y, 2 * half + 1, 1, (226, 230, 236) if y % 4 else (200, 206, 216))
+    disk(img, 10, 8, 3, (226, 230, 236)); rect(img, 7, 4, 7, 3, (206, 212, 222))   # head and hair
+    line(img, 12, 14, 17, 8, (226, 230, 236)); disk(img, 17, 6, 2, MOON)           # an arm raised, holding the moon
+    line(img, 8, 14, 4, 18, (226, 230, 236))
+    put(img, 6, 32, (90, 160, 90)); put(img, 13, 29, (90, 160, 90)); put(img, 4, 26, PETAL)
+    return finish(img, (50, 60, 80))
+
+
+@item("e_windmill", E, "風車", "building", 4, frames=2)
+def e_windmill(f):
+    img = new(38, 46)
+    for y in range(16, 46):
+        half = 4 + (y - 16) // 7
+        rect(img, 19 - half, y, 2 * half + 1, 1, (236, 228, 208) if y % 5 else (206, 196, 172))
+    tri_roof(img, 19, 9, 6, 7, (90, 140, 100))
+    rect(img, 17, 38, 4, 8, (100, 70, 44)); rect(img, 17, 26, 4, 4, (250, 220, 120))
+    for k in range(4):                                         # the sails, a quarter turn between the frames
+        a = math.radians(k * 90 + (22 if f else 0) + 30)
+        x1 = round(19 + 15 * math.cos(a)); y1 = round(15 + 15 * math.sin(a))
+        line(img, 19, 15, x1, y1, WOOD)
+        px, py = -math.sin(a), math.cos(a)
+        for t in range(5, 15):
+            for w in range(1, 4):
+                put(img, round(19 + t * math.cos(a) + w * px), round(15 + t * math.sin(a) + w * py), (244, 240, 226) if (t + w) % 3 else (214, 206, 186))
+    disk(img, 19, 15, 1, WOOD_DARK)
+    return finish(img, (40, 50, 40))
+
+
+@item("e_crystals", E, "水晶簇", "scene", 2, frames=2)
+def e_crystals(f):
+    img = new(24, 22)
+    light = (190, 245, 255) if f else (150, 225, 250)
+    for (x, h, w) in ((5, 10, 3), (11, 18, 4), (17, 13, 3), (8, 6, 2), (20, 7, 2)):
+        for y in range(h):
+            half = max(0, min(w // 2 + 1, (h - y + 1) // 2))
+            rect(img, x - half, 21 - y, 2 * half + 1, 1, (110, 190, 230) if (x + y) % 3 else light)
+        put(img, x, 21 - h, light)
+    put(img, 3 + f * 12, 4 + f * 3, (255, 255, 255))
+    return finish(img, (40, 60, 90))
+
+
+@item("u_gargoyle", U, "石像鬼雕像", "building", 2, frames=2)
+def u_gargoyle(f):
+    img = new(24, 34)
+    rect(img, 6, 22, 12, 12, GRAVE[0]); rect(img, 5, 20, 14, 3, GRAVE[1])
+    rect(img, 8, 10, 8, 10, GRAVE[1]); rect(img, 8, 10, 2, 10, GRAVE[2])     # hunched body
+    rect(img, 8, 4, 8, 7, GRAVE[1]); put(img, 8, 3, GRAVE[1]); put(img, 15, 3, GRAVE[1])  # head and horns
+    eye = (255, 70, 60) if f else (120, 30, 30)
+    put(img, 10, 7, eye); put(img, 13, 7, eye); rect(img, 10, 9, 4, 1, INK)
+    for d in (-1, 1):                                                        # folded wings
+        for k in range(8):
+            line(img, 12 + d * 4, 10, 12 + d * (5 + k // 2), 4 + k, GRAVE[0])
+    rect(img, 7, 19, 3, 2, GRAVE[2]); rect(img, 14, 19, 3, 2, GRAVE[2])      # claws on the plinth
+    return finish(img, (24, 20, 30))
+
+
+@item("u_shipwreck", U, "幽靈船殘骸", "scene", 4, frames=2)
+def u_shipwreck(f):
+    img = new(44, 34)
+    for y in range(20, 32):                                                  # a broken hull, leaning
+        x0 = 4 + (y - 20) // 2; x1 = 40 - (y - 20)
+        rect(img, x0, y, max(1, x1 - x0), 1, DARKWOOD if y % 3 else (50, 40, 36))
+    for x in range(10, 36, 5):
+        rect(img, x, 20, 1, 9, (100, 84, 76))                                # ribs showing
+    rect(img, 22, 20, 5, 4, (0, 0, 0, 0)); rect(img, 30, 24, 4, 3, (0, 0, 0, 0))  # holes
+    line(img, 18, 20, 22, 2, DARKWOOD); line(img, 19, 20, 23, 2, (100, 84, 76))   # the mast, aslant
+    for y in range(5, 15):                                                   # a torn sail
+        w = 9 - abs(y - 9)
+        rect(img, 23, y, max(1, w - (y % 3)), 1, (200, 210, 214, 200))
+    rect(img, 8, 15, 1, 5, (60, 60, 70)); disk(img, 8, 13 + f, 2, SOUL)      # a lantern still burning
+    put(img, 36, 8 - f, (220, 240, 245, 180)); put(img, 37, 9 - f, (220, 240, 245, 120))
+    return finish(img, (20, 16, 22))
 
 
 # ==== output ========================================================================================================

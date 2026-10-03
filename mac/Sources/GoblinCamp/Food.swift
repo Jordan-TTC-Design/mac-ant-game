@@ -583,6 +583,8 @@ struct AntWorld {
     var rangedReach = 0.0
     /// Night time (goblins sleep more), and whether they may start something to pass the time (not while it rains, in a crowd, or at the campfire party).
     var night = false
+    /// How much likelier quiet sitting is (a harp, a meditation stone put down: twice).
+    var calm = 1.0
     /// The hour of the day (0…23), for what goes on of an evening.
     var hour = 12
     /// How many more may take up the night watch, and sit round the fire pit.

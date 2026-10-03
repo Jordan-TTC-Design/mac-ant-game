@@ -119,6 +119,21 @@ enum Holidays {
         return false
     }
 
+    /// The dish of the day, if the day has one (the pot at the fire pit makes it).
+    static var dish: String? {
+        switch today?.id {
+        case "dongzhi", "lantern": return "湯圓"
+        case "dragon_boat": return "粽子"
+        case "qingming", "children_qingming": return "潤餅"
+        case "lunar_eve": return "火鍋"
+        case "mid_autumn": return "烤肉"
+        default: return nil
+        }
+    }
+
+    /// Sky lanterns are going up now: 元宵 after dark.
+    static var lanternsNow: Bool { today == lantern && (Scenery.currentHour >= 18 || Scenery.currentHour < 1) }
+
     // MARK: Saying it once a day
 
     /// Whether the camp has said today's holiday yet (kept in the settings, so it is said once a day, not at every start).
@@ -147,6 +162,23 @@ final class Fireworks {
     }
     private(set) var shells: [Shell] = []
     private var timer = 0.0
+    /// Sky lanterns (元宵): each drifts up from where it was let go, swaying, until it is out of sight.
+    private(set) var lanterns: [(pos: CGPoint, age: Double, sway: Double)] = []
+    private var lanternTimer = 0.0
+
+    func updateLanterns(dt: Double, on: Bool, area: CGRect) {
+        for i in lanterns.indices {
+            lanterns[i].age += dt
+            lanterns[i].pos.y += 9 * dt
+            lanterns[i].pos.x += CGFloat(sin(lanterns[i].age * 0.8 + lanterns[i].sway)) * 3 * dt
+        }
+        lanterns.removeAll { $0.pos.y > area.maxY + 60 || $0.age > 90 }
+        guard on, area.width > 40 else { return }
+        lanternTimer -= dt
+        guard lanternTimer <= 0, lanterns.count < 14 else { return }
+        lanternTimer = Double.random(in: 2.5...6)
+        lanterns.append((CGPoint(x: CGFloat.random(in: area.minX + 20...area.maxX - 20), y: CGFloat.random(in: area.minY...area.midY)), 0, Double.random(in: 0...6)))
+    }
 
     static let palette: [NSColor] = [
         NSColor(calibratedRed: 1, green: 0.35, blue: 0.35, alpha: 1), NSColor(calibratedRed: 1, green: 0.8, blue: 0.3, alpha: 1),
@@ -195,6 +227,10 @@ extension Colony {
         }
         let area = walkable.reduce(CGRect.null) { $0.union($1) }
         fireworks.update(dt: dt, on: Holidays.fireworksNow && !campHidden, area: area.isNull ? .zero : area)
+        fireworks.updateLanterns(dt: dt, on: Holidays.lanternsNow && !campHidden, area: area.isNull ? .zero : area)
+        if Holidays.today?.id.hasPrefix("children") == true { // 兒童節: the young grow twice as fast today
+            for i in ants.indices where ants[i].isChild { ants[i].age += dt * Colony.timeScale }
+        }
         // on a fireworks night those who are out stop and look up now and then, and cheer
         if fireworks.isOn, Double.random(in: 0..<1) < dt * 0.6 {
             let lookers = ants.indices.filter { i in
@@ -214,6 +250,34 @@ extension Colony {
             Holidays.announced()
         }
         guard let day = Holidays.today, !day.quiet else { return }
+        let hour = Scenery.currentHour
+        func once(_ what: String) -> Bool { holidayOnce.insert(Stats.key(Holidays.now) + ":" + what).inserted }
+        let out = ants.indices.filter { !ants[$0].isHidden && !ants[$0].isChild && ants[$0].touch == nil }
+        switch day.id {
+        case "dragon_boat" where hour == 12: // 端午: the egg stands at noon
+            if once("egg"), let nest { addFloater("中午了：立蛋成功！", .uncommon, at: CGPoint(x: nest.x, y: nest.y + 30), important: true) }
+        case "weiya" where hour >= 19: // 尾牙: the draw
+            if once("draw"), let i = out.randomElement() {
+                ants[i].touch = Touch.react(.hop, 4, line: "我中獎了！！", emote: "🎁")
+                addFloater("尾牙抽獎：\(ants[i].name) 中獎了！", .rare, at: ants[i].pos, important: true)
+            }
+        case "teachers": // 教師節: the clever ones are thanked
+            if Double.random(in: 0..<1) < 0.4, let i = out.filter({ ants[$0].traits.personality == .calm }).randomElement() {
+                ants[i].touch = Touch.react(.blush, 3, line: ["謝謝老師！", "老師辛苦了～"].randomElement(), emote: "🍎")
+            }
+        case "spring_festival", "lunar_eve": // 過年: firecrackers by the camp, and whoever is near jumps
+            if Double.random(in: 0..<1) < 0.5, let nest {
+                let p = nearestWalkable(to: CGPoint(x: nest.x + CGFloat.random(in: -70...70), y: nest.y + CGFloat.random(in: -50...10)))
+                for _ in 0..<4 { addHit(at: CGPoint(x: p.x + CGFloat.random(in: -8...8), y: p.y + CGFloat.random(in: -4...8))) }
+                addFloater(["劈哩啪啦！", "恭喜發財！", "新年快樂！"].randomElement()!, .uncommon, at: p)
+                for i in out where hypot(ants[i].pos.x - p.x, ants[i].pos.y - p.y) < 50 { ants[i].touch = Touch.react(.hop, 1.2) }
+            }
+        case "children", "children_qingming":
+            if Double.random(in: 0..<1) < 0.3, let i = ants.indices.filter({ ants[$0].isChild && !ants[$0].isHidden && ants[$0].touch == nil }).randomElement() {
+                ants[i].touch = Touch.react(.hearts, 2.5, line: ["兒童節快樂！", "今天我最大！"].randomElement())
+            }
+        default: break
+        }
         // 重陽: now and then the eldest is led round the camp, the others at its side (respect for the old)
         if day == Holidays.doubleNinth, !Colony.isNight, Double.random(in: 0..<1) < 0.3 { honourTheEldest() }
     }

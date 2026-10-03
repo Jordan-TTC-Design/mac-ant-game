@@ -80,46 +80,6 @@
   "blocks": true
  },
  {
-  "id": "g_pigpen",
-  "race": "goblin",
-  "name": "豬圈",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": "pigs",
-  "blocks": true
- },
- {
-  "id": "g_sheeppen",
-  "race": "goblin",
-  "name": "羊圈",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": "sheep",
-  "blocks": true
- },
- {
-  "id": "g_cowpen",
-  "race": "goblin",
-  "name": "牛欄",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": "cows",
-  "blocks": true
- },
- {
-  "id": "g_coop",
-  "race": "goblin",
-  "name": "雞籠",
-  "category": "pen",
-  "size": 2,
-  "frames": 2,
-  "fn": "eggs",
-  "blocks": true
- },
- {
   "id": "g_kennel",
   "race": "goblin",
   "name": "狼犬窩",
@@ -316,7 +276,7 @@
   "category": "tree",
   "size": 2,
   "frames": 2,
-  "fn": "apples",
+  "fn": null,
   "blocks": false
  },
  {
@@ -580,53 +540,13 @@
   "blocks": true
  },
  {
-  "id": "e_deerpark",
-  "race": "elf",
-  "name": "鹿園",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": "antlers",
-  "blocks": true
- },
- {
-  "id": "e_rabbits",
-  "race": "elf",
-  "name": "兔籠",
-  "category": "pen",
-  "size": 2,
-  "frames": 2,
-  "fn": "fur",
-  "blocks": true
- },
- {
   "id": "e_beegarden",
   "race": "elf",
   "name": "蜂箱園",
   "category": "pen",
   "size": 2,
   "frames": 2,
-  "fn": "honey",
-  "blocks": true
- },
- {
-  "id": "e_sheep",
-  "race": "elf",
-  "name": "白羊花籬",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": "sheep",
-  "blocks": true
- },
- {
-  "id": "e_cows",
-  "race": "elf",
-  "name": "花環牛欄",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": "cows",
+  "fn": null,
   "blocks": true
  },
  {
@@ -1076,7 +996,7 @@
   "category": "building",
   "size": 2,
   "frames": 2,
-  "fn": "dust",
+  "fn": null,
   "blocks": true
  },
  {
@@ -1100,33 +1020,13 @@
   "blocks": true
  },
  {
-  "id": "u_ghostsheep",
-  "race": "undead",
-  "name": "幽靈羊圈",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": "sheep",
-  "blocks": true
- },
- {
-  "id": "u_bonecows",
-  "race": "undead",
-  "name": "骨牛欄",
-  "category": "pen",
-  "size": 4,
-  "frames": 2,
-  "fn": null,
-  "blocks": true
- },
- {
   "id": "u_batcave",
   "race": "undead",
   "name": "蝙蝠洞",
   "category": "pen",
   "size": 2,
   "frames": 2,
-  "fn": "dust",
+  "fn": null,
   "blocks": true
  },
  {
@@ -1498,5 +1398,105 @@
   "frames": 2,
   "fn": null,
   "blocks": false
+ },
+ {
+  "id": "g_catapult",
+  "race": "goblin",
+  "name": "投石機",
+  "category": "scene",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "g_spit",
+  "race": "goblin",
+  "name": "烤肉架",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false
+ },
+ {
+  "id": "g_statue",
+  "race": "goblin",
+  "name": "哥布林王雕像",
+  "category": "building",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "g_treasurecave",
+  "race": "goblin",
+  "name": "藏寶洞",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "e_fountain",
+  "race": "elf",
+  "name": "噴泉",
+  "category": "scene",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "e_statue",
+  "race": "elf",
+  "name": "女神像",
+  "category": "building",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "e_windmill",
+  "race": "elf",
+  "name": "風車",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "e_crystals",
+  "race": "elf",
+  "name": "水晶簇",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "u_gargoyle",
+  "race": "undead",
+  "name": "石像鬼雕像",
+  "category": "building",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true
+ },
+ {
+  "id": "u_shipwreck",
+  "race": "undead",
+  "name": "幽靈船殘骸",
+  "category": "scene",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true
  }
 ]
