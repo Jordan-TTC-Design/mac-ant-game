@@ -19,6 +19,7 @@ pnpm test             # 跑測試（用 goblin_test，不會動到開發資料�
 pnpm typecheck        # 型別檢查
 pnpm db:down          # 關掉資料庫（資料保留在 Docker volume 裡）
 pnpm invite create --count 3 --days 14   # 產生邀請碼（只顯示這一次）
+cd server && node --import tsx scripts/dev-account.ts   # 本機開發資料庫的測試帳號（dev@example.com，營地已開、大世界已開在台北）
 pnpm invite list      # 還能用／已使用／過期的數量
 ```
 

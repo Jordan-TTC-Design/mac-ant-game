@@ -28,6 +28,8 @@
 | 怪物掉落 | `shared/src/world/drops.ts` | `FOE_DROPS`、`MATERIALS` | |
 | 領地產出 | `shared/src/world/territory.ts` | `TERRAIN_YIELD`（每 3 小時） | |
 | 一格住多少、城鎮加成 | `shared/src/camp/races.ts`、`shared/src/world/holdings.ts` | `cellCap`／`townCap`；`TOWN_ROOM_SHARE`、`TOWN_ROOM_MAX`、`TOWN_CELLS_EACH` | 哥布林 50／100、精靈 30／60、死靈 40／80；同一區每座城鎮每格 +50%，最多算 4 座；每 4 格 1 座 |
+| 專注的好事（server/CAMP.md §22） | `shared/src/camp/focus.ts`（Mac：`Focus.swift`） | `FOCUS_MERCHANT_ROUNDS`、`FOCUS_RANCH_ROUNDS`、`FOCUS_RANCH_SPEED`、`FOCUS_RARE_ROUNDS` | 一天 3 輪商人多來一次、4 輪牧場 ×1.5、6 輪商人帶稀有貨 |
+| 商人的稀有貨 | `shared/src/camp/merchant.ts` | `RARE_DEALS`（每個種族兩樣，挑一樣） | 例：贓物銅幣 4＋廢鐵 10 → 隊長徽章 1 |
 | 出征人數、糧食 | `shared/src/world/supplies.ts` | `PARTY_BASE`、`RATIONS_PER_EXTRA`、`BOOST_FOODS`、`OPENING_FOOD` | 哥布林 6／死靈 5／精靈 4（每級 +1，最多 30）；乾糧 2 份多 1 隻 |
 | 營地場地、田地 | `shared/src/camp/sites.ts`、`production.ts`（[server/FARM.md](server/FARM.md) §11） | `SITE_RULES`（每種場地每級的產量與花費）、`SLOTS_BY_STAGE`、`RACE_LEVELS_PER_SLOT`、`WORKERS_PER_LEVEL`、`GATHERING`、`SITE_HOURS`、`DEMOLISH_REFUND`；`FARM_LEVELS`、`FARM_KEEP`、`HARVEST_BOOST` | 空地 2／4／6（種族每 5 級 +1）；每級 10 人手；撿柴木材 2、石頭 1／小時；蓋 1、4、12 小時；拆掉退一半；糧食每種存 20 |
 | 等級 | `shared/src/world/leaderboard.ts` | `XP`、`raceLevel`（Lv = √(xp/50)+1） | 清 1 級巢穴 20 XP |
