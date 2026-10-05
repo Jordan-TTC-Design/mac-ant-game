@@ -604,9 +604,9 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.13.0）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.0）。
 
-### v0.16.0（還沒發版）
+### v0.16.0
 
 - **主視窗**：工坊、名冊、便利貼牆、大世界、任務、動態、帳號、說明手冊收進同一個視窗，左邊側邊選單切換。大世界改成桌面版：地圖佔滿左邊，資訊放右欄。
 - **專注的好事**：番茄鐘專注完一輪（跳過的不算），一天 3 輪商人多來一次、4 輪牧場生得快、6 輪商人帶稀有貨。

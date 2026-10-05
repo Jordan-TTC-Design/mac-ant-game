@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # 手機網頁（Nuxt 4，純前端）＋ nginx — docker-compose*.yml 的 web 服務。build context 是 repo 最上層
-# （pnpm workspace，要用到 shared/，還有 Mac 的角色圖、營地圖與魔獸的掉落物名稱）。nginx 送出靜態檔，並把 /api（含 WebSocket）轉給 server。
+# （pnpm workspace，要用到 shared/，還有 Mac 的角色圖、營地圖、裝飾圖與魔獸的掉落物名稱）。nginx 送出靜態檔，並把 /api（含 WebSocket）轉給 server。
 
 # ---------- build ----------
 FROM node:22-alpine AS build
@@ -24,6 +24,7 @@ COPY mac/Resources/Camps mac/Resources/Camps
 COPY mac/Resources/Animals mac/Resources/Animals
 COPY mac/Resources/World mac/Resources/World
 COPY mac/Resources/Terrain mac/Resources/Terrain
+COPY mac/Resources/Decor mac/Resources/Decor
 RUN pnpm --filter @goblincamp/pwa build
 
 # ---------- runtime ----------
