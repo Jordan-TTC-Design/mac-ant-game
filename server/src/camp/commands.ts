@@ -28,6 +28,7 @@ import {
   merchantStock,
   taipeiDay,
   decorProblem,
+  decorEarned,
   decorKind,
   RANCH_KINDS,
   RANCH_MAX_MINUTES,
@@ -312,7 +313,8 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
         changes.nextId = camp.nextId + born.length;
       }
       changes.quests = { ...claimed, [quest.id]: now.toISOString() };
-      message = `完成「${quest.title}」，領到獎勵了！`;
+      const decor = r.decor?.[camp.race] ? decorKind(r.decor[camp.race]!) : undefined;
+      message = `完成「${quest.title}」，領到獎勵了！` + (decor ? `新裝飾「${decor.name}」可以放了。` : "");
       break;
     }
     case "merchant-arrive": {
@@ -383,7 +385,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
     case "decor-set": {
       // (a kind that is no more, from a Mac with an older catalogue, is simply left out)
       const items = command.items.filter((d) => decorKind(d.kind)).map((d) => ({ kind: d.kind, x: Math.round(d.x), y: Math.round(d.y), ...(d.flip ? { flip: true } : {}) }));
-      const problem = decorProblem(items, camp.race, campStage(camp.race, camp.peak));
+      const problem = decorProblem(items, camp.race, campStage(camp.race, camp.peak), decorEarned(camp.quests ?? {}, camp.race));
       if (problem) return { ok: false, code: problem.includes("點數") ? "no_room" : "not_allowed", message: problem };
       changes.decor = items;
       message = "";

@@ -267,10 +267,11 @@ CATEGORIES = {"fence": "柵欄", "building": "建築", "pen": "圍欄", "furnitu
               "flower": "花", "plant": "巨型魔植", "creature": "活物"}
 
 
-def item(id, race, name, cat, size, frames=1, fn=None, blocks=None):
+def item(id, race, name, cat, size, frames=1, fn=None, blocks=None, limited=None):
+    """`limited`: not free; "quest" ones are a quest's reward (shared/src/camp/quests.ts), the camp has to have earned them."""
     def wrap(draw):
         CATALOG.append(dict(id=id, race=race, name=name, category=cat, size=size, frames=frames, fn=fn,
-                            blocks=(size >= 2 and cat in ("building", "pen", "scene")) if blocks is None else blocks, draw=draw))
+                            blocks=(size >= 2 and cat in ("building", "pen", "scene")) if blocks is None else blocks, limited=limited, draw=draw))
         return draw
     return wrap
 
@@ -1863,6 +1864,144 @@ def u_soullamp(f):
     return finish(img, (20, 18, 26))
 
 
+# ==== quest rewards (DESKTOP.md §9): three for each race, only for a camp that finished the quest (limited="quest") =========
+GOLD, GOLD_DARK, GOLD_LIGHT = (232, 186, 56), (170, 120, 30), (255, 230, 120)
+TOMATO, TOMATO_DARK = (222, 64, 48), (160, 40, 30)
+
+
+@item("g_tomatotower", G, "番茄鐘塔", "building", 2, frames=2, limited="quest")
+def g_tomatotower(f):
+    img = new(22, 44)
+    rect(img, 6, 20, 10, 24, WOOD); rect(img, 7, 20, 2, 24, WOOD_LIGHT)                 # the post
+    for y in range(24, 44, 6):
+        rect(img, 6, y, 10, 1, WOOD_DARK)
+    disk(img, 11, 11, 9, TOMATO); disk(img, 9, 8, 4, (240, 110, 90))                       # the tomato
+    for dx in (-3, 0, 3):
+        line(img, 11, 3, 11 + dx, 0, (70, 140, 50))                                        # its leaves
+    disk(img, 11, 12, 5, (250, 244, 228))                                                   # the clock face
+    put(img, 11, 12, INK); line(img, 11, 12, 11, 8, INK)
+    line(img, 11, 12, 14 if f else 8, 13 if f else 14, INK)                                 # the hand ticks
+    rect(img, 3, 41, 16, 3, (120, 110, 100))
+    return finish(img)
+
+
+@item("g_trophy", G, "哥布林獎盃", "furniture", 1, frames=2, limited="quest")
+def g_trophy(f):
+    img = new(16, 20)
+    rect(img, 3, 16, 10, 4, WOOD_DARK); rect(img, 4, 15, 8, 1, WOOD)
+    rect(img, 7, 10, 2, 5, GOLD_DARK)
+    for y in range(2, 10):                                                                  # the cup
+        half = 5 - (y - 2) // 3
+        rect(img, 8 - half, y, 2 * half, 1, GOLD)
+    rect(img, 4, 2, 2, 5, GOLD_LIGHT)
+    ring(img, 2, 5, 2, GOLD_DARK); ring(img, 13, 5, 2, GOLD_DARK)                          # its handles
+    put(img, 6 + f * 4, 1, (255, 255, 230)); put(img, 11 - f * 6, 8, (255, 255, 230))       # a glint
+    return finish(img)
+
+
+@item("g_goldthrone", G, "黃金寶座", "furniture", 2, limited="quest")
+def g_goldthrone(f):
+    img = new(24, 28)
+    rect(img, 4, 2, 16, 18, GOLD); rect(img, 6, 4, 12, 14, (170, 50, 50))                 # the back, red cushion
+    for x in (4, 9, 14, 19):
+        put(img, x, 1, GOLD_LIGHT); put(img, x, 0, (240, 80, 60))                           # spikes with rubies
+    rect(img, 2, 18, 20, 4, GOLD_DARK); rect(img, 3, 17, 18, 2, (190, 60, 60))             # the seat
+    rect(img, 1, 14, 3, 8, GOLD); rect(img, 20, 14, 3, 8, GOLD)                            # the arms
+    rect(img, 3, 22, 3, 6, GOLD_DARK); rect(img, 18, 22, 3, 6, GOLD_DARK)
+    disk(img, 12, 8, 2, (90, 200, 120))                                                     # a stolen emerald
+    return finish(img)
+
+
+@item("e_moondial", E, "月光日晷", "scene", 2, frames=2, limited="quest")
+def e_moondial(f):
+    img = new(26, 20)
+    disk(img, 13, 14, 12, (200, 206, 214), 5); disk(img, 13, 13, 10, (226, 230, 236), 4)
+    for k in range(12):                                                                     # the hours
+        a = k / 12 * 2 * math.pi
+        put(img, round(13 + math.cos(a) * 8), round(13 + math.sin(a) * 3), (150, 160, 180))
+    line(img, 13, 13, 13, 4, (170, 176, 190)); line(img, 13, 4, 17, 12, (170, 176, 190))   # the gnomon
+    glow = MOON if f else (180, 210, 255)
+    line(img, 13, 13, 6 if f else 20, 15, glow)                                              # the moon's shadow moves
+    disk(img, 21, 3, 2, glow); put(img, 4, 5, PETAL); put(img, 23, 9, PETAL)
+    return finish(img, (50, 60, 80))
+
+
+@item("e_laurelarch", E, "桂冠拱門", "building", 2, limited="quest")
+def e_laurelarch(f):
+    img = new(28, 34)
+    for x in (3, 22):
+        rect(img, x, 10, 3, 24, (226, 230, 236)); rect(img, x, 10, 1, 24, (200, 206, 216))
+    for k in range(17):                                                                     # the arch of laurel
+        a = math.pi * k / 16
+        cx, cy = 14 - math.cos(a) * 11, 11 - math.sin(a) * 9
+        disk(img, round(cx), round(cy), 2, (70, 140, 60) if k % 2 else (100, 170, 80))
+    disk(img, 14, 2, 2, GOLD); put(img, 14, 2, GOLD_LIGHT)                                  # a golden leaf on top
+    for (x, y) in ((6, 30), (20, 31), (9, 33)):
+        put(img, x, y, PETAL)
+    return finish(img, (40, 60, 40))
+
+
+@item("e_glowtree", E, "螢光燈樹", "tree", 2, frames=2, limited="quest")
+def e_glowtree(f):
+    img = leafy(26, 38, (110, 80, 60), [(40, 90, 70), (60, 120, 90), (90, 150, 110)], R(91), trunk_h=12)
+    rnd = R(92 + f)
+    for _ in range(9):                                                                      # fireflies and lanterns
+        x, y = rnd.randint(4, 21), rnd.randint(3, 22)
+        put(img, x, y, (240, 255, 150)); put(img, x, y + 1, (200, 230, 90))
+    for x in (7, 18):
+        rect(img, x, 18 + (x % 3), 2, 3, GOLD if f else GOLD_LIGHT)
+    return img
+
+
+@item("u_hourglass", U, "沙漏墓碑", "building", 2, frames=2, limited="quest")
+def u_hourglass(f):
+    img = new(20, 36)
+    rect(img, 2, 30, 16, 6, (96, 96, 108)); rect(img, 4, 28, 12, 3, (120, 120, 132))
+    rect(img, 3, 2, 14, 2, (70, 60, 80)); rect(img, 3, 24, 14, 2, (70, 60, 80))            # the frame
+    rect(img, 3, 4, 1, 20, (70, 60, 80)); rect(img, 16, 4, 1, 20, (70, 60, 80))
+    for y in range(4, 24):                                                                  # the glass, narrow in the middle
+        half = 1 + abs(y - 14) * 5 // 10
+        rect(img, 10 - half, y, 2 * half, 1, (180, 220, 230))
+    sand = SOUL
+    for y in range(5 + f * 2, 12):
+        half = max(0, 1 + abs(y - 14) * 5 // 10 - 1)
+        rect(img, 10 - half, y, 2 * half, 1, sand)
+    for y in range(20 - f * 2, 24):
+        half = max(0, 1 + abs(y - 14) * 5 // 10 - 1)
+        rect(img, 10 - half, y, 2 * half, 1, sand)
+    put(img, 10, 14 + f, sand); put(img, 10, 16 - f, sand)                                  # the falling souls
+    return finish(img, (20, 18, 26))
+
+
+@item("u_bonethrone", U, "骨王座", "furniture", 2, limited="quest")
+def u_bonethrone(f):
+    img = new(24, 30)
+    for x in range(4, 21, 4):                                                               # a back of ribs
+        rect(img, x, 3, 2, 16, BONE); rect(img, x + 1, 3, 1, 16, BONE_SHADE)
+    disk(img, 12, 4, 4, BONE); rect(img, 10, 3, 1, 2, INK); rect(img, 13, 3, 1, 2, INK)   # a skull on top
+    rect(img, 2, 18, 20, 4, (90, 70, 100)); rect(img, 2, 18, 20, 1, (130, 100, 140))       # the seat
+    rect(img, 3, 22, 3, 8, BONE); rect(img, 18, 22, 3, 8, BONE)
+    put(img, 11, 3, SOUL); put(img, 14, 3, SOUL)                                            # its eyes glow
+    return finish(img, (20, 18, 26))
+
+
+@item("u_ghostbell", U, "幽魂鐘", "building", 2, frames=2, limited="quest")
+def u_ghostbell(f):
+    img = new(24, 40)
+    rect(img, 3, 8, 2, 32, (60, 60, 72)); rect(img, 19, 8, 2, 32, (60, 60, 72))            # the gallows
+    rect(img, 1, 6, 22, 3, (80, 80, 94))
+    sway = 1 if f else -1
+    line(img, 12, 9, 12 + sway, 13, (110, 110, 124))
+    for y in range(13, 26):                                                                 # the bell
+        half = 2 + (y - 13) // 2
+        rect(img, 12 + sway - half, y, 2 * half + 1, 1, (90, 110, 120) if y % 3 else (120, 140, 150))
+    rect(img, 12 + sway - 8, 26, 17, 2, (70, 90, 100))
+    put(img, 12 + sway, 28, SOUL)
+    for k in range(3):                                                                      # a soul rings out
+        put(img, 5 + k * 6 + f, 32 - k * 2 - f, (200, 255, 244) if (k + f) % 2 else SOUL)
+    return finish(img, (20, 18, 26))
+
+
 # ==== fences (DESKTOP.md §8): laid a piece at a time on a grid; a closed ring is a pen. The game draws them joined up
 # (AntView.drawFence); these pictures are for the catalogue. They take no decoration room (their own limit instead). ====
 @item("g_fence", G, "木樁柵欄", "fence", 0, blocks=True)
@@ -1898,14 +2037,14 @@ def render_all():
         for f in range(c["frames"]):
             img = c["draw"](f)
             img.save(os.path.join(OUT, c["id"] + ("" if f == 0 else "-%d" % f) + ".png"))
-        catalog.append({k: c[k] for k in ("id", "race", "name", "category", "size", "frames", "fn", "blocks")})
+        catalog.append({k: c[k] for k in ("id", "race", "name", "category", "size", "frames", "fn", "blocks", "limited")})
     with open(os.path.join(OUT, "catalog.json"), "w") as fh:
         json.dump(catalog, fh, ensure_ascii=False, indent=1)
     # the server's copy (what may be put down, and how much room it takes): generated, so the two never differ
     shared = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "shared", "src", "camp", "decor-catalog.ts")
     with open(shared, "w") as fh:
         fh.write("// Generated by mac/tools/make_decor.py from its drawings: do not edit by hand (run the tool again).\n")
-        fh.write("export interface DecorKind { id: string; race: string; name: string; category: string; size: number; frames: number; fn: string | null; blocks: boolean }\n\n")
+        fh.write("export interface DecorKind { id: string; race: string; name: string; category: string; size: number; frames: number; fn: string | null; blocks: boolean; limited: string | null }\n\n")
         fh.write("export const DECOR_KINDS: readonly DecorKind[] = [\n")
         for c in catalog:
             fh.write("  %s,\n" % json.dumps(c, ensure_ascii=False))

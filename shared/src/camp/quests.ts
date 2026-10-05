@@ -49,6 +49,12 @@ export interface QuestMetrics {
   /** How many different kinds of 初期魔王 beaten; how many different pieces of middle gear owned. */
   bossKinds: number;
   middleGearKinds: number;
+  // (2026-10-05: focus and the ranch)
+  /** The pomodoro's focus rounds done in all, and the most in one day (focus.ts). */
+  focusRounds: number;
+  focusBestDay: number;
+  /** Animals kept in the ranch now (ranch.ts). */
+  ranchAnimals: number;
 }
 
 export interface QuestReward {
@@ -57,11 +63,13 @@ export interface QuestReward {
   gear?: string[];
   /** New residents born at home. */
   residents?: number;
+  /** A limited decoration (decor-catalog.ts `limited: "quest"`), the camp's race's: race → decoration id. */
+  decor?: Record<string, string>;
 }
 
 export interface Quest {
   id: string;
-  chapter: "營地" | "大世界" | "夥伴";
+  chapter: "營地" | "大世界" | "夥伴" | "專注";
   title: string;
   text: string;
   /** How far along: [have, need]. */
@@ -159,6 +167,13 @@ export const QUESTS: readonly Quest[] = [
   { id: "orcs_30", chapter: "大世界", title: "強獸人剋星", text: "打倒三十隻強獸人（步兵、弓手、隊長都算）。", goal: (m) => n((m.kills.orc_grunt ?? 0) + (m.kills.orc_archer ?? 0) + (m.kills.orc_chief ?? 0), 30), reward: { materials: { orc_tusk: 4, crude_blade: 3, war_banner: 1 } }, after: "lairs_5" },
   { id: "pvp_1", chapter: "大世界", title: "第一次攻城", text: "出征打贏另一個玩家的領地。", goal: (m) => n(m.pvpWins, 1), reward: { materials: { food_meat: 10, captain_badge: 1 } }, after: "lairs_5" },
   { id: "pvp_5", chapter: "大世界", title: "征服者", text: "打贏其他玩家的領地五次。", goal: (m) => n(m.pvpWins, 5), reward: { residents: 8, materials: { war_banner: 2 } }, after: "pvp_1" },
+  // 專注 (focus.ts: the pomodoro's focus rounds that ran to the end, from the Mac or the phone)
+  { id: "focus_1", chapter: "專注", title: "第一輪專注", text: "用番茄鐘專注完一輪（跳過的不算）。", goal: (m) => n(m.focusRounds, 1), reward: { materials: { ration_bread: 3, food_honey: 2 } } },
+  { id: "focus_day4", chapter: "專注", title: "專心的一天", text: "一天裡專注完四輪。", goal: (m) => n(m.focusBestDay, 4), reward: { decor: { goblin: "g_tomatotower", elf: "e_moondial", undead: "u_hourglass" } }, after: "focus_1" },
+  { id: "focus_20", chapter: "專注", title: "二十輪", text: "一共專注完二十輪。", goal: (m) => n(m.focusRounds, 20), reward: { residents: 3, materials: { crystal_shard: 2 } }, after: "focus_1" },
+  { id: "focus_day6", chapter: "專注", title: "全神貫注", text: "一天裡專注完六輪。", goal: (m) => n(m.focusBestDay, 6), reward: { decor: { goblin: "g_goldthrone", elf: "e_glowtree", undead: "u_bonethrone" } }, after: "focus_day4" },
+  { id: "focus_100", chapter: "專注", title: "百輪老手", text: "一共專注完一百輪。", goal: (m) => n(m.focusRounds, 100), reward: { residents: 8, materials: { crystal_shard: 6, amber: 2 } }, after: "focus_20" },
+  { id: "ranch_8", chapter: "營地", title: "牧場主人", text: "牧場裡養著八隻動物。", goal: (m) => n(m.ranchAnimals, 8), reward: { decor: { goblin: "g_trophy", elf: "e_laurelarch", undead: "u_ghostbell" } } },
   // 夥伴
   { id: "friend_3", chapter: "夥伴", title: "三五好友", text: "有三位好友。", goal: (m) => n(m.friends, 3), reward: { materials: { food_honey: 5, food_cheese: 3 } }, after: "friend_1" },
   { id: "friend_5", chapter: "夥伴", title: "朋友遍天下", text: "有五位好友。", goal: (m) => n(m.friends, 5), reward: { residents: 5, materials: { item_tonic: 3 } }, after: "friend_3" },
@@ -173,4 +188,14 @@ export function questRule(id: string): Quest | undefined {
 /** Whether a quest shows yet: the first of a chain always, the rest once the one before was claimed. */
 export function questShown(q: Quest, claimed: Record<string, unknown>): boolean {
   return !q.after || q.after in claimed;
+}
+
+/** The limited decorations a camp has earned: those of the quests whose rewards it took, for its race. */
+export function decorEarned(claimed: Record<string, unknown>, race: string): Set<string> {
+  const earned = new Set<string>();
+  for (const id of Object.keys(claimed)) {
+    const kind = BY_ID.get(id)?.reward.decor?.[race];
+    if (kind) earned.add(kind);
+  }
+  return earned;
 }

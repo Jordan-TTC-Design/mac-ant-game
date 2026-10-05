@@ -101,4 +101,25 @@ describe("專注", () => {
     expect(visit.id.endsWith(RARE_VISIT_SUFFIX)).toBe(true);
     expect(visit.stock.at(-1)).toMatchObject({ rare: true });
   });
+
+  it("earns a limited decoration with a day of four rounds: refused before, put down after the quest's reward is taken", async () => {
+    const me = await player();
+    const put = (kind: string) => t.call("POST", "/camp/commands", { kind: "decor-set", items: [{ kind, x: 10, y: 0 }] }, me);
+    const refused = await put("g_tomatotower");
+    expect(refused.status).toBe(409);
+    expect(refused.body.message).toContain("任務獎勵");
+    await t.call("POST", "/pomodoro", { action: "start", plan: { focusMinutes: 5, restMinutes: 0, rounds: 4, longRestMinutes: 0 } }, me);
+    t.advance(20 * MIN + 1000);
+    await tellPomodoros(t.app.deps, t.now());
+    const claim = (quest: string) => t.call("POST", "/camp/commands", { kind: "quest-claim", quest }, me);
+    expect((await claim("focus_day4")).status).toBe(409); // (the first of the chain first)
+    expect((await claim("focus_1")).status).toBe(200);
+    const day4 = await claim("focus_day4");
+    expect(day4.status).toBe(200);
+    expect(day4.body.message).toContain("番茄鐘塔");
+    expect(day4.body.camp.decorEarned).toEqual(["g_tomatotower"]);
+    expect((await put("g_tomatotower")).status).toBe(200);
+    expect((await put("e_moondial")).status).toBe(409); // (another race's)
+    expect((await put("g_goldthrone")).status).toBe(409); // (not earned yet)
+  });
 });

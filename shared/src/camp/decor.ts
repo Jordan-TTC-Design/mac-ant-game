@@ -35,7 +35,7 @@ export function decorRoomUsed(items: readonly DecorPlaced[]): number {
 }
 
 /** Why this list cannot be the camp's (null: it can). */
-export function decorProblem(items: readonly DecorPlaced[], race: string, stage: 1 | 2 | 3): string | null {
+export function decorProblem(items: readonly DecorPlaced[], race: string, stage: 1 | 2 | 3, earned: ReadonlySet<string> = new Set()): string | null {
   const fences = items.filter((d) => BY_ID.get(d.kind)?.category === "fence").length;
   if (items.length - fences > DECOR_MAX_ITEMS) return `最多放 ${DECOR_MAX_ITEMS} 樣。`;
   if (fences > DECOR_MAX_FENCES) return `柵欄最多 ${DECOR_MAX_FENCES} 段。`;
@@ -43,6 +43,7 @@ export function decorProblem(items: readonly DecorPlaced[], race: string, stage:
     const kind = BY_ID.get(d.kind);
     if (!kind) return "沒有這種裝飾。";
     if (kind.race !== race) return `${kind.name}不是這個種族的裝飾。`;
+    if (kind.limited && !earned.has(kind.id)) return `${kind.name}是任務獎勵，還沒拿到。`;
     if (!Number.isFinite(d.x) || !Number.isFinite(d.y) || Math.abs(d.x) > DECOR_REACH || Math.abs(d.y) > DECOR_REACH) return "裝飾放得太遠了。";
   }
   const used = decorRoomUsed(items);

@@ -164,6 +164,8 @@ export interface CampView {
   ranch?: { animals: RanchAnimal[] };
   /** The pomodoro's focus rounds done, today and in all, and what they bring today (focus.ts). Older servers leave it out. */
   focus?: FocusView;
+  /** The limited decorations this camp has earned (quests.ts `decorEarned`); the rest of the limited ones cannot be put down. */
+  decorEarned?: string[];
   /** Everyone alive (at home and, later, in the big world). */
   residents: CampResidentView[];
 }
@@ -238,7 +240,7 @@ export interface QuestView {
   need: number;
   done: boolean;
   claimed: boolean;
-  reward: { materials?: Record<string, number>; gear?: string[]; residents?: number };
+  reward: { materials?: Record<string, number>; gear?: string[]; residents?: number; decor?: Record<string, string> };
   /** The 道具 whose recipe it opens. */
   unlocks?: string;
 }

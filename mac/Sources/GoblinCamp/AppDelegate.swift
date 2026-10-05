@@ -381,7 +381,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let s = env["CAMP_TEST_MAIN"], let t = Double(s), let prefix = env["CAMP_SNAPSHOT"] { // the main window, every page in turn, captured
             after(t) { // (the pages offered are known once signed in)
                 var at = 0.0
-                for page in self.mainWindow.pages() {
+                let only = env["CAMP_TEST_MAIN_PAGES"]?.split(separator: ",").map(String.init) // (just these pages)
+                for page in self.mainWindow.pages() where only?.contains(page.rawValue) ?? true {
                     let wait = [.world, .quests, .feed].contains(page) ? 9.0 : 3.0 // (a web page loads first)
                     after(at) { self.mainWindow.show(page); if page == .roster { self.roster.select(row: 1) } }
                     after(at + wait) {
@@ -2129,6 +2130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
         colony.booksMerchant = ledger.view?.merchant
         colony.booksFocus = ledger.view?.focus
+        colony.decorEarned = Set(ledger.view?.decorEarned ?? [])
         colony.booksStage = ledger.view?.stage
         colony.applyBooksDecor(ledger.view?.decor)
         colony.applyBooksRanch(ledger.view?.ranch?.animals.map { ($0.id, $0.kind, MerchantVisitInfo.date($0.bornAt), $0.caught == true, $0.name ?? "") })

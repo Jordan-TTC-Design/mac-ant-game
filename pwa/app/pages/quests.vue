@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import type { CampView, QuestView } from "@goblincamp/shared/camp";
+import { DECOR_KINDS, type CampView, type QuestView } from "@goblincamp/shared/camp";
 import { itemRule, materialName } from "@goblincamp/shared/world";
 import { ApiError, api } from "~/utils/api";
 
 // 任務: small goals for the first days (shared/src/camp/quests.ts), by chapter; a finished one's reward is taken here.
 const ok = await useSignedIn();
 const mac = inMacApp();
+const { race, ensure } = useRace();
+onMounted(() => void ensure());
 const list = ref<QuestView[] | null>(null);
 const problem = ref("");
 const message = ref("");
@@ -41,7 +43,7 @@ async function claim(q: QuestView) {
   }
 }
 
-const CHAPTERS = ["營地", "大世界", "夥伴"];
+const CHAPTERS = ["營地", "專注", "大世界", "夥伴"];
 const chapter = ref("營地");
 /** Ready to claim first, then those under way (the most done first), then the claimed. */
 const shown = computed(() =>
@@ -60,8 +62,15 @@ function rewardText(q: QuestView): string {
   for (const [id, n] of gear) parts.push(`${GEAR.find((g) => g.id === id)?.name ?? id}${n > 1 ? ` ×${n}` : ""}`);
   if (q.reward.residents) parts.push(`新居民 ${q.reward.residents} 隻`);
   if (q.unlocks) parts.push(`解鎖道具「${itemRule(q.unlocks)?.name ?? q.unlocks}」`);
+  const decor = decorOf(q);
+  if (decor) parts.push(`限定裝飾「${decor.name}」`);
   return parts.join("、");
 }
+/** The limited decoration a quest gives this camp's race (shown with its picture). */
+const decorOf = (q: QuestView) => {
+  const id = q.reward.decor?.[race.value];
+  return id ? DECOR_KINDS.find((k) => k.id === id) : undefined;
+};
 </script>
 
 <template>
@@ -84,7 +93,10 @@ function rewardText(q: QuestView): string {
 
     <div v-if="!list" class="panel">{{ problem || "讀取中…" }}</div>
     <template v-else>
+      <p v-if="chapter === '專注'" class="panel intro small">用番茄鐘專注完一輪（Mac 或手機都算，跳過的不算），營地就記一輪。一天 3 輪商人多來一次、4 輪牧場生得快、6 輪商人帶稀有貨。</p>
+      <div class="list">
       <article v-for="q in shown" :key="q.id" class="quest" :class="{ ready: q.done && !q.claimed, claimed: q.claimed }">
+        <img v-if="decorOf(q)" :src="`/decor/${decorOf(q)!.id}.png`" class="pixel decor" :alt="decorOf(q)!.name" />
         <div class="grow">
           <b>{{ q.claimed ? "✅ " : q.done ? "🎁 " : "" }}{{ q.title }}</b>
           <p class="text">{{ q.text }}</p>
@@ -95,6 +107,7 @@ function rewardText(q: QuestView): string {
           {{ q.done ? "領獎勵" : "進行中" }}
         </button>
       </article>
+      </div>
       <p class="muted small note">做完一個，同一條線的下一個任務才會出現。</p>
     </template>
   </main>
@@ -117,4 +130,13 @@ small { font-size: 12px; }
 .ok { color: var(--green); font-weight: 700; }
 .warn { color: #b3412c; }
 .note { color: #fff; opacity: 0.8; text-align: center; }
+.intro { margin: 0 0 10px; line-height: 1.6; }
+.decor { flex: none; width: 56px; height: 56px; object-fit: contain; image-rendering: pixelated; background: #e6efd8; border-radius: 10px; padding: 4px; }
+
+/* a wide window (the Mac app, a computer's browser): two columns of quests */
+@media (min-width: 900px) {
+  .page { max-width: 1040px; }
+  .list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+  .list .quest { margin-bottom: 0; }
+}
 </style>

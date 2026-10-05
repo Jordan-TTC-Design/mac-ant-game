@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { focusView,
+import { focusView, decorEarned,
   advance,
   aliveAt,
   BASE_LIFESPAN_HOURS,
@@ -274,6 +274,7 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     decor: camp.decor.filter((d) => decorKind(d.kind)), // (kinds taken out of the catalogue since are gone)
     ranch: { animals: camp.ranch?.animals ?? [] },
     focus: focusView(camp.focus, camp.advancedTo),
+    decorEarned: [...decorEarned(camp.quests ?? {}, camp.race)],
     residents: rows.map((r) => ({
       id: r.id,
       breed: r.breed,

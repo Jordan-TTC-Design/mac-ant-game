@@ -78,6 +78,9 @@ export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics>
     pvpWins: pvp,
     bossKinds: [...BOSSES].filter((id) => (kills[id] ?? 0) > 0).length,
     middleGearKinds: new Set(owned.filter((id) => MIDDLE_GEAR.includes(id))).size,
+    focusRounds: camp.focus?.rounds ?? 0,
+    focusBestDay: camp.focus?.bestDay ?? 0,
+    ranchAnimals: camp.ranch?.animals.length ?? 0,
   };
 }
 

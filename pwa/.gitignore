@@ -5,3 +5,4 @@ public/terrain/
 .nuxt/
 .output/
 dist
+public/decor/

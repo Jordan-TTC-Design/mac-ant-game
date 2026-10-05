@@ -96,11 +96,13 @@ final class CampLedger {
         let ranch: RanchView?
         /// The pomodoro's focus rounds, and what they bring today (shared/src/camp/focus.ts); older servers leave it out.
         let focus: FocusInfo?
+        /// The quests' decorations earned (shared/src/camp/quests.ts `decorEarned`); older servers leave it out.
+        let decorEarned: [String]?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, ranch, focus, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, ranch, focus, decorEarned, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -130,6 +132,7 @@ final class CampLedger {
             decor = try? c.decodeIfPresent([DecorPlaced].self, forKey: .decor)
             ranch = try? c.decodeIfPresent(RanchView.self, forKey: .ranch)
             focus = try? c.decodeIfPresent(FocusInfo.self, forKey: .focus)
+            decorEarned = try? c.decodeIfPresent([String].self, forKey: .decorEarned)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }

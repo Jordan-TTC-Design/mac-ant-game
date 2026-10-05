@@ -139,6 +139,8 @@ final class Colony {
     /// The wandering merchant (Merchant.swift): at the camp or away; the visit on the books (set by the app); how to ask the server.
     let merchant = MerchantDesk()
     var booksMerchant: MerchantVisitInfo?
+    /// The quests' decorations this camp has earned (Decor.swift), from the books.
+    var decorEarned: Set<String> = []
     /// Today's focus rounds and what they bring (Focus.swift), from the books.
     var booksFocus: FocusInfo?
     var onMerchant: ((MerchantRequest, @escaping (MerchantAnswer) -> Void) -> Void)?

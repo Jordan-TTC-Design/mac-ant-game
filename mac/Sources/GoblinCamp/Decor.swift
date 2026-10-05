@@ -2,7 +2,8 @@ import AppKit
 import CampRules
 
 // Decorations the player puts down in the camp window (DESKTOP.md §5): each race's fifty (Resources/Decor, drawn by
-// tools/make_decor.py), free for now, as many as the camp's decoration room holds. Where they stand is kept as an offset from
+// tools/make_decor.py), free, as many as the camp's decoration room holds; and three more each that are quests' rewards
+// (`limited`: shown locked until the camp has earned them, shared/src/camp/quests.ts `decorEarned`). Where they stand is kept as an offset from
 // the land's anchor (TerrainScene.nest), so resizing or moving the window never moves them. A signed-in camp keeps the list on
 // the server (`decor-set`); a camp of its own in decor.json.
 
@@ -16,6 +17,8 @@ struct DecorKindInfo: Decodable {
     let frames: Int
     let fn: String?
     let blocks: Bool
+    /// "quest": a quest's reward, put down only once earned; nil: free.
+    let limited: String?
 }
 
 /// One decoration put down: which, where (points from the land's anchor), turned round or not.
@@ -437,7 +440,8 @@ final class DecorPalette: NSObject, NSWindowDelegate {
                 row!.spacing = 6
                 grid.addArrangedSubview(row!)
             }
-            let button = NSButton(title: kind.name + (kind.fn != nil ? " ★" : ""), target: self, action: #selector(pick(_:)))
+            let locked = kind.limited != nil && !colony.decorEarned.contains(kind.id)
+            let button = NSButton(title: (kind.limited != nil ? "🎁" : "") + kind.name + (kind.fn != nil ? " ★" : ""), target: self, action: #selector(pick(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(kind.id)
             button.imagePosition = .imageAbove
             button.bezelStyle = .regularSquare
@@ -445,6 +449,8 @@ final class DecorPalette: NSObject, NSWindowDelegate {
             button.state = colony.decorPlacing == kind.id ? .on : .off
             button.font = .systemFont(ofSize: 10)
             button.toolTip = "\(kind.name)・占 \(kind.size) 點" + (kind.fn != nil ? "・★ 有作用" : "")
+                + (locked ? "\n🎁 任務獎勵：在主視窗的「任務」完成任務才能放" + (colony.followsBooks ? "" : "（要先登入）") : kind.limited != nil ? "\n🎁 任務拿到的" : "")
+            button.isEnabled = !locked
             if let image = DecorCatalog.frames(kind.id).first {
                 let scale = min(2.0, 52.0 / Double(max(image.width, image.height)))
                 let ns = NSImage(cgImage: image, size: NSSize(width: Double(image.width) * scale, height: Double(image.height) * scale))

@@ -5,12 +5,13 @@ import { DECOR_KINDS, DECOR_ROOM, decorProblem, decorRoomUsed } from "./decor.ts
 const mac = new URL("../../../mac/Resources/Decor/", import.meta.url);
 
 describe("decorations", () => {
-  it("are fifty and a fence for each race, every one drawn (each frame) on the Mac, the same as its catalogue", () => {
+  it("are fifty free, three quest rewards and a fence for each race, every one drawn (each frame) on the Mac, the same as its catalogue", () => {
     for (const [race, n] of [["goblin", 50], ["elf", 51], ["undead", 51]] as const) { // (the elves' eagle perch, the undead's soul lamp)
-      expect(DECOR_KINDS.filter((k) => k.race === race && k.category !== "fence")).toHaveLength(n);
+      expect(DECOR_KINDS.filter((k) => k.race === race && k.category !== "fence" && !k.limited)).toHaveLength(n);
+      expect(DECOR_KINDS.filter((k) => k.race === race && k.limited === "quest")).toHaveLength(3);
       expect(DECOR_KINDS.filter((k) => k.race === race && k.category === "fence")).toHaveLength(1);
     }
-    expect(new Set(DECOR_KINDS.map((k) => k.id)).size).toBe(155);
+    expect(new Set(DECOR_KINDS.map((k) => k.id)).size).toBe(164);
     const catalog = JSON.parse(readFileSync(new URL("catalog.json", mac), "utf8"));
     expect(catalog).toEqual(DECOR_KINDS);
     for (const k of DECOR_KINDS) {
@@ -29,6 +30,8 @@ describe("decorations", () => {
     expect(decorProblem(five, "elf", 3)).toContain("不是這個種族");
     expect(decorProblem([{ kind: "nope", x: 0, y: 0 }], "goblin", 3)).toBe("沒有這種裝飾。");
     expect(decorProblem([{ kind: big.id, x: 5000, y: 0 }], "goblin", 3)).toContain("太遠");
+    expect(decorProblem([{ kind: "g_trophy", x: 0, y: 0 }], "goblin", 3)).toContain("任務獎勵"); // (a quest's: earned first)
+    expect(decorProblem([{ kind: "g_trophy", x: 0, y: 0 }], "goblin", 3, new Set(["g_trophy"]))).toBeNull();
     expect(DECOR_ROOM[3]).toBeGreaterThan(DECOR_ROOM[2]);
     const ring = Array.from({ length: 80 }, (_, i) => ({ kind: "g_fence", x: (i % 20) * 20, y: Math.floor(i / 20) * 20 })); // (fences take no room, up to eighty)
     expect(decorProblem([...five, ...ring], "goblin", 1)).toBeNull();
