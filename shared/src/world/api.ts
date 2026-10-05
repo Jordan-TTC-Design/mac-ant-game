@@ -291,6 +291,18 @@ export interface NearbyLandmark {
   owner: WorldOwner | null;
 }
 
+/** `GET /api/world/search?q=&lat=&lng=`: places by name (OpenStreetMap), those near the point favoured. */
+export interface PlaceFound {
+  name: string;
+  /** The rest of the address (district, city…). */
+  where: string;
+  lat: number;
+  lng: number;
+  cell: string;
+  /** From the point asked about (none given: null). */
+  km: number | null;
+}
+
 /** One held cell as the territory list shows it (`GET /api/world/territory`). */
 export interface TerritoryItem {
   cell: string;

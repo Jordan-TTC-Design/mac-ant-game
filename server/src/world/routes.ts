@@ -28,6 +28,7 @@ import {
   worldMe,
   WorldError,
 } from "./service.ts";
+import { searchPlaces } from "./search.ts";
 
 /** 大世界 (server/WORLD.md §15). Every answer first settles the parties that have arrived. */
 export function worldRoutes(deps: AppDeps) {
@@ -99,6 +100,18 @@ export function worldRoutes(deps: AppDeps) {
       return apiError(c, 400, "invalid_input", `lat、lng 要是座標，radius 是 1～${LANDMARK_RADIUS} 公尺。`);
     }
     return respond(c, await run(c, async () => ({ landmarks: await db.transaction((tx) => landmarksAround(tx, { lat, lng }, radius)) })));
+  });
+
+  /** Places by name (`q`; `lat`, `lng`: where the map is, near places favoured), to go to on the map. */
+  app.get("/search", async (c) => {
+    const q = (c.req.query("q") ?? "").trim();
+    const lat = Number(c.req.query("lat"));
+    const lng = Number(c.req.query("lng"));
+    if (!q || q.length > 80) return apiError(c, 400, "invalid_input", "請輸入要找的地方（80 字以內）。");
+    const near = Math.abs(lat) <= 85 && Math.abs(lng) <= 180 && c.req.query("lat") && c.req.query("lng") ? { lat, lng } : null;
+    const places = await searchPlaces(q, near);
+    if (!places) return apiError(c, 503, "unavailable", "現在連不上地圖的搜尋，等一下再試。");
+    return c.json({ places });
   });
 
   /** What a party would likely meet and how it would fare (nothing is sent). */

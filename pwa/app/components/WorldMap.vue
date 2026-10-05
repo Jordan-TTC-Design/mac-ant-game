@@ -227,7 +227,12 @@ async function placesNear(at: { lat: number; lng: number }): Promise<{ name: str
   }
   return chosen.sort((a, b) => a.km - b.km);
 }
-defineExpose({ placesNear });
+/** Where the map is looking right now (the page's center lags a drag by up to 300 m). */
+function viewCenter(): { lat: number; lng: number } {
+  const c = map?.getCenter();
+  return c ? { lat: c.lat, lng: c.lng } : props.center;
+}
+defineExpose({ placesNear, viewCenter });
 
 let ticking: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, LANDMARKS, type NearbyLandmark, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, travelMinutes, type CellView } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 
@@ -37,10 +37,23 @@ const PLACES = [
   { name: "高雄中央公園", lat: 22.6246, lng: 120.3016 },
 ];
 /** Where the phone is (asked only when the person taps 找我附近的地方): the map goes there and suggests the parks and landmarks round it. */
-const mapView = ref<{ placesNear: (at: { lat: number; lng: number }) => Promise<{ name: string; lat: number; lng: number; km: number }[]> }>();
+const mapView = ref<{
+  placesNear: (at: { lat: number; lng: number }) => Promise<{ name: string; lat: number; lng: number; km: number }[]>;
+  viewCenter: () => { lat: number; lng: number };
+}>();
 const nearby = ref<{ name: string; lat: number; lng: number; km: number }[] | null>(null);
 const locating = ref(false);
 const locateProblem = ref("");
+/** Where the phone is (`exact`: asked fresh and precise, for going there; otherwise a recent rough fix will do). */
+function whereAmI(exact: boolean) {
+  return new Promise<{ lat: number; lng: number }>((done, fail) =>
+    navigator.geolocation.getCurrentPosition((p) => done({ lat: p.coords.latitude, lng: p.coords.longitude }), fail, {
+      enableHighAccuracy: exact,
+      timeout: 10_000,
+      maximumAge: exact ? 60_000 : 600_000,
+    }),
+  );
+}
 async function findNearby() {
   if (!navigator.geolocation) {
     locateProblem.value = "這支手機不能定位，從下面的地方挑一個吧。";
@@ -49,9 +62,7 @@ async function findNearby() {
   locating.value = true;
   locateProblem.value = "";
   try {
-    const at = await new Promise<{ lat: number; lng: number }>((done, fail) =>
-      navigator.geolocation.getCurrentPosition((p) => done({ lat: p.coords.latitude, lng: p.coords.longitude }), fail, { enableHighAccuracy: false, timeout: 10_000, maximumAge: 600_000 }),
-    );
+    const at = await whereAmI(false);
     await world.moveTo(at);
     await nextTick();
     nearby.value = (await mapView.value?.placesNear(at)) ?? [];
@@ -195,7 +206,8 @@ const title = computed(() => {
 });
 const canAct = computed(() => !!s.me?.open && spare.value > 0);
 
-// 附近地標: the landmarks around where the map is looking (3 km), the nearest first; tapping one goes there
+// 附近地標: the landmarks around where the map is looking (3 km, not where the phone is), the nearest first; tapping one
+// goes there, and dragging the map while the list is open looks again around the new spot
 const landmarkList = ref<NearbyLandmark[] | null>(null);
 const landmarkKind = ref("");
 const landmarkBusy = ref(false);
@@ -204,7 +216,7 @@ async function findLandmarks() {
   landmarkBusy.value = true;
   landmarkProblem.value = "";
   try {
-    const at = center.value;
+    const at = mapView.value?.viewCenter() ?? center.value;
     landmarkList.value = (await api<{ landmarks: NearbyLandmark[] }>("GET", `world/landmarks?lat=${at.lat.toFixed(6)}&lng=${at.lng.toFixed(6)}`)).landmarks;
   } catch (e) {
     landmarkProblem.value = e instanceof ApiError ? e.message : String(e);
@@ -212,11 +224,67 @@ async function findLandmarks() {
     landmarkBusy.value = false;
   }
 }
+watch(
+  () => s.center,
+  () => {
+    if (landmarkList.value && !landmarkBusy.value) void findLandmarks();
+  },
+);
 const shownLandmarks = computed(() => (landmarkList.value ?? []).filter((l) => !landmarkKind.value || l.kind === landmarkKind.value));
 async function goToLandmark(l: NearbyLandmark) {
   landmarkList.value = null;
   await world.moveTo({ lat: l.lat, lng: l.lng });
   pick(l.cell);
+}
+
+// 📍 我的位置: the map goes to where the phone is (asked only on the tap)
+const goingHere = ref(false);
+const hereProblem = ref("");
+async function goToMe() {
+  hereProblem.value = "";
+  if (!navigator.geolocation) {
+    hereProblem.value = "這支手機不能定位。";
+    return;
+  }
+  goingHere.value = true;
+  try {
+    await world.moveTo(await whereAmI(true));
+  } catch {
+    hereProblem.value = "沒辦法知道你在哪（可能沒有允許定位）。";
+  } finally {
+    goingHere.value = false;
+  }
+}
+
+// 搜尋: any place by name (台藝大, 台北車站…), the ones near where the map is looking favoured; tapping one goes there
+const searchText = ref("");
+const searchList = ref<PlaceFound[] | null>(null);
+const searchBusy = ref(false);
+const searchProblem = ref("");
+async function searchPlaces() {
+  const q = searchText.value.trim();
+  if (!q || searchBusy.value) return;
+  searchBusy.value = true;
+  searchProblem.value = "";
+  landmarkList.value = null;
+  try {
+    const at = mapView.value?.viewCenter() ?? center.value;
+    searchList.value = (await api<{ places: PlaceFound[] }>("GET", `world/search?q=${encodeURIComponent(q)}&lat=${at.lat.toFixed(6)}&lng=${at.lng.toFixed(6)}`)).places;
+  } catch (e) {
+    searchList.value = null;
+    searchProblem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    searchBusy.value = false;
+  }
+}
+function closeSearch() {
+  searchList.value = null;
+  searchProblem.value = "";
+}
+async function goToPlace(p: PlaceFound) {
+  searchList.value = null;
+  await world.moveTo({ lat: p.lat, lng: p.lng });
+  pick(p.cell);
 }
 </script>
 
@@ -265,9 +333,28 @@ async function goToLandmark(l: NearbyLandmark) {
         <p v-else-if="nearby?.length" class="places-note">挑一個公園或地標當營地吧——地圖是真的，別選你家。</p>
       </div>
 
+      <form class="map-search" @submit.prevent="searchPlaces">
+        <input v-model="searchText" type="search" enterkeyhint="search" maxlength="80" placeholder="搜尋地點，例如：台藝大、台北車站" />
+        <button class="chip" type="submit" :disabled="searchBusy || !searchText.trim()">{{ searchBusy ? "找…" : "🔍 搜尋" }}</button>
+      </form>
+      <section v-if="searchList" class="panel landmarks">
+        <div class="search-head">
+          <b>「{{ searchText.trim() }}」找到 {{ searchList.length }} 個地方</b>
+          <button class="link" @click="closeSearch">收起</button>
+        </div>
+        <p v-if="!searchList.length" class="muted small">找不到這個地方，換個說法試試（例如全名：國立臺灣藝術大學）。</p>
+        <button v-for="p in searchList" :key="p.cell" class="landmark-row" @click="goToPlace(p)">
+          <span class="icon">📍</span>
+          <span class="grow"><b>{{ p.name }}</b><small>{{ p.where }}</small></span>
+          <span v-if="p.km !== null" class="side"><small>{{ distance(p.km) }}</small></span>
+        </button>
+      </section>
+      <p v-if="searchProblem" class="status error">{{ searchProblem }}</p>
+
       <div class="map-tools">
-        <button class="chip" :disabled="landmarkBusy" @click="landmarkList ? (landmarkList = null) : findLandmarks()">
-          {{ landmarkBusy ? "找地標中…" : landmarkList ? "收起地標" : "🏛️ 附近地標" }}
+        <button class="chip" :disabled="goingHere" @click="goToMe">{{ goingHere ? "定位中…" : "📍 我的位置" }}</button>
+        <button class="chip" :disabled="landmarkBusy" @click="landmarkList ? (landmarkList = null) : (closeSearch(), findLandmarks())">
+          {{ landmarkBusy && !landmarkList ? "找地標中…" : landmarkList ? "收起地標" : "🏛️ 地圖這附近的地標" }}
         </button>
       </div>
       <section v-if="landmarkList" class="panel landmarks">
@@ -277,6 +364,7 @@ async function goToLandmark(l: NearbyLandmark) {
             {{ k.icon }} {{ k.name }}
           </button>
         </div>
+        <p class="muted small">地圖中心 3 公里內，拖動地圖會跟著換{{ landmarkBusy ? "（更新中…）" : "" }}</p>
         <p v-if="!shownLandmarks.length" class="muted small">地圖中心 3 公里內沒有地標，拖到別的地方再找一次。</p>
         <button v-for="l in shownLandmarks" :key="l.cell" class="landmark-row" @click="goToLandmark(l)">
           <span class="icon">{{ landmarkRule(l.kind)?.icon }}</span>
@@ -288,6 +376,7 @@ async function goToLandmark(l: NearbyLandmark) {
         </button>
       </section>
       <p v-if="landmarkProblem" class="status error">{{ landmarkProblem }}</p>
+      <p v-if="hereProblem" class="status error">{{ hereProblem }}</p>
 
       <WorldMap
         ref="mapView"
@@ -490,6 +579,10 @@ p { margin: 6px 0; line-height: 1.55; }
 .landmark small { display: block; font-weight: 500; color: var(--muted); }
 .hungry { color: #ffb3a6; font-weight: 700; }
 .map-tools { display: flex; gap: 6px; margin: 0 0 8px; }
+.map-search { display: flex; gap: 6px; margin: 0 0 8px; }
+.map-search input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; background: #fff; color: #1f1f1f; font-size: 16px; }
+.search-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 6px; font-size: 14px; }
+.search-head .link { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
 .landmarks { margin-bottom: 10px; padding: 12px; max-height: 50vh; overflow-y: auto; }
 .landmarks .kinds { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
 .landmarks .kinds button { flex: none; border: 0; border-radius: 999px; padding: 5px 10px; background: #f0efe8; font-weight: 700; font-size: 12px; cursor: pointer; }

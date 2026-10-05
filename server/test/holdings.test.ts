@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
 import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type TerritoryList, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
+import { usePlaceSource } from "../src/world/search.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
 // 領地 from inside, and what can be done with one (server/WORLD.md §20).
@@ -212,6 +213,32 @@ describe("parties from a held cell", () => {
     const c = await camp(a);
     expect(c.residents.filter((r) => r.place === `cell:${cell}`).length).toBe(before - fallen);
     expect(c.residents.some((r) => r.place.startsWith("exp:"))).toBe(false);
+  });
+});
+
+describe("searching for a place", () => {
+  it("finds it by name (台 or 臺), one per cell, with how far it is; and says so when the search cannot be reached", async () => {
+    const a = await ready();
+    const asked: string[] = [];
+    const ARTS = { name: "國立台灣藝術大學", where: "板橋區・新北市", lat: 25.0060215, lng: 121.4490451 };
+    usePlaceSource(async (q, _near, country) => {
+      asked.push(`${q}@${country ?? "*"}`);
+      return q === "臺藝大" && country === "tw" ? [ARTS, { ...ARTS, name: "同一格的門口", lat: ARTS.lat + 0.00001 }] : [];
+    });
+    const res = await t.call("GET", `/world/search?q=${encodeURIComponent("台藝大")}&lat=${DAAN.lat}&lng=${DAAN.lng}`, undefined, a);
+    expect(res.status).toBe(200);
+    expect(asked).toEqual(["台藝大@tw", "臺藝大@tw"]);
+    const places = res.body.places as { name: string; cell: string; km: number }[];
+    expect(places).toEqual([expect.objectContaining({ name: "國立台灣藝術大學", cell: cellAt(ARTS) })]);
+    expect(places[0]!.km).toBeGreaterThan(8);
+    expect(places[0]!.km).toBeLessThan(10);
+    // (nothing in Taiwan: anywhere)
+    asked.length = 0;
+    expect((await t.call("GET", `/world/search?q=${encodeURIComponent("Eiffel")}`, undefined, a)).body.places).toEqual([]);
+    expect(asked).toEqual(["Eiffel@tw", "Eiffel@*"]);
+    expect((await t.call("GET", "/world/search?q=", undefined, a)).status).toBe(400);
+    usePlaceSource(async () => null);
+    expect((await t.call("GET", `/world/search?q=${encodeURIComponent("台北車站")}`, undefined, a)).status).toBe(503);
   });
 });
 
