@@ -57,15 +57,19 @@ function whereAmI(exact: boolean) {
     }),
   );
 }
-async function findNearby() {
+/** `auto`: asked on its own when the page opens; the answer can take seconds, and if the person has moved the map
+ * meanwhile (searched, picked a landmark, dragged) the map stays where they took it. */
+async function findNearby(auto = false) {
   if (!navigator.geolocation) {
     locateProblem.value = "這支手機不能定位，從下面的地方挑一個吧。";
     return;
   }
   locating.value = true;
   locateProblem.value = "";
+  const startedAt = s.center;
   try {
     const at = await whereAmI(false);
+    if (auto && s.center !== startedAt) return;
     await world.moveTo(at);
     await nextTick();
     nearby.value = (await mapView.value?.placesNear(at)) ?? [];
@@ -82,7 +86,7 @@ onMounted(async () => {
   try {
     // (only while there is no camp yet: after that the map starts at the camp)
     if (!world.state.me) await world.refresh();
-    if (!world.state.me?.homeCell && (await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted") void findNearby();
+    if (!world.state.me?.homeCell && (await navigator.permissions?.query({ name: "geolocation" }))?.state === "granted") void findNearby(true);
   } catch {
     // (no permissions API: wait for the tap)
   }
@@ -390,7 +394,7 @@ async function goToPlace(p: PlaceFound) {
       </button>
 
       <div v-if="!s.me.homeCell" class="places">
-        <button class="chip here" :disabled="locating" @click="findNearby">{{ locating ? "找附近的地方中…" : "📍 找我附近的地方" }}</button>
+        <button class="chip here" :disabled="locating" @click="findNearby()">{{ locating ? "找附近的地方中…" : "📍 找我附近的地方" }}</button>
         <template v-if="nearby?.length">
           <button v-for="p in nearby" :key="p.name" class="chip" @click="world.moveTo(p)">{{ p.name }}<small>{{ distance(p.km) }}</small></button>
         </template>
