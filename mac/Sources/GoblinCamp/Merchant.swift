@@ -411,7 +411,7 @@ extension Colony {
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }
-        let camp = NSApp.windows.first { ($0.contentView as? AntView)?.isMap == true }
+        let camp = AntView.campView?.window
         switch MerchantTest.step {
         case 0 where merchant.phase == .here:
             MerchantTest.step = 1

@@ -378,6 +378,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
+        if let s = env["CAMP_TEST_DOCK"], let t = Double(s), let prefix = env["CAMP_SNAPSHOT"] { // the camp in the main window, popped out, back in
+            func shot(_ window: NSWindow?, _ name: String) {
+                guard let window, let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution]) else { return log("dock: \(name) capture failed") }
+                if let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-dock-\(name).png")) }
+                log("dock: \(name) \(cg.width)x\(cg.height), world \(self.mapWindow?.world.size ?? .zero), docked \(self.mapWindow?.docked == true), camp visible \(self.mapWindow?.isVisible == true), goblins \(self.colony.ants.count)")
+            }
+            after(t) { self.mainWindow.show(.camp) }
+            after(t + 3) { shot(self.mainWindow.window, "in") }
+            after(t + 4) { self.setCampDocked(false) }
+            after(t + 7) { shot(self.mapWindow?.window, "out"); shot(self.mainWindow.window, "placeholder") }
+            after(t + 8) { self.setCampDocked(true) }
+            after(t + 11) { shot(self.mainWindow.window, "back"); log("dock: small window visible \(self.mapWindow?.window.isVisible == true)") }
+            after(t + 12) { self.mainWindow.window.setContentSize(NSSize(width: 340, height: 250)) }
+            after(t + 15) { shot(self.mainWindow.window, "small") }
+            after(t + 16) { self.mainWindow.show(.roster) }
+            after(t + 18) { shot(self.mainWindow.window, "roster-from-small") }
+            if env["CAMP_TEST_MAIN_STAY"] == nil { after(t + 19) { NSApp.terminate(nil) } }
+        }
         if let s = env["CAMP_TEST_MAIN"], let t = Double(s), let prefix = env["CAMP_SNAPSHOT"] { // the main window, every page in turn, captured
             after(t) { // (the pages offered are known once signed in)
                 var at = 0.0
@@ -3386,6 +3404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func bringCampWindowForward() {
         guard isWindowMode else { return }
         settings.mapCollapsed = false
+        if ensureMapWindow().docked { return mainWindow.show(.camp) } // (the camp is the main window's first page)
         updateMapWindow()
         guard let map = mapWindow, map.isVisible || map.window.isMiniaturized else { return } // (in 節能 or 專注 it stays away)
         NSApp.activate(ignoringOtherApps: true)
@@ -3435,9 +3454,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let mapWindow { return mapWindow }
         let created = MapWindow(colony: colony)
         created.onResize = { [weak self] in self?.applyWalkable(); self?.redrawAll() }
+        created.onDock = { [weak self] docked in self?.setCampDocked(docked) }
         mapWindow = created
         return created
     }
+
+    /// The camp into the main window (its first page) or out into a small window of its own (to sit in a corner of the desktop).
+    private func setCampDocked(_ docked: Bool) {
+        let map = ensureMapWindow()
+        map.setDocked(docked)
+        settings.mapCollapsed = false
+        if docked {
+            map.hide()
+            mainWindow.show(.camp)
+        } else {
+            updateMapWindow()
+            map.window.makeKeyAndOrderFront(nil)
+        }
+        redrawAll()
+    }
+
+    /// The main window opens by itself once at launch on the camp, as the camp window did (not when it was folded away).
+    private var campShownAtLaunch = false
 
     /// The camp window shows when it should: window mode, not folded away, not in a quiet mode, on an allowed desktop,
     /// and never over a full-screen app. Picking a spot always brings it up.
@@ -3450,6 +3488,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // (it is an ordinary window: it stays on the desktop and screen it was put on, and the desktop ticks do not apply to it)
         if !spaceAssignWorks, let screen = map.window.screen ?? NSScreen.main, Spaces.info(for: screen)?.isFullScreen == true { visible = false }
         if picking { visible = true }
+        if map.docked {
+            map.hide()
+            if visible, !campShownAtLaunch || picking, !mainWindow.isShowing(.camp) {
+                campShownAtLaunch = true
+                mainWindow.show(.camp, activate: picking)
+            }
+            return
+        }
         if visible { map.show() } else { map.hide() }
     }
 
@@ -3485,14 +3531,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the camp window: shown or folded away, on top or not, and what its ground and sky are like
         let windowMenu = NSMenu(title: "營地視窗")
         windowMenu.autoenablesItems = false
-        let toggle = ClosureMenuItem(title: settings.mapCollapsed ? "顯示營地視窗" : "收起營地視窗") { [weak self] in
+        let docked = settings.campDocked
+        let toggle = ClosureMenuItem(title: docked ? "打開營地" : settings.mapCollapsed ? "顯示營地視窗" : "收起營地視窗") { [weak self] in
             guard let self else { return }
+            if self.settings.campDocked { return self.mainWindow.show(.camp) }
             self.settings.mapCollapsed.toggle()
             self.updateMapWindow()
             if !self.settings.mapCollapsed { self.bringCampWindowForward() }
         }
         toggle.isEnabled = isWindowMode
         windowMenu.addItem(toggle)
+        let pop = ClosureMenuItem(title: docked ? "彈出成小視窗（放在桌面角落）" : "收回主視窗") { [weak self] in
+            guard let self else { return }
+            self.setCampDocked(!self.settings.campDocked)
+        }
+        pop.isEnabled = isWindowMode
+        windowMenu.addItem(pop)
         let onTop = ClosureMenuItem(title: "永遠在最上面") { [weak self] in
             self?.settings.mapOnTop.toggle()
             self?.mapWindow?.applyLevel()
@@ -3652,7 +3706,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // a full-screen app only matters on a screen the goblins live on
         if settings.fullscreenFocus || fullscreenActive {
-            let mine = screens.filter { screen in isWindowMode ? screen == (mapWindow?.window.screen ?? NSScreen.main) : allowed.contains { $0.frame == screen.frame } }
+            let mine = screens.filter { screen in isWindowMode ? screen == (mapWindow?.hostWindow.screen ?? NSScreen.main) : allowed.contains { $0.frame == screen.frame } }
             let space = mine.contains { Spaces.info(for: $0)?.isFullScreen == true }
             // (in the camp window, only a real full-screen app counts: a browser zoomed to fill the screen used to fold the camp away)
             let now = space || (!isWindowMode && fullscreenWindowUp(on: mine))
@@ -3807,7 +3861,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         main.pages = { [weak self] in
             guard let self else { return [] }
             let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .quests, .feed] : []
-            return online + [.workshop, .roster, .notes, .account, .manual]
+            let camp: [MainWindow.Page] = self.isWindowMode ? [.camp] : [] // (on the desktop, the camp is not in a window)
+            return camp + online + [.workshop, .roster, .notes, .account, .manual]
         }
         main.pane = { [weak self] page in self?.pane(for: page) }
         return main
@@ -3815,6 +3870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func pane(for page: MainWindow.Page) -> MainPane? {
         switch page {
+        case .camp: return ensureMapWindow()
         case .world, .quests, .feed:
             if let pane = webPanes[page] { return pane }
             let pane = WebPane(api: sync.api, path: "/\(page.rawValue)")
@@ -4326,7 +4382,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if picking, !isHiddenByUser {
             NSApp.activate(ignoringOtherApps: true)
-            if isWindowMode { updateMapWindow(); mapWindow?.window.makeKeyAndOrderFront(nil) } else { windows.first?.makeKeyAndOrderFront(nil) }
+            if isWindowMode {
+                updateMapWindow()
+                if mapWindow?.docked == true { mainWindow.show(.camp) } else { mapWindow?.window.makeKeyAndOrderFront(nil) }
+            } else { windows.first?.makeKeyAndOrderFront(nil) }
         }
         updateCount()
         checkFullscreenAndDesktops()

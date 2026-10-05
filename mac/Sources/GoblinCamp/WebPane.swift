@@ -43,11 +43,26 @@ final class WebPane: NSObject, MainPane, WKNavigationDelegate, WKUIDelegate {
         if !loaded { load() }
     }
 
+    /// The app version whose web pages were last loaded: after an update, the web app's offline copy (its service worker and
+    /// caches) is thrown away first, or the old pages it kept ask for files the server no longer has (a blank page).
+    private static var freshFor: String?
+
+    private static func freshen() async {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        guard freshFor == nil else { return }
+        freshFor = version
+        guard Settings.shared.webFreshVersion != version else { return }
+        let kinds: Set<String> = [WKWebsiteDataTypeServiceWorkerRegistrations, WKWebsiteDataTypeFetchCache, WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache]
+        await data.removeData(ofTypes: kinds, modifiedSince: .distantPast)
+        Settings.shared.webFreshVersion = version
+    }
+
     /// Loads `path` (or another page of the app) signed in.
     func load(_ to: String? = nil) {
         status.stringValue = "連線中…"
         status.isHidden = false
         Task { @MainActor in
+            await WebPane.freshen()
             do {
                 let url = try await api.handoff(to: to ?? path)
                 web.load(URLRequest(url: url))

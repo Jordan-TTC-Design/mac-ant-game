@@ -19,10 +19,11 @@ extension MainPane {
 /// small window (or the desktop): this one is for looking things up and doing things.
 final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSToolbarDelegate {
     enum Page: String, CaseIterable {
-        case world, quests, feed, workshop, roster, notes, account, manual
+        case camp, world, quests, feed, workshop, roster, notes, account, manual
 
         var title: String {
             switch self {
+            case .camp: return "營地"
             case .world: return "大世界"
             case .quests: return "任務"
             case .feed: return "動態"
@@ -34,8 +35,22 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             }
         }
 
+        /// The narrowest the page can be: the camp very small (a corner of the desktop), the web pages lay themselves out for
+        /// a phone when narrow, the Mac's own pages need their room.
+        var minWidth: CGFloat {
+            switch self {
+            case .camp: return 300
+            case .world, .quests, .feed: return 360
+            case .account, .manual: return 420
+            case .workshop: return 600
+            case .notes: return 620
+            case .roster: return 720
+            }
+        }
+
         var symbol: String {
             switch self {
+            case .camp: return "tent"
             case .world: return "globe.asia.australia"
             case .quests: return "checklist"
             case .feed: return "clock.arrow.circlepath"
@@ -69,7 +84,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
         super.init()
         window.title = "哥布林營地"
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 820, height: 520)
+        window.minSize = NSSize(width: 300, height: 240) // (small enough for a corner of the desktop: the sidebar folds away first; each page sets its own, `fit`)
         window.delegate = self
         window.toolbarStyle = .unified
         let toolbar = NSToolbar(identifier: "GoblinCampMain")
@@ -94,9 +109,10 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
         sideItem.minimumThickness = 170
         sideItem.maximumThickness = 260
         sideItem.canCollapse = true
+        if #available(macOS 14.0, *) { sideItem.canCollapseFromWindowResize = true } // (made narrow: the sidebar goes, the page stays)
         holder.view = NSView()
         let mainItem = NSSplitViewItem(viewController: holder)
-        mainItem.minimumThickness = 560
+        mainItem.minimumThickness = 300
         split.addSplitViewItem(sideItem)
         split.addSplitViewItem(mainItem)
         split.splitView.autosaveName = "GoblinCampMainSplit"
@@ -106,14 +122,19 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
         window.setFrameAutosaveName("GoblinCampMain")
     }
 
-    /// Opens the window on `page` (or on the page it was last on) and brings it in front.
-    func show(_ page: Page? = nil) {
+    /// Opens the window on `page` (or on the page it was last on) and brings it in front (`activate`: the app too; not when
+    /// it opens by itself at launch).
+    func show(_ page: Page? = nil, activate: Bool = true) {
         reloadSidebar()
         let wanted = page ?? current ?? Page(rawValue: Settings.shared.mainPage ?? "") ?? shown.first ?? .workshop
         select(shown.contains(wanted) ? wanted : (shown.first ?? .manual))
-        NSApp.activate(ignoringOtherApps: true)
         if window.isMiniaturized { window.deminiaturize(nil) }
-        window.makeKeyAndOrderFront(nil)
+        if activate {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            window.orderFrontRegardless()
+        }
     }
 
     /// The sidebar again (after signing in or out), keeping the page if it is still offered.
@@ -150,7 +171,21 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
         ])
         window.subtitle = ""
         window.title = page.title
+        fit(page)
         pane.paneWillShow()
+    }
+
+    /// The window no narrower than the page needs (made wider if it is, with the sidebar if it shows).
+    private func fit(_ page: Page) {
+        let side = split.splitViewItems.first
+        let sideWidth = side?.isCollapsed == false ? (side?.viewController.view.frame.width ?? 170) : 0
+        window.contentMinSize = NSSize(width: page.minWidth, height: 240)
+        let need = page.minWidth + sideWidth
+        guard let content = window.contentView, content.frame.width < need else { return }
+        var frame = window.frame
+        frame.size.width += need - content.frame.width
+        if let screen = window.screen?.visibleFrame, frame.maxX > screen.maxX { frame.origin.x = max(screen.minX, screen.maxX - frame.width) }
+        window.setFrame(frame, display: true, animate: window.isVisible)
     }
 
     private func hideCurrent() {
@@ -163,6 +198,21 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
     // MARK: Window
 
     func windowWillClose(_ notification: Notification) { hideCurrent() }
+
+    /// The sidebar folded away because the window was made narrow (opened again when it is wide again; not if folded by hand).
+    private var foldedForSize = false
+
+    func windowDidResize(_ notification: Notification) {
+        guard let side = split.splitViewItems.first else { return }
+        let width = window.frame.width
+        if width < 560, !side.isCollapsed {
+            foldedForSize = true
+            side.isCollapsed = true
+        } else if width >= 700, side.isCollapsed, foldedForSize {
+            foldedForSize = false
+            side.isCollapsed = false
+        }
+    }
 
     func windowDidBecomeKey(_ notification: Notification) {
         if currentPane == nil, let current { select(current) } // (closed and opened again)

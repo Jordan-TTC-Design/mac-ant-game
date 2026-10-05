@@ -342,7 +342,7 @@ Claude Code ▸   連接 · 通知 · 提醒顯示的螢幕
 說明手冊… · 檢查更新… · 複製診斷資訊 · 關於哥布林營地 · 結束
 ```
 
-工坊、居民名冊、便利貼牆、大世界、任務、帳號、說明手冊都在同一個**主視窗**裡：左邊側邊選單切換（登入後多了大世界、任務、動態）。
+營地、工坊、居民名冊、便利貼牆、大世界、任務、帳號、說明手冊都在同一個**主視窗**裡：左邊側邊選單切換（登入後多了大世界、任務、動態）。營地（營地視窗模式）是第一頁，也可以「彈出成小視窗」放在桌面角落；主視窗本身也能縮得很小，側邊選單會自己收起來。
 
 ## 功能與設定說明
 
@@ -516,6 +516,7 @@ CAMP_SPAWN_INTERVAL=1 CAMP_AUTO_NEST=1 CAMP_NO_SAVE=1 GoblinCamp.app/Contents/Ma
 | `CAMP_LIFESPAN=秒` | 覆蓋平民的壽命（預設 86400 秒 = 1 天） |
 | `CAMP_TIME_SCALE=倍數` | 讓年齡增加得更快（測試老死） |
 | `CAMP_TEST_MAIN=秒` `CAMP_SNAPSHOT=/路徑前綴` | 該時間點打開主視窗，一頁一頁截圖存成 `-main-<頁>.png` 後結束（`CAMP_TEST_MAIN_PAGES=feed,quests` 只截這幾頁；`CAMP_TEST_MAIN_STAY=1` 截完不結束） |
+| `CAMP_TEST_DOCK=秒` `CAMP_SNAPSHOT=/路徑前綴` | 營地在主視窗 → 彈出成小視窗 → 收回 → 主視窗縮到最小 → 切到名冊，每一步截圖（`-dock-*.png`）並印出營地世界的大小 |
 | `CAMP_TEST_FOCUS=1` | 和 `CAMP_TEST_LOGIN` 一起用：6 秒時開始 3 輪 1 分鐘的番茄鐘，每 15 秒印出帳上的專注輪數、今天的好事與商人 |
 | `CAMP_TEST_ROSTER=秒` | 該時間點打開名冊並選中一隻（配合 `CAMP_SNAPSHOT` 會把名冊視窗也截圖存成 `-roster.png`） |
 | `CAMP_DEBUG` | 每次生成角色或還原存檔時印 log |

@@ -984,7 +984,7 @@ enum TouchTest {
 
 extension Colony {
     fileprivate func shoot(_ path: String) {
-        guard let view = NSApp.windows.compactMap({ $0.contentView as? AntView }).first(where: \.isMap),
+        guard let view = AntView.campView,
               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return NSLog("touch test: no camp window") }
         view.cacheDisplay(in: view.bounds, to: rep)
         if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: path)) }

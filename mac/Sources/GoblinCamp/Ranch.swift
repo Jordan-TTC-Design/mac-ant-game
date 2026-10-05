@@ -818,7 +818,7 @@ extension Colony {
     fileprivate func runRanchTest(_ prefix: String) {
         let t = Date().timeIntervalSince(RanchTest.started)
         func shoot(_ path: String) {
-            guard let view = NSApp.windows.compactMap({ $0.contentView as? AntView }).first(where: \.isMap), let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            guard let view = AntView.campView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }

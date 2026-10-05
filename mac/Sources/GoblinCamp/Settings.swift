@@ -258,6 +258,11 @@ final class Settings {
         get { defaults.object(forKey: "mapCollapsed") as? Bool ?? false }
         set { defaults.set(newValue, forKey: "mapCollapsed") }
     }
+    /// The camp is a page of the main window (true) or popped out into a small window of its own (MapWindow.swift).
+    var campDocked: Bool {
+        get { defaults.object(forKey: "campDocked") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "campDocked") }
+    }
     var mapFrame: String? {
         get { defaults.string(forKey: "mapFrame") }
         set { defaults.set(newValue, forKey: "mapFrame") }
@@ -373,6 +378,12 @@ final class Settings {
     var ranchEagleTrust: Int {
         get { defaults.integer(forKey: "ranchEagleTrust") }
         set { defaults.set(newValue, forKey: "ranchEagleTrust") }
+    }
+
+    /// The app's build whose web pages were last freshened (WebPane.swift).
+    var webFreshVersion: String? {
+        get { defaults.string(forKey: "webFreshVersion") }
+        set { defaults.set(newValue, forKey: "webFreshVersion") }
     }
 
     /// The page the main window was last on (MainWindow.swift).

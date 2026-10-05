@@ -17,6 +17,8 @@ final class AntView: NSView {
     /// Set for the camp window: it shows the camp's own little world (fixed origin) instead of a piece of the screen.
     var originOverride: CGPoint?
     var isMap = false
+    /// The camp's own view (MapWindow), wherever it is now (the main window's page, or its small window).
+    static weak var campView: AntView?
     /// This view only draws the pomodoro and the popups (the tools overlay), not the camp.
     var toolsOnly = false
     /// The strip of this screen the goblins walk in (global coordinates), when they are limited to one; drawn with scenery.
