@@ -94,11 +94,13 @@ final class CampLedger {
             let animals: [Animal]
         }
         let ranch: RanchView?
+        /// The pomodoro's focus rounds, and what they bring today (shared/src/camp/focus.ts); older servers leave it out.
+        let focus: FocusInfo?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, ranch, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, ranch, focus, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -127,6 +129,7 @@ final class CampLedger {
             merchant = try? c.decodeIfPresent(MerchantVisitInfo.self, forKey: .merchant)
             decor = try? c.decodeIfPresent([DecorPlaced].self, forKey: .decor)
             ranch = try? c.decodeIfPresent(RanchView.self, forKey: .ranch)
+            focus = try? c.decodeIfPresent(FocusInfo.self, forKey: .focus)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }
@@ -193,6 +196,8 @@ final class CampLedger {
         let yields: [String: Int]?
         let lairBack: LairBack?
         let site: SiteDone?
+        /// A focus round done: the day's count so far (shared/src/camp/focus.ts).
+        let focusRounds: Int?
         private enum CodingKeys: String, CodingKey { case seq, at, kind, data }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -202,6 +207,8 @@ final class CampLedger {
             raid = kind == "raid" ? try? c.decode(Raid.self, forKey: .data) : nil
             expedition = kind == "expedition" ? try? c.decode(Expedition.self, forKey: .data) : nil
             site = kind == "site" ? try? c.decode(SiteDone.self, forKey: .data) : nil
+            struct Focus: Decodable { let rounds: Int }
+            focusRounds = kind == "focus" ? (try? c.decode(Focus.self, forKey: .data))?.rounds : nil
             struct World: Decodable { let bossReward: BossReward?; let yields: [String: Int]?; let lairBack: LairBack? }
             let world = kind == "world" ? try? c.decode(World.self, forKey: .data) : nil
             bossReward = world?.bossReward

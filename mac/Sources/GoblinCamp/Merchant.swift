@@ -10,6 +10,8 @@ struct MerchantVisitInfo: Codable, Equatable {
         let give: [String: Int]
         let get: [String: Int]
         let sale: Bool?
+        /// A rare find: the merchant's visit on a day of much focus (Focus.swift).
+        var rare: Bool? = nil
     }
     let id: String
     let merchant: String
@@ -121,18 +123,30 @@ enum MerchantPlan {
         return Int(saved.split(separator: ":").last ?? "") ?? 0
     }
 
-    static func markVisit() { Settings.shared.merchantVisits = "\(Stats.key(Holidays.now)):\(doneToday + 1)" }
-
     /// `CAMP_MERCHANT_AT=seconds`: the first visit that long after the start (tests).
     static let testAt = Double(ProcessInfo.processInfo.environment["CAMP_MERCHANT_AT"] ?? "")
     static let started = Date()
 
-    /// Whether the next visit of the day is due.
-    static func due(now: Date = Holidays.now) -> Bool {
+    /// Whether the next visit of the day is due: the day's plan, or the visit a day of focus earned (FocusInfo), an hour
+    /// after the last one at least.
+    static func due(now: Date = Holidays.now, focus: FocusInfo? = nil) -> Bool {
         if let testAt { return Date().timeIntervalSince(started) >= testAt && doneToday == 0 }
+        if bonusDue(focus: focus, now: now) { return true }
         let plan = times(for: now)
         let done = doneToday
         return done < plan.count && now >= plan[done]
+    }
+
+    /// The visit earned by focus today and not had yet.
+    static func bonusDue(focus: FocusInfo?, now: Date = Holidays.now) -> Bool {
+        guard focus?.perks.merchant == true, Settings.shared.merchantBonusDay != Stats.key(now) else { return false }
+        return now.timeIntervalSince(Settings.shared.merchantLastAt ?? .distantPast) >= 61 * 60
+    }
+
+    /// A visit came (or was refused): the earned one first, else the day's next.
+    static func markVisit(focus: FocusInfo? = nil) {
+        if bonusDue(focus: focus) { Settings.shared.merchantBonusDay = Stats.key(Holidays.now) } else { Settings.shared.merchantVisits = "\(Stats.key(Holidays.now)):\(doneToday + 1)" }
+        Settings.shared.merchantLastAt = Date()
     }
 }
 
@@ -222,14 +236,14 @@ extension Colony {
         }
         if let prefix = MerchantTest.prefix { runMerchantTest(prefix) }
         // time for a visit?
-        guard desk.visit == nil, desk.phase == .away, !desk.asking, !campHidden, phase == .running, MerchantPlan.due(), onAnnounce != nil else { return }
+        guard desk.visit == nil, desk.phase == .away, !desk.asking, !campHidden, phase == .running, MerchantPlan.due(focus: booksFocus), onAnnounce != nil else { return }
         if followsBooks {
             guard let ask = onMerchant else { return }
             desk.asking = true
             ask(.arrive) { [weak self] result in
                 guard let self else { return }
                 self.merchant.asking = false
-                MerchantPlan.markVisit() // (refused or not: today's turn is used)
+                MerchantPlan.markVisit(focus: self.booksFocus) // (refused or not: today's turn is used)
                 if case .success = result { self.merchant.show(self.booksMerchant, local: false) }
             }
         } else {
@@ -342,7 +356,7 @@ final class MerchantWindow: NSObject, NSWindowDelegate {
             row.spacing = 10
             let cost = offer.give.sorted { $0.key < $1.key }.map { "\(name($0.key)) ×\($0.value)（有 \(have[$0.key, default: 0])）" }.joined(separator: "、")
             let gets = offer.get.sorted { $0.key < $1.key }.map { "\(name($0.key)) ×\($0.value)" }.joined(separator: "、")
-            let text = NSTextField(wrappingLabelWithString: "\(offer.sale == true ? "【特價】" : "")\(cost)\n→ \(gets)")
+            let text = NSTextField(wrappingLabelWithString: "\(offer.rare == true ? "【稀有】" : "")\(offer.sale == true ? "【特價】" : "")\(cost)\n→ \(gets)")
             text.font = .systemFont(ofSize: 12)
             text.preferredMaxLayoutWidth = 290
             text.translatesAutoresizingMaskIntoConstraints = false

@@ -5,6 +5,7 @@ import { RACES } from "./races.ts";
 import type { MerchantVisit } from "./merchant.ts";
 import type { DecorPlaced } from "./decor.ts";
 import type { RanchAnimal } from "./ranch.ts";
+import type { FocusView } from "./focus.ts";
 
 /** `POST /api/camp/start`: a new camp (for an account that has none). */
 export const startCampInput = z.object({ race: z.enum(RACES) });
@@ -161,6 +162,8 @@ export interface CampView {
   decor?: DecorPlaced[];
   /** The ranch's animals (ranch.ts). Older servers leave it out. */
   ranch?: { animals: RanchAnimal[] };
+  /** The pomodoro's focus rounds done, today and in all, and what they bring today (focus.ts). Older servers leave it out. */
+  focus?: FocusView;
   /** Everyone alive (at home and, later, in the big world). */
   residents: CampResidentView[];
 }
@@ -204,7 +207,7 @@ export interface CampSiteView {
 export interface CampEvent {
   seq: number;
   at: string;
-  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "site";
+  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "site" | "focus";
   data: unknown;
 }
 

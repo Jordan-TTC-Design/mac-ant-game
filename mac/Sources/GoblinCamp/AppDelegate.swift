@@ -466,6 +466,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(6) { self.showWorld() }
             after(15) { self.worldWindow?.snapshotForTesting(to: path) { url in log("world window at \(url)") } }
         }
+        if env["CAMP_TEST_FOCUS"] != nil { // (with CAMP_TEST_LOGIN) three 1-minute focus rounds from 6 s; every 15 s: the books' focus and the merchant
+            after(6) { self.startPomodoro(focus: 1, rest: 0, rounds: 3, longRest: 0); log("focus: pomodoro started") }
+            for t in stride(from: 15.0, through: 260.0, by: 15.0) {
+                after(t) {
+                    let f = self.colony.booksFocus
+                    log("focus t=\(Int(t)): today \(f?.today.rounds ?? -1) perks \(f.map { "\($0.perks)" } ?? "-") merchant \(self.colony.merchant.visit?.id ?? "none") phase \(self.colony.merchant.phase) bonus due \(MerchantPlan.bonusDue(focus: f)) popup \(self.colony.stage.current?.text ?? "-")")
+                }
+            }
+        }
         if env["CAMP_TEST_POMOSYNC"] != nil { // (with CAMP_TEST_LOGIN) start a pomodoro here at 5 s; log what it is every 3 s until 40 s
             after(5) { self.startPomodoro(focus: 25, rest: 5, rounds: 4, longRest: 15); log("pomodoro started here") }
             for t in stride(from: 8.0, through: 40.0, by: 3.0) {
@@ -2119,6 +2128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard campReady, let stores = ledger.bookStores() else { return }
         colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
         colony.booksMerchant = ledger.view?.merchant
+        colony.booksFocus = ledger.view?.focus
         colony.booksStage = ledger.view?.stage
         colony.applyBooksDecor(ledger.view?.decor)
         colony.applyBooksRanch(ledger.view?.ranch?.animals.map { ($0.id, $0.kind, MerchantVisitInfo.date($0.bornAt), $0.caught == true, $0.name ?? "") })
@@ -2318,6 +2328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         }
                     }
                     self.tellHarvest(before: before)
+                    if let rounds = events.compactMap(\.focusRounds).last { self.say(FocusInfo.line(rounds: rounds)) } // (one line for the newest)
                     for reward in events.compactMap(\.bossReward) {
                         let loot = reward.loot.sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
                         self.say("大家一起打倒了世界魔王\(reward.name)！我們出了 \(Int((reward.share * 100).rounded()))% 的力，分到 \(loot)，經驗 +\(reward.xp)。")

@@ -9,5 +9,6 @@ export * from "./production.ts";
 export * from "./sites.ts";
 export * from "./quests.ts";
 export * from "./merchant.ts";
+export * from "./focus.ts";
 export * from "./decor.ts";
 export * from "./ranch.ts";

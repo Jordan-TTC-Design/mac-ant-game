@@ -381,6 +381,16 @@ final class Settings {
         set { defaults.set(newValue, forKey: "mainPage") }
     }
 
+    /// The day (yyyy-MM-dd) the visit earned by focus came, and when the last visit came (Merchant.swift).
+    var merchantBonusDay: String? {
+        get { defaults.string(forKey: "merchantBonusDay") }
+        set { defaults.set(newValue, forKey: "merchantBonusDay") }
+    }
+    var merchantLastAt: Date? {
+        get { defaults.object(forKey: "merchantLastAt") as? Date }
+        set { defaults.set(newValue, forKey: "merchantLastAt") }
+    }
+
     /// The merchant's visits so far today (Merchant.swift), as "yyyy-MM-dd:count".
     var merchantVisits: String? {
         get { defaults.string(forKey: "merchantVisits") }

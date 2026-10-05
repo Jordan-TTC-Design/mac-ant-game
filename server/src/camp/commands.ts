@@ -18,8 +18,11 @@ import {
   BASE_LIFESPAN_HOURS,
   campStage,
   MERCHANT_GAP_MINUTES,
+  FOCUS_RARE_ROUNDS,
+  focusToday,
+  merchantVisitsToday,
+  RARE_VISIT_SUFFIX,
   MERCHANT_STAY_MINUTES,
-  MERCHANT_VISITS_PER_DAY,
   merchantGift,
   merchantName,
   merchantStock,
@@ -319,13 +322,14 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (latest && now.getTime() - latest.at.getTime() < MERCHANT_STAY_MINUTES * 60_000) {
         return { ok: true, message: `${name}還在營地。`, repeated: true }; // (another Mac of the same account brought it already)
       }
-      if (arrivals.filter((a) => taipeiDay(a.at) === taipeiDay(now)).length >= MERCHANT_VISITS_PER_DAY) {
+      if (arrivals.filter((a) => taipeiDay(a.at) === taipeiDay(now)).length >= merchantVisitsToday(camp.focus, now)) {
         return { ok: false, code: "not_allowed", message: `${name}今天已經來過了。` };
       }
       if (latest && now.getTime() - latest.at.getTime() < MERCHANT_GAP_MINUTES * 60_000) {
         return { ok: false, code: "too_soon", message: `${name}剛走不久。` };
       }
-      const visit = `${camp.userId.slice(0, 8)}-${now.getTime()}`;
+      // (a day of much focus: the merchant brings a rare find, marked in the visit's id)
+      const visit = `${camp.userId.slice(0, 8)}-${now.getTime()}${focusToday(camp.focus, now) >= FOCUS_RARE_ROUNDS ? RARE_VISIT_SUFFIX : ""}`;
       const gift = merchantGift(visit, campStage(camp.race, camp.peak));
       for (const [id, n] of Object.entries(gift)) materials[id] = (materials[id] ?? 0) + n;
       extra = { visit, gift };

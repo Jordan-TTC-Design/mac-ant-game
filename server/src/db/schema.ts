@@ -1,4 +1,4 @@
-import type { Ranch, Site } from "@goblincamp/shared/camp";
+import type { CampFocus, Ranch, Site } from "@goblincamp/shared/camp";
 import type { CellBuilding, FightBoosts } from "@goblincamp/shared/world";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
@@ -151,6 +151,8 @@ export const camps = pgTable("camps", {
   decor: jsonb("decor").$type<{ kind: string; x: number; y: number; flip?: boolean }[]>().notNull().default([]),
   /** The ranch: the animals kept in the pens the player fenced, and when a Mac last reported (shared/src/camp/ranch.ts). */
   ranch: jsonb("ranch").$type<Ranch>().notNull().default({ animals: [] }),
+  /** The pomodoro's focus rounds that ran to the end, per day (shared/src/camp/focus.ts); null until the first. */
+  focus: jsonb("focus").$type<CampFocus>(),
   /** Food boosts still running and food cooldowns: food id → the time it ends (ISO). */
   boosts: jsonb("boosts").$type<Record<string, string>>().notNull().default({}),
   foodCooldowns: jsonb("food_cooldowns").$type<Record<string, string>>().notNull().default({}),

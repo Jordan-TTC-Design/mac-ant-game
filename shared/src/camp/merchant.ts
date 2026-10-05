@@ -18,6 +18,8 @@ export interface MerchantOffer {
   get: Record<string, number>;
   /** Today's bargain (cheaper than usual). */
   sale?: boolean;
+  /** A rare find (a day of much focus). */
+  rare?: boolean;
 }
 
 export interface MerchantVisit {
@@ -94,7 +96,27 @@ const OWN_DEALS: Record<string, Deal[]> = {
   ],
 };
 
-/** What this visit's merchant brings: four to six swaps, at most one a bargain (40% off what it asks). */
+/** A visit on a day of much focus (focus.ts FOCUS_RARE_ROUNDS) has this at the end of its id, and one rare find more. */
+export const RARE_VISIT_SUFFIX = "-f";
+
+/** The rare finds: what world bosses and great lairs drop, for a good deal of the camp's own. */
+const RARE_DEALS: Record<string, Deal[]> = {
+  goblin: [
+    { give: { stolen_coin: 4, scrap_iron: 10 }, get: { captain_badge: 1 }, weight: 1 },
+    { give: { log: 120, rat_pelt: 6 }, get: { golden_fur: 1 }, weight: 1 },
+  ],
+  elf: [
+    { give: { heartwood: 2, log: 40 }, get: { queen_silk: 1 }, weight: 1 },
+    { give: { amber: 2, feather: 6 }, get: { river_pearl: 1 }, weight: 1 },
+  ],
+  undead: [
+    { give: { night_dust: 8, bone_shard: 10 }, get: { night_heart: 1 }, weight: 1 },
+    { give: { ectoplasm: 4, stone: 40 }, get: { naiad_tear: 1 }, weight: 1 },
+  ],
+};
+
+/** What this visit's merchant brings: four to six swaps, at most one a bargain (40% off what it asks), and on a day of much
+ * focus one rare find last (marked `rare`). */
 export function merchantStock(visit: string, race: string): MerchantOffer[] {
   const r = seeded(visit, "stock");
   const pool = [...(OWN_DEALS[race] ?? OWN_DEALS.goblin!), ...COMMON_DEALS];
@@ -115,6 +137,11 @@ export function merchantStock(visit: string, race: string): MerchantOffer[] {
     const offer = picked[between(r, 0, picked.length - 1)]!;
     for (const id of Object.keys(offer.give)) offer.give[id] = Math.max(1, Math.round(offer.give[id]! * 0.6));
     offer.sale = true;
+  }
+  if (visit.endsWith(RARE_VISIT_SUFFIX)) {
+    const rare = RARE_DEALS[race] ?? RARE_DEALS.goblin!;
+    const deal = rare[between(seeded(visit, "rare"), 0, rare.length - 1)]!;
+    picked.push({ give: { ...deal.give }, get: { ...deal.get }, rare: true });
   }
   return picked;
 }

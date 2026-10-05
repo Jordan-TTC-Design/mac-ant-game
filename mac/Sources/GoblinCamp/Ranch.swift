@@ -323,7 +323,7 @@ extension Colony {
                 continue
             }
             var timer = state.breeding[kind] ?? (0, Double.random(in: RanchRules.breedMinutes) * 60)
-            timer.done += dt * RanchRules.scale
+            timer.done += dt * RanchRules.scale * (booksFocus?.perks.ranch == true ? FocusInfo.ranchSpeed : 1) // (a day of focus: faster)
             if timer.done >= timer.need {
                 state.breeding[kind] = nil
                 var young = RanchBeast(id: state.nextID, kind: kind, born: Date(), caught: false, pen: pen ?? -1)
