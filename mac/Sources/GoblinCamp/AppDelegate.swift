@@ -4200,7 +4200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyWalkable()
         windows = NSScreen.screens.map { screen in
             let window = OverlayWindow(screen: screen)
-            window.contentView = AntView(frame: NSRect(origin: .zero, size: screen.frame.size), colony: colony)
+            let view = AntView(frame: NSRect(origin: .zero, size: screen.frame.size), colony: colony)
+            // start out right: a new overlay showing goblins until the next check flashed them for a second (in the camp window mode, every time the Dock moved screens)
+            view.showsCamp = showsCamp(on: screen)
+            window.contentView = view
             if !isSilenced { window.orderFrontRegardless() }
             return window
         }

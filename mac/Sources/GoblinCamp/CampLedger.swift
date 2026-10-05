@@ -354,6 +354,8 @@ final class CampLedger {
     }
 
     /// Sends the queue in order. Each answer (or refusal: its reason) goes to `answered`; offline, the rest wait for next time.
+    /// On the main thread: `answered` touches windows (it once built the roster panel off it, and AppKit killed the app).
+    @MainActor
     func sendPending(answered: @escaping (Queued, Result<CommandAnswer, APIError>) -> Void) async {
         guard !sending else { return }
         sending = true
