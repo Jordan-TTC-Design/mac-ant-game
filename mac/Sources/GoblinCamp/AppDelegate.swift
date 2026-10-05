@@ -3806,7 +3806,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let main = MainWindow()
         main.pages = { [weak self] in
             guard let self else { return [] }
-            let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .quests] : []
+            let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .quests, .feed] : []
             return online + [.workshop, .roster, .notes, .account, .manual]
         }
         main.pane = { [weak self] page in self?.pane(for: page) }

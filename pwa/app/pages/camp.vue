@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RANCH_CAP, RANCH_KINDS, raceRules, ranchGrown } from "@goblincamp/shared/camp";
+import { RANCH_CAP, RANCH_KINDS, raceRules, ranchGrown, type FeedEntry, type FeedResponse } from "@goblincamp/shared/camp";
 import { materialName as sharedMaterialName } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
@@ -22,6 +22,16 @@ onUnmounted(() => {
 if (ok && user.value) void camp.open(user.value.id);
 
 const view = computed(() => camp.state.saved?.view ?? null);
+/** The newest few lines of 動態 (pages/feed.vue), asked again when the camp changes. */
+const latest = ref<FeedEntry[]>([]);
+async function loadLatest() {
+  try {
+    latest.value = (await api<FeedResponse>("GET", "camp/feed?limit=3")).entries;
+  } catch {
+    // (offline: the card keeps what it had)
+  }
+}
+watch(() => view.value?.version, () => void loadLatest(), { immediate: true });
 const raids = computed(() => camp.state.saved?.raids ?? []);
 const race = computed(() => names.value.races[view.value?.race ?? "goblin"]);
 const rules = computed(() => raceRules(view.value?.race ?? "goblin"));
@@ -166,6 +176,7 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         <NuxtLink to="/world" class="icon-btn" aria-label="大世界" title="大世界">🗺️</NuxtLink>
         <NuxtLink to="/territory" class="icon-btn" aria-label="領地列表" title="領地列表">🏰</NuxtLink>
         <NuxtLink to="/quests" class="icon-btn" aria-label="任務" title="任務">📜</NuxtLink>
+        <NuxtLink to="/feed" class="icon-btn" aria-label="動態" title="動態">🕘</NuxtLink>
       </nav>
     </header>
 
@@ -182,6 +193,16 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         <div><b>{{ kills }}</b><small>打倒魔獸</small></div>
         <p class="next">下一隻出生：{{ nextBirth }}<br /><small>每 {{ rules.homeBirthMinutes }} 分鐘生一隻，Mac 關著也會長大</small></p>
       </section>
+
+      <NuxtLink to="/feed" class="panel feed-card">
+        <div class="feed-head">
+          <h2>動態</h2>
+          <small v-if="view.focus">🍅 今天專注 {{ view.focus.today.rounds }} 輪{{ view.focus.next ? `・再 ${view.focus.next.rounds} 輪有好事` : "" }}</small>
+        </div>
+        <p v-for="e in latest" :key="e.seq" class="feed-line"><span>{{ e.icon }}</span>{{ e.text }}</p>
+        <p v-if="!latest.length" class="feed-line muted">還沒有動態。</p>
+        <small class="more">看全部 →</small>
+      </NuxtLink>
 
       <section v-if="production" class="panel production">
         <h2>場地 <small>空地 {{ production.used }}/{{ production.slots }}・人手 {{ production.workers }}/{{ production.need }}</small></h2>
@@ -382,4 +403,10 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .production .chips { margin-top: 6px; }
 .world-links { display: flex; gap: 6px; }
 .world-links .icon-btn { padding: 6px 10px; font-size: 18px; line-height: 1.2; }
+.feed-card { display: block; text-decoration: none; color: inherit; }
+.feed-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.feed-head h2 { margin: 0 0 6px; }
+.feed-head small { color: var(--muted); font-size: 12px; }
+.feed-line { display: flex; gap: 8px; margin: 4px 0; font-size: 13px; line-height: 1.5; }
+.feed-card .more { display: block; margin-top: 6px; color: var(--green); font-weight: 700; }
 </style>

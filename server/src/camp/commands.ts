@@ -378,7 +378,10 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       }
       for (const [id, n] of Object.entries(gain)) materials[id] = (materials[id] ?? 0) + n;
       changes.ranch = { animals: next, syncedAt: now.toISOString(), carry };
-      extra = { gain };
+      // (newcomers on the books: born at the ranch, or caught; for the camp's 動態, shared/src/camp/feed.ts)
+      const newcomers = command.animals.filter((a) => !known.has(a.id));
+      const born = newcomers.filter((a) => !a.caught).map((a) => a.kind), caught = newcomers.filter((a) => a.caught).map((a) => a.kind);
+      extra = { gain, ...(born.length ? { born } : {}), ...(caught.length ? { caught } : {}) };
       message = Object.keys(gain).length ? `牧場：${cost(gain)}。` : "";
       break;
     }

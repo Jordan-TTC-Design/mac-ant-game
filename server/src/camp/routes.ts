@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { campCommand, migrateInput, sanctuaryInput, SANCTUARY_REST_HOURS, startCampInput } from "@goblincamp/shared/camp";
-import { eq } from "drizzle-orm";
-import { camps } from "../db/schema.ts";
+import { campCommand, feedEntries, migrateInput, RACE_NOUNS, sanctuaryInput, SANCTUARY_REST_HOURS, startCampInput, type CampEvent, type FeedResponse } from "@goblincamp/shared/camp";
+import { and, desc, eq, lt } from "drizzle-orm";
+import { campEvents, camps } from "../db/schema.ts";
 import { advanceWorld } from "../world/service.ts";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
@@ -49,6 +49,30 @@ export function campRoutes(deps: AppDeps) {
     if (!Number.isSafeInteger(since) || since < 0) return apiError(c, 400, "invalid_input", "since 要是 0 以上的整數。");
     const events = await db.transaction((tx) => eventsSince(tx, c.get("session").user.id, since));
     return c.json({ events, seq: events.at(-1)?.seq ?? since });
+  });
+
+  /** 動態: what happened at the camp, a line each, newest first (shared/src/camp/feed.ts); older with `?before=<seq>`. */
+  app.get("/feed", async (c) => {
+    const before = Number(c.req.query("before") ?? "0");
+    const limit = Number(c.req.query("limit") ?? "40");
+    if (!Number.isSafeInteger(before) || before < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      return apiError(c, 400, "invalid_input", "before 要是 0 以上的整數，limit 是 1 到 100。");
+    }
+    const userId = c.get("session").user.id;
+    const out = await db.transaction(async (tx) => {
+      const [camp] = await tx.select({ race: camps.race }).from(camps).where(eq(camps.userId, userId));
+      // (more events than lines: some make none, and a run of births makes one)
+      const rows = await tx
+        .select({ seq: campEvents.seq, at: campEvents.at, kind: campEvents.kind, data: campEvents.data })
+        .from(campEvents)
+        .where(and(eq(campEvents.userId, userId), before ? lt(campEvents.seq, before) : undefined))
+        .orderBy(desc(campEvents.seq))
+        .limit(limit * 5);
+      const events = rows.map((r) => ({ seq: r.seq, at: r.at.toISOString(), kind: r.kind as CampEvent["kind"], data: r.data }));
+      const entries = feedEntries(events, RACE_NOUNS[camp?.race ?? ""] ?? "居民");
+      return { entries: entries.slice(0, limit), more: entries.length > limit || rows.length === limit * 5 } satisfies FeedResponse;
+    });
+    return c.json(out);
   });
 
   /** The latest monster raids, newest first, as a short report (who came, who fell, what was left). */
