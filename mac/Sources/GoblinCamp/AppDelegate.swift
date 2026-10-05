@@ -389,7 +389,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(t + 4) { self.setCampDocked(false) }
             after(t + 7) { shot(self.mapWindow?.window, "out"); shot(self.mainWindow.window, "placeholder") }
             after(t + 8) { self.setCampDocked(true) }
-            after(t + 11) { shot(self.mainWindow.window, "back"); log("dock: small window visible \(self.mapWindow?.window.isVisible == true)") }
+            after(t + 11) {
+                shot(self.mainWindow.window, "back")
+                if let menu = self.statusItem.menu { self.menuWillOpen(menu) } // (opening the menu-bar menu brings the camp up)
+                self.applyDockIcon()
+            }
+            after(t + 11.5) { log("dock: small window visible \(self.mapWindow?.window.isVisible == true) (after the menu opened)") }
             after(t + 12) { self.mainWindow.window.setContentSize(NSSize(width: 340, height: 250)) }
             after(t + 15) { shot(self.mainWindow.window, "small") }
             after(t + 16) { self.mainWindow.show(.roster) }
@@ -3397,7 +3402,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
         // (going back to menu-bar only hides the app's windows for a moment: the camp window comes straight back)
-        if policy == .accessory, mapWindow?.isVisible == true { DispatchQueue.main.async { self.mapWindow?.window.orderFrontRegardless() } }
+        if policy == .accessory, mapWindow?.isVisible == true { DispatchQueue.main.async { self.mapWindow?.hostWindow.orderFrontRegardless() } }
     }
 
     /// Shows the camp window (unfolding it) and brings it in front of every other window, keyboard included.
@@ -4115,7 +4120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Opening the menu-bar menu brings the camp window up from behind other windows (without taking the keyboard).
     func menuWillOpen(_ menu: NSMenu) {
         guard menu === statusItem.menu, isWindowMode, let map = mapWindow, map.isVisible else { return }
-        map.window.orderFrontRegardless()
+        map.hostWindow.orderFrontRegardless() // (the main window when the camp is its page: never the empty small window)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

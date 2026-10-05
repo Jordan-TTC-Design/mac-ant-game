@@ -36,8 +36,8 @@ final class MapWindow: NSObject, NSWindowDelegate, MainPane {
         guard let host = view.window else { return false }
         return host.isVisible && !host.isMiniaturized
     }
-    /// The window the camp is in now (for the screen it is on).
-    var hostWindow: NSWindow { view.window ?? window }
+    /// The window the camp is in now (for the screen it is on, and to bring it up): the main window while it is a page there.
+    var hostWindow: NSWindow { docked ? (view.window ?? window) : window }
 
     init(colony: Colony) {
         let settings = Settings.shared
@@ -176,6 +176,11 @@ final class MapWindow: NSObject, NSWindowDelegate, MainPane {
     /// Shrinking it to the Dock counts as folding it away (and it must stay there, not pop back up).
     func windowDidMiniaturize(_ notification: Notification) { Settings.shared.mapCollapsed = true }
     func windowDidDeminiaturize(_ notification: Notification) { Settings.shared.mapCollapsed = false }
+
+    /// The small window never shows empty: while the camp is in the main window, whatever orders it up is undone.
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        if docked, window.isVisible { window.orderOut(nil) }
+    }
 
     func windowDidMove(_ notification: Notification) { Settings.shared.mapFrame = NSStringFromRect(window.frame) }
 

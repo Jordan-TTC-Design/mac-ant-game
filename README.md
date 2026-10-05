@@ -605,7 +605,11 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.2）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.3）。
+
+### v0.16.3
+
+- 修正：營地在主視窗時，打開選單列的選單會跑出一個空的黑色營地小視窗。
 
 ### v0.16.2
 
