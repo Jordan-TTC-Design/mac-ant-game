@@ -31,7 +31,7 @@ export default defineNuxtConfig({
     worker: { format: "es" },
   },
   nitro: {
-    devProxy: { "/api": { target: "http://localhost:8787/api" } },
+    devProxy: { "/api": { target: `${process.env.API_ORIGIN ?? "http://localhost:8787"}/api` } }, // (API_ORIGIN: the server on another port)
   },
 
   pwa: {

@@ -1,10 +1,10 @@
 import AppKit
 
-/// A tall panel docked at the right edge of the screen that lists everyone in the camp. Picking a row rings that
-/// goblin on screen, so you can find it among the others.
-final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+/// Everyone in the camp, a page of the main window. Picking a row rings that goblin on screen, so you can find it among
+/// the others, and its gear can be changed below the list.
+final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
+    let paneView = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 700))
     private let colony: Colony
-    private let panel: NSPanel
     private let summary = NSTextField(wrappingLabelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
     private let table = NSTableView()
@@ -18,32 +18,18 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
     /// Called when the selection changes so the overlay can redraw the ring.
     var onSelectionChanged: (() -> Void)?
 
-    var isVisible: Bool { panel.isVisible }
+    /// Showing in the main window (and so kept up to date every second).
+    private(set) var isVisible = false
 
     init(colony: Colony) {
         self.colony = colony
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 760),
-                        styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
         super.init()
-        panel.title = "\(Characters.current.noun)名冊"
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-        // above the transparent overlay windows, which sit at the status-bar level
-        panel.level = Levels.dialog
-        panel.collectionBehavior = [.canJoinAllSpaces]
-        panel.minSize = NSSize(width: 340, height: 480)
         buildContent()
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: panel, queue: .main) { [weak self] _ in
-            self?.stopUpdating()
-        }
     }
 
     /// Test aids.
-    var windowNumber: Int { panel.windowNumber }
-    var contentViewForTesting: NSView? { panel.contentView }
-    func useLightAppearanceForTesting() { panel.appearance = NSAppearance(named: .aqua) }
+    var contentViewForTesting: NSView? { paneView }
+    func useLightAppearanceForTesting() { paneView.appearance = NSAppearance(named: .aqua) }
 
     func select(row: Int) {
         guard rows.indices.contains(row) else { return }
@@ -52,29 +38,16 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
 
     // MARK: Show / hide
 
-    func toggle() {
-        if panel.isVisible { hide() } else { show() }
-    }
-
-    func show() {
-        panel.title = "\(Characters.current.noun)名冊"
-        if let screen = NSScreen.main {
-            let area = screen.visibleFrame
-            let width: CGFloat = 360
-            panel.setFrame(NSRect(x: area.maxX - width - 8, y: area.minY + 8, width: width, height: area.height - 16), display: false)
-        }
+    func paneWillShow() {
+        isVisible = true
         reload()
-        panel.orderFrontRegardless()
+        timer?.invalidate()
         timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.reload() }
         RunLoop.main.add(timer!, forMode: .common)
     }
 
-    func hide() {
-        panel.orderOut(nil)
-        stopUpdating()
-    }
-
-    private func stopUpdating() {
+    func paneDidHide() {
+        isVisible = false
         timer?.invalidate()
         timer = nil
         if colony.selectedAntID != nil {
@@ -86,8 +59,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
     // MARK: Layout
 
     private func buildContent() {
-        let content = NSView()
-        panel.contentView = content
+        let content = paneView
 
         summary.font = .systemFont(ofSize: 12)
         summary.translatesAutoresizingMaskIntoConstraints = false
@@ -103,9 +75,9 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
             return c
         }
         table.addTableColumn(column("id", "#", 30))
-        table.addTableColumn(column("name", "名字", 92))
+        table.addTableColumn(column("name", "名字", 120))
         table.addTableColumn(column("breed", "品種", 44))
-        table.addTableColumn(column("state", "狀態", 66))
+        table.addTableColumn(column("state", "狀態", 150))
         table.addTableColumn(column("gear", "裝備", 40))
         table.addTableColumn(column("life", "壽命", 58))
         table.dataSource = self
@@ -131,21 +103,23 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
         content.addSubview(scroll)
         content.addSubview(detail)
         content.addSubview(gearBox)
+        // the list on the left; the one picked, and its gear, on the right
         NSLayoutConstraint.activate([
-            summary.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
-            summary.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
-            summary.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
-            scroll.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 8),
+            summary.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
+            summary.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
+            summary.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            scroll.topAnchor.constraint(equalTo: summary.bottomAnchor, constant: 10),
             scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            detail.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 8),
-            detail.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
-            detail.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
-            detail.heightAnchor.constraint(greaterThanOrEqualToConstant: 96),
-            gearBox.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 6),
-            gearBox.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
-            gearBox.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
-            gearBox.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -10),
+            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 360),
+            detail.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 4),
+            detail.leadingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: 16),
+            detail.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
+            detail.widthAnchor.constraint(equalToConstant: 340),
+            gearBox.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 12),
+            gearBox.leadingAnchor.constraint(equalTo: detail.leadingAnchor),
+            gearBox.trailingAnchor.constraint(equalTo: detail.trailingAnchor),
+            gearBox.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -12),
         ])
     }
 
@@ -186,7 +160,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
 
     /// Reloads when the panel is showing (after a gear command was answered).
     func refreshIfVisible() {
-        if panel.isVisible { reload() }
+        if isVisible { reload() }
     }
 
     private func updateDetail() {
@@ -267,7 +241,7 @@ final class RosterPanel: NSObject, NSTableViewDataSource, NSTableViewDelegate, N
             popup.selectItem(at: 0)
             let row = NSStackView(views: [label, popup])
             row.spacing = 6
-            popup.widthAnchor.constraint(equalToConstant: 280).isActive = true
+            popup.widthAnchor.constraint(equalToConstant: 290).isActive = true
             gearBox.addArrangedSubview(row)
         }
     }

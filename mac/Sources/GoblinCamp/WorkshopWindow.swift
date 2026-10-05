@@ -3,10 +3,10 @@ import AppKit
 /// The workshop: three pages. 製作 turns materials into gear (for whoever needs it most, or for a goblin you pick); 現有裝備
 /// lists every piece there is, worn or in the stock, to take off, hand over or hold; 修理 mends worn pieces. A switch turns
 /// the handing out of the stock on or off (what you placed by hand is never moved either way).
-final class WorkshopWindow: NSObject {
+final class WorkshopWindow: NSObject, MainPane {
     enum Tab: Int { case make, pieces, repair }
 
-    private let window: NSWindow
+    let paneView: NSView
     private let colony: Colony
     private let scroll = NSScrollView()
     private var lastMessage = ""
@@ -14,31 +14,34 @@ final class WorkshopWindow: NSObject {
     /// 製作: which slot (nil: all), and whether to show only what can be made now.
     private var slotFilter: GearSlot?
     private var onlyAffordable = false
+    /// The width the page was laid out for (laid out again when the window is made wider or narrower).
+    private var laidOutWidth: CGFloat = 0
 
-    private static let width: CGFloat = 600
+    /// The page follows the window's width, between these.
+    private static let narrowest: CGFloat = 600, widest: CGFloat = 900
+    private var width: CGFloat { max(WorkshopWindow.narrowest, min(WorkshopWindow.widest, scroll.contentSize.width)) }
 
     init(colony: Colony) {
         self.colony = colony
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: WorkshopWindow.width, height: 700), styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                          backing: .buffered, defer: false)
+        paneView = NSView(frame: NSRect(x: 0, y: 0, width: WorkshopWindow.narrowest, height: 700))
         super.init()
-        window.title = "工坊"
-        window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: WorkshopWindow.width, height: 360)
-        window.maxSize = NSSize(width: WorkshopWindow.width, height: 4000)
-        window.center()
-        scroll.frame = window.contentView!.bounds
+        scroll.frame = paneView.bounds
         scroll.autoresizingMask = [.width, .height]
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
-        window.contentView?.addSubview(scroll)
+        scroll.postsFrameChangedNotifications = true
+        paneView.addSubview(scroll)
+        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll, queue: .main) { [weak self] _ in
+            guard let self, abs(self.width - self.laidOutWidth) > 1, self.paneView.window != nil else { return }
+            self.refresh()
+        }
         refresh()
     }
 
-    var contentViewForTesting: NSView? { window.contentView }
+    var contentViewForTesting: NSView? { paneView }
 
     /// Off-screen drawing for tests uses the light look (in the dark look the text is white on nothing).
-    func useLightAppearanceForTesting() { window.appearance = NSAppearance(named: .aqua) }
+    func useLightAppearanceForTesting() { paneView.appearance = NSAppearance(named: .aqua) }
 
     /// For tests: shows a page (and scrolls to its top).
     func select(_ tab: Tab) {
@@ -46,12 +49,7 @@ final class WorkshopWindow: NSObject {
         refresh()
     }
 
-    func present() {
-        refresh()
-        window.level = Levels.dialog
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-    }
+    func paneWillShow() { refresh() }
 
     /// A line from the server about what was made, mended or handed over (the camp follows the books).
     func show(_ message: String) {
@@ -62,12 +60,13 @@ final class WorkshopWindow: NSObject {
     // MARK: Layout (by hand, top to bottom)
 
     private let margin: CGFloat = 20
-    private var inner: CGFloat { WorkshopWindow.width - margin * 2 }
+    private var inner: CGFloat { width - margin * 2 }
 
     /// Rebuilds the page (after making something, or when the materials changed).
     func refresh() {
         let keepScroll = scroll.contentView.bounds.origin
-        let holder = FlippedView(frame: NSRect(x: 0, y: 0, width: WorkshopWindow.width, height: 10))
+        laidOutWidth = width
+        let holder = FlippedView(frame: NSRect(x: 0, y: 0, width: width, height: 10))
         var y: CGFloat = 14
 
         let tabs = NSSegmentedControl(labels: ["製作", "現有裝備（\(pieceCount)）", "修理（\(colony.repairJobs().count)）"], trackingMode: .selectOne,

@@ -1,12 +1,12 @@
 import AppKit
 
-/// 便利貼牆: every note in one window, for when there are too many for the desktop. A list on the left (search, and
+/// 便利貼牆: every note in one page of the main window, for when there are too many for the desktop. A list on the left (search, and
 /// 全部 / 待辦 / 備忘), the note picked on the right: its words, 待辦 or 備忘, its paper, whether it is on the desktop,
 /// a memo's lines to copy (and open, for a web address), a todo's times. Notes kept in the wall have no window on the
 /// desktop; one ticked 放在桌面上 gets its window back.
-final class NoteWallWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextViewDelegate, NSSearchFieldDelegate, NSWindowDelegate {
+final class NoteWallWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextViewDelegate, NSSearchFieldDelegate, MainPane {
     private let notes: NoteController
-    private let window: NSWindow
+    let paneView = NSView(frame: NSRect(x: 0, y: 0, width: 780, height: 520))
     private let table = NSTableView()
     private let search = NSSearchField()
     private let filter = NSSegmentedControl(labels: ["全部", "待辦", "備忘"], trackingMode: .selectOne, target: nil, action: nil)
@@ -29,32 +29,34 @@ final class NoteWallWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate
 
     init(notes: NoteController) {
         self.notes = notes
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 520), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         super.init()
-        window.title = "便利貼牆"
-        window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 620, height: 380)
-        window.delegate = self
         build()
-        if !window.setFrameUsingName("GoblinCampNoteWall") { window.center() }
-        window.setFrameAutosaveName("GoblinCampNoteWall")
     }
 
-    func show(select id: String? = nil) {
+    /// Picks a note (when the page opens on it).
+    func select(_ id: String) {
         reload()
-        if let id { pick(id) }
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        pick(id)
     }
 
-    var isVisible: Bool { window.isVisible }
-    var contentView: NSView? { window.contentView }
+    /// Showing in the main window.
+    private(set) var isVisible = false
+    var contentView: NSView? { paneView }
+
+    func paneWillShow() {
+        isVisible = true
+        reload()
+    }
+
+    func paneDidHide() {
+        isVisible = false
+        commitTyping()
+    }
 
     // MARK: Layout
 
     private func build() {
-        let content = NSView()
-        window.contentView = content
+        let content = paneView
 
         // the bar along the top
         search.placeholderString = "搜尋便利貼"
@@ -292,8 +294,6 @@ final class NoteWallWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate
         notes.change(id) { $0.text = value }
     }
 
-    func windowWillClose(_ notification: Notification) { commitTyping() }
-
     @objc private func kindChanged() {
         guard let id = selectedID else { return }
         notes.setKind(id, memo: kind.selectedSegment == 1)
@@ -336,7 +336,7 @@ final class NoteWallWindow: NSObject, NSTableViewDataSource, NSTableViewDelegate
         selectedID = note.id
         reload()
         pick(note.id)
-        window.makeFirstResponder(text)
+        paneView.window?.makeFirstResponder(text)
     }
 
     @objc private func putAllAway() { notes.putAllInWall() }

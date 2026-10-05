@@ -375,6 +375,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "ranchEagleTrust") }
     }
 
+    /// The page the main window was last on (MainWindow.swift).
+    var mainPage: String? {
+        get { defaults.string(forKey: "mainPage") }
+        set { defaults.set(newValue, forKey: "mainPage") }
+    }
+
     /// The merchant's visits so far today (Merchant.swift), as "yyyy-MM-dd:count".
     var merchantVisits: String? {
         get { defaults.string(forKey: "merchantVisits") }

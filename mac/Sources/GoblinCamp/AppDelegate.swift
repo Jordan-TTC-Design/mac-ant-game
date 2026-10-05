@@ -378,14 +378,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
+        if let s = env["CAMP_TEST_MAIN"], let t = Double(s), let prefix = env["CAMP_SNAPSHOT"] { // the main window, every page in turn, captured
+            after(t) { // (the pages offered are known once signed in)
+                var at = 0.0
+                for page in self.mainWindow.pages() {
+                    let wait = [.world, .quests, .feed].contains(page) ? 9.0 : 3.0 // (a web page loads first)
+                    after(at) { self.mainWindow.show(page); if page == .roster { self.roster.select(row: 1) } }
+                    after(at + wait) {
+                        let window = self.mainWindow.window
+                        guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution]) else { return log("main window capture failed") }
+                        if let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-main-\(page.rawValue).png")) }
+                        log("main window: \(page.rawValue) captured \(cg.width)x\(cg.height), title '\(window.title)'")
+                    }
+                    at += wait + 1
+                }
+                if env["CAMP_TEST_MAIN_STAY"] == nil { after(at + 1) { log("main window done"); NSApp.terminate(nil) } }
+            }
+        }
         if let s = env["CAMP_TEST_ROSTER"], let t = Double(s), let prefix = env["CAMP_SNAPSHOT"] { // open the roster, pick a goblin, capture it
             after(t) {
-                self.roster.show()
+                self.mainWindow.show(.roster)
                 self.roster.select(row: 1)
                 log("roster shown, selected goblin: \(String(describing: self.colony.selectedAntID))")
             }
             after(t + 1.5) {
-                guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(self.roster.windowNumber), [.boundsIgnoreFraming, .bestResolution]) else { return log("roster capture failed") }
+                guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(self.mainWindow.window.windowNumber), [.boundsIgnoreFraming, .bestResolution]) else { return log("roster capture failed") }
                 let rep = NSBitmapImageRep(cgImage: cg)
                 if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: "\(prefix)-roster.png")) }
                 log("roster captured \(cg.width)x\(cg.height)")
@@ -515,7 +532,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let memo = notes.newNote(text: "測試站 https://stage.example.com/login\nssh ubuntu@stage\nmake admin email=me@example.com", edit: false, memo: true)
             notes.change(memo.id) { $0.color = "blue" }
             notes.newNote(text: "常用指令\npnpm dev", edit: false, memo: true)
-            noteWall.show(select: memo.id)
+            showNoteWall(select: memo.id)
             after(2) {
                 for (name, view) in [("wall", self.noteWall.contentView), ("strip", self.notes.view(folded.id))] {
                     guard let view, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { log("\(name): no view"); continue }
@@ -854,7 +871,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     view.cacheDisplay(in: view.bounds, to: rep)
                     if let png = rep.representation(using: .png, properties: [:]) { try? png.write(to: URL(fileURLWithPath: s.replacingOccurrences(of: ".png", with: "-\(name).png"))) }
                 }
-                self.roster.show()
+                self.mainWindow.show(.roster)
                 self.roster.useLightAppearanceForTesting()
                 self.colony.selectedAntID = self.colony.ants.filter { !$0.isChild }.max(by: { $0.might < $1.might })?.id
                 self.roster.refreshIfVisible()
@@ -915,7 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 time("nobody selected")
                 self.colony.debugSelect(self.colony.ants.first { !$0.isHidden }?.id)
                 time("one selected")
-                self.roster.show()
+                self.mainWindow.show(.roster)
                 after(1) {
                     self.colony.debugSelect(self.colony.ants.first { !$0.isHidden }?.id)
                     time("roster open, one selected")
@@ -1402,6 +1419,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the big world is the web page's map in a window (the Mac tells what happens there too)
         let world = ClosureMenuItem(title: "大世界（地圖、出征、排行榜）…") { [weak self] in self?.showWorld() }
         world.isHidden = !serverCamp
+        let quests = ClosureMenuItem(title: "任務…") { [weak self] in
+            guard let self else { return }
+            guard self.sync.user != nil else { return self.say("任務要先登入。") }
+            self.mainWindow.show(.quests)
+        }
+        quests.isHidden = !serverCamp
         let wildlife = choiceMenu(title: "野生動物與果樹",
                                   options: [("關閉", 0), ("少", 1), ("普通", 2), ("多", 3)],
                                   get: { self.settings.wildlife }, set: { self.settings.wildlife = $0 })
@@ -1423,7 +1446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sitesMenuItem.submenu?.autoenablesItems = false
         sitesMenuItem.isHidden = !serverCamp
         menu.addItem(group("營地", [
-            foodMenu(), workshop, sitesMenuItem, world, worldStatusItem, sanctuary,
+            foodMenu(), workshop, sitesMenuItem, world, quests, worldStatusItem, sanctuary,
             .separator(),
             editItem, pickItem,
             ClosureMenuItem(title: "公主的名字…") { [weak self] in DispatchQueue.main.async { self?.nameThePrincess(firstTime: false) } },
@@ -1432,7 +1455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ] + pace + (serverCamp ? [wildlife] : [])))
 
         // records: everything you can look up
-        rosterItem = ClosureMenuItem(title: "居民名冊…") { [weak self] in self?.roster.toggle() }
+        rosterItem = ClosureMenuItem(title: "居民名冊…") { [weak self] in self?.toggleRoster() }
         menu.addItem(group("名冊與圖鑑", [
             rosterItem,
             ClosureMenuItem(title: "魔獸與素材圖鑑…") { [weak self] in self?.showWarehouse() },
@@ -1818,6 +1841,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         items.signOut.isHidden = user == nil
         items.signIn.isHidden = user != nil
         items.signIn.title = sync.status == .needsLogin ? "重新登入…" : "登入或註冊…"
+        if mainWindow.isVisible {
+            mainWindow.reloadSidebar() // (the big world, quests and what happened come and go with the account)
+            if mainWindow.current == .account { accountPane.refresh() }
+        }
+    }
+
+    /// The account page of the main window: the same as the account menu.
+    private func accountContent() -> AccountPane.Content {
+        guard let user = sync.user else {
+            let expired = sync.status == .needsLogin
+            return AccountPane.Content(heading: expired ? "登入已經過期" : "沒有登入",
+                                       lines: [expired ? "請重新登入，便利貼和營地才會繼續同步。" : "便利貼只存在這台 Mac。登入之後可以在手機上看營地、玩大世界、做任務。"],
+                                       buttons: [(expired ? "重新登入…" : "登入或註冊…", { [weak self] in self?.showAccountWindow() })])
+        }
+        return AccountPane.Content(heading: user.displayName,
+                                   lines: [user.email, syncText(), "好友代碼：\(user.friendCode)"],
+                                   buttons: [("複製好友代碼", {
+                                                NSPasteboard.general.clearContents()
+                                                NSPasteboard.general.setString(user.friendCode, forType: .string)
+                                             }),
+                                             ("登入中的裝置…", { [weak self] in self?.showDevices() }),
+                                             ("登出…", { [weak self] in self?.confirmSignOut() })])
     }
 
     private func syncText() -> String {
@@ -2434,9 +2479,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sub.addItem(ClosureMenuItem(title: "新增備忘（放在便利貼牆）") { [weak self] in
             guard let self else { return }
             let note = self.notes.newNote(edit: false, memo: true)
-            self.noteWall.show(select: note.id)
+            self.showNoteWall(select: note.id)
         })
-        let wall = ClosureMenuItem(title: "便利貼牆…") { [weak self] in self?.noteWall.show() }
+        let wall = ClosureMenuItem(title: "便利貼牆…") { [weak self] in self?.showNoteWall() }
         wall.keyEquivalent = "w"
         wall.keyEquivalentModifierMask = [.control, .option]
         wall.toolTip = "所有便利貼排在一個視窗裡：搜尋、分待辦／備忘，決定哪些要放在桌面"
@@ -2920,10 +2965,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "哥布林營地", .applicationVersion: versionText, .version: "", .credits: credits])
     }
 
-    private func showManual() {
-        if manualWindow == nil { manualWindow = ManualWindow() }
-        manualWindow?.present()
-    }
+    private func showManual() { mainWindow.show(.manual) }
 
     // MARK: Connecting Claude Code
 
@@ -3128,7 +3170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             windows.forEach { $0.orderFrontRegardless() }
             toolWindows.forEach { $0.orderFrontRegardless() }
         }
-        if mode != nil { roster.hide() }
+        if mode != nil, mainWindow.current == .roster { mainWindow.close() }
         updateMapWindow()
         if mode != nil, away == nil { away = (Date(), colony.ants.count, colony.deaths, 0) }
         if mode == nil, let gone = away {
@@ -3737,18 +3779,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var actShotDone = false
     private var workshopWindow: WorkshopWindow?
-    private var worldWindow: WorldWindow?
+    /// The web app's pages in the main window, made when first opened.
+    private var webPanes: [MainWindow.Page: WebPane] = [:]
+    private var worldWindow: WebPane? { webPanes[.world] }
+    private lazy var accountPane: AccountPane = {
+        let pane = AccountPane()
+        pane.content = { [weak self] in self?.accountContent() ?? AccountPane.Content(heading: "", lines: [], buttons: []) }
+        return pane
+    }()
 
-    /// The big world: the web page's map in a window of its own, signed in as this Mac's account.
-    private func showWorld() {
-        guard sync.user != nil else { return say("大世界要先登入。") }
-        if worldWindow == nil { worldWindow = WorldWindow(api: sync.api) }
-        worldWindow?.show()
+    /// The main window: a sidebar of pages, the one picked on the right (MainWindow.swift).
+    private lazy var mainWindow: MainWindow = {
+        let main = MainWindow()
+        main.pages = { [weak self] in
+            guard let self else { return [] }
+            let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .quests] : []
+            return online + [.workshop, .roster, .notes, .account, .manual]
+        }
+        main.pane = { [weak self] page in self?.pane(for: page) }
+        return main
+    }()
+
+    private func pane(for page: MainWindow.Page) -> MainPane? {
+        switch page {
+        case .world, .quests, .feed:
+            if let pane = webPanes[page] { return pane }
+            let pane = WebPane(api: sync.api, path: "/\(page.rawValue)")
+            webPanes[page] = pane
+            return pane
+        case .workshop:
+            if workshopWindow == nil { workshopWindow = WorkshopWindow(colony: colony) }
+            return workshopWindow
+        case .roster: return roster
+        case .notes: return noteWall
+        case .account: return accountPane
+        case .manual:
+            if manualWindow == nil { manualWindow = ManualWindow() }
+            return manualWindow
+        }
     }
 
-    private func showWorkshop() {
-        if workshopWindow == nil { workshopWindow = WorkshopWindow(colony: colony) }
-        workshopWindow?.present()
+    /// The big world: the web page's map in the main window, signed in as this Mac's account.
+    private func showWorld() {
+        guard sync.user != nil else { return say("大世界要先登入。") }
+        mainWindow.show(.world)
+    }
+
+    private func showWorkshop() { mainWindow.show(.workshop) }
+
+    /// 居民名冊 from the menu: opens it, or (already in front) closes the window.
+    private func toggleRoster() {
+        if mainWindow.isShowing(.roster), mainWindow.window.isKeyWindow { mainWindow.close() } else { mainWindow.show(.roster) }
+    }
+
+    private func showNoteWall(select id: String? = nil) {
+        mainWindow.show(.notes)
+        if let id { noteWall.select(id) }
     }
 
     /// A new world: everything starts over (the goblins, what they brought home, the camp's growth, the princess's story, the land itself).
@@ -3988,7 +4074,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let minutes = max(0, Int((next.timeIntervalSinceNow / 60).rounded(.up)))
             worldStatusItem.title = "　出征中 \(walking.count) 隊，" + (minutes == 0 ? "有一隊到了，結算中" : "最快 \(minutes) 分鐘後到")
         }
-        rosterItem.title = roster.isVisible ? "\(Characters.current.noun)名冊（開啟中，再按一次關閉）" : "\(Characters.current.noun)名冊…"
+        rosterItem.title = "\(Characters.current.noun)名冊…"
         rosterItem.isEnabled = colony.nest != nil && !isHiddenByUser
         var status: [String] = []
         if fullscreenActive, settings.fullscreenFocus {
@@ -4149,7 +4235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !ok, ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: shortcut for key \(code) was not accepted") }
         }
         HotKeys.shared.register(keyCode: 45) { [weak self] in self?.notes.newNote() } // ⌃⌥N a new sticky note
-        HotKeys.shared.register(keyCode: 13) { [weak self] in self?.noteWall.show() } // ⌃⌥W the notes wall
+        HotKeys.shared.register(keyCode: 13) { [weak self] in self?.showNoteWall() } // ⌃⌥W the notes wall
         HotKeys.shared.register(keyCode: 46) { [weak self] in // ⌃⌥M the notes above the windows, and back
             guard let self else { return }
             self.notes.setRaised(!self.notes.raised)

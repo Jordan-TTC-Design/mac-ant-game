@@ -5,6 +5,7 @@ import { ApiError, api } from "~/utils/api";
 
 // 任務: small goals for the first days (shared/src/camp/quests.ts), by chapter; a finished one's reward is taken here.
 const ok = await useSignedIn();
+const mac = inMacApp();
 const list = ref<QuestView[] | null>(null);
 const problem = ref("");
 const message = ref("");
@@ -66,7 +67,7 @@ function rewardText(q: QuestView): string {
 <template>
   <main v-if="ok" class="page">
     <header class="topbar">
-      <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
+      <NuxtLink v-if="!mac" to="/camp" class="icon-btn">← 營地</NuxtLink>
       <div style="flex: 1">
         <h1>任務</h1>
         <div v-if="list" class="sub">完成了 {{ claimedCount }} 個・做完就能領獎勵</div>

@@ -8,6 +8,7 @@ import { loadLastAttack, saveLastAttack, type LastAttack } from "~/utils/again";
 // what can be done: attack, settle, send more, build, recall); an action that sends a party opens the dispatch dialog.
 const ok = await useSignedIn();
 const world = useWorld();
+const mac = inMacApp();
 const { race, noun, ensure } = useRace();
 void ensure();
 const s = world.state;
@@ -361,9 +362,9 @@ async function goToPlace(p: PlaceFound) {
 </script>
 
 <template>
-  <main v-if="ok" class="page" :class="{ 'with-sheet': !!cell }">
+  <main v-if="ok" class="page world" :class="{ 'with-sheet': !!cell }">
     <header class="topbar">
-      <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
+      <NuxtLink v-if="!mac" to="/camp" class="icon-btn">← 營地</NuxtLink>
       <div style="flex: 1">
         <h1>大世界</h1>
         <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}<template v-if="s.me.upkeep?.paying">・<span :class="{ hungry: s.me.upkeep.rations < s.me.upkeep.perYield }">乾糧 {{ s.me.upkeep.rations }}（每 {{ s.me.upkeep.everyHours }} 小時吃 {{ s.me.upkeep.perYield }}）</span></template></div>
@@ -371,8 +372,10 @@ async function goToPlace(p: PlaceFound) {
       <NuxtLink to="/leaderboard" class="icon-btn">排行</NuxtLink>
     </header>
 
-    <div v-if="!s.me" class="panel">{{ s.problem || "讀取中…" }}</div>
+    <div v-if="!s.me" class="panel w-top">{{ s.problem || "讀取中…" }}</div>
     <template v-else>
+      <!-- on a wide screen: the map on the left, this and the lists under it on the right -->
+      <div class="w-top">
       <section v-if="!s.me.homeCell && !s.me.canOpen" class="panel intro">
         <h2>還不能開啟大世界</h2>
         <p>營地要曾經有過 <b>{{ s.me.unlockPeak }}</b> 隻（第三階段）才能開啟；現在最多時是 {{ s.me.peak }} 隻。</p>
@@ -449,6 +452,9 @@ async function goToPlace(p: PlaceFound) {
       </section>
       <p v-if="landmarkProblem" class="status error">{{ landmarkProblem }}</p>
       <p v-if="hereProblem" class="status error">{{ hereProblem }}</p>
+      </div>
+
+      <div class="w-map">
 
       <div v-if="launchFrom" class="launch">
         <span>從{{ launchName }}出征：點地圖上要去的格子</span>
@@ -469,6 +475,9 @@ async function goToPlace(p: PlaceFound) {
         @home="goHome"
       />
       <p class="legend">真實世界的地圖（OpenStreetMap）。格子裡是那裡最強的怪物與等級，大馬路邊有強盜與強獸人；黃框是你的，紅框是別人的，深紅粗框是別人蓋了東西的領地（隊伍要繞過去）；黃色點點是點的那一格要走的路。點一格看看。</p>
+      </div>
+
+      <div class="w-rest">
 
       <section v-if="s.me.walking.length" class="panel">
         <h2>在路上</h2>
@@ -501,6 +510,7 @@ async function goToPlace(p: PlaceFound) {
           <small>{{ noteTime(r.arriveAt) }}</small>
         </NuxtLink>
       </section>
+      </div>
     </template>
 
     <!-- the card of the cell picked -->
@@ -693,4 +703,26 @@ p { margin: 6px 0; line-height: 1.55; }
 .launch .btn { min-height: 36px; }
 .wall { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a2a1a; }
 .boss-tag { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a5a00; }
+
+/* A wide window (the Mac app, a computer's browser): the map fills the left and stays put; the rest is a column on the right,
+   and a cell's card opens over that column instead of rising from the bottom. */
+@media (min-width: 980px) {
+  .page.world {
+    max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) 400px; grid-template-rows: auto auto 1fr;
+    grid-template-areas: "map head" "map top" "map rest"; column-gap: 20px; align-items: start; padding: 16px 20px 24px;
+  }
+  .page.world.with-sheet { padding-bottom: 24px; }
+  .page.world > .topbar { grid-area: head; }
+  .w-top { grid-area: top; }
+  .w-rest { grid-area: rest; }
+  .w-rest > section:first-child { margin-top: 0; }
+  .w-map { grid-area: map; position: sticky; top: 0; }
+  .w-map :deep(.map) { aspect-ratio: auto; height: calc(100vh - 92px); }
+  .w-map .legend { margin-top: 8px; }
+  .sheet {
+    left: auto; right: 20px; top: 16px; bottom: auto; width: 400px; max-height: calc(100vh - 32px); overflow-y: auto;
+    border-radius: 18px; border-bottom: 3px solid #1f1f1f; padding-bottom: 16px; box-shadow: -4px 4px 0 rgba(0, 0, 0, 0.25);
+  }
+  @keyframes rise { from { transform: translateX(30px); opacity: 0; } }
+}
 </style>

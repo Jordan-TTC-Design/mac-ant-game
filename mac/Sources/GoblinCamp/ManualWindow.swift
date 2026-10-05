@@ -1,8 +1,8 @@
 import AppKit
 
 /// The help manual inside the app (menu: 說明手冊). Plain text pages so it works offline and never goes out of date with the build.
-final class ManualWindow: NSObject {
-    private let window: NSWindow
+final class ManualWindow: NSObject, MainPane {
+    let paneView = NSView(frame: NSRect(x: 0, y: 0, width: 620, height: 720))
     private let textView = NSTextView()
 
     /// A line starting with "## " is a small heading, "• " a bullet, anything else a paragraph.
@@ -165,16 +165,8 @@ final class ManualWindow: NSObject {
     ]
 
     override init() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 720), styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                          backing: .buffered, defer: false)
         super.init()
-        window.title = "哥布林營地 說明手冊"
-        window.level = Levels.dialog // (in front of the camp window, which may be set to stay on top)
-        window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 420, height: 320)
-        window.center()
-
-        let scroll = NSScrollView(frame: window.contentView!.bounds)
+        let scroll = NSScrollView(frame: paneView.bounds)
         scroll.autoresizingMask = [.width, .height]
         scroll.hasVerticalScroller = true
         scroll.borderType = .noBorder
@@ -190,16 +182,11 @@ final class ManualWindow: NSObject {
         textView.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         scroll.documentView = textView
-        window.contentView?.addSubview(scroll)
+        paneView.addSubview(scroll)
         textView.textStorage?.setAttributedString(ManualWindow.render())
     }
 
-    var contentViewForTesting: NSView? { window.contentView }
-
-    func present() {
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-    }
+    var contentViewForTesting: NSView? { paneView }
 
     /// Headings, small headings, bullets and paragraphs as styled text.
     static func render() -> NSAttributedString {
