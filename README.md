@@ -605,7 +605,11 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.1）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.2）。
+
+### v0.16.2
+
+- 修正：營地頁的「彈出」按鈕蓋住「🏡 裝飾」按鈕，現在並排在它左邊。
 
 ### v0.16.1
 

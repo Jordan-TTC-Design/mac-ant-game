@@ -10,7 +10,7 @@ final class MapWindow: NSObject, NSWindowDelegate, MainPane {
     let view: AntView
     /// The main window's 營地 page: the camp, or (popped out) a line and a button to bring it back.
     let paneView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
-    private let popOut = NSButton(title: "⇱ 彈出成小視窗", target: nil, action: nil)
+    private let popOut = NSButton(title: "⇱ 彈出", target: nil, action: nil)
     private let placeholder = NSStackView()
     /// Asked to move the camp in or out (AppDelegate does the rest: the main window, the menu).
     var onDock: ((Bool) -> Void)?
@@ -79,9 +79,12 @@ final class MapWindow: NSObject, NSWindowDelegate, MainPane {
         // the page's way out, and what it shows while the camp is out
         popOut.target = self
         popOut.action = #selector(popItOut)
-        popOut.bezelStyle = .rounded
-        popOut.toolTip = "營地變成一個小視窗，可以放在桌面角落；小視窗上的「收回主視窗」放回來"
-        popOut.translatesAutoresizingMaskIntoConstraints = false
+        popOut.bezelStyle = .rounded // (the same as the camp's 🏡 裝飾 button, just left of it: AntView.viewDidMoveToWindow)
+        popOut.controlSize = .small
+        popOut.font = .systemFont(ofSize: 11)
+        popOut.sizeToFit()
+        popOut.autoresizingMask = [.minXMargin, .minYMargin]
+        popOut.toolTip = "彈出成小視窗：營地自己一個小視窗，可以放在桌面角落；小視窗上的「收回主視窗」放回來"
         let line = NSTextField(labelWithString: "營地現在是一個小視窗。")
         line.textColor = .secondaryLabelColor
         let bring = NSButton(title: "收回主視窗", target: self, action: #selector(dockIt))
@@ -105,8 +108,9 @@ final class MapWindow: NSObject, NSWindowDelegate, MainPane {
             window.contentView = NSView()
             view.frame = paneView.bounds
             paneView.addSubview(view, positioned: .below, relativeTo: nil)
-            paneView.addSubview(popOut)
-            NSLayoutConstraint.activate([popOut.topAnchor.constraint(equalTo: paneView.topAnchor, constant: 10), popOut.trailingAnchor.constraint(equalTo: paneView.trailingAnchor, constant: -12)])
+            view.addSubview(popOut)
+            let decor = view.subviews.first { $0.identifier?.rawValue == "decor-button" }?.frame.width ?? 72
+            popOut.frame.origin = NSPoint(x: view.bounds.maxX - decor - 10 - 6 - popOut.frame.width, y: view.bounds.maxY - popOut.frame.height - 8)
             placeholder.isHidden = true
         } else {
             popOut.removeFromSuperview()
