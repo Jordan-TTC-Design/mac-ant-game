@@ -20,7 +20,7 @@ days ?= 14
         restart restart-dev restart-prod logs logs-dev logs-prod \
         deploy deploy-dev deploy-prod ps ps-dev ps-prod \
         invite invite-dev invite-prod invites invites-prod admin admin-prod admins vapid \
-        dump-db dump-db-dev dump-db-prod restore-db shell-server shell-server-dev shell-server-prod \
+        dump-db dump-db-dev dump-db-prod restore-db backups backup-copy shell-server shell-server-dev shell-server-prod \
         shell-db shell-db-dev shell-db-prod check-env
 
 check-env:
@@ -134,12 +134,23 @@ dump-db-prod:
 	docker compose $(PROD) exec -T postgres pg_dump -U goblin -d goblin --clean --if-exists > backups/goblin-$$(date +%Y%m%d-%H%M%S).sql
 	@ls -lh backups | tail -1
 
-# 用備份蓋回資料庫（線上一般）：make restore-db file=backups/goblin-XXXX.sql
+# 用備份蓋回資料庫（線上一般）：make restore-db file=backups/goblin-XXXX.sql（自動／手動備份的 .sql.gz 也可以）
 restore-db:
 	@test -n "$(file)" || { echo "用法：make restore-db file=backups/goblin-XXXX.sql"; exit 1; }
 	@printf '⚠️  這會用 $(file) 蓋掉現在的資料庫，確定請輸入 yes：'; \
 	read ans; [ "$$ans" = "yes" ] || { echo "已取消"; exit 1; }
-	docker compose $(BASE) exec -T postgres psql -U goblin -d goblin < $(file)
+	case "$(file)" in *.gz) gunzip -c "$(file)" ;; *) cat "$(file)" ;; esac | docker compose $(BASE) exec -T postgres psql -U goblin -d goblin
+
+# 伺服器自己做的備份（每天 01:30、13:30，和後台的手動備份）在 server 容器的 /backups 裡：
+# make backups 列出來；make backup-copy file=auto/goblin-XXXX.sql.gz 複製到 backups/，再用 restore-db 還原
+backups:
+	docker compose $(BASE) exec server sh -c 'ls -lh /backups/auto /backups/manual'
+
+backup-copy:
+	@test -n "$(file)" || { echo "用法：make backup-copy file=auto/goblin-XXXX.sql.gz（make backups 看有哪些）"; exit 1; }
+	@mkdir -p backups
+	docker compose $(BASE) cp server:/backups/$(file) backups/
+	@ls -lh backups/$(notdir $(file))
 
 shell-server:
 	docker compose $(BASE) exec server sh

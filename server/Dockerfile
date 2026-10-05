@@ -7,6 +7,8 @@ FROM node:22-alpine
 WORKDIR /repo
 ENV NODE_ENV=production
 RUN npm install -g pnpm@12.6.0
+# pg_dump for the backups (backup.ts), the same major version as the database (postgres:16); /backups is their volume
+RUN apk add --no-cache postgresql16-client && mkdir -p /backups && chown node:node /backups
 
 # 相依只跟 package.json / lockfile 有關，改原始碼不會重跑這一層
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./

@@ -38,11 +38,13 @@ import {
   type Population,
   type RaidReport,
   type Resident,
+  decorKind,
 } from "@goblincamp/shared/camp";
 import { hashString, raceLevel, randomFrom } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps, expeditions, worldCells, worldPlayers } from "../db/schema.ts";
 import { resolveRaid, type RaidOutcome } from "./raids.ts";
+import { merchantNow } from "./merchant.ts";
 
 export type CampRow = typeof camps.$inferSelect;
 export type ResidentRow = typeof campResidents.$inferSelect;
@@ -268,6 +270,9 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       canTurnOnAt: camp.sanctuaryOffAt ? new Date(camp.sanctuaryOffAt.getTime() + SANCTUARY_REST_HOURS * 3_600_000).toISOString() : null,
     },
     production: productionView(camp, rows.filter((r) => r.place === "home").length, await campRaceLevel(tx, camp.userId)),
+    merchant: await merchantNow(tx, camp, camp.advancedTo), // (the camp was just advanced to now)
+    decor: camp.decor.filter((d) => decorKind(d.kind)), // (kinds taken out of the catalogue since are gone)
+    ranch: { animals: camp.ranch?.animals ?? [] },
     residents: rows.map((r) => ({
       id: r.id,
       breed: r.breed,

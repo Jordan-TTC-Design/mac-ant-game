@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { raceRules } from "@goblincamp/shared/camp";
+import { RANCH_CAP, RANCH_KINDS, raceRules, ranchGrown } from "@goblincamp/shared/camp";
 import { materialName as sharedMaterialName } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
@@ -34,7 +34,7 @@ const statusLine = computed(() => {
     case "loading": return "讀取中…";
     case "offline": return `離線中：這是 ${noteTime(new Date(camp.state.saved?.fetchedAt ?? 0).toISOString())} 的樣子`;
     case "problem": return `出了問題：${camp.state.problem}`;
-    default: return "在 Mac 上玩；這裡可以看、蓋場地";
+    default: return ""; // (all is well: no line, the header stays short)
   }
 });
 
@@ -98,6 +98,25 @@ async function toggleSanctuary() {
 }
 // the camp's sites (server/FARM.md §11): build, raise, take down
 const production = computed(() => view.value?.production ?? null);
+/** The ranch (kept and bred on the Mac): how many of each kind, the young apart, and what the grown ones give an hour. */
+const ranch = computed(() => {
+  const animals = view.value?.ranch?.animals ?? [];
+  const at = new Date(now.value);
+  const kinds = new Map<string, { kind: string; name: string; grown: number; young: number; names: string[] }>();
+  const perHour: Record<string, number> = {};
+  for (const a of animals) {
+    const rule = RANCH_KINDS[a.kind];
+    if (!rule) continue;
+    const row = kinds.get(a.kind) ?? { kind: a.kind, name: rule.name, grown: 0, young: 0, names: [] };
+    if (ranchGrown(a, at)) {
+      row.grown += 1;
+      for (const [id, n] of Object.entries(rule.perHour)) perHour[id] = (perHour[id] ?? 0) + n;
+    } else row.young += 1;
+    if (a.name) row.names.push(a.name);
+    kinds.set(a.kind, row);
+  }
+  return { total: animals.length, kinds: [...kinds.values()], perHour };
+});
 const perHourText = (n: number) => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
 const makesText = (makes: Record<string, number>) =>
   Object.entries(makes).map(([id, n]) => (n < 0.1 && (id === "crystal_shard") ? `${materialName(id)} ${Math.round(n * 100)}%` : `${materialName(id)} ${perHourText(n)}`)).join("、");
@@ -141,7 +160,7 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
       <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
       <div style="flex: 1">
         <h1>{{ view ? `${race?.name ?? ""}${race?.nest ?? "營地"}` : "營地" }}</h1>
-        <div class="sub">{{ statusLine }}</div>
+        <div v-if="statusLine" class="sub">{{ statusLine }}</div>
       </div>
       <nav class="world-links">
         <NuxtLink to="/world" class="icon-btn" aria-label="大世界" title="大世界">🗺️</NuxtLink>
@@ -208,6 +227,18 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         </div>
         <p class="muted small">沒有場地也會撿一點木材、石頭。空地隨營地長大變多（2／4／6 格），大世界的種族每 5 級再多 1 格。</p>
         <p v-if="siteProblem" class="warn">{{ siteProblem }}</p>
+      </section>
+
+      <section v-if="ranch.total" class="panel ranch">
+        <h2>牧場 <small>{{ ranch.total }}/{{ RANCH_CAP[view.stage] }} 隻</small></h2>
+        <ul class="chips">
+          <li v-for="k in ranch.kinds" :key="k.kind">
+            {{ k.name }} <b>{{ k.grown + k.young }}</b><template v-if="k.young">（小的 {{ k.young }}）</template>
+            <span v-if="k.names.length" class="muted small">　{{ k.names.join("、") }}</span>
+          </li>
+        </ul>
+        <p v-if="Object.keys(ranch.perHour).length" class="muted small">營地在 Mac 上開著時，每小時：{{ makesText(ranch.perHour) }}</p>
+        <p class="muted small">在 Mac 的營地視窗用柵欄圍牧場、抓動物（🏡 裝飾 → 柵欄）。</p>
       </section>
 
       <section class="panel">

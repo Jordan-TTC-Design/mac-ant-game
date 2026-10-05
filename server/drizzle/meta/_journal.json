@@ -169,6 +169,27 @@
       "when": 1790670347781,
       "tag": "0023_quests",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790875971631,
+      "tag": "0024_expedition_route",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790881577132,
+      "tag": "0025_decor",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791037603241,
+      "tag": "0026_ranch",
+      "breakpoints": true
     }
   ]
 }

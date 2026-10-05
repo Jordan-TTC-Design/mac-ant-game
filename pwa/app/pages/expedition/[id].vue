@@ -7,6 +7,8 @@ import { noteTime } from "~/utils/time";
 const ok = await useSignedIn();
 const route = useRoute();
 const report = ref<ExpeditionReport | null>(null);
+const { user: account } = useAccount();
+const myId = computed(() => account.value?.id ?? null);
 const problem = ref("");
 const names = ref<ArtNames>({ races: {}, materials: {} });
 
@@ -109,6 +111,7 @@ const sheet = (f: { race?: string; breed?: string }) => `/sprites/${f.race ?? "g
         <p v-if="report.outcome && Object.keys(report.outcome.loot).length" class="loot">
           撿到：<span v-for="(n, id) in report.outcome.loot" :key="id" class="chip">{{ materialName(String(id)) }} ×{{ n }}</span>
         </p>
+        <NuxtLink v-if="report.kind === 'attack' && !report.defending && report.attacker?.id === myId" :to="`/world?cell=${report.to}&again=1`" class="btn primary again">再派一次</NuxtLink>
       </section>
 
       <section v-if="report.events?.length" class="panel battle">

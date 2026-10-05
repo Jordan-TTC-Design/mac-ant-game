@@ -15,14 +15,16 @@ import {
   RATIONS,
   RATIONS_PER_EXTRA,
   residentFighter,
-  travelMinutes,
+  walkMinutes,
   GUESTS_MAX,
   WORLD_SEED,
   type CellView,
   type Fighter,
+  type RoutePreview,
   type WorldMe,
 } from "@goblincamp/shared/world";
 import { api } from "~/utils/api";
+import type { LastAttack } from "~/utils/again";
 
 // Sending a party (the big world): where from, who goes (the strongest few in one go, or one by one from the list), how
 // strong they are against what waits there, and how long the walk is. The server checks it all again.
@@ -32,8 +34,12 @@ const props = defineProps<{
   kind: "attack" | "settle" | "move" | "guard";
   me: WorldMe;
   race: string;
+  /** Where it sets out from, when picked on the map first ("home" or a held cell). */
+  start?: string;
+  /** 再派一次: the last attack on this cell, to start from (those still there; the strongest fill in for the fallen). */
+  again?: LastAttack | null;
 }>();
-const emit = defineEmits<{ close: []; sent: [party: number[], settle: boolean, from: string, supplies: Record<string, number>] }>();
+const emit = defineEmits<{ close: []; sent: [party: number[], settle: boolean, from: string, supplies: Record<string, number>]; route: [way: RoutePreview | null] }>();
 
 type Resident = CampView["residents"][number];
 const camp = ref<CampView | null>(null);
@@ -45,11 +51,12 @@ onMounted(async () => {
 const min = computed(() => props.me.rules.garrisonMin);
 /** Where a party may set out from: the camp, or a held cell with more living there than it needs (not the target). */
 const starts = computed(() => [
-  { id: "home", label: `營地（在家 ${props.me.atHome} 隻）` },
+  { id: "home", label: "營地", n: props.me.atHome },
   // (not the camp's own cell: everybody at home is there already)
-  ...props.me.cells.filter((c) => c.garrison > min.value && c.cell !== props.target.cell && c.cell !== props.me.homeCell).map((c) => ({ id: c.cell, label: `領地（住 ${c.garrison} 隻）` })),
+  ...props.me.cells.filter((c) => c.garrison > min.value && c.cell !== props.target.cell && c.cell !== props.me.homeCell).map((c) => ({ id: c.cell, label: "領地", n: c.garrison })),
 ]);
-const from = ref("home");
+const firstStart = props.again?.from ?? props.start;
+const from = ref(firstStart && starts.value.some((o) => o.id === firstStart) ? firstStart : "home");
 const place = computed(() => (from.value === "home" ? "home" : `cell:${from.value}`));
 const keep = computed(() => (from.value === "home" ? 2 : min.value));
 
@@ -88,6 +95,20 @@ const available = computed(() =>
     .map((r) => ({ r, power: power(r), gear: Object.keys(r.gear ?? {}).length }))
     .sort((a, b) => b.power - a.power || a.r.id - b.r.id),
 );
+/** What each place could send: as many of its strongest as may go from there, and their strength (no food counted). */
+const startPower = computed(() => {
+  const out = new Map<string, { n: number; power: number }>();
+  if (!camp.value) return out;
+  for (const o of starts.value) {
+    const at = o.id === "home" ? "home" : `cell:${o.id}`;
+    const fighters = camp.value.residents.filter((r) => r.place === at).map((r) => ({ f: fighter(r), p: power(r) }));
+    const bonus = props.me.cells.find((c) => c.cell === (o.id === "home" ? props.me.homeCell : o.id))?.party ?? 0;
+    const n = Math.max(0, Math.min(60, fighters.length - (o.id === "home" ? 2 : min.value), capped.value ? (props.me.partyCap ?? 60) + bonus : 60));
+    const best = fighters.sort((a, b) => b.p - a.p).slice(0, n).map((x) => x.f);
+    out.set(o.id, { n, power: Math.round(combatPower(best)) });
+  }
+  return out;
+});
 /** A lair lets in only so many (world/expedition.ts lairEntry); a great monster and another camp's cell do not. */
 const entry = computed(() => (props.target.lair && !props.target.boss && !props.target.owner ? lairEntry(props.target.lair.count, props.target.lair.boss) : null));
 const most = computed(() =>
@@ -109,8 +130,28 @@ const order = computed(() => (props.kind === "attack" || props.kind === "guard" 
 function pickTop(n: number) {
   picked.value = new Set(order.value.slice(0, Math.min(n, most.value)).map((a) => a.r.id));
 }
-watch([available, most], () => pickTop(capped.value ? most.value : 10), { immediate: true });
+let repeat = props.again ?? null;
+watch(
+  [available, most],
+  () => {
+    pickTop(capped.value ? most.value : 10);
+    if (!repeat || !camp.value) return;
+    // the same ones as last time where they are still here, the strongest of the rest for those who are not, as many as fit
+    const want = Math.min(repeat.party.length, most.value);
+    const same = order.value.filter((a) => repeat!.party.includes(a.r.id)).slice(0, want);
+    const others = order.value.filter((a) => !repeat!.party.includes(a.r.id)).slice(0, want - same.length);
+    picked.value = new Set([...same, ...others].map((a) => a.r.id));
+    for (const [id, n] of Object.entries(repeat.supplies)) supplies[id] = Math.min(n, store.value[id] ?? 0);
+    if (props.kind === "attack") settle.value = repeat.settle;
+    repeat = null;
+  },
+  { immediate: true },
+);
 const party = computed(() => available.value.filter((a) => picked.value.has(a.r.id)));
+/** The whole list folds away (it is long): the quick picks above it are what is mostly used. */
+const showRoster = ref(false);
+const showBoosts = ref(false);
+const boostsTaken = computed(() => Object.keys({ ...BOOST_FOODS, ...BOOST_ITEMS }).filter((id) => supplies[id]).length);
 function toggle(id: number) {
   const next = new Set(picked.value);
   if (next.has(id)) next.delete(id);
@@ -180,16 +221,55 @@ const hints = computed(() => {
   out.push("打輸了巢穴會留傷，趁牠還沒回血派第二波");
   return out;
 });
-const minutes = computed(() => {
-  const start = from.value === "home" ? props.me.homeCell : from.value;
-  if (!start || party.value.length === 0) return null;
+// the way there: round other camps' built-up land (the server knows whose is where); no way round, no going
+const way = ref<RoutePreview | null>(null);
+const wayProblem = ref("");
+watch(
+  from,
+  async () => {
+    way.value = null;
+    wayProblem.value = "";
+    try {
+      way.value = await api<RoutePreview>("POST", "world/expeditions/route", { from: from.value, to: props.target.cell });
+    } catch (e) {
+      wayProblem.value = e instanceof Error ? e.message : String(e);
+    }
+    emit("route", way.value); // (the map draws it)
+  },
+  { immediate: true },
+);
+const noWay = computed(() => !!way.value && way.value.waypoints.length === 0);
+const minutesFor = (meters: number) => {
   const slowest = Math.min(...party.value.map((a) => fighter(a.r).speed));
-  return Math.max(1, Math.round(travelMinutes(start, props.target.cell, slowest) * (fromCell.value?.travel ?? 1)));
-});
-const settle = ref(props.kind !== "move" && props.kind !== "guard");
+  return Math.max(1, Math.round(walkMinutes(meters, slowest) * (fromCell.value?.travel ?? 1)));
+};
+const minutes = computed(() => (way.value && !noWay.value && party.value.length ? minutesFor(way.value.meters) : null));
+/** How much longer the way round is than straight there. */
+const detour = computed(() => (way.value && !noWay.value && party.value.length && way.value.waypoints.length > 2 ? minutes.value! - minutesFor(way.value.straight) : 0));
+
+// after a win: stay and hold the cell, or come home (remembered, apart for lairs and other camps' cells)
+const settleKey = `goblincamp.settle.${props.target.owner ? "camp" : "lair"}`;
+function rememberedSettle(): boolean {
+  try {
+    const v = localStorage.getItem(settleKey);
+    if (v !== null) return v === "1";
+  } catch {
+    // (no storage: the default)
+  }
+  return true;
+}
+const settle = ref(props.kind === "attack" ? rememberedSettle() : props.kind === "settle");
+function chooseSettle(v: boolean) {
+  settle.value = v;
+  try {
+    localStorage.setItem(settleKey, v ? "1" : "0");
+  } catch {
+    // (it just will not be remembered)
+  }
+}
 const title = computed(() => ({ attack: props.target.boss ? "出征打世界魔王" : "出征", settle: "派人去佔領", move: "派人去駐守", guard: `派兵幫${props.target.owner?.name ?? "好友"}守` })[props.kind]);
 const go = computed(() => ({ attack: "出發攻擊", settle: "出發佔領", move: "出發", guard: "出發幫守" })[props.kind]);
-const ok = computed(() => party.value.length > 0 && (props.kind !== "settle" || party.value.length >= min.value));
+const ok = computed(() => party.value.length > 0 && (props.kind !== "settle" || party.value.length >= min.value) && !!way.value && !noWay.value);
 
 const breedName = (b: string) => names.value.races[props.race]?.breeds[b] ?? b;
 const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.race]?.sheets[b] ?? "worker"}.png`;
@@ -204,12 +284,16 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
       </header>
 
       <div class="body">
-        <label v-if="starts.length > 1" class="field">
+        <div v-if="starts.length > 1" class="field">
           <span>從哪裡出發</span>
-          <select v-model="from">
-            <option v-for="o in starts" :key="o.id" :value="o.id">{{ o.label }}</option>
-          </select>
-        </label>
+          <div class="starts">
+            <button v-for="o in starts" :key="o.id" class="start" :class="{ on: from === o.id }" @click="from = o.id">
+              <b>{{ o.label }}</b>
+              <small>{{ o.id === "home" ? "在家" : "住" }} {{ o.n }} 隻</small>
+              <small v-if="startPower.get(o.id)">最強 {{ startPower.get(o.id)!.n }} 隻・戰力 <b>{{ startPower.get(o.id)!.power }}</b></small>
+            </button>
+          </div>
+        </div>
 
         <div v-if="!camp" class="muted">讀取居民中…</div>
         <template v-else>
@@ -217,8 +301,10 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
             <div><small>我方戰力</small><b>{{ ourPower }}</b></div>
             <div v-if="theirPower !== null"><small>對方戰力</small><b>{{ theirPower }}</b></div>
             <div v-else-if="target.owner"><small>對方守軍</small><b>{{ target.garrison }} 隻</b></div>
-            <div v-if="minutes !== null"><small>走過去</small><b>{{ minutes }} 分</b></div>
+            <div v-if="minutes !== null"><small>{{ detour ? `繞路 +${detour} 分` : "走過去" }}</small><b>{{ minutes }} 分</b></div>
           </div>
+          <p v-if="noWay" class="warn">{{ way?.blockedBy?.name ?? "別人" }}的領地（有巢穴、建築或城鎮）擋在路上，繞不過去：先把擋路的那一格打下來，或從別的地方出發。</p>
+          <p v-else-if="wayProblem" class="warn">{{ wayProblem }}</p>
           <div v-if="scouted" class="odds"><i :style="{ width: `${scouted.win * 100}%` }" /></div>
           <p v-if="scouted" class="muted small">
             對方會有 <b>{{ scouted.facing }}</b> 隻迎戰（最強的先上；全部 {{ scouted.total }} 隻，一格的地方有限，最多是你的 1.5 倍）。
@@ -251,7 +337,10 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
                 <button class="chip" :disabled="extra >= extraCanTake" @click="setExtra(extra + 1)">＋</button>
               </span>
             </div>
-            <div class="boosts">
+            <button class="fold" @click="showBoosts = !showBoosts">
+              加成食物{{ boostsTaken ? `（帶了 ${boostsTaken} 樣）` : "" }} <span>{{ showBoosts ? "▴" : "▾" }}</span>
+            </button>
+            <div v-if="showBoosts" class="boosts">
               <button
                 v-for="(f, id) in { ...BOOST_FOODS, ...Object.fromEntries(Object.entries(BOOST_ITEMS).filter(([k]) => (store[k] ?? 0) > 0 || supplies[k])) }"
                 :key="id"
@@ -272,11 +361,12 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
             <small class="muted">最多 {{ most }}（{{ from === "home" ? "營地至少留 2 隻" : `那一格至少留 ${min} 隻` }}）</small>
           </div>
           <div class="quick">
+            <button class="chip" :class="{ on: showRoster }" @click="showRoster = !showRoster">{{ showRoster ? "收起名單" : "逐隻挑選" }}</button>
             <button class="chip" @click="pickTop(capped ? most : 10)">{{ kind === "attack" || kind === "guard" ? `最強 ${capped ? most : 10} 隻` : `一般的 ${capped ? most : 10} 隻` }}</button>
             <button class="chip" @click="pickTop(most)">全部</button>
             <button class="chip" @click="picked = new Set()">清空</button>
           </div>
-          <ul class="roster">
+          <ul v-if="showRoster" class="roster">
             <li v-for="a in available" :key="a.r.id" :class="{ on: picked.has(a.r.id) }" @click="toggle(a.r.id)">
               <span class="box">{{ picked.has(a.r.id) ? "✓" : "" }}</span>
               <span class="face pixel" :style="{ backgroundImage: `url(${sheet(a.r.breed)})` }" />
@@ -285,7 +375,14 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
             </li>
           </ul>
 
-          <label v-if="kind === 'attack' && !target.boss" class="check"><input v-model="settle" type="checkbox" /> 打贏就留下來佔領（活下來的至少 {{ min }} 隻）</label>
+          <div v-if="kind === 'attack' && !target.boss" class="after">
+            <span>打贏後</span>
+            <div class="seg">
+              <button :class="{ on: settle }" @click="chooseSettle(true)">留下來佔領</button>
+              <button :class="{ on: !settle }" @click="chooseSettle(false)">直接回家</button>
+            </div>
+            <small class="muted">{{ settle ? `活下來的至少 ${min} 隻才佔得住` : "撿了戰利品就回來" }}・下次會記得</small>
+          </div>
           <p v-if="kind === 'settle' && party.length < min" class="warn">至少要 {{ min }} 隻才守得住一格。</p>
           <p v-if="kind === 'guard'" class="muted small">牠們會住在那裡，巢穴回來搶、有人來打時一起守；戰死的裝備會回你的倉庫。你或對方隨時可以叫牠們回來。一格最多 {{ GUESTS_MAX }} 隻好友的居民（現在有 {{ target.guests ?? 0 }} 隻）。</p>
         </template>
@@ -310,6 +407,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
 .food-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .stepper { display: inline-flex; align-items: center; gap: 8px; }
 .stepper .chip { min-width: 36px; }
+.fold { display: flex; justify-content: space-between; width: 100%; margin-top: 8px; padding: 6px 0 0; border: 0; border-top: 1px dashed rgba(0, 0, 0, 0.15); background: none; font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
 .boosts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
 .boost { display: grid; gap: 1px; text-align: left; border: 2px solid rgba(0, 0, 0, 0.12); border-radius: 10px; padding: 6px 8px; background: #fff; cursor: pointer; }
 .boost small { color: #666; font-size: 11px; }
@@ -344,7 +442,8 @@ footer .btn { flex: 1; min-height: 46px; }
 .odds i { display: block; height: 100%; background: var(--green); }
 .pickbar { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 6px; }
 .pickbar small { font-size: 12px; }
-.quick { display: flex; gap: 6px; margin-bottom: 8px; }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.quick .chip.on { background: #1f1f1f; color: #fff; }
 .chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .roster { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--line); border-radius: 10px; }
 .roster li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-top: 1px solid var(--line); cursor: pointer; user-select: none; }
@@ -357,7 +456,15 @@ footer .btn { flex: 1; min-height: 46px; }
 .who small { font-weight: 400; color: var(--muted); font-size: 11px; }
 .pw { display: grid; justify-items: end; font-weight: 700; }
 .pw small { font-size: 10px; color: var(--muted); font-weight: 400; }
-.check { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 14px; }
-.check input { width: 20px; height: 20px; }
+.starts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.start { display: grid; gap: 1px; text-align: left; border: 2px solid rgba(0, 0, 0, 0.12); border-radius: 10px; padding: 6px 9px; background: #fff; color: var(--ink); font: inherit; cursor: pointer; }
+.start small { font-size: 11px; color: var(--muted); }
+.start.on { border-color: #2f7a3a; background: #e3f3dc; }
+.after { display: grid; gap: 4px; margin: 10px 0 0; font-size: 14px; font-weight: 600; }
+.after small { font-size: 12px; font-weight: 400; }
+.seg { display: flex; border: 2px solid #1f1f1f; border-radius: 10px; overflow: hidden; }
+.seg button { flex: 1; border: 0; padding: 9px 6px; background: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.seg button + button { border-left: 2px solid #1f1f1f; }
+.seg button.on { background: var(--green); color: #fff; }
 .warn { color: var(--red); font-size: 13px; font-weight: 600; }
 </style>

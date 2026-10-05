@@ -301,6 +301,104 @@ describe("cells held side by side", () => {
     expect((await t.call("POST", `/world/cells/${first}/town`, undefined, a)).status).toBe(200);
   });
 
+  it("every town lets each cell of its region house half as many more (stacking, 4 at most), one town per 4 cells", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const ring = neighbors(home);
+    const outer = neighbors(ring[0]!).find((c) => c !== home && !ring.includes(c))!;
+    await clear([...ring, outer]);
+    for (const c of ring.slice(0, 3)) await settle(a, 20, [], (x) => x.cell === c);
+    await give("a@example.com", { scrap_wood: 1000, scrap_iron: 500, scrap_rag: 300, crystal_shard: 10 });
+    const [first, second, third] = ring as [string, string, string];
+
+    // before: a goblin cell houses 50, a town 100
+    expect((await detail(a, second)).body.capacity).toBe(50);
+    expect((await t.call("POST", `/world/cells/${first}/town`, undefined, a)).status).toBe(200);
+    let d = (await detail(a, second)).body;
+    expect(d.capacity).toBe(75); // +25 from the town
+    expect(d).toMatchObject({ regionTowns: 1, townRoom: 25 });
+    expect((await detail(a, first)).body.capacity).toBe(100); // (a town gets no room from itself)
+    const list = (await t.call("GET", "/world/territory", undefined, a)).body as TerritoryList;
+    expect(list.items.find((i) => i.cell === second)).toMatchObject({ capacity: 75, townRoom: 25 });
+
+    // a second town needs 8 cells in the region
+    const refused = await t.call("POST", `/world/cells/${third}/town`, undefined, a);
+    expect(refused.body.error).toBe("too_few");
+    expect(refused.body.message).toContain("8");
+    for (const c of [...ring.slice(3), outer]) await settle(a, 20, [], (x) => x.cell === c);
+    expect((await me(a)).cells.find((c) => c.cell === third)).toMatchObject({ region: 8, regionTowns: 1 });
+    expect((await t.call("POST", `/world/cells/${third}/town`, undefined, a)).status).toBe(200);
+    expect((await detail(a, second)).body.capacity).toBe(100); // two towns: +50
+    expect((await detail(a, first)).body.capacity).toBe(125); // a town: 100, and +25 from the other one
+  });
+
+  /** Waits until every party on the road has arrived (and whatever they set off in turn). */
+  async function arriveAll(auth: Record<string, string>) {
+    for (let k = 0; k < 4; k++) {
+      const walking = (await me(auth)).walking;
+      if (!walking.length) return;
+      t.advance(Math.max(...walking.map((w) => Date.parse(w.arriveAt))) - t.now().getTime() + 1000);
+    }
+  }
+  const cellOf = async (auth: Record<string, string>, cell: string) => (await me(auth)).cells.find((c) => c.cell === cell);
+
+  it("recall walks: fills the cell it goes to, the rest camp beside it and move in as room frees up", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const [bCell, aCell] = neighbors(home) as [string, string];
+    await clear([bCell, aCell]);
+    await settle(a, 25, [], (c) => c.cell === bCell);
+    const more = await t.call("POST", "/world/expeditions", { from: "home", to: bCell, count: 20 }, a);
+    expect(more.status).toBe(201);
+    await settle(a, 20, [], (c) => c.cell === aCell);
+    await arriveAll(a);
+    expect((await cellOf(a, bCell))!.garrison).toBe(45);
+
+    // all 20 go: the cell is given up at once, and they are on the road (not there yet)
+    const res = await t.call("POST", `/world/cells/${aCell}/recall`, { to: bCell }, a);
+    expect(res.status).toBe(200);
+    let w = res.body as WorldMe;
+    expect(w.cells.some((c) => c.cell === aCell)).toBe(false);
+    expect(w.walking).toEqual([expect.objectContaining({ kind: "recall", from: aCell, to: bCell, party: 20 })]);
+    expect((await cellOf(a, bCell))!.garrison).toBe(45);
+
+    await arriveAll(a);
+    let b = (await cellOf(a, bCell))!;
+    expect(b).toMatchObject({ garrison: 50, capacity: 50, camping: 15 }); // (no other cell has room)
+    expect((await detail(a, bCell)).body.camping).toBe(15);
+
+    // ten walk home from it: the campers move in
+    expect((await t.call("POST", `/world/cells/${bCell}/recall`, { to: "home", count: 10 }, a)).status).toBe(200);
+    b = (await cellOf(a, bCell))!;
+    expect(b).toMatchObject({ garrison: 50, camping: 5 });
+    // and the campers can be sent off too
+    expect((await t.call("POST", `/world/cells/${bCell}/recall`, { to: "home", campers: true }, a)).status).toBe(200);
+    w = await me(a);
+    expect(w.cells.find((c) => c.cell === bCell)).toMatchObject({ garrison: 50, camping: 0 });
+    expect(w.walking.filter((x) => x.kind === "recall").map((x) => x.party).sort()).toEqual([10, 5]);
+  });
+
+  it("recall: those who do not fit walk on to the nearest cell with room", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const [bCell, aCell, cCell] = neighbors(home) as [string, string, string];
+    await clear([bCell, aCell, cCell]);
+    await settle(a, 25, [], (c) => c.cell === bCell);
+    await t.call("POST", "/world/expeditions", { from: "home", to: bCell, count: 20 }, a);
+    await settle(a, 20, [], (c) => c.cell === aCell);
+    await settle(a, 10, [], (c) => c.cell === cCell);
+    await arriveAll(a);
+
+    expect((await t.call("POST", `/world/cells/${aCell}/recall`, { to: bCell }, a)).status).toBe(200);
+    const first = (await me(a)).walking[0]!;
+    t.advance(Date.parse(first.arriveAt) - t.now().getTime() + 1000);
+    const w = await me(a);
+    expect(w.cells.find((c) => c.cell === bCell)).toMatchObject({ garrison: 50, camping: 0 });
+    expect(w.walking).toEqual([expect.objectContaining({ kind: "reroute", from: bCell, to: cCell, party: 15 })]);
+    await arriveAll(a);
+    expect((await cellOf(a, cCell))!.garrison).toBe(25);
+  });
+
   it("send help when a cell is attacked: the camp next to it lends its strongest", async () => {
     const a = await ready();
     const home = (await me(a)).homeCell!;

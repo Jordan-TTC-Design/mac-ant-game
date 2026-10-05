@@ -70,7 +70,8 @@ export interface ApiError {
     | "conflict"
     | "rate_limited"
     | "unsupported_media_type"
-    | "unavailable";
+    | "unavailable"
+    | "backup_failed";
   message: string;
   fields?: Record<string, string>;
   retryAfter?: number;

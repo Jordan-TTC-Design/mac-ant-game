@@ -138,7 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.noteWall.reload()
         }
         sync.start()
+        if settings.moveToWindowOnly() { Diagnostics.note("walking range moved to the camp window (the others are switched off for now)") }
         setupMenuBar()
+        setupMainMenu()
+        applyDockIcon()
         rebuildOverlays()
         startFullscreenWatch()
         purgeOldReplies()
@@ -149,7 +152,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // the camp's race first (its residents are made from that race's breeds); older saves are goblins
             let race = saved.race ?? "goblin"
             if Characters.all.contains(where: { $0.id == race }) { settings.characterID = race }
-            let nest = CGPoint(x: saved.nestX, y: saved.nestY)
+            var nest = CGPoint(x: saved.nestX, y: saved.nestY)
+            // a camp that stood on the screen or in a strip moves into the camp window (where it last stood there, or the middle)
+            if isWindowMode, !colony.walkable.contains(where: { $0.contains(nest) }), let area = colony.walkable.first {
+                nest = settings.modeNest("window").flatMap { area.insetBy(dx: 30, dy: 30).contains($0) ? $0 : nil } ?? CGPoint(x: area.midX, y: area.midY)
+            }
             if colony.walkable.contains(where: { $0.contains(nest) }) {
                 colony.restore(nest: nest, saved: saved)
                 if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: restored \(colony.ants.count) ants") }
@@ -193,6 +200,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.persist()
             self?.applyWalkable() // the home screen follows the camp when it is moved
             if self?.colony.needsPrincessName == true { DispatchQueue.main.async { self?.nameThePrincess(firstTime: true) } }
+        }
+        colony.onAnnounce = { [weak self] text in // a holiday, said by the princess (not in focus mode: it waits)
+            guard let self, !self.isSilenced else { return false }
+            self.say(text)
+            return true
+        }
+        colony.onMerchant = { [weak self] request, done in // the wandering merchant asks the books (Merchant.swift)
+            guard let self else { return }
+            struct Arrive: Encodable { let kind = "merchant-arrive" }
+            struct Trade: Encodable { let kind = "merchant-trade"; let visit: String; let offer: Int }
+            Task { @MainActor in
+                do {
+                    let answer: CampLedger.CommandAnswer
+                    switch request {
+                    case .arrive: answer = try await self.ledger.command(Arrive())
+                    case .trade(let visit, let offer): answer = try await self.ledger.command(Trade(visit: visit, offer: offer))
+                    }
+                    self.applyBooksToCamp()
+                    done(.success(answer.message))
+                } catch {
+                    done(.failure((error as? APIError)?.message ?? error.localizedDescription))
+                }
+            }
+        }
+        colony.onRanchSync = { [weak self] report, done in // the ranch tells the books its herd and how long the camp was open (Ranch.swift)
+            guard let self else { return }
+            struct Body: Encodable { let kind = "ranch-sync"; let animals: [RanchReport.Animal]; let minutes: Double; let butchered: [Int] }
+            Task { @MainActor in
+                do {
+                    let answer = try await self.ledger.command(Body(animals: report.animals, minutes: report.minutes, butchered: report.butchered))
+                    done(.success(answer.message))
+                    self.applyBooksToCamp()
+                } catch {
+                    done(.failure((error as? APIError)?.message ?? error.localizedDescription))
+                }
+            }
+        }
+        colony.onDecorChanged = { [weak self] list in // the decorations go to the books a second after the last change
+            guard let self else { return }
+            self.decorToSend = list
+            self.decorTimer?.invalidate()
+            self.decorTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in self?.sendDecor() }
         }
         colony.onAntsChanged = { [weak self] in
             self?.updateCount()
@@ -1261,8 +1310,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        ExitLog.quitting()
+        return .terminateNow
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         persist()
+        ExitLog.ended()
     }
 
     // MARK: Menu
@@ -1424,6 +1479,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if self.settings.saveProgress { self.persist() } else { Persistence.clear() }
         }
         save.stateProvider = { self.settings.saveProgress }
+        save.isHidden = serverCamp // (the camp is kept by the server; only the old camp that lives on this Mac, used in tests, has it)
         menu.addItem(group("偏好設定", [
             characterMenuItem,
             choiceMenu(title: "啟動時的模式",
@@ -1996,6 +2052,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let loot = (e.loot ?? [:]).sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
             if e.defended == true {
                 say("\(e.by ?? "有人")來打我們的領地，" + (e.won == true ? "守住了！" : "領地被搶走了……") + ((e.fallen ?? 0) > 0 ? "倒下 \(e.fallen!) 隻。" : ""))
+            } else if e.arrived == true, e.kind == "recall" || e.kind == "reroute" {
+                say("撤回的隊伍到了" + (e.cell == "back" ? "營地。" : "\(e.against ?? "領地")。"))
             } else if e.arrived == true {
                 let what: String
                 switch e.cell {
@@ -2015,6 +2073,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyBooksToCamp() {
         guard campReady, let stores = ledger.bookStores() else { return }
         colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
+        colony.booksMerchant = ledger.view?.merchant
+        colony.booksStage = ledger.view?.stage
+        colony.applyBooksDecor(ledger.view?.decor)
+        colony.applyBooksRanch(ledger.view?.ranch?.animals.map { ($0.id, $0.kind, MerchantVisitInfo.date($0.bornAt), $0.caught == true, $0.name ?? "") })
         updateCount()
     }
 
@@ -2234,6 +2296,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard !got.isEmpty else { return }
         say("今天收了 \(got.joined(separator: "、"))。")
+    }
+
+    /// The decorations as last arranged, waiting a moment before they go to the books (Decor.swift).
+    private var decorToSend: [DecorPlaced]?
+    private var decorTimer: Timer?
+
+    private func sendDecor() {
+        guard let list = decorToSend else { return }
+        decorToSend = nil
+        struct Body: Encodable { let kind = "decor-set"; let items: [DecorPlaced] }
+        Task { @MainActor in
+            do {
+                _ = try await self.ledger.command(Body(items: list))
+            } catch {
+                DecorPalette.shared.refresh("沒存到伺服器：\((error as? APIError)?.message ?? error.localizedDescription)")
+            }
+        }
     }
 
     /// Something the player did that the books must do: queued (it waits while offline) and sent in order.
@@ -2558,6 +2637,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch type {
         case "pomodoro.changed":
             pullPomodoro()
+        case "friends.changed":
+            // (with `from`: a message from that friend)
+            if let from = event["from"] as? String { tellMessage(from: from) }
         case "claude.answer":
             guard let id = event["id"] as? String, event["device"] as? String == sync.account.deviceID, relayedAsks[id] != nil else { return }
             relayedAsks[id] = nil
@@ -2569,6 +2651,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         default:
             break
+        }
+    }
+
+    /// The last message from each friend already told (by its time), so a second "changed" for the same one says nothing.
+    private var toldMessages: [String: String] = [:]
+
+    /// A friend wrote: the princess says who and what (the reply is on the phone, or in the 大世界 window's 好友).
+    private func tellMessage(from friend: String) {
+        struct Last: Decodable { let text: String; let at: String; let mine: Bool }
+        struct Friend: Decodable { let id: String; let name: String; let unread: Int; let last: Last? }
+        struct Friends: Decodable { let friends: [Friend] }
+        Task { @MainActor in
+            guard let list = try? await self.sync.api.request("GET", "friends", as: Friends.self),
+                  let who = list.friends.first(where: { $0.id == friend }), let last = who.last, !last.mine, who.unread > 0,
+                  self.toldMessages[friend] != last.at else { return }
+            self.toldMessages[friend] = last.at
+            let text = last.text.count > 60 ? String(last.text.prefix(60)) + "…" : last.text
+            self.say("\(who.name) 傳來訊息：「\(text)」\(who.unread > 1 ? "（還有 \(who.unread - 1) 則沒看）" : "")")
         }
     }
 
@@ -3218,6 +3318,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var mapWindow: MapWindow?
     private var isWindowMode: Bool { settings.rangeMode == "window" }
 
+    /// With the camp window, the app is an ordinary one (Dock icon, ⌘Tab) unless the player turned that off; otherwise it lives in the menu bar only.
+    private func applyDockIcon() {
+        let policy: NSApplication.ActivationPolicy = isWindowMode && settings.showInDock ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+        // (going back to menu-bar only hides the app's windows for a moment: the camp window comes straight back)
+        if policy == .accessory, mapWindow?.isVisible == true { DispatchQueue.main.async { self.mapWindow?.window.orderFrontRegardless() } }
+    }
+
+    /// Shows the camp window (unfolding it) and brings it in front of every other window, keyboard included.
+    private func bringCampWindowForward() {
+        guard isWindowMode else { return }
+        settings.mapCollapsed = false
+        updateMapWindow()
+        guard let map = mapWindow, map.isVisible || map.window.isMiniaturized else { return } // (in 節能 or 專注 it stays away)
+        NSApp.activate(ignoringOtherApps: true)
+        if map.window.isMiniaturized { map.window.deminiaturize(nil) }
+        map.window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Clicking the Dock icon brings the camp window forward, like any app's window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        bringCampWindowForward()
+        return false
+    }
+
+    /// The app's own menu (shown while it has a Dock icon and is in front): quit, copy and paste in text fields, and the window.
+    private func setupMainMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "隱藏 GoblinCamp", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "結束 GoblinCamp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "編輯")
+        editMenu.addItem(withTitle: "還原", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪下", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷貝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "貼上", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全選", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        main.addItem(editItem)
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "視窗")
+        windowMenu.addItem(withTitle: "縮到 Dock", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "關閉", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowItem.submenu = windowMenu
+        main.addItem(windowItem)
+        NSApp.mainMenu = main
+        NSApp.windowsMenu = windowMenu
+    }
+
     @discardableResult
     private func ensureMapWindow() -> MapWindow {
         if let mapWindow { return mapWindow }
@@ -3235,9 +3392,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let picking = [.choosingNest, .editing, .placingFood].contains(colony.phase)
         var visible = !settings.mapCollapsed
         if effectiveMode != nil { visible = false }
-        if !spaceAssignWorks, let screen = map.window.screen ?? NSScreen.main, let info = Spaces.info(for: screen) {
-            if info.isFullScreen { visible = false } else if !settings.desktopsAll, let n = info.desktop, !settings.desktops.contains(n) { visible = false }
-        }
+        // (it is an ordinary window: it stays on the desktop and screen it was put on, and the desktop ticks do not apply to it)
+        if !spaceAssignWorks, let screen = map.window.screen ?? NSScreen.main, Spaces.info(for: screen)?.isFullScreen == true { visible = false }
         if picking { visible = true }
         if visible { map.show() } else { map.hide() }
     }
@@ -3248,9 +3404,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func rebuildRangeMenu() {
         guard let sub = rangeMenuItem.submenu else { return }
         sub.removeAllItems()
-        func changed() { applyWalkable(); checkFullscreenAndDesktops(immediate: true); redrawAll() }
+        func changed() { applyWalkable(); checkFullscreenAndDesktops(immediate: true); applyDockIcon(); redrawAll() }
         let modes = [("整個螢幕", "screen"), ("底部一條", "bottom"), ("右邊一條", "right"), ("左邊一條", "left"), ("獨立的營地視窗（可以收起來）", "window")]
-        for (label, mode) in modes {
+        for (label, mode) in modes where !Settings.windowOnly {
             let item = ClosureMenuItem(title: label) { [weak self] in
                 guard let self else { return }
                 let entering = mode == "window" && self.settings.rangeMode != "window"
@@ -3265,10 +3421,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let sizes: [(String, Double)] = [("薄", 30), ("中（預設）", 42), ("厚", 54), ("很厚", 64)]
         let sizeMenu = choiceMenu(title: "條狀範圍的寬度", options: sizes, get: { self.settings.rangeSize }, set: { [weak self] in self?.settings.rangeSize = $0; changed() })
         sizeMenu.isEnabled = ["bottom", "right", "left"].contains(settings.rangeMode)
-        sub.addItem(sizeMenu)
-        sub.addItem(choiceMenu(title: "條狀範圍的背景", options: [("森林", "forest"), ("草地", "meadow"), ("沒有", "none")],
-                               get: { self.settings.scenery }, set: { [weak self] in self?.settings.scenery = $0; self?.redrawAll() }))
-        sub.addItem(.separator())
+        if !Settings.windowOnly {
+            sub.addItem(sizeMenu)
+            sub.addItem(choiceMenu(title: "條狀範圍的背景", options: [("森林", "forest"), ("草地", "meadow"), ("沒有", "none")],
+                                   get: { self.settings.scenery }, set: { [weak self] in self?.settings.scenery = $0; self?.redrawAll() }))
+            sub.addItem(.separator())
+        }
         // the camp window: shown or folded away, on top or not, and what its ground and sky are like
         let windowMenu = NSMenu(title: "營地視窗")
         windowMenu.autoenablesItems = false
@@ -3276,6 +3434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.settings.mapCollapsed.toggle()
             self.updateMapWindow()
+            if !self.settings.mapCollapsed { self.bringCampWindowForward() }
         }
         toggle.isEnabled = isWindowMode
         windowMenu.addItem(toggle)
@@ -3286,6 +3445,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         onTop.stateProvider = { self.settings.mapOnTop }
         onTop.isEnabled = isWindowMode
         windowMenu.addItem(onTop)
+        let dock = ClosureMenuItem(title: "在 Dock 顯示圖示") { [weak self] in
+            self?.settings.showInDock.toggle()
+            self?.applyDockIcon()
+        }
+        dock.toolTip = "有 Dock 圖示時，可以用 ⌘Tab 切過來，點圖示就會把營地視窗叫到最前面"
+        dock.stateProvider = { self.settings.showInDock }
+        dock.isEnabled = isWindowMode
+        windowMenu.addItem(dock)
         let reset = ClosureMenuItem(title: "回到右下角") { [weak self] in self?.mapWindow?.resetPosition() }
         reset.isEnabled = isWindowMode
         windowMenu.addItem(reset)
@@ -3432,7 +3599,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if settings.fullscreenFocus || fullscreenActive {
             let mine = screens.filter { screen in isWindowMode ? screen == (mapWindow?.window.screen ?? NSScreen.main) : allowed.contains { $0.frame == screen.frame } }
             let space = mine.contains { Spaces.info(for: $0)?.isFullScreen == true }
-            let now = space || fullscreenWindowUp(on: mine)
+            // (in the camp window, only a real full-screen app counts: a browser zoomed to fill the screen used to fold the camp away)
+            let now = space || (!isWindowMode && fullscreenWindowUp(on: mine))
             if now == fullscreenActive {
                 pendingFullscreen = 0
             } else {
@@ -3463,12 +3631,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if Spaces.apply(plan, to: window) { key = text; Diagnostics.note("\(window.title.isEmpty ? "overlay" : window.title) placed on desktops \(plan.target)") }
         }
         for (window, screen) in zip(windows, NSScreen.screens) { place(window, on: screen, key: &window.placedOn) }
-        if isWindowMode, let map = mapWindow, let screen = map.window.screen ?? NSScreen.main { place(map.window, on: screen, key: &map.placedOn) }
         if works != spaceAssignWorks {
             spaceAssignWorks = works
             let behavior: NSWindow.CollectionBehavior = works ? [.stationary, .ignoresCycle] : [.canJoinAllSpaces, .stationary, .ignoresCycle]
             windows.forEach { $0.collectionBehavior = behavior }
-            mapWindow?.window.collectionBehavior = works ? [] : [.canJoinAllSpaces]
             Diagnostics.note("placing windows on chosen desktops \(works ? "works" : "is not available; hiding by drawing instead")")
         }
     }
@@ -3791,6 +3957,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return parent
     }
 
+    /// Opening the menu-bar menu brings the camp window up from behind other windows (without taking the keyboard).
+    func menuWillOpen(_ menu: NSMenu) {
+        guard menu === statusItem.menu, isWindowMode, let map = mapWindow, map.isVisible else { return }
+        map.window.orderFrontRegardless()
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         let pomodoro = colony.pomodoro
         pomodoroStatusItem.isHidden = !pomodoro.isRunning
@@ -3833,6 +4005,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildDesktopMenu()
         rebuildScreenMenu()
         rebuildRangeMenu()
+        desktopMenuItem.isHidden = isWindowMode // (the camp window is an ordinary window: it is on whichever desktop and screen you put it)
+        screenMenuItem.isHidden = isWindowMode
         refreshClaudeStatus()
         pickItem.title = colony.nest == nil ? "選擇\(home)位置…" : "開新世界…"
         nestMenuItem.title = "\(home)外觀"

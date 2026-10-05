@@ -333,6 +333,7 @@ final class Updater {
             return
         }
         Diagnostics.note("update: quitting to install")
+        ExitLog.reason = "安裝更新"
         NSApp.terminate(nil)
     }
 

@@ -5,9 +5,14 @@ const route = useRoute();
 const { user } = useAccount();
 const TABBED = ["/", "/notes", "/pomodoro", "/camp", "/workshop", "/roster", "/friends", "/settings", "/claude"];
 const tabbed = computed(() => !!user.value && (TABBED.includes(route.path.replace(/\/$/, "") || "/") || route.path.startsWith("/friends/")));
+// The page scrolls inside #scroller, never the whole document: on iPhone a scrolling document drags the fixed tab bar along with
+// Safari's toolbar and the bounce at either end. A new page starts at its top (what the router does for the document).
+useNuxtApp().hook("page:finish", () => document.getElementById("scroller")?.scrollTo(0, 0));
 </script>
 
 <template>
-  <NuxtPage />
+  <div id="scroller">
+    <NuxtPage />
+  </div>
   <TabBar v-if="tabbed" />
 </template>

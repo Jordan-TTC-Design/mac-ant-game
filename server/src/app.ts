@@ -19,6 +19,7 @@ import { friendRoutes } from "./friends/routes.ts";
 import { pomodoroRoutes } from "./pomodoro/routes.ts";
 import { NoPushSender, type PushSender } from "./push/sender.ts";
 import { Hub, type Socket } from "./realtime/hub.ts";
+import type { Backups } from "./backup.ts";
 
 export interface AppDeps {
   database: Database;
@@ -30,6 +31,8 @@ export interface AppDeps {
   /** The clock (tests move it forward). */
   now?: () => Date;
   limiter?: RateLimiter;
+  /** The database backups (none: BACKUP_DIR is not set). */
+  backups?: Backups;
 }
 
 export type AppEnv = { Variables: { session: CurrentSession } };

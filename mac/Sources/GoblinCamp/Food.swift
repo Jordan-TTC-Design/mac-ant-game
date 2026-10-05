@@ -583,6 +583,13 @@ struct AntWorld {
     var rangedReach = 0.0
     /// Night time (goblins sleep more), and whether they may start something to pass the time (not while it rains, in a crowd, or at the campfire party).
     var night = false
+    /// How much likelier quiet sitting is (a harp, a meditation stone put down: twice).
+    var calm = 1.0
+    /// The hour of the day (0…23), for what goes on of an evening.
+    var hour = 12
+    /// How many more may take up the night watch, and sit round the fire pit.
+    var patrolSlots = 0
+    var firesideSlots = 0
     var activitiesOn = true
     /// The stone ring where the goblins cook (once the camp has one), and whether a cook may start now (something in the larder, nobody at the pot).
     var pit: CGPoint?
@@ -607,6 +614,10 @@ struct AntWorld {
     var race = "goblin"
     /// The undead camp's graves (where they sleep).
     var graves: [CGPoint] = []
+    /// The ranch: where what is being caught is now (by its id; a soul's is negative), and the wild animals nobody may hunt
+    /// (they are being caught for the pens).
+    var herdTargets: [Int: CGPoint] = [:]
+    var spared: Set<Int> = []
     var crowded: Bool { crowd >= 1 }
 
     /// The way in nearest to `p`: the nest hole or a tent.

@@ -1,0 +1,13 @@
+{
+  "id": "soul_beast",
+  "name": "獸魂",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 1,
+  "speed": 10,
+  "meat": 0,
+  "aggressive": false,
+  "weight": 0,
+  "radius": 7
+}

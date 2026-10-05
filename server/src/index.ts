@@ -9,6 +9,7 @@ import { NoPushSender, WebPushSender } from "./push/sender.ts";
 import { startWorldLoop } from "./world/service.ts";
 import { startMaintenance } from "./maintenance.ts";
 import { startPomodoroLoop } from "./pomodoro/routes.ts";
+import { Backups, pgDump, startBackups } from "./backup.ts";
 
 const config = loadConfig();
 const database = createDatabase(config.DATABASE_URL);
@@ -21,11 +22,14 @@ const push =
 if (!push.publicKey) console.warn("No VAPID keys (see server/.env.example): phones will not get reminders.");
 const mailer = config.RESEND_API_KEY ? new ResendMailer(config.RESEND_API_KEY, config.MAIL_FROM) : new ConsoleMailer();
 if (!config.RESEND_API_KEY) console.warn("No RESEND_API_KEY: mails are printed here instead of sent.");
-const app = createApp({ database, mailer, config, push });
+const backups = config.BACKUP_DIR ? new Backups(config.BACKUP_DIR, pgDump(config.DATABASE_URL)) : undefined;
+if (!backups) console.warn("No BACKUP_DIR: the database is not backed up.");
+const app = createApp({ database, mailer, config, push, backups });
 const stopReminders = startReminderLoop(app.deps);
 const stopWorld = startWorldLoop(app.deps);
 const stopMaintenance = startMaintenance(app.deps);
 const stopPomodoro = startPomodoroLoop(app.deps);
+const stopBackups = backups ? startBackups(backups) : () => {};
 const server = serve({ fetch: app.fetch, port: config.PORT }, (info) => {
   console.log(`GoblinCamp server on http://localhost:${info.port}/api/health`);
 });
@@ -36,6 +40,7 @@ async function shutdown() {
   stopWorld();
   stopMaintenance();
   stopPomodoro();
+  stopBackups();
   server.close();
   await database.close();
   process.exit(0);

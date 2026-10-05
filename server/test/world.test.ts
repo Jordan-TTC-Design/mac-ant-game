@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { bossIn, bossWindow, cellAt, lairEntry, cellCenter, cellsWithin, neighbors, regionOf, WORLD_SEED, type CellView, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
+import { bossIn, bossWindow, cellAt, lairEntry, cellCenter, cellsWithin, neighbors, regionOf, WORLD_SEED, type CellView, type ExpeditionReport, type RoutePreview, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { APP_URL, bearer, emptyTables, logIn, mac, openTestDatabase, phone, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -349,6 +349,52 @@ describe("camps against camps", () => {
     expect(report.outcome.against).toContain("營地");
     expect(report.fighters.filter((f) => f.side === "defend").length).toBeGreaterThan(20); // (the whole camp)
     expect((await me(a)).cells.map((c) => c.cell)).toEqual([aCell]);
+  });
+
+  it("parties go round other camps' built-up land, and cannot go where it walls them out (not a friend's)", async () => {
+    const a = await account("a@example.com");
+    const b = await account("b@example.com");
+    const c = await account("c@example.com");
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, a);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, b);
+    await t.call("POST", "/world/open", { cell: cellAt({ lat: 25.045, lng: 121.55 }) }, c);
+    await veteran("b@example.com");
+    // a free cell 1 km west of b, walled in all round by two rings of a's town cells
+    const target = cellAt({ lat: 25.0336, lng: 121.555 });
+    const ring = new Set(neighbors(target));
+    for (const n of [...ring]) for (const m of neighbors(n)) if (m !== target) ring.add(m);
+    const id = async (email: string) => (await database.sql`select id from users where email = ${email}`)[0]!.id as string;
+    const aId = await id("a@example.com");
+    for (const cell of ring) await database.sql`insert into world_cells (cell, owner, town) values (${cell}, ${aId}, true) on conflict (cell) do update set owner = ${aId}, town = true`;
+    const route = async (auth: Record<string, string>) => (await t.call("POST", "/world/expeditions/route", { to: target }, auth)).body as RoutePreview;
+
+    // the map shows b the wall (and not a, whose land it is)
+    expect((await map(b, cellCenter(target), 600)).filter((c) => c.blocks).length).toBe(ring.size);
+    expect((await map(a, cellCenter(target), 600)).some((c) => c.blocks)).toBe(false);
+    // b cannot get there: told whose land is in the way
+    const shut = await route(b);
+    expect(shut.waypoints).toEqual([]);
+    expect(shut.blockedBy?.name).toBeTruthy();
+    const refused = await t.call("POST", "/world/expeditions", { to: target, count: 5, settle: true }, b);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe("no_way");
+    // a's own land does not stand in a's way, nor a friend's in the friend's
+    expect((await route(a)).waypoints.length).toBeGreaterThanOrEqual(2);
+    const cId = await id("c@example.com");
+    const [x, y] = aId < cId ? [aId, cId] : [cId, aId];
+    await database.sql`insert into friendships (user_a, user_b, asked_by, created_at, accepted_at) values (${x}, ${y}, ${aId}, now(), now())`;
+    expect((await route(c)).waypoints.length).toBeGreaterThanOrEqual(2);
+
+    // the northern side opened (bare cells: walked over): b goes round, longer than straight, and the party walks that way
+    for (const cell of ring) if (cellCenter(cell).lat > cellCenter(target).lat + 0.0002) await database.sql`update world_cells set town = false where cell = ${cell}`;
+    const round = await route(b);
+    expect(round.waypoints.length).toBeGreaterThan(2);
+    expect(round.meters).toBeGreaterThan(round.straight);
+    const sent = await t.call("POST", "/world/expeditions", { to: target, count: 5, settle: true }, b);
+    expect(sent.status).toBe(201);
+    expect(sent.body.route).toEqual(round.waypoints);
+    expect((await me(b)).walking[0]!.route).toEqual(round.waypoints);
   });
 
   it("a new world gives the cells up", async () => {

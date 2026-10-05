@@ -11,6 +11,7 @@ export function outcomeText(r: Pick<ExpeditionSummary, "outcome" | "defending">)
     case "taken": return "打贏了，搶下這一格";
     case "settled": return fought ? "打贏了，佔領下來" : "住下了";
     case "held": return o.damage ? `打了 ${o.damage} 點傷害` : "沒打下來";
+    case "camping": return "到了，有些在旁邊扎營";
     default: return "回來了";
   }
 }

@@ -48,8 +48,27 @@ export const expeditionInput = z
   .refine((v) => v.residents || v.count, "residents or count");
 export type ExpeditionInput = z.infer<typeof expeditionInput>;
 
-/** `POST /api/world/cells/:cell/recall`: residents on a held cell walk home (all of them: the cell is given up). */
-export const recallInput = z.object({ count: z.number().int().min(1).max(100).optional() });
+export const routeInput = z.object({ from: z.union([z.literal("home"), cell]).default("home"), to: cell });
+
+/** The way a party would walk (POST world/expeditions/route): round other camps' built-up land (route.ts). */
+export interface RoutePreview {
+  /** The cells walked between, or empty when there is no way round. */
+  waypoints: string[];
+  meters: number;
+  straight: number;
+  /** When there is no way: the first cell in the way and whose it is. */
+  blockedBy: { cell: string; name: string } | null;
+}
+
+/**
+ * `POST /api/world/cells/:cell/recall`: residents on a held cell (or, with `campers`, those camping beside it) walk to the camp
+ * or to another held cell (`to`: "home" or a cell). No count, or too few left behind: all go and the cell is given up.
+ */
+export const recallInput = z.object({
+  count: z.number().int().min(1).max(500).optional(),
+  to: z.string().max(40).optional(),
+  campers: z.boolean().optional(),
+});
 
 export const battleEventSchema = z.object({
   round: z.number().int(),
@@ -116,22 +135,27 @@ export interface CellView {
   lairWounds?: { standing: number; total: number; hpShare: number; healedAt: string } | null;
   /** A great monster standing here (a lair here is hidden while it is). */
   boss: BossView | null;
+  /** Someone else's built-up land the viewer's parties must walk round (route.ts); not sent when it does not. */
+  blocks?: boolean;
 }
 
 export interface ExpeditionSummary {
   id: string;
-  kind: "attack" | "move" | "guard";
+  /** recall: walking back from a cell (WORLD.md §24); reroute: those of a recall who found no room, walking on to a cell with room. */
+  kind: "attack" | "move" | "guard" | "recall" | "reroute";
   from: string;
   to: string;
   party: number;
   setOutAt: string;
   arriveAt: string;
+  /** The cells it walks between round other camps' land (route.ts); absent: straight there. */
+  route?: string[];
   status: "walking" | "done";
   /** Filled in when it arrived. */
   outcome: null | {
     won: boolean;
     /** cleared: a lair beaten; taken: a player's cell won; settled: moved in; held: the defenders held; guarding: staying on a friend's cell; back: nothing to do there. */
-    cell: "cleared" | "taken" | "settled" | "held" | "guarding" | "back";
+    cell: "cleared" | "taken" | "settled" | "held" | "guarding" | "back" | "camping";
     against: string;
     loot: Record<string, number>;
     xp: number;
@@ -183,9 +207,14 @@ export interface WorldMe {
     upkeep: boolean;
     /** How many held cells are joined to it side by side (itself included): a town needs TOWN_MIN_CELLS. */
     region: number;
+    /** The towns in that region (one may stand for every TOWN_CELLS_EACH cells). */
+    regionTowns: number;
     /** Parties setting out from it may be this many bigger, and walk this share of the time (its building). */
     party: number;
     travel: number;
+    /** Most who may live there (all bonuses counted), and how many camp beside it waiting for room. */
+    capacity: number;
+    camping: number;
   }[];
   /** At home, free to go (not on an expedition). */
   atHome: number;
@@ -208,7 +237,7 @@ export interface WorldMe {
   }[];
   /** The great monsters out now near the camp (the nearest few), to go and look at. */
   bosses: { cell: string; kind: string; name: string; lat: number; lng: number; km: number; hp: number; maxHp: number; endsAt: string }[];
-  rules: { garrisonMin: number; cellCapacity: number; nestCost: Record<string, number>; nestHours: number; nestBirthMinutes: number; townCost: Record<string, number>; townMinCells: number };
+  rules: { garrisonMin: number; cellCapacity: number; nestCost: Record<string, number>; nestHours: number; nestBirthMinutes: number; townCost: Record<string, number>; townMinCells: number; townCellsEach: number };
 }
 
 /** One thing that happened on a held cell (newest first in `CellDetail.history`). */
@@ -269,6 +298,11 @@ export interface CellDetail {
   /** Held cells next to it (they add to its yield, and send help when it is fought over), and how many are joined to it. */
   neighbours: number;
   region: number;
+  /** The towns in its region, and the room they add to this cell (counted in `capacity`; at most TOWN_ROOM_MAX towns count). */
+  regionTowns: number;
+  townRoom: number;
+  /** The holder's residents camping beside it, waiting for room (they help defend it and move in as room frees up). */
+  camping: number;
   /** Friends' residents guarding it, by friend. */
   guests: { owner: string; name: string; count: number }[];
   /** Whether it eats rations (beyond the free cells), and how the store stands against all that do. */
@@ -320,6 +354,10 @@ export interface TerritoryItem {
   /** Held cells joined to it (itself included), and next to it. */
   region: number;
   neighbours: number;
+  /** The room the towns of its region add (counted in `capacity`). */
+  townRoom: number;
+  /** Residents camping beside it, waiting for room. */
+  camping: number;
   /** It eats rations every yield. */
   upkeep: boolean;
   /** Friends' residents guarding it. */

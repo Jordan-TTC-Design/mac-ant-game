@@ -1,0 +1,13 @@
+{
+  "id": "eagle",
+  "name": "老鷹",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 10,
+  "speed": 40,
+  "meat": 0,
+  "aggressive": false,
+  "weight": 0,
+  "radius": 7
+}

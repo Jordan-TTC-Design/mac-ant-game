@@ -74,7 +74,7 @@ describe("任務", () => {
     expect(ids).toContain("pop_60");
     expect(ids).not.toContain("lumber_2");
     expect(ids).not.toContain("pop_120");
-    expect(QUESTS).toHaveLength(30);
+    expect(QUESTS).toHaveLength(80);
     expect(list.find((q) => q.id === "pop_60")).toEqual(expect.objectContaining({ have: 6, need: 60, done: false, claimed: false }));
   });
 
@@ -101,6 +101,20 @@ describe("任務", () => {
     const c = res.body.camp as CampView;
     const clubs = c.residents.filter((r) => r.gear?.weapon?.id === "wood_club").length + c.armory.filter((g) => g.id === "wood_club").length;
     expect(clubs).toBe(2);
+  });
+
+  it("counts the second batch: raids by the hundred, every kind of 初期魔王, a camp full to the brim", async () => {
+    const me = await campWith({}, 60);
+    const done = { raids_20: "2026-10-01T00:00:00Z", raids_100: "2026-10-01T00:00:00Z", boss_1: "2026-10-01T00:00:00Z", boss_3: "2026-10-01T00:00:00Z", pop_60: "2026-10-01T00:00:00Z", pop_120: "2026-10-01T00:00:00Z" };
+    await database.sql`update camps set quests = ${JSON.stringify(done)}::jsonb, kills = ${JSON.stringify({ giant_rat: 250, slime: 60, giant_bat: 1, dire_wolf: 1, slime_king: 2, boar_lord: 1, toad_king: 1 })}::jsonb`;
+    const list = await quests(me);
+    expect(list.find((q) => q.id === "raids_300")).toEqual(expect.objectContaining({ have: 300, need: 300, done: true }));
+    expect(list.find((q) => q.id === "boss_all")).toEqual(expect.objectContaining({ have: 5, need: 6, done: false })); // (no 盜賊頭目 yet)
+    expect(list.find((q) => q.id === "boss_6")).toEqual(expect.objectContaining({ have: 6, need: 6, done: true }));
+    expect(list.find((q) => q.id === "home_full")).toEqual(expect.objectContaining({ need: 300, done: false })); // (goblins: 300 at home)
+    expect(list.find((q) => q.id === "people_250")).toEqual(expect.objectContaining({ have: 60, need: 250 }));
+    expect((await cmd(me, { kind: "quest-claim", quest: "raids_300" })).status).toBe(200);
+    expect((await quests(me)).map((q) => q.id)).toContain("raids_1000");
   });
 
   it("opens a 道具's recipe", async () => {

@@ -219,9 +219,20 @@ final class Settings {
 
     /// Where the goblins may walk on their screen: "screen" (all of it), "bottom", "right", "left" (a strip of `rangeSize` points),
     /// or "window" (inside the little camp window).
+    /// For now only the camp window is offered: the whole screen and the strips are switched off (their code stays, and turning
+    /// this off brings them back to the menu).
+    static let windowOnly = true
     var rangeMode: String {
-        get { defaults.string(forKey: "rangeMode") ?? "screen" }
+        get { Settings.windowOnly ? "window" : defaults.string(forKey: "rangeMode") ?? "screen" }
         set { defaults.set(newValue, forKey: "rangeMode") }
+    }
+    /// A player who had the whole screen or a strip moves to the camp window, shown (once; true when that happened).
+    @discardableResult
+    func moveToWindowOnly() -> Bool {
+        guard Settings.windowOnly, defaults.string(forKey: "rangeMode") != "window" else { return false }
+        defaults.set("window", forKey: "rangeMode")
+        mapCollapsed = false
+        return true
     }
     var rangeSize: Double {
         get { min(64, max(30, defaults.object(forKey: "rangeSize") as? Double ?? 42)) }
@@ -232,10 +243,15 @@ final class Settings {
         get { defaults.string(forKey: "scenery") ?? "forest" }
         set { defaults.set(newValue, forKey: "scenery") }
     }
-    /// The camp window stays above other windows.
+    /// The camp window stays above other windows (off by default since 2026-10-02: an ordinary window, in front when picked).
     var mapOnTop: Bool {
-        get { defaults.object(forKey: "mapOnTop") as? Bool ?? true }
+        get { defaults.object(forKey: "mapOnTop") as? Bool ?? false }
         set { defaults.set(newValue, forKey: "mapOnTop") }
+    }
+    /// While the camp window is used, the app also has a Dock icon (and is in ⌘Tab), like any other app.
+    var showInDock: Bool {
+        get { defaults.object(forKey: "showInDock") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "showInDock") }
     }
     /// The player closed (folded away) the camp window.
     var mapCollapsed: Bool {
@@ -337,6 +353,34 @@ final class Settings {
     }
 
     /// Which character is on screen ("goblin", "ants", or a user-made one).
+    /// The day (yyyy-MM-dd) the camp last said which holiday it is (Holidays.swift): said once a day, not at every start.
+    var holidayAnnounced: String? {
+        get { defaults.string(forKey: "holidayAnnounced") }
+        set { defaults.set(newValue, forKey: "holidayAnnounced") }
+    }
+
+    /// Seconds the camp has been open that the books have not been told of yet (Ranch.swift): kept so a restart loses none.
+    var ranchOpenSeconds: Double {
+        get { defaults.double(forKey: "ranchOpenSeconds") }
+        set { defaults.set(newValue, forKey: "ranchOpenSeconds") }
+    }
+
+    /// Beasts' bones the undead have dug up and not yet put together, and how well the wild eagle knows the elves (Ranch.swift).
+    var ranchBones: Int {
+        get { defaults.integer(forKey: "ranchBones") }
+        set { defaults.set(newValue, forKey: "ranchBones") }
+    }
+    var ranchEagleTrust: Int {
+        get { defaults.integer(forKey: "ranchEagleTrust") }
+        set { defaults.set(newValue, forKey: "ranchEagleTrust") }
+    }
+
+    /// The merchant's visits so far today (Merchant.swift), as "yyyy-MM-dd:count".
+    var merchantVisits: String? {
+        get { defaults.string(forKey: "merchantVisits") }
+        set { defaults.set(newValue, forKey: "merchantVisits") }
+    }
+
     var characterID: String {
         get { defaults.string(forKey: "character") ?? "goblin" }
         set { defaults.set(newValue, forKey: "character") }

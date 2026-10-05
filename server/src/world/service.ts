@@ -5,7 +5,7 @@
  */
 import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { PushSubscriptionJSON, WorldPush } from "@goblincamp/shared";
-import { advance, fightBoosts, RACE_RANGE, residentAsFighter, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
+import { advance, fightBoosts, RACE_RANGE, raceRules, residentAsFighter, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
 import {
   afterDefeat,
   bossAt,
@@ -61,7 +61,11 @@ import {
   TOWN_COST,
   TOWN_MIN_CELLS,
   TERRAIN_YIELD,
-  travelMinutes,
+  walkMinutes,
+  findRoute,
+  inTheWay,
+  type Route,
+  type RoutePreview,
   cellYield,
   buildingYield,
   buildingsFor,
@@ -77,6 +81,12 @@ import {
   neighbors,
   connectedCells,
   heldNeighbours,
+  townsJoined,
+  townRoom,
+  regionTowns,
+  regionHasRoomForTown,
+  TOWN_CELLS_EACH,
+  type CellBuilding,
   REINFORCE_PER_CELL,
   eatRations,
   fedYield,
@@ -138,6 +148,8 @@ export const walkingPlace = (id: string) => `exp:${id}`;
 /** Guarding a friend's cell (holdings.ts GUESTS_MAX); fallen there, their gear still to come home (see advanceWorld). */
 export const guardPlace = (cell: string) => `guard:${cell}`;
 const fellPlace = (cell: string) => `fell:${cell}`;
+/** Camping beside one of the camp's own cells, waiting for room in it (a recall that found no room anywhere). */
+export const campingPlace = (cell: string) => `bivouac:${cell}`;
 
 export class WorldError extends Error {
   constructor(
@@ -300,15 +312,41 @@ async function bumpVersion(tx: Tx, camp: CampRow) {
   await tx.update(camps).set({ version: camp.version, nextId: camp.nextId, materials: camp.materials, kills: camp.kills }).where(eq(camps.userId, camp.userId));
 }
 
-/** What stands on and around a camp's held cells: each one's landmark, and whether one of its own temples is next to it. */
+/**
+ * What stands on and around a camp's held cells: each one's landmark, whether one of its own temples is next to it, how
+ * many of its cells are next to it, and the towns of its region that add to its room.
+ */
 async function surroundings(tx: Tx, held: string[]): Promise<(cell: string) => CellSurroundings> {
   const landmarks = await landmarksFor(tx, held);
   const mine = new Set(held);
+  const towns = await townsIn(tx, held);
+  const inRegion = new Map<string, number>();
+  const regionTownsOf = (cell: string) => {
+    if (!inRegion.has(cell)) {
+      const region = connectedCells(cell, mine);
+      const n = region.filter((c) => towns.has(c)).length;
+      for (const c of region) inRegion.set(c, n);
+    }
+    return inRegion.get(cell) ?? 0;
+  };
   return (cell) => ({
     landmark: landmarks.get(cell) ?? null,
     templeNear: neighbors(cell).some((n) => mine.has(n) && landmarks.get(n)?.kind === "temple"),
     neighbours: heldNeighbours(cell, mine),
+    townsJoined: mine.has(cell) ? townsJoined(regionTownsOf(cell), towns.has(cell)) : 0,
   });
+}
+
+/** The towns among these cells. */
+async function townsIn(tx: Tx, cells: string[]): Promise<Set<string>> {
+  if (!cells.length) return new Set();
+  return new Set((await tx.select({ cell: worldCells.cell }).from(worldCells).where(and(inArray(worldCells.cell, cells), eq(worldCells.town, true)))).map((r) => r.cell));
+}
+
+/** Most residents a held cell houses: by race (a town twice that), plus what its building, landmark and the region's towns add. */
+async function roomOf(tx: Tx, camp: { userId: string; race: string }, row: { cell: string; town: boolean; building: CellBuilding | null }, at: Date, isHome = false): Promise<number> {
+  const around = (await surroundings(tx, await heldCells(tx, camp.userId)))(row.cell);
+  return cellCapacity(camp.race, row.town) + cellBonus(camp.race, isHome ? null : row.building, at.getTime(), around).room;
 }
 
 /** Whether two accounts are friends (an ask answered yes). */
@@ -356,7 +394,10 @@ async function guestsFell(tx: Tx, rows: ResidentRow[], cell: string, holder: str
  */
 async function playerDefense(tx: Tx, defender: CampRow, homeCell: string | null, row: CellRow, at: Date, attackers: number) {
   const campCell = homeCell === row.cell;
-  const pool = [...(await dwellers(tx, defender.userId, row.cell, homeCell)), ...(campCell ? [] : await reinforcements(tx, defender, row.cell, homeCell))];
+  const pool = [
+    ...(await dwellers(tx, defender.userId, row.cell, homeCell)),
+    ...(campCell ? [] : [...(await aliveAt(tx, defender.userId, campingPlace(row.cell))), ...(await reinforcements(tx, defender, row.cell, homeCell))]),
+  ];
   const around = (await surroundings(tx, await heldCells(tx, defender.userId)))(row.cell);
   const fort = cellBonus(defender.race, campCell ? null : row.building, at.getTime(), around).fort;
   const boosts: FightBoosts = { ...fightBoosts(defender.race, defender.boosts, at.getTime()), fort };
@@ -476,6 +517,16 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       }
       await tx.update(worldCells).set({ nextSlot: population.nextSlot, advancedTo: now }).where(eq(worldCells.cell, cell.cell));
     }
+    // those camping beside it move in as room frees up (on the camp's own cell they are simply home)
+    const campers = await aliveAt(tx, camp.userId, campingPlace(cell.cell));
+    if (campers.length) {
+      const free = isHome ? campers.length : room - (await countAt(tx, camp.userId, cellPlace(cell.cell)));
+      const moving = campers.slice(0, Math.max(0, free));
+      if (moving.length) {
+        await tx.update(campResidents).set({ place: isHome ? "home" : cellPlace(cell.cell) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, moving.map((r) => r.id))));
+        changed = true;
+      }
+    }
     const n = (await countAt(tx, camp.userId, cellPlace(cell.cell))) + (isHome ? await countAt(tx, camp.userId, "home") : 0);
     if (n === 0 && !isHome) {
       await releaseCell(tx, cell.cell);
@@ -575,6 +626,8 @@ async function lairReturns(
     const guards = await aliveAt(tx, camp.userId, cellPlace(cell.cell));
     if (guards.length === 0) break;
     fought = true;
+    // (those camping beside it fight too)
+    guards.push(...(await aliveAt(tx, camp.userId, campingPlace(cell.cell))));
     const at = new Date(t);
     const foes = lairFighters(lair).map((f) => ({ ...f, side: "attack" as const }));
     const fort = cellBonus(camp.race, cell.building, t, around).fort;
@@ -627,8 +680,8 @@ async function lairReturns(
 }
 
 async function releaseCell(tx: Tx, cell: string) {
-  // (friends guarding it walk home)
-  await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.place, guardPlace(cell)), isNull(campResidents.diedAt)));
+  // (friends guarding it walk home, and so do the holder's residents camping beside it)
+  await tx.update(campResidents).set({ place: "home" }).where(and(or(eq(campResidents.place, guardPlace(cell)), eq(campResidents.place, campingPlace(cell))), isNull(campResidents.diedAt)));
   await tx
     .update(worldCells)
     .set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: null, building: null, updatedAt: new Date() })
@@ -818,9 +871,12 @@ export async function sendExpedition(
     if (refusal === "target_shielded" || refusal === "target_closed") throw new WorldError(409, refusal, "對方正在龜縮，現在打不了。");
   }
 
+  // round other camps' built-up land; no way round, no going
+  const way = await routeFor(tx, userId, fromCell!, input.to);
+  if (!way.route) throw new WorldError(409, "no_way", `${way.blockedBy?.name ?? "別人"}的領地擋在路上，繞不過去：先把擋路的那一格打下來，或從別的地方出發。`);
   const boosts = withCarried(fightBoosts(camp.race, camp.boosts, now.getTime()), carried);
   const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
-  const minutes = Math.max(1, Math.round(travelMinutes(fromCell, input.to, slowest) * fromBonus.travel));
+  const minutes = Math.max(1, Math.round(walkMinutes(way.route.meters, slowest) * fromBonus.travel));
   const [row] = await tx
     .insert(expeditions)
     .values({
@@ -830,6 +886,7 @@ export async function sendExpedition(
       toCell: input.to,
       party: party.map((r) => r.id),
       boosts: carried,
+      route: routeColumn(way.route),
       setOutAt: now,
       arriveAt: new Date(now.getTime() + minutes * MINUTE),
       defender: !moving && target?.owner ? target.owner : null,
@@ -842,6 +899,50 @@ export async function sendExpedition(
   await addEvent(tx, userId, now, "expedition", { id: row!.id, setOut: true, to: input.to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
   await bumpVersion(tx, camp);
   return summary(row!);
+}
+
+// --- the way there ---------------------------------------------------------------------------------------------------
+
+/**
+ * The cells `userId`'s parties cannot walk through (shared/src/world/route.ts), with whose they are: other camps' cells
+ * with a nest, a building or a town on them, and their camps' own cells; never a friend's.
+ */
+async function blockedFor(tx: Tx, userId: string): Promise<Map<string, string>> {
+  const pairs = await tx
+    .select({ a: friendships.userA, b: friendships.userB })
+    .from(friendships)
+    .where(and(or(eq(friendships.userA, userId), eq(friendships.userB, userId)), isNotNull(friendships.acceptedAt)));
+  const friends = new Set(pairs.map((p) => (p.a === userId ? p.b : p.a)));
+  const out = new Map<string, string>();
+  const built = await tx
+    .select({ cell: worldCells.cell, owner: worldCells.owner })
+    .from(worldCells)
+    .where(and(isNotNull(worldCells.owner), ne(worldCells.owner, userId), or(isNotNull(worldCells.nestStartedAt), isNotNull(worldCells.building), eq(worldCells.town, true))));
+  for (const c of built) if (c.owner && !friends.has(c.owner)) out.set(c.cell, c.owner);
+  const homes = await tx.select({ cell: worldPlayers.homeCell, owner: worldPlayers.userId }).from(worldPlayers).where(and(isNotNull(worldPlayers.homeCell), ne(worldPlayers.userId, userId)));
+  for (const h of homes) if (h.cell && !friends.has(h.owner)) out.set(h.cell, h.owner);
+  return out;
+}
+
+/** The way from one cell to another for `userId`'s parties, or (null) whose land is in the way. */
+async function routeFor(tx: Tx, userId: string, from: string, to: string): Promise<{ route: Route | null; blockedBy: { cell: string; name: string } | null }> {
+  const blocked = await blockedFor(tx, userId);
+  const route = findRoute(from, to, new Set(blocked.keys()));
+  if (route) return { route, blockedBy: null };
+  const cell = inTheWay(from, to, blocked.keys());
+  return { route: null, blockedBy: cell ? { cell, name: (await ownerOf(tx, blocked.get(cell)!)).name } : null };
+}
+
+/** As stored on the expedition: the turns, or null when it walks straight there. */
+const routeColumn = (route: Route | null): string[] | null => (route && route.waypoints.length > 2 ? route.waypoints : null);
+
+/** The way a party would walk from `from` ("home" or a held cell) to `to` (the dispatch dialog shows it; nothing is sent). */
+export async function previewRoute(tx: Tx, userId: string, input: { from: string; to: string }): Promise<RoutePreview> {
+  const [player] = await tx.select().from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  const from = input.from === "home" ? player?.homeCell : input.from;
+  if (!from) throw new WorldError(403, "not_open", "還沒開啟大世界。");
+  const { route, blockedBy } = await routeFor(tx, userId, from, input.to);
+  return route ? { waypoints: route.waypoints, meters: route.meters, straight: route.straight, blockedBy: null } : { waypoints: [], meters: 0, straight: cellDistance(from, input.to), blockedBy };
 }
 
 /** How many may go into the lair on a free cell (null: no lair there, or a great monster: as many as can go). */
@@ -909,6 +1010,7 @@ function summary(row: ExpeditionRow, viewer?: string): ExpeditionSummary {
     party: row.party.length,
     setOutAt: row.setOutAt.toISOString(),
     arriveAt: row.arriveAt.toISOString(),
+    ...(row.route ? { route: row.route } : {}),
     status: row.status,
     outcome: result?.outcome ?? null,
     ...(viewer && row.defender === viewer && row.userId !== viewer ? { defending: true } : {}),
@@ -955,7 +1057,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   const attacker = await ownerOf(tx, camp.userId);
   const player = await lockPlayer(tx, camp.userId);
   const min = garrisonMin(camp.race);
-  const cap = cellCapacity(camp.race, cell?.town ?? false) + (cell?.owner === camp.userId ? cellBonus(camp.race, cell.building, at.getTime()).room : 0);
+  const cap = cell?.owner === camp.userId ? await roomOf(tx, camp, cell, at) : cellCapacity(camp.race, cell?.town ?? false);
   const report: ExpeditionReport = {
     ...summary(exp),
     status: "done",
@@ -989,7 +1091,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       const from = await lockCell(tx, exp.fromPlace);
       if (from?.owner === camp.userId) {
         const there = (await aliveAt(tx, camp.userId, cellPlace(exp.fromPlace))).length;
-        const room = cellCapacity(camp.race, from.town) + cellBonus(camp.race, from.building, at.getTime()).room - there;
+        const room = (await roomOf(tx, camp, from, at)) - there;
         const returning = back.slice(0, Math.max(0, room));
         if (returning.length) {
           await tx.update(campResidents).set({ place: cellPlace(exp.fromPlace) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, returning.map((r) => r.id))));
@@ -1003,6 +1105,44 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
 
   if (party.length === 0) {
     outcome.cell = "back"; // (everyone died of age on the road)
+  } else if (exp.kind === "recall" || exp.kind === "reroute") {
+    // walking back from a cell: into the cell they were sent to, as many as it has room for; the rest to the nearest held
+    // cell with room (once), else they camp beside it and move in as room frees up (WORLD.md §24)
+    const put = async (rows: ResidentRow[], place: string) => {
+      if (rows.length) await tx.update(campResidents).set({ place }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, rows.map((r) => r.id))));
+    };
+    if (exp.toCell === player?.homeCell || !player?.homeCell) {
+      await put(party, "home");
+      outcome.cell = "back";
+      outcome.against = "營地";
+    } else if (cell?.owner !== camp.userId) {
+      // (the cell was lost on the way: they go on home)
+      await put(party, "home");
+      outcome.cell = "back";
+      outcome.against = "那一格已經不是你的了，回營地";
+    } else {
+      const there = (await aliveAt(tx, camp.userId, cellPlace(exp.toCell))).length;
+      const staying = party.slice(0, Math.max(0, cap - there));
+      await put(staying, cellPlace(exp.toCell));
+      let left = party.slice(staying.length);
+      const parts = staying.length ? [`住進 ${staying.length} 隻`] : [];
+      if (left.length && exp.kind === "recall") {
+        const next = await nearestRoom(tx, camp, exp.toCell, [exp.fromPlace, exp.toCell], at);
+        if (next) {
+          const going = left.slice(0, next.room);
+          await walk(tx, camp, going, exp.toCell, next.cell, "reroute", at);
+          parts.push(`${going.length} 隻住不下，走去別的領地`);
+          left = left.slice(going.length);
+        }
+      }
+      if (left.length) {
+        await put(left, campingPlace(exp.toCell));
+        parts.push(`${left.length} 隻在旁邊扎營`);
+      }
+      outcome.won = true;
+      outcome.cell = left.length ? "camping" : "settled";
+      outcome.against = `自己的領地（${parts.join("，")}）`;
+    }
   } else if (exp.kind === "guard") {
     // to a friend's cell: stay as guests while it is still theirs and they are still friends (up to GUESTS_MAX in all)
     const holder = cell?.owner && cell.owner !== camp.userId && (await areFriends(tx, camp.userId, cell.owner)) ? await ownerOf(tx, cell.owner) : null;
@@ -1212,7 +1352,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   }
   if (outcome.xp && player) await tx.update(worldPlayers).set({ xp: player.xp + outcome.xp }).where(eq(worldPlayers.userId, camp.userId));
   await tx.update(expeditions).set({ status: "done", result: report }).where(eq(expeditions.id, exp.id));
-  await addEvent(tx, camp.userId, at, "expedition", { id: exp.id, to: exp.toCell, arrived: true, ...outcome });
+  await addEvent(tx, camp.userId, at, "expedition", { id: exp.id, to: exp.toCell, arrived: true, kind: exp.kind, ...outcome });
   await bumpVersion(tx, camp);
 
   // the phones' news: the party's camp, the camp it attacked, and everybody who shared a great monster's spoils
@@ -1222,13 +1362,14 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     cleared: "打贏了，清掉了",
     taken: "打贏了，搶下了",
     settled: outcome.killed > 0 || outcome.fallen > 0 ? "打贏了，佔領了" : "住進了",
+    camping: "到了",
     held: outcome.damage ? `造成 ${outcome.damage} 點傷害：` : "沒打下",
     back: "回來了：",
   };
   const news: WorldNews[] = [
     {
       user: camp.userId,
-      title: "出征的隊伍到了",
+      title: exp.kind === "recall" || exp.kind === "reroute" ? "撤回的隊伍到了" : "出征的隊伍到了",
       body: `${headline[outcome.cell]}${outcome.against}${outcome.fallen ? `，倒下 ${outcome.fallen} 隻` : ""}${loot ? `，撿到 ${loot}` : ""}`,
       url,
     },
@@ -1303,9 +1444,16 @@ export async function buildTown(tx: Tx, userId: string, cell: string, now: Date)
   await advanceWorld(tx, camp, now);
   const row = await ownedRow(tx, userId, cell);
   if (row.town) throw new WorldError(409, "exists", "這一格已經是城鎮了。");
-  // a town stands in a region of its holder's: TOWN_MIN_CELLS held cells joined side by side (this one among them)
-  const region = connectedCells(cell, new Set(await heldCells(tx, userId))).length;
+  // a town stands in a region of its holder's: TOWN_MIN_CELLS held cells joined side by side (this one among them), and one more
+  // town for every TOWN_CELLS_EACH more cells
+  const held = new Set(await heldCells(tx, userId));
+  const region = connectedCells(cell, held).length;
   if (region < TOWN_MIN_CELLS) throw new WorldError(409, "too_few", `城鎮要蓋在至少 ${TOWN_MIN_CELLS} 格相連的領地裡（這裡連著 ${region} 格）。`);
+  const towns = await townsIn(tx, [...held]);
+  const already = regionTowns(cell, held, towns);
+  if (!regionHasRoomForTown(region, already)) {
+    throw new WorldError(409, "too_few", `這一區每 ${TOWN_CELLS_EACH} 格可以蓋 1 座城鎮：連著 ${region} 格、已經有 ${already} 座，要連到 ${TOWN_CELLS_EACH * (already + 1)} 格才能再蓋。`);
+  }
   if (!canAfford(camp.materials, TOWN_COST)) throw new WorldError(409, "cannot_afford", `素材不夠：城鎮要 ${costText(TOWN_COST)}。`);
   camp.materials = spend(camp.materials, TOWN_COST);
   // a town has a nest of its own (it raises residents as fast as the home camp)
@@ -1377,19 +1525,62 @@ export async function unguard(tx: Tx, userId: string, cell: string, now: Date) {
 }
 
 /** Residents on a cell walk home (all of them, or `count` if enough stay to hold it). */
-export async function recall(tx: Tx, userId: string, cell: string, count: number | undefined, now: Date) {
+/**
+ * Residents on a held cell (or camping beside it) walk to the camp or to another held cell (WORLD.md §24). All of those living
+ * there going, or fewer than the cell must keep staying, gives the cell up at once. Walking takes as long as any party's walk.
+ */
+export async function recall(tx: Tx, userId: string, cell: string, input: { count?: number; to?: string; campers?: boolean }, now: Date) {
   const { camp } = await ownCell(tx, userId, cell);
   await advanceWorld(tx, camp, now);
   await ownedRow(tx, userId, cell);
-  if ((await homeCellOf(tx, userId)) === cell) throw new WorldError(409, "camp_cell", "營地那一格不能放棄；要換地方請用「搬營地」。");
-  const there = await aliveAt(tx, userId, cellPlace(cell));
-  const all = count === undefined || there.length - count < garrisonMin(camp.race);
+  const homeCell = await homeCellOf(tx, userId);
+  if (!input.campers && homeCell === cell) throw new WorldError(409, "camp_cell", "營地那一格不能放棄；要換地方請用「搬營地」。");
+  const to = !input.to || input.to === "home" || input.to === homeCell ? homeCell! : input.to;
+  if (to === cell) throw new WorldError(400, "invalid_input", "出發和目的地是同一格。");
+  if (to !== homeCell && (await lockCell(tx, to))?.owner !== userId) throw new WorldError(403, "not_yours", "只能撤回到營地或自己的領地。");
+  const there = await aliveAt(tx, userId, input.campers ? campingPlace(cell) : cellPlace(cell));
+  if (there.length === 0) throw new WorldError(409, "too_few", "沒有人可以撤回。");
+  const count = input.count ?? there.length;
+  const all = input.campers ? count >= there.length : there.length - count < garrisonMin(camp.race);
   const going = all ? there : pickParty(camp.race, there, undefined, count, false);
-  if (going.length) await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, going.map((r) => r.id))));
-  if (all) await releaseCell(tx, cell);
-  await addEvent(tx, userId, now, "world", { recalled: cell, residents: going.length, gaveUp: all });
+  const row = await walk(tx, camp, going, cell, to, "recall", now);
+  if (all && !input.campers) await releaseCell(tx, cell);
+  await addEvent(tx, userId, now, "world", { recalled: cell, residents: going.length, gaveUp: all && !input.campers, to: to === homeCell ? "home" : to, arriveAt: row.arriveAt.toISOString(), ...(input.campers ? { campers: true } : {}) });
   await bumpVersion(tx, camp);
-  return { residents: going.length, gaveUp: all };
+  return { residents: going.length, gaveUp: all && !input.campers, arriveAt: row.arriveAt.toISOString() };
+}
+
+/** Sends residents walking from one cell to another (a recall, or its leftovers looking for room): no fight, no party cap. */
+async function walk(tx: Tx, camp: CampRow, party: ResidentRow[], from: string, to: string, kind: "recall" | "reroute", at: Date): Promise<ExpeditionRow> {
+  const boosts = fightBoosts(camp.race, camp.boosts, at.getTime());
+  const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
+  // (between its own cells: round other camps' land if it can be, straight on if not; nobody is left stranded)
+  const way = (await routeFor(tx, camp.userId, from, to)).route;
+  const minutes = walkMinutes(way?.meters ?? cellDistance(from, to), slowest);
+  const [row] = await tx
+    .insert(expeditions)
+    .values({ userId: camp.userId, kind, fromPlace: from, toCell: to, party: party.map((r) => r.id), route: routeColumn(way), setOutAt: at, arriveAt: new Date(at.getTime() + minutes * MINUTE), settle: false })
+    .returning();
+  await tx.update(campResidents).set({ place: walkingPlace(row!.id) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, party.map((r) => r.id))));
+  await addEvent(tx, camp.userId, at, "expedition", { id: row!.id, setOut: true, to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
+  return row!;
+}
+
+/** The camp's held cell with room nearest to `near` (not the camp's own, not those in `not`), and how many it has room for. */
+async function nearestRoom(tx: Tx, camp: CampRow, near: string, not: string[], at: Date): Promise<{ cell: string; room: number } | null> {
+  const homeCell = await homeCellOf(tx, camp.userId);
+  const held = await tx.select().from(worldCells).where(eq(worldCells.owner, camp.userId));
+  const cells = held.map((c) => c.cell);
+  const around = await surroundings(tx, cells);
+  const counts = await garrisons(tx, cells);
+  let best: { cell: string; room: number; km: number } | null = null;
+  for (const c of held) {
+    if (c.cell === homeCell || not.includes(c.cell)) continue;
+    const room = cellCapacity(camp.race, c.town) + cellBonus(camp.race, c.building, at.getTime(), around(c.cell)).room - (counts.get(c.cell)?.n ?? 0);
+    const km = cellDistance(near, c.cell);
+    if (room > 0 && (!best || km < best.km)) best = { cell: c.cell, room, km };
+  }
+  return best && { cell: best.cell, room: best.room };
 }
 
 // --- looking ------------------------------------------------------------------------------------------------------
@@ -1404,6 +1595,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
   const counts = await garrisons(tx, held.map((c) => c.cell));
   const around = await surroundings(tx, held.map((c) => c.cell));
+  const camping = await campersBeside(tx, held.map((c) => c.cell));
   const guardingRows = await tx
     .select({ place: campResidents.place, n: sql<number>`count(*)::int`, holder: users.displayName })
     .from(campResidents)
@@ -1444,9 +1636,12 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
       region: connectedCells(c.cell, new Set(held.map((h) => h.cell))).length,
+      regionTowns: regionTowns(c.cell, new Set(held.map((h) => h.cell)), new Set(held.filter((h) => h.town).map((h) => h.cell))),
       upkeep: paying.has(c.cell),
       party: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).party,
       travel: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).travel,
+      capacity: cellCapacity(camp.race, c.town) + cellBonus(camp.race, c.cell === player?.homeCell ? null : c.building, now.getTime(), around(c.cell)).room,
+      camping: camping.get(c.cell) ?? 0,
     })),
     atHome,
     guarding: guardingRows.map((g) => ({ cell: g.place.slice(6), holder: g.holder ?? "？", count: g.n })),
@@ -1472,6 +1667,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       nestBirthMinutes: nestBirthMinutes(camp.race),
       townCost: TOWN_COST,
       townMinCells: TOWN_MIN_CELLS,
+      townCellsEach: TOWN_CELLS_EACH,
     },
   };
 }
@@ -1488,6 +1684,7 @@ export async function territoryList(tx: Tx, userId: string, now: Date): Promise<
   const ground = await terrainsFor(tx, cells);
   const around = await surroundings(tx, cells);
   const counts = await garrisons(tx, cells);
+  const camping = await campersBeside(tx, cells);
   const paying = payingCells(held, homeCell);
   const guests = new Map(
     (cells.length
@@ -1514,6 +1711,8 @@ export async function territoryList(tx: Tx, userId: string, now: Date): Promise<
       town: c.town,
       garrison: counts.get(c.cell)?.n ?? 0,
       capacity: cellCapacity(camp.race, c.town) + cellBonus(camp.race, b, now.getTime(), a).room,
+      townRoom: isHome ? 0 : townRoom(raceRules(camp.race).cellCap, a.townsJoined ?? 0),
+      camping: camping.get(c.cell) ?? 0,
       nest: nestState(c, now),
       building: b ? { kind: b.kind, name: cellBuildingName(b.kind, camp.race), level: b.level, busy: workingLevel(b, now.getTime()) < b.level } : null,
       landmark: a.landmark && rule ? { ...a.landmark, icon: rule.icon, label: rule.name } : null,
@@ -1540,7 +1739,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   const isHome = cell === homeCell;
   const terrain = await terrainOf(tx, cell);
   const garrison = (await dwellers(tx, userId, cell, homeCell)).length;
-  const capacity = cellCapacity(camp.race, row.town);
+  const capacity = await roomOf(tx, camp, row, now, isHome);
   const nest = nestState(row, now);
   const readyAt = row.nestStartedAt ? new Date(row.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
   const birthMinutes = row.nestStartedAt && !isHome ? nestBirthMinutes(camp.race, row.town) : null;
@@ -1627,6 +1826,9 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     templeNear: !!around.templeNear,
     neighbours: around.neighbours ?? 0,
     region: connectedCells(cell, new Set(mine)).length,
+    regionTowns: regionTowns(cell, new Set(mine), await townsIn(tx, mine)),
+    townRoom: isHome ? 0 : townRoom(raceRules(camp.race).cellCap, around.townsJoined ?? 0),
+    camping: (await campersBeside(tx, [cell])).get(cell) ?? 0,
     guests: guestRows.map((g) => ({ owner: g.owner, name: g.name ?? "？", count: g.n })),
     upkeep: { pays: paying.has(cell), paying: paying.size, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS, perYield: UPKEEP_RATIONS, everyHours: UPKEEP_EVERY * YIELD_HOURS },
     history,
@@ -1661,6 +1863,17 @@ async function bossesNear(tx: Tx, home: string, now: Date): Promise<WorldMe["bos
 }
 
 /** How many live on each cell (on a camp's own cell, everybody at home as well). */
+/** How many of their holder's residents camp beside each of these cells. */
+async function campersBeside(tx: Tx, cells: string[]): Promise<Map<string, number>> {
+  if (cells.length === 0) return new Map();
+  const rows = await tx
+    .select({ place: campResidents.place, n: sql<number>`count(*)::int` })
+    .from(campResidents)
+    .where(and(inArray(campResidents.place, cells.map(campingPlace)), isNull(campResidents.diedAt)))
+    .groupBy(campResidents.place);
+  return new Map(rows.map((r) => [r.place.slice("bivouac:".length), r.n]));
+}
+
 async function garrisons(tx: Tx, cells: string[]): Promise<Map<string, { n: number }>> {
   if (cells.length === 0) return new Map();
   const rows = await tx
@@ -1716,8 +1929,9 @@ export async function landmarksAround(tx: Tx, point: LatLng, radius: number): Pr
   return near.map((n) => ({ ...n, owner: ownerOfCell.get(n.cell) ?? null }));
 }
 
-export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date): Promise<CellView[]> {
+export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Date, viewer?: string): Promise<CellView[]> {
   const ids = cellsWithin(point, Math.min(radius, MAX_MAP_RADIUS));
+  const blocked = viewer ? await blockedFor(tx, viewer) : new Map<string, string>();
   const ground = await terrainsFor(tx, ids);
   const landmarks = await landmarksFor(tx, ids);
   const rows = ids.length ? await tx.select().from(worldCells).where(inArray(worldCells.cell, ids)) : [];
@@ -1766,6 +1980,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       ...lairWith(lair, row?.lairWounds, now),
       lairBackAt: backAt?.toISOString() ?? null,
       boss,
+      ...(blocked.has(cell) ? { blocks: true } : {}),
     };
   });
 }

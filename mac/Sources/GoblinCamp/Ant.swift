@@ -38,6 +38,22 @@ struct Ant {
         case dig(spot: CGPoint)
         /// The undead: going to lie in one of the camp's graves at `spot` (they sleep there, not on the grass).
         case grave(spot: CGPoint)
+        /// Standing face to face with another one, talking (the colony pairs them up).
+        case chat(partner: Int)
+        /// Carrying what the work turned up back to the camp (`load` 0 a log or twigs, 1 a stone, 2 a bone) and in at `to`.
+        case haul(load: Int, to: CGPoint)
+        /// On night watch: walking round the camp with a light, `angle` along a ring `radius` out from the nest.
+        case patrol(angle: Double, radius: Double)
+        /// Sitting round the fire pit of an evening: at `spot`, facing the fire at `fire`.
+        case fireside(spot: CGPoint, fire: CGPoint)
+        /// The ranch (Ranch.swift): going after an animal that wandered in (or a beast's soul) to catch it for the pens.
+        case herd(target: Int)
+        /// Carrying what it caught to its pen, perch or lamp: let go at `to`, it ends up at `home`.
+        case carryBeast(kind: String, to: CGPoint, home: CGPoint)
+        /// Feeding the animals over the fence: standing at `spot`, throwing feed toward `face`.
+        case tend(spot: CGPoint, face: CGPoint)
+        /// At the scribe's desk while Claude Code works (Scribe.swift): typing (writing, for elves) at `desk`; nodding off after a long while.
+        case scribe(desk: CGPoint, dozing: Bool)
 
         var label: String {
             switch self {
@@ -57,6 +73,14 @@ struct Ant {
             case .meditate: return "冥想"
             case .dig: return "挖地"
             case .grave: return "睡在墳墓裡"
+            case .chat: return "聊天"
+            case .haul(let load, _): return load == 0 ? (Characters.current.rules.fellsTrees == false ? "搬樹枝" : "搬木頭") : load == 1 ? "搬石頭" : load == 2 ? "搬骨頭" : load == 3 ? "送文件" : "搬牧場的東西"
+            case .patrol: return "守夜"
+            case .fireside: return "圍著火坑"
+            case .scribe: return "幫 Claude 寫東西"
+            case .herd: return "抓動物"
+            case .carryBeast: return "把動物帶回牧場"
+            case .tend: return "餵牧場的動物"
             }
         }
     }
@@ -115,6 +139,10 @@ struct Ant {
         case farmed(plot: Int, action: Int)
         /// Finished felling (kind 0) or mining (1) the thing at `foot`, after `hits` blows.
         case gathered(kind: Int, id: Int, foot: CGPoint, hits: Int)
+        /// The ranch: reached the animal (or soul) it was after; brought one to its home; dug up a beast's bone.
+        case reached(target: Int)
+        case penned(kind: String, home: CGPoint)
+        case foundBeastBone
     }
 
     /// How fast the two carriers walk the princess in, in points per second.
@@ -253,6 +281,37 @@ struct Ant {
         }
     }
 
+    /// How often a dig that turned up a bone turned up a beast's (`CAMP_BEAST_BONES=1` for tests: always).
+    static let beastBoneChance = ProcessInfo.processInfo.environment["CAMP_BEAST_BONES"] != nil ? 1.0 : 0.3
+
+    /// Going home to sleep the night (or a long nap) indoors, not on the grass: it stays in a good while.
+    var bedtime = false
+
+    /// The player's hand on it: held up, flying from a throw, or reacting to a poke (Touch.swift). Its own life waits meanwhile.
+    var touch: Touch?
+    /// Seconds left of the good mood from a pat on the head (it walks a little faster), and of dripping after a dip in the pond.
+    var cheer = 0.0
+    var wet = 0.0
+
+    /// Moved by the hand's show (fleeing, dodging, chasing the cursor): walks there with its legs going.
+    mutating func step(to target: CGPoint, speed: Double, dt: Double) {
+        let distance = hypot(target.x - pos.x, target.y - pos.y)
+        guard distance > 0.5 else { return }
+        heading = atan2(target.y - pos.y, target.x - pos.x)
+        facing = SpriteDirection(heading: heading, previous: facing)
+        let step = min(speed * dt, distance)
+        pos.x += cos(heading) * step
+        pos.y += sin(heading) * step
+        legPhase += step * 0.9
+        moving = true
+    }
+
+    /// Turns to look at a point without moving.
+    mutating func face(_ point: CGPoint) {
+        heading = atan2(point.y - pos.y, point.x - pos.x)
+        facing = SpriteDirection(heading: heading, previous: facing)
+    }
+
     /// Lying in the bed beside the princess (drawn lying down; the colony sets it).
     var lying = false
     /// Who its parents were, for the young ones born to the princess ("" for the rest).
@@ -279,7 +338,7 @@ struct Ant {
     var lifeFraction: Double { min(1, age / max(traits.lifespan, 1)) }
 
     /// Old ones walk slower.
-    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed * (isChild ? 0.85 : 1) * (sick > 0 ? 0.5 : 1) * foodSpeed }
+    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed * (isChild ? 0.85 : 1) * (sick > 0 ? 0.5 : 1) * foodSpeed * (cheer > 0 ? 1.15 : 1) }
     /// Carrots brought home: everyone walks a little faster for a while (set from the world on each update).
     private var foodSpeed = 1.0
 
@@ -361,11 +420,15 @@ struct Ant {
         swing = max(0, swing - dt)
         catchShow = max(0, catchShow - dt)
         sick = max(0, sick - dt)
+        cheer = max(0, cheer - dt)
+        wet = max(0, wet - dt)
         age += ageDt
         if age >= traits.lifespan, !ageless, !isDying, !isCarryingPrincess {
             if isHidden { return .died } // it went quietly in the nest
             mode = .dying(remaining: Ant.dyingTime)
+            touch = nil
         }
+        if touch != nil { return nil } // in the player's hand, or reacting to it (the colony moves it: Touch.swift)
         switch mode {
         case .activity(let kind, let remaining):
             return updateActivity(kind, remaining: remaining, dt: dt, world: world)
@@ -405,7 +468,8 @@ struct Ant {
 
         case .returningToNest:
             if walkHome(dt: dt, world: world, speedFactor: 1.2) {
-                mode = .inNest(remaining: Double.random(in: 10...35), thenForage: nil)
+                mode = .inNest(remaining: bedtime ? Double.random(in: world.night ? 240...600 : 60...150) : Double.random(in: 10...35), thenForage: nil)
+                bedtime = false
             }
 
         case .carryingNews(let id):
@@ -521,7 +585,7 @@ struct Ant {
             guard world.activitiesOn, Double.random(in: 0..<1) < dt / 22 else { return nil }
             return Double.random(in: 0..<1) < (world.night ? 0.8 : 0.3) ? .sleep : .play
         }
-        guard world.activitiesOn, Double.random(in: 0..<1) < dt / 55 else { return nil }
+        guard world.activitiesOn, Double.random(in: 0..<1) < dt / 40 else { return nil }
         let personality = traits.personality
         var options: [(kind: Activity, weight: Double)] = []
         // each race passes its time its own way: elves never nap by day and keep to the bow and quiet sitting; the undead lie
@@ -529,9 +593,28 @@ struct Ant {
         let elf = world.race == "elf", undead = world.race == "undead"
         let grave = undead ? world.graves.randomElement() : nil
         if let grave {
-            options.append((.grave(spot: grave), world.night ? (personality == .boss ? 2 : 6) : 0.5))
+            options.append((.grave(spot: grave), world.night ? (personality == .boss ? 2 : 4) : 0.5))
         } else {
-            options.append((.sleep, world.night ? (personality == .boss ? 2 : elf ? 3 : 6) : elf ? 0 : 0.4))
+            options.append((.sleep, world.night ? (personality == .boss ? 2 : elf ? 3 : 6) : elf ? 0 : 0.15)) // (a night's sleep is taken indoors: see `goToBed`)
+        }
+        // night watch: a few go round the camp with a light (the strong ones most; the golden ones never)
+        if world.night, world.patrolSlots > 0, personality != .boss {
+            let keen: Double = personality == .brute ? 2.5 : personality == .calm ? 0.6 : 1.2
+            options.append((.patrol(angle: atan2(pos.y - world.nest.y, pos.x - world.nest.x), radius: Double.random(in: 85...150)), keen * (undead ? 2 : 1)))
+        }
+        // of an evening, round the fire pit: talking, roasting something on a stick, singing (the undead keep their own soul fire)
+        let evening = world.hour >= 18 || world.hour < 1
+        if evening, !undead, world.firesideSlots > 0, let pit = world.pit {
+            let a = Double.random(in: 0..<(2 * .pi)), r = Double.random(in: 24...34)
+            let spot = CGPoint(x: pit.x + cos(a) * r, y: pit.y + sin(a) * r * 0.6)
+            if world.walkable.contains(where: { $0.contains(spot) }) {
+                options.append((.fireside(spot: spot, fire: pit), personality == .boss ? 1 : personality == .lively ? 4 : 3))
+            }
+        }
+        if world.night, elf, personality != .boss { options.append((.meditate, 1.5 * world.calm)) } // (under the moon)
+        if world.night, undead, personality != .boss { // the night is theirs: they dig more than they rest
+            let spot = CGPoint(x: pos.x + Double.random(in: -60...60), y: pos.y + Double.random(in: -30...30))
+            if world.walkable.contains(where: { $0.contains(spot) }) { options.append((.dig(spot: spot), personality == .brute ? 3 : 2)) }
         }
         if !world.night, elf, personality != .boss {
             let mark = world.resources.filter { $0.kind == .tree }.randomElement()?.foot ?? CGPoint(x: pos.x + Double.random(in: -80...80), y: pos.y + Double.random(in: -40...40))
@@ -541,7 +624,7 @@ struct Ant {
                 let aim: Double = personality == .lively ? 2.5 : personality == .brute ? 1.2 : personality == .calm ? 0.6 : 1.6
                 options.append((.archery(spot: spot, target: CGPoint(x: mark.x, y: mark.y + 8)), aim))
             }
-            options.append((.meditate, personality == .calm ? 3 : personality == .plain ? 1 : 0.4))
+            options.append((.meditate, (personality == .calm ? 3 : personality == .plain ? 1 : 0.4) * world.calm))
         }
         if !world.night, undead, personality != .boss {
             let spot = CGPoint(x: pos.x + Double.random(in: -60...60), y: pos.y + Double.random(in: -30...30))
@@ -618,7 +701,9 @@ struct Ant {
                 options.append((.fish(spot: spot.spot, water: spot.water), personality == .calm ? 2 : personality == .lively ? 0.4 : 0.8))
             }
         }
-        var roll = Double.random(in: 0..<options.reduce(0) { $0 + $1.weight })
+        let total = options.reduce(0) { $0 + $1.weight }
+        guard total > 0 else { return nil } // (nothing it would do now: a silver-moon elf by day)
+        var roll = Double.random(in: 0..<total)
         for option in options {
             roll -= option.weight
             if roll < 0 { return option.kind }
@@ -655,6 +740,14 @@ struct Ant {
         case .meditate: return Double.random(in: 25...50)
         case .dig: return Double.random(in: 15...30)
         case .grave: return night ? Double.random(in: 60...120) : Double.random(in: 20...40)
+        case .chat: return Double.random(in: 8...16)
+        case .haul: return 90 // (a limit; it ends at the door)
+        case .patrol: return Double.random(in: 60...120)
+        case .fireside: return Double.random(in: 25...60)
+        case .scribe: return 1_000_000 // (the colony ends it when Claude stops)
+        case .herd: return 40
+        case .carryBeast: return 90
+        case .tend: return Double.random(in: 10...16)
         }
     }
 
@@ -721,10 +814,10 @@ struct Ant {
                     swing = Ant.swingTime
                     swingHeading = atan2(face.y - pos.y, face.x - pos.x)
                     gatherHits += 1
-                    if hitsLeft <= 1 {
+                    if hitsLeft <= 1 { // done: what came off it goes home on its shoulder
                         let hits = gatherHits
-                        mode = .wandering
-                        heading = Double.random(in: 0..<(2 * .pi))
+                        activityClock = 0
+                        mode = .activity(.haul(load: job, to: world.nearestEntrance(to: pos)), remaining: Ant.duration(of: .haul(load: job, to: pos), night: world.night))
                         return .gathered(kind: job, id: id, foot: face, hits: hits)
                     }
                     kind = .gather(kind: job, spot: spot, face: face, id: id, hitsLeft: hitsLeft - 1)
@@ -841,14 +934,102 @@ struct Ant {
             } else {
                 health = min(maxHealth, health + dt * 0.1)
             }
+        case .chat(let partner):
+            guard let other = world.partners[partner] else { return giveUp() }
+            let distance = hypot(other.x - pos.x, other.y - pos.y)
+            if distance > 22 { // close the gap a little
+                walk(toward: other, distance: distance - 18, speed: effectiveSpeed, dt: dt)
+                left = remaining
+            } else {
+                turn(toward: atan2(other.y - pos.y, other.x - pos.x), rate: 5, dt: dt)
+            }
+        case .haul(_, let door):
+            let distance = hypot(door.x - pos.x, door.y - pos.y)
+            if distance < 3 {
+                mode = .inNest(remaining: Double.random(in: 3...8), thenForage: nil) // put it away inside
+                return event
+            }
+            walk(toward: door, distance: distance, speed: effectiveSpeed * 0.75 * world.pace, dt: dt)
+        case .patrol(let angle, let radius):
+            let target = CGPoint(x: world.nest.x + cos(angle) * radius, y: world.nest.y + sin(angle) * radius * 0.6)
+            let distance = hypot(target.x - pos.x, target.y - pos.y)
+            if distance < 6 || !world.walkable.contains(where: { $0.contains(target) }) {
+                kind = .patrol(angle: angle + 0.3, radius: radius) // on to the next point of the round
+            } else {
+                walk(toward: target, distance: distance, speed: effectiveSpeed * 0.7 * world.pace, dt: dt)
+            }
+        case .herd(let target):
+            guard let prey = world.herdTargets[target] else { return giveUp() }
+            let distance = hypot(prey.x - pos.x, prey.y - pos.y)
+            if distance < 11 {
+                mode = .wandering // (the colony says what next: it has it, or it got away)
+                return .reached(target: target)
+            }
+            walk(toward: prey, distance: distance, speed: effectiveSpeed * 1.5, dt: dt)
+        case .carryBeast(let beast, let door, let home):
+            let distance = hypot(door.x - pos.x, door.y - pos.y)
+            if distance < 4 {
+                mode = .wandering
+                heading = Double.random(in: 0..<(2 * .pi))
+                return .penned(kind: beast, home: home)
+            }
+            walk(toward: door, distance: distance, speed: effectiveSpeed * 0.8, dt: dt)
+        case .tend(let spot, let face):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed, dt: dt)
+                left = remaining
+            } else {
+                turn(toward: atan2(face.y - pos.y, face.x - pos.x), rate: 5, dt: dt)
+                gatherTimer -= dt
+                if gatherTimer <= 0 { // a handful of feed over the fence
+                    gatherTimer = Double.random(in: 1.2...2)
+                    swing = Ant.swingTime
+                    swingHeading = atan2(face.y - pos.y, face.x - pos.x)
+                }
+            }
+        case .scribe(let desk, let dozing):
+            let seat = CGPoint(x: desk.x, y: desk.y + 7) // behind the desk, facing out
+            let distance = hypot(seat.x - pos.x, seat.y - pos.y)
+            if distance > 2 {
+                walk(toward: seat, distance: distance, speed: effectiveSpeed * 1.2, dt: dt)
+            } else {
+                turn(toward: -.pi / 2, rate: 6, dt: dt)
+                gatherTimer -= dt
+                if gatherTimer <= 0, !dozing { // tap tap tap
+                    gatherTimer = Double.random(in: 0.25...0.6)
+                    swing = Ant.swingTime * 0.5
+                    swingHeading = -.pi / 2
+                }
+            }
+        case .fireside(let spot, let fire):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * world.pace, dt: dt)
+                left = remaining
+            } else {
+                turn(toward: atan2(fire.y - pos.y, fire.x - pos.x), rate: 4, dt: dt)
+                health = min(maxHealth, health + dt * 0.03)
+            }
         }
         if left <= 0 {
+            if case .dig = kind, world.race == "undead", Double.random(in: 0..<1) < 0.4 { // it turned up a bone: home with it
+                activityClock = 0
+                mode = .activity(.haul(load: 2, to: world.nearestEntrance(to: pos)), remaining: 90)
+                return Double.random(in: 0..<1) < Ant.beastBoneChance ? .foundBeastBone : event // (now and then a beast's: three make a bone beast)
+            }
             mode = .wandering
             heading = Double.random(in: 0..<(2 * .pi))
             return event
         }
         mode = .activity(kind, remaining: left)
         return event
+    }
+
+    /// Off to bed: walks home and sleeps inside (the nest or a tent), instead of lying down on the grass where it is.
+    mutating func goToBed() {
+        bedtime = true
+        mode = .returningToNest
     }
 
     /// Starts an activity (the colony does this for scuffles and for the golden ones and those who wait on them).
@@ -866,7 +1047,7 @@ struct Ant {
             }
             if hypot(pos.x - world.nest.x, pos.y - world.nest.y) > 150 { turn(toward: atan2(world.nest.y - pos.y, world.nest.x - pos.x), rate: 3, dt: dt) }
             if let kind = pickActivity(dt: dt, world: world) {
-                begin(kind, world: world)
+                if kind == .sleep { goToBed() } else { begin(kind, world: world) } // (the young ones nap indoors)
                 return nil
             }
             return wanderStep(dt: dt, world: world)
@@ -887,7 +1068,7 @@ struct Ant {
             return .foundFood(food.id)
         }
         // Notice an animal only by walking into it (and not while hurt).
-        if !isWounded, let animal = world.creatures.first(where: { hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.radius + 20 * traits.sense }) {
+        if !isWounded, let animal = world.creatures.first(where: { !world.spared.contains($0.id) && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.radius + 20 * traits.sense }) { // (not the ones being caught for the pens)
             if animal.alerted {
                 mode = .hunting(creature: animal.id, cooldown: 0) // the others know already: join in
                 return nil
@@ -903,7 +1084,7 @@ struct Ant {
                 return nil
             }
             if let kind = pickActivity(dt: dt, world: world) {
-                begin(kind, world: world)
+                if kind == .sleep, world.night || Double.random(in: 0..<1) < 0.5 { goToBed() } else { begin(kind, world: world) } // (by day half of the naps are taken indoors)
                 return nil
             }
         }

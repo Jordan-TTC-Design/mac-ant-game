@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, connectedCells, eatRations, fedYield, upkeepDue, heldNeighbours, LANDMARKS, standInLandmark, workingLevel } from "./holdings.ts";
-import { cellId, neighbors } from "./grid.ts";
+import { buildingsFor, buildingYield, CELL_BUILDINGS, cellBonus, cellBuildingName, connectedCells, eatRations, fedYield, upkeepDue, heldNeighbours, LANDMARKS, regionHasRoomForTown, regionTowns, standInLandmark, townRoom, townsJoined, workingLevel } from "./holdings.ts";
+import { cellAt, cellId, neighbors } from "./grid.ts";
 import { materialName } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 
@@ -90,5 +90,35 @@ describe("keeping many cells", () => {
     expect(fedYield({ scrap_wood: 8, amber: 1 }, 1)).toEqual({ scrap_wood: 8, amber: 1 });
     expect(fedYield({ scrap_wood: 8, amber: 1 }, 0)).toEqual({ scrap_wood: 4 });
     expect(fedYield({ scrap_wood: 8 }, 0.5)).toEqual({ scrap_wood: 6 });
+  });
+});
+
+describe("towns and their region", () => {
+  it("adds half a cell's room per town, stacking up to four", () => {
+    expect(townRoom(50, 0)).toBe(0);
+    expect(townRoom(50, 1)).toBe(25);
+    expect(townRoom(50, 2)).toBe(50);
+    expect(townRoom(30, 3)).toBe(45);
+    expect(townRoom(50, 9)).toBe(100); // (4 at most)
+    // a town counts itself among the four but gets no room from itself
+    expect(townsJoined(1, true)).toBe(0);
+    expect(townsJoined(3, false)).toBe(3);
+    expect(townsJoined(6, false)).toBe(4);
+    expect(townsJoined(6, true)).toBe(3);
+    const at = Date.parse("2026-10-01T09:00:00Z");
+    expect(cellBonus("goblin", null, at, { townsJoined: 2 }).room).toBe(50);
+    expect(cellBonus("elf", null, at, { townsJoined: 1 }).room).toBe(15);
+  });
+
+  it("allows one town for every four cells of a region, and counts only the towns joined to a cell", () => {
+    expect(regionHasRoomForTown(4, 0)).toBe(true);
+    expect(regionHasRoomForTown(7, 1)).toBe(false);
+    expect(regionHasRoomForTown(8, 1)).toBe(true);
+    const home = cellAt({ lat: 25.0302, lng: 121.5357 });
+    const [a, b] = neighbors(home) as [string, string];
+    const far = cellAt({ lat: 25.1, lng: 121.6 });
+    const held = new Set([home, a, b, far]);
+    expect(regionTowns(b, held, new Set([a, far]))).toBe(1);
+    expect(regionTowns(far, held, new Set([a, far]))).toBe(1);
   });
 });

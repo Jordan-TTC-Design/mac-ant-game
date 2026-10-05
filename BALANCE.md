@@ -27,6 +27,7 @@
 | 大世界怪物 | `shared/src/world/contents.ts` | `FOES`、`LAIRS`（群數、等級、tier、掉寶）、`OPEN_TIERS` | 只開 tier 1 |
 | 怪物掉落 | `shared/src/world/drops.ts` | `FOE_DROPS`、`MATERIALS` | |
 | 領地產出 | `shared/src/world/territory.ts` | `TERRAIN_YIELD`（每 3 小時） | |
+| 一格住多少、城鎮加成 | `shared/src/camp/races.ts`、`shared/src/world/holdings.ts` | `cellCap`／`townCap`；`TOWN_ROOM_SHARE`、`TOWN_ROOM_MAX`、`TOWN_CELLS_EACH` | 哥布林 50／100、精靈 30／60、死靈 40／80；同一區每座城鎮每格 +50%，最多算 4 座；每 4 格 1 座 |
 | 出征人數、糧食 | `shared/src/world/supplies.ts` | `PARTY_BASE`、`RATIONS_PER_EXTRA`、`BOOST_FOODS`、`OPENING_FOOD` | 哥布林 6／死靈 5／精靈 4（每級 +1，最多 30）；乾糧 2 份多 1 隻 |
 | 營地場地、田地 | `shared/src/camp/sites.ts`、`production.ts`（[server/FARM.md](server/FARM.md) §11） | `SITE_RULES`（每種場地每級的產量與花費）、`SLOTS_BY_STAGE`、`RACE_LEVELS_PER_SLOT`、`WORKERS_PER_LEVEL`、`GATHERING`、`SITE_HOURS`、`DEMOLISH_REFUND`；`FARM_LEVELS`、`FARM_KEEP`、`HARVEST_BOOST` | 空地 2／4／6（種族每 5 級 +1）；每級 10 人手；撿柴木材 2、石頭 1／小時；蓋 1、4、12 小時；拆掉退一半；糧食每種存 20 |
 | 等級 | `shared/src/world/leaderboard.ts` | `XP`、`raceLevel`（Lv = √(xp/50)+1） | 清 1 級巢穴 20 XP |
@@ -140,6 +141,10 @@ cd shared && npm run balance:territory # 領地：每種地形一天產多少、
 - 開放 tier 2（中級區）時：用 §4.3 那些材料設計 T2 配方，並重跑三份報告。
 
 ## 6. 調整紀錄
+
+- **2026-10-02（深夜）** 流浪商人（[DESKTOP.md](DESKTOP.md) §2，`shared/src/camp/merchant.ts`）：只在 Mac 開著時來，一天最多 3 次。見面禮：階段 1 木材 10～20、石頭 5～10；階段 2 木材 20～40、石頭 10～20＋一樣零碎材料 2～4；階段 3 再 ×1.5，20% 多一個碎晶。貨架 4～6 樣，每樣一次，15% 機率有一樣打 6 折。最貴重的：木材 80 → 碎晶 1、廢鐵 12 → 鐵甲片 1、夜光粉 10 → 夜之心 1（死靈）、鼠尾 6＋鼠皮 4 → 鼠王冠 1（哥布林）。數字是第一版，還沒跑報告：一天最多多出約 3 個碎晶等級的東西，比場地的產量小很多，應該不會亂掉，之後看玩家的反應再調。
+
+- **2026-09-30** 城鎮加成擴到整區（WORLD.md §23）：同一區（相連的領地）每座城鎮讓區裡每一格的上限 +50% 一般上限（哥布林 +25、精靈 +15、死靈 +20），可以疊加、最多算 4 座（哥布林一般格最多 150）；城鎮那一格自己兩倍，再加其他城鎮的。一區每 4 格才能蓋 1 座（原本只要 4 格就能蓋很多座）。產出不變（產出的倍數仍照一般上限算），多住的人主要是守得更穩。伺服器各處「一格最多住幾隻」統一成同一個算法（原本領地頁沒算建築加成）。還沒跑報告看守城的影響。
 
 - **2026-09-29（深夜）** 戰鬥的規模（WORLD.md §22）：集中攻擊（居民七成、怪物四成、狂化與營地來襲的魔獸照舊亂打）；攻打別人時守軍最多攻方 × 1.5 上場；巢穴人數上限（怪物 × 2 + 2，魔王巢穴 × 3 + 3）。結果：來襲死得比原本稍少（150 隻哥布林有人倒下 21%→14%）；初期魔王稍難（怪物也會集中打），先不調。
 

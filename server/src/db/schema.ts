@@ -1,4 +1,4 @@
-import type { Site } from "@goblincamp/shared/camp";
+import type { Ranch, Site } from "@goblincamp/shared/camp";
 import type { CellBuilding, FightBoosts } from "@goblincamp/shared/world";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, customType, index, integer, jsonb, pgSequence, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
@@ -147,6 +147,10 @@ export const camps = pgTable("camps", {
   autoGear: boolean("auto_gear").notNull().default(true),
   /** 任務 claimed (shared/src/camp/quests.ts): quest id → when (ISO). */
   quests: jsonb("quests").$type<Record<string, string>>().notNull().default({}),
+  /** Decorations the player put down in the camp window (shared/src/camp/decor.ts): kind, offset from the land's anchor, turned. */
+  decor: jsonb("decor").$type<{ kind: string; x: number; y: number; flip?: boolean }[]>().notNull().default([]),
+  /** The ranch: the animals kept in the pens the player fenced, and when a Mac last reported (shared/src/camp/ranch.ts). */
+  ranch: jsonb("ranch").$type<Ranch>().notNull().default({ animals: [] }),
   /** Food boosts still running and food cooldowns: food id → the time it ends (ISO). */
   boosts: jsonb("boosts").$type<Record<string, string>>().notNull().default({}),
   foodCooldowns: jsonb("food_cooldowns").$type<Record<string, string>>().notNull().default({}),
@@ -253,7 +257,7 @@ export const expeditions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["attack", "move", "guard"] }).notNull(),
+    kind: text("kind", { enum: ["attack", "move", "guard", "recall", "reroute"] }).notNull(),
     /** "home" or a cell id. */
     fromPlace: text("from_place").notNull(),
     toCell: text("to_cell").notNull(),
@@ -261,6 +265,8 @@ export const expeditions = pgTable(
     settle: boolean("settle").notNull().default(false),
     /** The food boosts the party carries (shared/src/world/supplies.ts). */
     boosts: jsonb("boosts").$type<FightBoosts>(),
+    /** The cells it walks between round other camps' land (shared/src/world/route.ts); null: straight there. */
+    route: jsonb("route").$type<string[]>(),
     setOutAt: timestamp("set_out_at", { withTimezone: true, precision: 3 }).notNull(),
     arriveAt: timestamp("arrive_at", { withTimezone: true, precision: 3 }).notNull(),
     status: text("status", { enum: ["walking", "done"] }).notNull().default("walking"),

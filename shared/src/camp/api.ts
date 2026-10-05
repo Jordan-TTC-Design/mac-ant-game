@@ -2,6 +2,9 @@ import { z } from "zod";
 import { FOODS, SOULS } from "./food.ts";
 import { GEAR_SLOTS } from "./gear.ts";
 import { RACES } from "./races.ts";
+import type { MerchantVisit } from "./merchant.ts";
+import type { DecorPlaced } from "./decor.ts";
+import type { RanchAnimal } from "./ranch.ts";
 
 /** `POST /api/camp/start`: a new camp (for an account that has none). */
 export const startCampInput = z.object({ race: z.enum(RACES) });
@@ -83,6 +86,25 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("quest-claim"), quest: z.string().max(40) }),
   /** Raises the farm a level (the same as site-upgrade on the farm). */
   z.object({ requestId, kind: z.literal("farm-upgrade") }),
+  /** The wandering merchant comes to a camp on a Mac's screen (merchant.ts): its present goes into the store. */
+  z.object({ requestId, kind: z.literal("merchant-arrive") }),
+  /** Takes one of the merchant's swaps (`offer`: its place in the visit's stock) while it is still here. */
+  z.object({ requestId, kind: z.literal("merchant-trade"), visit: z.string().max(80), offer: z.number().int().min(0).max(9) }),
+  /** The ranch as a Mac has it now, and how many minutes the camp has been open there since it last said (ranch.ts). */
+  z.object({
+    requestId,
+    kind: z.literal("ranch-sync"),
+    animals: z.array(z.object({ id: z.number().int().min(1), kind: z.string().max(20), caught: z.boolean().optional(), name: z.string().trim().max(8).optional() })).max(40),
+    minutes: z.number().min(0).max(240),
+    /** Grown ones taken for meat since (their ids: they must be gone from `animals`). */
+    butchered: z.array(z.number().int()).max(40).optional(),
+  }),
+  /** The camp's decorations as the player arranged them (the whole list: decor.ts checks room and race). */
+  z.object({
+    requestId,
+    kind: z.literal("decor-set"),
+    items: z.array(z.object({ kind: z.string().max(40), x: z.number(), y: z.number(), flip: z.boolean().optional() })).max(200),
+  }),
 ]);
 export type CampCommand = z.infer<typeof campCommand>;
 
@@ -133,6 +155,12 @@ export interface CampView {
   sanctuary: { since: string | null; canTurnOnAt: string | null };
   /** The camp's sites and what they make (server/FARM.md §11). Older servers leave it out. */
   production?: CampProduction;
+  /** The wandering merchant, while it is at the camp (merchant.ts). Older servers leave it out. */
+  merchant?: MerchantVisit | null;
+  /** The decorations put down (decor.ts). Older servers leave it out. */
+  decor?: DecorPlaced[];
+  /** The ranch's animals (ranch.ts). Older servers leave it out. */
+  ranch?: { animals: RanchAnimal[] };
   /** Everyone alive (at home and, later, in the big world). */
   residents: CampResidentView[];
 }

@@ -26,6 +26,19 @@ async function load() {
   }
 }
 const onChanged = () => void load();
+
+// 撤回 (the recall sheet): all of them going gives the cell up, so the page goes back to the list then
+const recalling = ref<null | "garrison" | "campers">(null);
+const recallNote = ref("");
+async function recalled(text: string) {
+  recalling.value = null;
+  recallNote.value = text;
+  try {
+    d.value = await api<CellDetail>("GET", `world/cells/${cellId.value}`);
+  } catch {
+    await navigateTo("/territory");
+  }
+}
 onMounted(async () => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   window.addEventListener("gc:camp-changed", onChanged);
@@ -117,7 +130,7 @@ function happening(h: CellHappening): string {
     case "settled": return h.killed ? `打下這一格，住了進來（倒下 ${h.fallen}）` : "有居民搬進來了";
     case "nest": return "開始蓋繁殖巢";
     case "town": return "蓋成了城鎮";
-    case "recalled": return `${h.residents} 隻走回營地`;
+    case "recalled": return `${h.residents} 隻撤走了`;
     case "built": return h.residents === 1 ? `開始蓋${h.name}` : `${h.name}開始升到 ${h.residents} 級`;
     case "demolished": return `拆掉了${h.name}`;
     case "guests": return `${h.by}派了 ${h.residents} 隻來幫忙守`;
@@ -156,7 +169,23 @@ function happening(h: CellHappening): string {
           <b>{{ { none: "沒有", building: "蓋到一半", ready: "有" }[d.nest] }}</b>
           <small>繁殖巢</small>
         </div>
+        <p v-if="d.camping" class="wide-note">⛺ 外面扎營 <b>{{ d.camping }}</b> 隻：住不下，等有空位就自動住進去，有人來打時一起守。</p>
+        <div v-if="!d.home" class="wide-note ops">
+          <button class="btn" @click="recalling = 'garrison'">撤回</button>
+          <button v-if="d.camping" class="btn" @click="recalling = 'campers'">叫扎營的走</button>
+        </div>
+        <p v-if="recallNote" class="wide-note good">{{ recallNote }}</p>
       </section>
+      <RecallDialog
+        v-if="recalling"
+        :from="d.cell"
+        :title="recalling === 'campers' ? '叫扎營的走' : '撤回'"
+        :available="recalling === 'campers' ? d.camping : d.garrison"
+        :keep="d.garrisonMin"
+        :campers="recalling === 'campers'"
+        @close="recalling = null"
+        @done="recalled"
+      />
 
       <section class="panel">
         <h2>怎麼長大</h2>
@@ -191,9 +220,11 @@ function happening(h: CellHappening): string {
         <h2>相連的領地</h2>
         <p>旁邊有 <b>{{ d.neighbours }}</b> 格是你的・這一區連著 <b>{{ d.region }}</b> 格</p>
         <p v-if="d.bonus.yieldBoost" class="good">地形產出 +{{ Math.round(d.bonus.yieldBoost * 100) }}%</p>
+        <p v-if="d.townRoom" class="good">城鎮加成：最多住的 +{{ d.townRoom }}（這一區 {{ d.regionTowns }} 座城鎮）</p>
         <p class="muted small">
           旁邊每有一格自己的，產出多 10%（最多 30%）；被打時旁邊的格子各派最多 5 隻來幫忙守。
-          {{ d.town ? "" : d.region >= 4 ? "這一區夠大，可以蓋城鎮了。" : `城鎮要蓋在 4 格相連的地方（還差 ${4 - d.region} 格）。` }}
+          這一區每座城鎮讓每一格多住一半（最多算 4 座）；每 4 格可以蓋 1 座城鎮。
+          {{ d.town ? "" : d.region >= 4 * (d.regionTowns + 1) ? "這一區夠大，可以再蓋一座城鎮。" : `再連到 ${4 * (d.regionTowns + 1)} 格就能蓋${d.regionTowns ? "下一座" : ""}城鎮（還差 ${4 * (d.regionTowns + 1) - d.region} 格）。` }}
         </p>
       </section>
 
@@ -289,4 +320,6 @@ p { margin: 6px 0; }
 .event { font-size: 14px; display: flex; gap: 8px; }
 .event .muted { flex: none; font-size: 12px; }
 .wide-link { display: block; margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; text-decoration: none; font-weight: 700; text-align: center; }
+.wide-note { grid-column: 1 / -1; margin: 6px 0 0; text-align: left; font-size: 14px; }
+.wide-note.ops { display: flex; gap: 8px; }
 </style>

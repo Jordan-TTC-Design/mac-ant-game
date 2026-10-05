@@ -16,6 +16,22 @@ import {
   give,
   neediest,
   BASE_LIFESPAN_HOURS,
+  campStage,
+  MERCHANT_GAP_MINUTES,
+  MERCHANT_STAY_MINUTES,
+  MERCHANT_VISITS_PER_DAY,
+  merchantGift,
+  merchantName,
+  merchantStock,
+  taipeiDay,
+  decorProblem,
+  decorKind,
+  RANCH_KINDS,
+  RANCH_MAX_MINUTES,
+  ranchGrown,
+  ranchProblem,
+  ranchYield,
+  type RanchAnimal,
   PRINCESS_CHILD_HOURS,
   placeableFoods,
   raceRules,
@@ -34,6 +50,7 @@ import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps } from "../db/schema.ts";
 import { addEvent, campRaceLevel, HALF_BREED_LIFESPAN, refundFor } from "./service.ts";
 import { questMetrics } from "./quests.ts";
+import { merchantArrivals, merchantBought } from "./merchant.ts";
 
 type CampRow = typeof camps.$inferSelect;
 const MINUTE = 60_000;
@@ -72,6 +89,8 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
   let message = "";
   let resident: number | undefined;
   let wearers: Wearer[] | null = null;
+  /** More to keep with the command's event (the merchant's visit id). */
+  let extra: Record<string, unknown> = {};
   let gearBefore = new Map<number, string>();
 
   const loadWearers = async () => {
@@ -293,6 +312,79 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       message = `完成「${quest.title}」，領到獎勵了！`;
       break;
     }
+    case "merchant-arrive": {
+      const name = merchantName(camp.race);
+      const arrivals = await merchantArrivals(tx, camp.userId, now);
+      const latest = arrivals[0];
+      if (latest && now.getTime() - latest.at.getTime() < MERCHANT_STAY_MINUTES * 60_000) {
+        return { ok: true, message: `${name}還在營地。`, repeated: true }; // (another Mac of the same account brought it already)
+      }
+      if (arrivals.filter((a) => taipeiDay(a.at) === taipeiDay(now)).length >= MERCHANT_VISITS_PER_DAY) {
+        return { ok: false, code: "not_allowed", message: `${name}今天已經來過了。` };
+      }
+      if (latest && now.getTime() - latest.at.getTime() < MERCHANT_GAP_MINUTES * 60_000) {
+        return { ok: false, code: "too_soon", message: `${name}剛走不久。` };
+      }
+      const visit = `${camp.userId.slice(0, 8)}-${now.getTime()}`;
+      const gift = merchantGift(visit, campStage(camp.race, camp.peak));
+      for (const [id, n] of Object.entries(gift)) materials[id] = (materials[id] ?? 0) + n;
+      extra = { visit, gift };
+      message = `${name}來了，送你 ${cost(gift)}。`;
+      break;
+    }
+    case "merchant-trade": {
+      const [latest] = await merchantArrivals(tx, camp.userId, now);
+      if (!latest || latest.visit !== command.visit || now.getTime() - latest.at.getTime() >= MERCHANT_STAY_MINUTES * 60_000) {
+        return { ok: false, code: "not_found", message: "商人已經走了。" };
+      }
+      const offer = merchantStock(command.visit, camp.race)[command.offer];
+      if (!offer) return { ok: false, code: "not_found", message: "商人沒有這樣東西。" };
+      if ((await merchantBought(tx, camp.userId, command.visit)).includes(command.offer)) {
+        return { ok: false, code: "not_allowed", message: "這個已經換過了。" };
+      }
+      if (!canAfford(materials, offer.give)) return { ok: false, code: "not_enough", message: `素材不夠：要 ${cost(offer.give)}。` };
+      spend(materials, offer.give);
+      for (const [id, n] of Object.entries(offer.get)) materials[id] = (materials[id] ?? 0) + n;
+      message = `用 ${cost(offer.give)} 換到了 ${cost(offer.get)}。`;
+      break;
+    }
+    case "ranch-sync": {
+      const ranch = camp.ranch ?? { animals: [] };
+      const known = new Map(ranch.animals.map((a) => [a.id, a]));
+      // (one already on the books keeps its birthday; a new one is born, or caught full-grown, now)
+      const next: RanchAnimal[] = command.animals.map((a) => {
+        const { name: _old, ...kept } = known.get(a.id) ?? { id: a.id, kind: a.kind, bornAt: now.toISOString(), ...(a.caught ? { caught: true } : {}) };
+        return a.name ? { ...kept, name: a.name } : kept; // (its name is the player's to give and change)
+      });
+      const problem = ranchProblem(next, campStage(camp.race, camp.peak));
+      if (problem) return { ok: false, code: "not_allowed", message: problem };
+      // what the herd on the books gave while the camp was open: never more minutes than really passed
+      const passed = ranch.syncedAt ? (now.getTime() - Date.parse(ranch.syncedAt)) / 60_000 : 0;
+      const minutes = Math.max(0, Math.min(command.minutes, RANCH_MAX_MINUTES, passed));
+      const { gain, carry } = ranchYield(ranch.animals, minutes, now, ranch.carry);
+      const kept = new Set(next.map((a) => a.id));
+      for (const id of command.butchered ?? []) {
+        const animal = known.get(id);
+        const meat = animal && RANCH_KINDS[animal.kind]?.butcher;
+        if (!animal || !meat || kept.has(id) || !ranchGrown(animal, now)) continue;
+        for (const [m, n] of Object.entries(meat)) gain[m] = (gain[m] ?? 0) + n;
+        known.delete(id); // (once)
+      }
+      for (const [id, n] of Object.entries(gain)) materials[id] = (materials[id] ?? 0) + n;
+      changes.ranch = { animals: next, syncedAt: now.toISOString(), carry };
+      extra = { gain };
+      message = Object.keys(gain).length ? `牧場：${cost(gain)}。` : "";
+      break;
+    }
+    case "decor-set": {
+      // (a kind that is no more, from a Mac with an older catalogue, is simply left out)
+      const items = command.items.filter((d) => decorKind(d.kind)).map((d) => ({ kind: d.kind, x: Math.round(d.x), y: Math.round(d.y), ...(d.flip ? { flip: true } : {}) }));
+      const problem = decorProblem(items, camp.race, campStage(camp.race, camp.peak));
+      if (problem) return { ok: false, code: problem.includes("點數") ? "no_room" : "not_allowed", message: problem };
+      changes.decor = items;
+      message = "";
+      break;
+    }
     case "story": {
       if (JSON.stringify(command.romance ?? null).length > 20_000) return { ok: false, code: "too_big", message: "故事的資料太大了。" };
       changes.romance = command.romance ?? null;
@@ -311,6 +403,6 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
   const set: Partial<CampRow> = { ...changes, materials, armory: store, version: camp.version + 1 };
   await tx.update(camps).set(set).where(eq(camps.userId, camp.userId));
   Object.assign(camp, set);
-  await addEvent(tx, camp.userId, now, "command", { command, message, resident });
+  await addEvent(tx, camp.userId, now, "command", { command, message, resident, ...extra });
   return { ok: true, message, resident };
 }

@@ -5,6 +5,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--hook") {
     HookCLI.run(Array(CommandLine.arguments[(index + 1)...]))
 }
 
+ExitLog.start()
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

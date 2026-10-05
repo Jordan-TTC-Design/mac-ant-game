@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
-import { CAMP_MONSTERS, MIDDLE_GEAR, QUESTS, questShown, type QuestMetrics, type QuestView } from "@goblincamp/shared/camp";
-import { connectedCells, ITEMS, LAIRS, raceLevel } from "@goblincamp/shared/world";
+import { CAMP_MONSTERS, MIDDLE_GEAR, QUESTS, questShown, raceRules, type QuestMetrics, type QuestView } from "@goblincamp/shared/camp";
+import { CELL_BUILDING_MAX, connectedCells, ITEMS, LAIRS, raceLevel } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campResidents, expeditions, friendships, worldCells, worldPlayers } from "../db/schema.ts";
 import { landmarksFor } from "../world/osm.ts";
@@ -20,13 +20,23 @@ export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics>
   for (const s of sites) siteLevels[s.kind] = Math.max(siteLevels[s.kind] ?? 0, s.level);
 
   const [player] = await tx.select({ xp: worldPlayers.xp, home: worldPlayers.homeCell }).from(worldPlayers).where(eq(worldPlayers.userId, userId));
-  const held = await tx.select({ cell: worldCells.cell, nest: worldCells.nestStartedAt, building: worldCells.building }).from(worldCells).where(eq(worldCells.owner, userId));
+  const held = await tx.select({ cell: worldCells.cell, nest: worldCells.nestStartedAt, building: worldCells.building, town: worldCells.town }).from(worldCells).where(eq(worldCells.owner, userId));
   const cells = new Set(held.map((c) => c.cell));
   const landmarks = await landmarksFor(tx, [...cells]);
   const [{ won }] = (await tx
     .select({ won: sql<number>`count(*)::int` })
     .from(expeditions)
     .where(and(eq(expeditions.userId, userId), eq(expeditions.status, "done"), sql`${expeditions.result} -> 'lair' is not null and (${expeditions.result} -> 'outcome' ->> 'won')::boolean`))) as [{ won: number }];
+  // (other camps' cells won: a fight with a defender that went this camp's way)
+  const [{ pvp }] = (await tx
+    .select({ pvp: sql<number>`count(*)::int` })
+    .from(expeditions)
+    .where(and(eq(expeditions.userId, userId), eq(expeditions.status, "done"), isNotNull(expeditions.defender), sql`(${expeditions.result} -> 'outcome' ->> 'won')::boolean`))) as [{ pvp: number }];
+  // (everybody alive: at home, on held cells, camping, guarding, on the road)
+  const [{ alive }] = (await tx
+    .select({ alive: sql<number>`count(*)::int` })
+    .from(campResidents)
+    .where(and(eq(campResidents.userId, userId), isNull(campResidents.diedAt)))) as [{ alive: number }];
   const [{ friends }] = (await tx
     .select({ friends: sql<number>`count(*)::int` })
     .from(friendships)
@@ -60,6 +70,14 @@ export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics>
     raceLevel: raceLevel(player?.xp ?? 0),
     friends,
     guarding: !!guard,
+    sitesTop: sites.filter((s) => s.level >= 3).length,
+    population: alive,
+    homeCap: raceRules(camp.race).homeCap,
+    towns: held.filter((c) => c.town).length,
+    buildingsTop: held.filter((c) => (c.building?.level ?? 0) >= CELL_BUILDING_MAX).length,
+    pvpWins: pvp,
+    bossKinds: [...BOSSES].filter((id) => (kills[id] ?? 0) > 0).length,
+    middleGearKinds: new Set(owned.filter((id) => MIDDLE_GEAR.includes(id))).size,
   };
 }
 

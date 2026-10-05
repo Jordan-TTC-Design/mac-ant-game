@@ -1,0 +1,13 @@
+{
+  "id": "bone_sheep",
+  "name": "骨羊",
+  "frame": 16,
+  "pixelScale": 1.5,
+  "sheet": "walk.png",
+  "hp": 6,
+  "speed": 13,
+  "meat": 0,
+  "aggressive": false,
+  "weight": 0,
+  "radius": 9
+}
