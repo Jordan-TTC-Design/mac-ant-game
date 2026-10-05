@@ -605,7 +605,13 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.0）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.1）。
+
+### v0.16.1
+
+- **營地也收進主視窗**：營地是主視窗的第一頁；右上角「彈出成小視窗」可以放到桌面角落，小視窗上的「收回主視窗」放回來。
+- 主視窗可以縮得很小（側邊選單會自己收起來）；切到工坊、名冊這些頁時，視窗太窄會自動拉寬。
+- 修正：更新後主視窗的任務、動態頁可能一片空白（舊的網頁快取）。
 
 ### v0.16.0
 
