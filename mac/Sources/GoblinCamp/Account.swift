@@ -63,7 +63,11 @@ final class AccountStore {
         save()
         return id
     }
-    var deviceName: String { Host.current().localizedName ?? "Mac" }
+    /// What the server accepts as a device name: 1–60 characters, never empty (a Mac can have a blank or very long name).
+    var deviceName: String {
+        let name = (Host.current().localizedName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Mac" : String(name.prefix(60))
+    }
     var user: AccountUser? { file.user }
 
     /// The token, read from the Keychain once per launch and kept: every read of an item another build made can make
@@ -180,9 +184,15 @@ final class APIClient {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            struct Body: Decodable { let error: String?; let message: String? }
+            struct Body: Decodable { let error: String?; let message: String?; let fields: [String: String]? }
             let parsed = try? APIClient.decoder.decode(Body.self, from: data)
-            throw APIError(status: status, code: parsed?.error ?? "http_\(status)", message: parsed?.message ?? "伺服器回了錯誤（\(status)）。")
+            var message = parsed?.message ?? "伺服器回了錯誤（\(status)）。"
+            if let fields = parsed?.fields, !fields.isEmpty { // which box, so a report says more than "有欄位沒填好"
+                message += "（" + fields.keys.sorted().map { "\($0)：\(fields[$0] ?? "")" }.joined(separator: "、") + "）"
+            }
+            let code = parsed?.error ?? "http_\(status)"
+            message += "［\(status) \(code)］" // the status and code, so a screenshot is enough to tell what went wrong
+            throw APIError(status: status, code: code, message: message)
         }
         return data
     }

@@ -605,7 +605,12 @@ make invite n=5              # 邀請碼（只顯示這一次）
 
 ## 版本紀錄
 
-最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.3）。
+最新版都在 [Releases](https://github.com/Jordan-TTC-Design/mac-ant-game/releases/latest)。裝了 0.8.0 之後，之後的版本 App 會自己更新（現在是 0.16.4）。
+
+### v0.16.4
+
+- 修正：有些 Mac 登入時出現「有欄位沒填好」（電腦名稱是空的或太長，被伺服器擋下）；現在會自動補成 "Mac" 或截短。
+- 錯誤訊息多帶了沒過的欄位名稱、狀態碼和錯誤代碼，方便回報。
 
 ### v0.16.3
 
