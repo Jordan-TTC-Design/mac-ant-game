@@ -94,11 +94,12 @@ for scene in root["poses"] as? [[String: Any]] ?? [] {
     }
     let presentIds = scene["present"] as? [String] ?? []
     let present = members.filter { presentIds.contains($0.id) }
+    let seats = (scene["seats"] as? [[String: Any]] ?? []).map { HallPoint(x: number($0["x"]) ?? 0, y: number($0["y"]) ?? 0) }
     for moment in scene["times"] as? [[String: Any]] ?? [] {
         let now = number(moment["now"]) ?? 0
         for (want, m) in zip(moment["poses"] as? [Any] ?? [], members) {
             let tag = "pose of \(m.id) (hall \(layout.width)×\(layout.height)) at \(now)"
-            let got = hallPose(layout, m, present: present, now: now)
+            let got = hallPose(layout, m, present: present, now: now, seats: seats)
             guard let w = want as? [String: Any] else {
                 expect(tag, got == nil, "nil vs \(String(describing: got))")
                 continue

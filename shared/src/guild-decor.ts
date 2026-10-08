@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { GUILD_DECOR, type GuildDecorKind } from "./guild-decor-catalog.ts";
 import { guildLevel, type GuildRole } from "./guild.ts";
-import { WALL_ROWS } from "./guild-hall.ts";
+import { WALL_ROWS, type Point, type Rect } from "./guild-hall.ts";
 
 export { GUILD_DECOR, type GuildDecorKind };
 
@@ -142,6 +142,30 @@ export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: num
   const used = guildDecorRoomUsed(items);
   if (used > room) return `裝飾點數不夠（${used}／${room}），公會升級後會有更多。`;
   return null;
+}
+
+/** Where one sits on each piece made for sitting (a sofa, an armchair…), in the hall's order: the feet, in tiles. */
+export function guildDecorSeats(items: readonly GuildDecorPlaced[]): Point[] {
+  const out: Point[] = [];
+  for (const d of items) {
+    const k = BY_ID.get(d.kind);
+    if (!k?.seat) continue;
+    const dx = (k.seat.x - k.w / 2) / 16;
+    out.push({ x: d.x + (d.flip ? -dx : dx), y: d.y + (k.seat.y - k.h) / 16 });
+  }
+  return out;
+}
+
+/** What stands in the way among the decorations: not rugs, wall or ceiling pieces, or the little living things. */
+export function guildDecorSolids(items: readonly GuildDecorPlaced[]): Rect[] {
+  const out: Rect[] = [];
+  for (const d of items) {
+    const k = BY_ID.get(d.kind);
+    if (!k || k.flat || k.wall || k.ceiling || k.category === "會動的") continue;
+    const half = Math.max(0.2, (k.w / 2 - 2) / 16);
+    out.push({ x0: d.x - half, y0: d.y - Math.min(k.h, 10) / 16, x1: d.x + half, y1: d.y });
+  }
+  return out;
 }
 
 export interface GuildDecorChange {

@@ -6,6 +6,8 @@ import {
   GUILD_MOVE_STALE_MS,
   GUILD_SAY_MAX,
   guildDecorKind,
+  guildDecorSeats,
+  guildDecorSolids,
   hallLayout,
   hallPose,
   newDecorUid,
@@ -115,9 +117,9 @@ const control = useHallControl(layout, () => {
   const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
   const mine = order.find((m) => m.id === user.value!.id);
   const present = order.filter((m) => m.presence !== "offline");
-  const at = mine && hallPose(L, mine, present, Date.now());
+  const at = mine && hallPose(L, mine, present, Date.now(), guildDecorSeats(guild.value.decor));
   return at ? { x: at.x, y: at.y } : { x: L.width / 2, y: L.aisles.at(-1)! };
-});
+}, () => guildDecorSolids(guild.value?.decor ?? []), () => guildDecorSeats(guild.value?.decor ?? []));
 const tick = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
@@ -133,7 +135,7 @@ const follow = computed(() => {
   if (!L || !user.value) return null;
   const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
   const mine = order.find((m) => m.id === user.value!.id);
-  const at = mine && hallPose(L, mine, order.filter((m) => m.presence !== "offline"), Date.now());
+  const at = mine && hallPose(L, mine, order.filter((m) => m.presence !== "offline"), Date.now(), guildDecorSeats(guild.value?.decor ?? []));
   return at ? { x: at.x, y: at.y } : null;
 });
 const hand = computed(() => {

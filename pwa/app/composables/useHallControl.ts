@@ -4,6 +4,7 @@ import {
   GUILD_MOVE_MS,
   hallInteract,
   hallPath,
+  hallRoute,
   hallSolids,
   hallStep,
   hallWalkable,
@@ -11,6 +12,7 @@ import {
   type GuildMove,
   type HallLayout,
   type Point,
+  type Rect,
 } from "@goblincamp/shared";
 
 /** Walking pace by hand, tiles a second (a little brisker than wandering). */
@@ -26,7 +28,7 @@ export type Pad = "up" | "down" | "left" | "right";
  * wandering; where it is goes to the other members over the WebSocket (when it changes, and every few seconds), and after a
  * while without input — or leaving the page — it is let go again.
  */
-export function useHallControl(layout: Ref<HallLayout | null>, startAt: () => Point | null) {
+export function useHallControl(layout: Ref<HallLayout | null>, startAt: () => Point | null, extraSolids: () => Rect[] = () => [], extraSeats: () => Point[] = () => []) {
   const pose = ref<(GuildMove & { since: number }) | null>(null);
   const held = new Set<Pad>();
   let path: Point[] = [];
@@ -39,6 +41,13 @@ export function useHallControl(layout: Ref<HallLayout | null>, startAt: () => Po
 
   const send = (detail: object) => window.dispatchEvent(new CustomEvent("gc:client-message", { detail }));
 
+  /** Somewhere free to stand up to from a seat (beside it; else the aisle behind the desks). */
+  function standUp(L: HallLayout, p: Point, solids: Rect[]): Point {
+    const spots = [-1, 1].flatMap((s) => [{ x: p.x, y: p.y + s * 0.9 }, { x: p.x + s * 0.9, y: p.y }]).concat([{ x: p.x, y: p.y - 1.1 }]);
+    const free = spots.find((q) => hallWalkable(L, q, solids));
+    return free ?? { x: p.x, y: L.aisles.filter((a) => a < p.y).at(-1) ?? L.aisles[0]! };
+  }
+
   /** Takes the avatar over (from where it was wandering) on the first input. */
   function take(): boolean {
     lastInput = Date.now();
@@ -46,9 +55,9 @@ export function useHallControl(layout: Ref<HallLayout | null>, startAt: () => Po
     const from = startAt();
     const L = layout.value;
     if (!from || !L) return false;
-    const solids = hallSolids(L);
-    // (if it was sitting at a desk, stand up into the aisle behind it)
-    const at = hallWalkable(L, from, solids) ? from : { x: from.x, y: L.aisles.reduce((b, a) => (Math.abs(a - from.y) < Math.abs(b - from.y) ? a : b)) };
+    const solids = [...hallSolids(L), ...extraSolids()];
+    // (if it was sitting, stand up beside the seat)
+    const at = hallWalkable(L, from, solids) ? from : standUp(L, from, solids);
     pose.value = { ...at, dir: "front", flip: false, anim: "idle", since: Date.now() };
     return true;
   }
@@ -66,27 +75,31 @@ export function useHallControl(layout: Ref<HallLayout | null>, startAt: () => Po
   }
   function pressA() {
     if (!take() || !layout.value) return;
-    const { anim, at } = hallInteract(layout.value, pose.value!);
+    const { anim, at } = hallInteract(layout.value, pose.value!, extraSeats());
     act(anim, at);
   }
   function pressB() {
     if (take()) act("cheer");
   }
-  /** Walks there round the desks; a tap on a desk or its seat walks behind it and sits. */
+  /** Walks there round the desks and decorations; a tap on something to sit on (or its desk) walks up to it and sits. */
   function walkTo(x: number, y: number) {
     const L = layout.value;
     if (!L || !take()) return;
+    const solids = [...hallSolids(L), ...extraSolids()];
     const target = { x, y };
     thenSit = false;
     let goal: Point = target;
-    if (!hallWalkable(L, target)) {
-      const near = hallInteract(L, target);
+    if (!hallWalkable(L, target, solids)) {
+      const near = hallInteract(L, target, extraSeats());
       if (near.anim !== "sit") return;
-      const aisle = L.aisles.filter((a) => a < near.at.y).at(-1) ?? L.aisles[0]!;
-      goal = { x: near.at.x, y: aisle };
+      // (the nearest free spot by the seat)
+      const spots = [-1, 1].flatMap((s) => [{ x: near.at.x, y: near.at.y + s * 0.9 }, { x: near.at.x + s * 0.9, y: near.at.y }, { x: near.at.x, y: near.at.y - 1.1 }]);
+      const free = spots.filter((p) => hallWalkable(L, p, solids)).sort((a, b) => Math.hypot(a.x - pose.value!.x, a.y - pose.value!.y) - Math.hypot(b.x - pose.value!.x, b.y - pose.value!.y))[0];
+      if (!free) return;
+      goal = free;
       thenSit = true;
     }
-    path = hallPath(L, pose.value!, goal).slice(1);
+    path = hallRoute(L, solids, pose.value!, goal) ?? hallPath(L, pose.value!, goal).slice(1);
   }
 
   function frame(t: number) {
@@ -108,7 +121,7 @@ export function useHallControl(layout: Ref<HallLayout | null>, startAt: () => Po
         path.shift();
         if (!path.length && thenSit) {
           thenSit = false;
-          const { anim, at } = hallInteract(L, p);
+          const { anim, at } = hallInteract(L, p, extraSeats());
           act(anim, at);
           return;
         }
@@ -117,16 +130,16 @@ export function useHallControl(layout: Ref<HallLayout | null>, startAt: () => Po
         dy = ay / d;
       }
     }
-    if ((dx || dy) && !hallWalkable(L, p)) {
-      // (sitting at a desk: stand up into the aisle behind it first)
-      const aisle = L.aisles.filter((a) => a < p.y).at(-1) ?? L.aisles[0]!;
-      pose.value = { ...p, y: aisle, anim: "walk", dir: "back", since: now };
+    const solids = [...hallSolids(L), ...extraSolids()];
+    if ((dx || dy) && !hallWalkable(L, p, solids)) {
+      // (sitting: stand up beside the seat first)
+      pose.value = { ...p, ...standUp(L, p, solids), anim: "walk", dir: "front", since: now };
       return;
     }
     if (dx || dy) {
       const len = Math.hypot(dx, dy);
       const step = Math.min(SPEED * dt, path.length ? Math.hypot(path[0]!.x - p.x, path[0]!.y - p.y) : Infinity);
-      const to = hallStep(L, p, (dx / len) * step, (dy / len) * step);
+      const to = hallStep(L, p, (dx / len) * step, (dy / len) * step, solids);
       const dir = Math.abs(dx) >= Math.abs(dy) ? "side" : dy < 0 ? "back" : "front";
       pose.value = { ...to, dir, flip: dx > 0, anim: "walk", since: p.anim === "walk" ? p.since : now };
       if (to.x === p.x && to.y === p.y) path = []; // (stuck: give up on the way)

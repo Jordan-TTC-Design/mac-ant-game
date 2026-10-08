@@ -23,7 +23,7 @@ import {
 export const HALL_FIXTURE_START = Date.parse("2026-10-08T09:00:00Z");
 
 /** Who is in each hall the poses are worked out for: online ones (wandering, visiting each other), focusing, away, offline. */
-const SCENES: { level: number; members: HallMember[] }[] = [
+const SCENES: { level: number; members: HallMember[]; seats?: Point[] }[] = [
   {
     level: 3,
     members: [
@@ -39,6 +39,12 @@ const SCENES: { level: number; members: HallMember[] }[] = [
   // alone in the hall: nobody's desk to chat at
   { level: 1, members: [{ id: "lonely", presence: "online", seat: 2 }] },
   { level: 7, members: [{ id: "x1", presence: "online", seat: 29 }, { id: "x2", presence: "online", seat: 0 }, { id: "x3", presence: "focus", seat: 15 }] },
+  // with seats among the decorations (a sofa, an armchair) to sit on too
+  {
+    level: 2,
+    members: [{ id: "sofa-lover", presence: "online", seat: 1 }, { id: "幽幽", presence: "online", seat: 0 }],
+    seats: [{ x: 6.4375, y: 14.0625 }, { x: 9.8125, y: 16.25 }, { x: 30.5, y: 18.75 }],
+  },
 ];
 
 /** Every 0.37 s over three minutes, the first minute from 0 (where the activity before the first is the −1st), and a few far off. */
@@ -77,14 +83,15 @@ export function buildGuildHallFixtures() {
     return { level, width: l.width, height: l.height, pieces: l.pieces, seats: l.seats, drink: l.drink, bench: l.bench, aisles: l.aisles };
   });
 
-  const poses = SCENES.map(({ level, members }) => {
+  const poses = SCENES.map(({ level, members, seats = [] }) => {
     const layout = hallLayout(level);
     const present = members.filter((m) => m.presence !== "offline");
     return {
       level,
       members,
+      seats,
       present: present.map((m) => m.id),
-      times: times().map((now) => ({ now, poses: members.map((m) => hallPose(layout, m, present, now)) })),
+      times: times().map((now) => ({ now, poses: members.map((m) => hallPose(layout, m, present, now, seats)) })),
     };
   });
 

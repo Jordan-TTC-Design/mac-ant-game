@@ -19,7 +19,11 @@ final class GuildHallView: NSView {
     var level = 1 { didSet { if level != oldValue { layout = hallLayout(level: level) } } }
     var members: [Member] = []
     var me: String?
-    var decor: [GuildInfo.Decor] = []
+    var decor: [GuildInfo.Decor] = [] { didSet { placeDecor() } }
+    /// Seats among the decorations (the wanderers sit on them too) and what of them stands in the way
+    /// (shared/src/guild-decor.ts guildDecorSeats / guildDecorSolids).
+    private var decorSeats: [HallPoint] = []
+    private var decorSolids: [HallRect] = []
     var floorBase = "oak"
     var floorTiles: [String: String] = [:]
     var wall = "stone"
@@ -88,11 +92,26 @@ final class GuildHallView: NSView {
     }
     private func tiles(at p: CGPoint) -> HallPoint { HallPoint(x: Double(cam.x + p.x / tilePoints), y: Double(cam.y + p.y / tilePoints)) }
 
+    private func placeDecor() {
+        decorSeats = []
+        decorSolids = []
+        for d in decor {
+            guard let k = art.decorPiece(d.kind) else { continue }
+            if let seat = k.seat {
+                let dx = (seat.x - Double(k.w) / 2) / 16
+                decorSeats.append(HallPoint(x: d.x + ((d.flip ?? false) ? -dx : dx), y: d.y + (seat.y - Double(k.h)) / 16))
+            }
+            if k.flat || k.wall || k.ceiling || k.living { continue }
+            let half = max(0.2, (Double(k.w) / 2 - 2) / 16)
+            decorSolids.append(HallRect(x0: d.x - half, y0: d.y - Double(min(k.h, 10)) / 16, x1: d.x + half, y1: d.y))
+        }
+    }
+
     // MARK: Each frame
 
     private func autoPose(_ m: Member, _ now: Date) -> HallPose? {
         let all = members.map { HallMember(id: $0.id, presence: $0.presence, seat: $0.seat) }
-        return hallPose(layout, HallMember(id: m.id, presence: m.presence, seat: m.seat), present: all.filter { $0.presence != "offline" }, now: now.timeIntervalSince1970 * 1000)
+        return hallPose(layout, HallMember(id: m.id, presence: m.presence, seat: m.seat), present: all.filter { $0.presence != "offline" }, now: now.timeIntervalSince1970 * 1000, seats: decorSeats)
     }
 
     private func tick() {
@@ -294,9 +313,15 @@ final class GuildHallView: NSView {
         if mine != nil { return true }
         guard let me, let m = members.first(where: { $0.id == me }) else { return false }
         let from = autoPose(m, Date()).map { HallPoint(x: $0.x, y: $0.y) } ?? HallPoint(x: Double(layout.width) / 2, y: layout.aisles.last ?? 4)
-        let at = hallWalkable(layout, from) ? from : HallPoint(x: from.x, y: layout.aisles.min { abs($0 - from.y) < abs($1 - from.y) } ?? from.y)
+        let at = hallWalkable(layout, from, extra: decorSolids) ? from : standUp(from)
         mine = Mine(move: GuildMove(x: at.x, y: at.y, dir: "front", flip: false, anim: "idle"), since: Date())
         return true
+    }
+
+    /// Somewhere free to stand up to from a seat (beside it; else the aisle behind the desks).
+    private func standUp(_ p: HallPoint) -> HallPoint {
+        let spots = [-1.0, 1.0].flatMap { s in [HallPoint(x: p.x, y: p.y + s * 0.9), HallPoint(x: p.x + s * 0.9, y: p.y)] } + [HallPoint(x: p.x, y: p.y - 1.1)]
+        return spots.first { hallWalkable(layout, $0, extra: decorSolids) } ?? HallPoint(x: p.x, y: layout.aisles.last(where: { $0 < p.y }) ?? layout.aisles.first ?? p.y)
     }
 
     private func act(_ anim: String, at: HallPoint? = nil) {
@@ -308,7 +333,7 @@ final class GuildHallView: NSView {
 
     func pressA() {
         guard take(), let m = mine else { return }
-        let r = hallInteract(layout, HallPoint(x: m.move.x, y: m.move.y), extraSeats: [])
+        let r = hallInteract(layout, HallPoint(x: m.move.x, y: m.move.y), extraSeats: decorSeats)
         act(r.anim, at: r.at)
     }
 
@@ -316,18 +341,73 @@ final class GuildHallView: NSView {
         if take() { act("cheer") }
     }
 
-    /// Walks there round the desks; a click on a desk or its seat walks behind it and sits.
+    /// Walks there round the desks and decorations; a click on something to sit on (or its desk) walks up to it and sits.
     private func walk(to target: HallPoint) {
         guard take(), let m = mine else { return }
+        let here = HallPoint(x: m.move.x, y: m.move.y)
         thenSit = false
         var goal = target
-        if !hallWalkable(layout, target) {
-            let near = hallInteract(layout, target, extraSeats: [])
+        if !hallWalkable(layout, target, extra: decorSolids) {
+            let near = hallInteract(layout, target, extraSeats: decorSeats)
             guard near.anim == "sit" else { return }
-            goal = HallPoint(x: near.at.x, y: layout.aisles.last(where: { $0 < near.at.y }) ?? layout.aisles.first ?? near.at.y)
+            // (the nearest free spot by the seat)
+            let spots = [-1.0, 1.0].flatMap { s in [HallPoint(x: near.at.x, y: near.at.y + s * 0.9), HallPoint(x: near.at.x + s * 0.9, y: near.at.y), HallPoint(x: near.at.x, y: near.at.y - 1.1)] }
+            guard let free = spots.filter({ hallWalkable(layout, $0, extra: decorSolids) }).min(by: { hypot($0.x - here.x, $0.y - here.y) < hypot($1.x - here.x, $1.y - here.y) }) else { return }
+            goal = free
             thenSit = true
         }
-        path = Array(hallPath(layout, from: HallPoint(x: m.move.x, y: m.move.y), to: goal).dropFirst())
+        path = route(from: here, to: goal) ?? Array(hallPath(layout, from: here, to: goal).dropFirst())
+    }
+
+    /// A way round whatever is in the way (shared/src/guild-hall.ts hallRoute): a breadth-first search over half-tile steps,
+    /// then shortened wherever a straight line is clear.
+    private func route(from: HallPoint, to: HallPoint) -> [HallPoint]? {
+        let step = 0.5
+        let cols = Int((Double(layout.width) / step).rounded(.up)), rows = Int((Double(layout.height) / step).rounded(.up))
+        func cell(_ p: HallPoint) -> (Int, Int) { (min(cols - 1, max(0, Int((p.x / step - 0.5).rounded()))), min(rows - 1, max(0, Int((p.y / step - 0.5).rounded())))) }
+        func centre(_ c: Int, _ r: Int) -> HallPoint { HallPoint(x: (Double(c) + 0.5) * step, y: (Double(r) + 0.5) * step) }
+        func ok(_ p: HallPoint) -> Bool { hallWalkable(layout, p, extra: decorSolids) }
+        let (sc, sr) = cell(from), (gc, gr) = cell(to)
+        let goal = gr * cols + gc
+        var came: [Int: Int] = [sr * cols + sc: -1]
+        var queue = [sr * cols + sc]
+        var i = 0
+        while i < queue.count {
+            let at = queue[i]
+            i += 1
+            if at == goal { break }
+            let c = at % cols, r = at / cols
+            for (dc, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let nc = c + dc, nr = r + dr, key = nr * cols + nc
+                guard nc >= 0, nr >= 0, nc < cols, nr < rows, came[key] == nil, ok(centre(nc, nr)) else { continue }
+                came[key] = at
+                queue.append(key)
+            }
+        }
+        guard came[goal] != nil else { return nil }
+        var cells: [HallPoint] = []
+        var k = goal
+        while k != -1 {
+            cells.insert(centre(k % cols, k / cols), at: 0)
+            k = came[k] ?? -1
+        }
+        cells[cells.count - 1] = to
+        func clear(_ a: HallPoint, _ b: HallPoint) -> Bool {
+            let n = Int((hypot(b.x - a.x, b.y - a.y) / 0.2).rounded(.up))
+            for j in stride(from: 1, to: n, by: 1) where !ok(HallPoint(x: a.x + (b.x - a.x) * Double(j) / Double(n), y: a.y + (b.y - a.y) * Double(j) / Double(n))) { return false }
+            return true
+        }
+        var out: [HallPoint] = []
+        var a = from
+        var at = 0
+        while at < cells.count {
+            var j = cells.count - 1
+            while j > at && !clear(a, cells[j]) { j -= 1 }
+            out.append(cells[j])
+            a = cells[j]
+            at = j + 1
+        }
+        return out
     }
 
     private func stepHand(dt: Double, now: Date) {
@@ -341,7 +421,7 @@ final class GuildHallView: NSView {
                 path.removeFirst()
                 if path.isEmpty, thenSit {
                     thenSit = false
-                    let r = hallInteract(layout, p, extraSeats: [])
+                    let r = hallInteract(layout, p, extraSeats: decorSeats)
                     act(r.anim, at: r.at)
                     return tell(now)
                 }
@@ -350,16 +430,16 @@ final class GuildHallView: NSView {
                 dy = (next.y - p.y) / d
             }
         }
-        if dx != 0 || dy != 0, !hallWalkable(layout, p) {
-            // (sitting at a desk: stand up into the aisle behind it first)
-            let aisle = layout.aisles.last(where: { $0 < p.y }) ?? layout.aisles.first ?? p.y
-            m.move = GuildMove(x: p.x, y: aisle, dir: "back", flip: false, anim: "walk")
+        if dx != 0 || dy != 0, !hallWalkable(layout, p, extra: decorSolids) {
+            // (sitting: stand up beside the seat first)
+            let up = standUp(p)
+            m.move = GuildMove(x: up.x, y: up.y, dir: "front", flip: false, anim: "walk")
             m.since = now
         } else if dx != 0 || dy != 0 {
             let len = hypot(dx, dy)
             let room = path.first.map { hypot($0.x - p.x, $0.y - p.y) } ?? .infinity
             let step = min(speed * dt, room)
-            let to = hallStep(layout, p, dx: dx / len * step, dy: dy / len * step)
+            let to = hallStep(layout, p, dx: dx / len * step, dy: dy / len * step, extra: decorSolids)
             let dir = abs(dx) >= abs(dy) ? "side" : dy < 0 ? "back" : "front"
             if m.move.anim != "walk" { m.since = now }
             m.move = GuildMove(x: to.x, y: to.y, dir: dir, flip: dx > 0, anim: "walk")

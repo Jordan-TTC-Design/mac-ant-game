@@ -9,7 +9,12 @@ final class GuildArt {
     static let shared = GuildArt()
 
     struct Anim { let frames: [Int]; let fps: Double; let loop: Bool }
-    struct Piece { let image: CGImage; let w: Int; let h: Int; let frames: Int; let fps: Double; let anchorX: Double; let anchorY: Double; let flat: Bool; let wall: Bool; let ceiling: Bool }
+    struct Piece {
+        let image: CGImage; let w: Int; let h: Int; let frames: Int; let fps: Double; let anchorX: Double; let anchorY: Double; let flat: Bool; let wall: Bool; let ceiling: Bool
+        /// Where a sitter's feet go (sprite pixels; nil: not for sitting), and whether it is one of the little living things.
+        var seat: (x: Double, y: Double)? = nil
+        var living = false
+    }
 
     private(set) var ready = false
     // the avatars
@@ -101,8 +106,13 @@ final class GuildArt {
             for (id, d) in all {
                 guard let file = d["file"] as? String, let img = image(h.appendingPathComponent(file)) else { continue }
                 let w = d["w"] as? Int ?? img.width, hh = d["h"] as? Int ?? img.height
+                let seat = (d["seat"] as? [String: Any]).flatMap { s -> (x: Double, y: Double)? in
+                    guard let x = (s["x"] as? NSNumber)?.doubleValue, let y = (s["y"] as? NSNumber)?.doubleValue else { return nil }
+                    return (x, y)
+                }
                 decor[id] = Piece(image: img, w: w, h: hh, frames: d["frames"] as? Int ?? 1, fps: (d["fps"] as? NSNumber)?.doubleValue ?? 0,
-                                  anchorX: Double(w) / 2, anchorY: Double(hh), flat: d["flat"] as? Bool ?? false, wall: d["wall"] as? Bool ?? false, ceiling: d["ceiling"] as? Bool ?? false)
+                                  anchorX: Double(w) / 2, anchorY: Double(hh), flat: d["flat"] as? Bool ?? false, wall: d["wall"] as? Bool ?? false, ceiling: d["ceiling"] as? Bool ?? false,
+                                  seat: seat, living: d["category"] as? String == "會動的")
             }
         }
         ready = !layers.isEmpty && !floors.isEmpty

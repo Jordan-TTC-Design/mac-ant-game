@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { guildDecorKind, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
+import { guildDecorKind, guildDecorSeats, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
 import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
 
 /**
@@ -158,6 +158,8 @@ function up(e: PointerEvent) {
 }
 
 const layout = computed(() => hallLayout(props.level));
+/** Seats among the decorations (the wanderers sit on them too). */
+const decorSeats = computed(() => guildDecorSeats(props.decor));
 const seatOrder = computed(() => [...props.members].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)));
 const hallMembers = computed<HallMember[]>(() => seatOrder.value.map((m, i) => ({ id: m.id, presence: m.presence, seat: i })));
 
@@ -308,7 +310,7 @@ function draw() {
   for (const hm of hallMembers.value) {
     const member = seatOrder.value[hm.seat]!;
     const handPose = props.hand?.[hm.id];
-    let pose: HallPose | null = handPose ? smoothed(hm.id, handPose, now) : hallPose(L, hm, present, now);
+    let pose: HallPose | null = handPose ? smoothed(hm.id, handPose, now) : hallPose(L, hm, present, now, decorSeats.value);
     if (!handPose) shown.delete(hm.id);
     if (!pose) continue;
     const moment = moments.get(hm.id);

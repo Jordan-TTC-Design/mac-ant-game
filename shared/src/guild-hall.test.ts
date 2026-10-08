@@ -69,3 +69,23 @@ describe("walking by hand", () => {
     expect(hallInteract(hall, { x: hall.width / 2, y: hall.height - 2 }).anim).toBe("wave");
   });
 });
+
+describe("finding a way round", () => {
+  it("walks round a wall of decorations to the other side, never through it", async () => {
+    const { hallRoute, hallSolids, hallWalkable } = await import("./guild-hall.ts");
+    const hall = hallLayout(1);
+    // a long fence of pieces across the lower hall, with a gap at the right end
+    const fence = [{ x0: 0, y0: 12.4, x1: 27, y1: 13 }];
+    const solids = [...hallSolids(hall), ...fence];
+    const route = hallRoute(hall, solids, { x: 5, y: 10 }, { x: 5, y: 16 })!;
+    expect(route.at(-1)).toEqual({ x: 5, y: 16 });
+    let at = { x: 5, y: 10 };
+    for (const p of route) {
+      for (let i = 1; i <= 20; i++) expect(hallWalkable(hall, { x: at.x + ((p.x - at.x) * i) / 20, y: at.y + ((p.y - at.y) * i) / 20 }, solids)).toBe(true);
+      at = p;
+    }
+    expect(Math.max(...route.map((p) => p.x))).toBeGreaterThan(27); // (through the gap)
+    // walled in: no way
+    expect(hallRoute(hall, [...solids, { x0: 0, y0: 12.4, x1: 40, y1: 13 }], { x: 5, y: 10 }, { x: 5, y: 16 })).toBeNull();
+  });
+});

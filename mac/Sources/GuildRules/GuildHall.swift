@@ -188,7 +188,7 @@ private struct Doing {
 }
 
 /// What someone who is there chooses to do in their `k`th activity.
-private func activity(_ layout: HallLayout, _ m: HallMember, _ k: Double, _ present: [HallMember]) -> Doing {
+private func activity(_ layout: HallLayout, _ m: HallMember, _ k: Double, _ present: [HallMember], _ seats: [HallPoint]) -> Doing {
     let seat = layout.seats[m.seat % layout.seats.count]
     let kk = jsNumber(k)
     let roll = hallHash([m.id, kk])
@@ -196,7 +196,9 @@ private func activity(_ layout: HallLayout, _ m: HallMember, _ k: Double, _ pres
     if roll < 0.3 { return Doing(seat, anim: "sit", dir: "front") }
     if roll < 0.45 { return Doing(layout.drink, anim: "drink", dir: "front") }
     if roll < 0.6 {
-        return Doing(layout.bench[Int((hallHash([m.id, kk, "bench"]) * Double(layout.bench.count)).rounded(.down))], anim: "sit", dir: "front")
+        // (the bench, or a seat among the decorations: a sofa, an armchair…)
+        let benches = layout.bench + seats
+        return Doing(benches[Int((hallHash([m.id, kk, "bench"]) * Double(benches.count)).rounded(.down))], anim: "sit", dir: "front")
     }
     if roll < 0.8 && !others.isEmpty {
         let friend = others[Int((hallHash([m.id, kk, "who"]) * Double(others.count)).rounded(.down))]
@@ -252,8 +254,9 @@ private func along(_ path: [HallPoint], _ distance: Double) -> (at: HallPoint, d
 }
 
 /// What member `m` is doing at `now` (ms since 1970): nil when offline (not in the hall). `present` is everyone in the hall
-/// (for visiting a friend's desk).
-public func hallPose(_ layout: HallLayout, _ m: HallMember, present: [HallMember], now: Double) -> HallPose? {
+/// (for visiting a friend's desk); `seats` the decorations one can sit on, in the hall's order (shared/src/guild-decor.ts
+/// guildDecorSeats), so every device picks the same.
+public func hallPose(_ layout: HallLayout, _ m: HallMember, present: [HallMember], now: Double, seats: [HallPoint] = []) -> HallPose? {
     if m.presence == "offline" { return nil }
     let seat = layout.seats[m.seat % layout.seats.count]
     let secs = now / 1000
@@ -262,8 +265,8 @@ public func hallPose(_ layout: HallLayout, _ m: HallMember, present: [HallMember
     let shifted = secs + hallHash([m.id, "offset"]) * guildActivitySeconds
     let k = (shifted / guildActivitySeconds).rounded(.down)
     let into = shifted - k * guildActivitySeconds
-    let from = activity(layout, m, k - 1, present)
-    let to = activity(layout, m, k, present)
+    let from = activity(layout, m, k - 1, present, seats)
+    let to = activity(layout, m, k, present, seats)
     let path = hallPath(layout, from: from.point, to: to.point)
     // (a long way in a big hall: a brisker pace, so it is walked in most of the activity's time and nobody jumps)
     let far = length(path)
@@ -278,7 +281,12 @@ public func hallPose(_ layout: HallLayout, _ m: HallMember, present: [HallMember
 
 // ── Walking by hand (GUILD.md §3.1) ──────────────────────────────────────────────────────────────────────────────────
 
-private struct Rect { let x0, y0, x1, y1: Double }
+/// Somewhere feet cannot go (tiles).
+public struct HallRect {
+    public let x0, y0, x1, y1: Double
+    public init(x0: Double, y0: Double, x1: Double, y1: Double) { self.x0 = x0; self.y0 = y0; self.x1 = x1; self.y1 = y1 }
+}
+private typealias Rect = HallRect
 
 /// Where feet cannot go: the desks (and what stands along the back wall is out of reach anyway, below the wall's edge).
 private func hallSolids(_ layout: HallLayout) -> [Rect] {
@@ -290,12 +298,12 @@ private func walkable(_ layout: HallLayout, _ p: HallPoint, _ solids: [Rect]) ->
     return !solids.contains { r in p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1 }
 }
 
-/// Whether feet may stand at `p`.
-public func hallWalkable(_ layout: HallLayout, _ p: HallPoint) -> Bool { walkable(layout, p, hallSolids(layout)) }
+/// Whether feet may stand at `p` (`extra`: what else is in the way, such as the decorations).
+public func hallWalkable(_ layout: HallLayout, _ p: HallPoint, extra: [HallRect] = []) -> Bool { walkable(layout, p, hallSolids(layout) + extra) }
 
 /// A step from `p` by (dx, dy), sliding along whatever is in the way.
-public func hallStep(_ layout: HallLayout, _ p: HallPoint, dx: Double, dy: Double) -> HallPoint {
-    let solids = hallSolids(layout)
+public func hallStep(_ layout: HallLayout, _ p: HallPoint, dx: Double, dy: Double, extra: [HallRect] = []) -> HallPoint {
+    let solids = hallSolids(layout) + extra
     let both = HallPoint(x: p.x + dx, y: p.y + dy)
     if walkable(layout, both, solids) { return both }
     let sideways = HallPoint(x: p.x + dx, y: p.y)

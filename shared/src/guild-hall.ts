@@ -130,13 +130,17 @@ interface Doing extends Point {
 }
 
 /** What someone who is there chooses to do in their `k`th activity. */
-function activity(layout: HallLayout, m: HallMember, k: number, present: HallMember[]): Doing {
+function activity(layout: HallLayout, m: HallMember, k: number, present: HallMember[], seats: Point[]): Doing {
   const seat = layout.seats[m.seat % layout.seats.length]!;
   const roll = hallHash(m.id, k);
   const others = present.filter((o) => o.id !== m.id);
   if (roll < 0.3) return { ...seat, anim: "sit", dir: "front" };
   if (roll < 0.45) return { ...layout.drink, anim: "drink", dir: "front" };
-  if (roll < 0.6) return { ...layout.bench[Math.floor(hallHash(m.id, k, "bench") * layout.bench.length)]!, anim: "sit", dir: "front" };
+  if (roll < 0.6) {
+    // (the bench, or a seat among the decorations: a sofa, an armchair…)
+    const benches = [...layout.bench, ...seats];
+    return { ...benches[Math.floor(hallHash(m.id, k, "bench") * benches.length)]!, anim: "sit", dir: "front" };
+  }
   if (roll < 0.8 && others.length) {
     const friend = others[Math.floor(hallHash(m.id, k, "who") * others.length)]!;
     const at = layout.seats[friend.seat % layout.seats.length]!;
@@ -189,9 +193,10 @@ function along(path: Point[], d: number): { at: Point; dir: HallDir; flip: boole
 
 /**
  * What member `m` is doing at `now` (ms): null when offline (not in the hall). `present` is everyone in the hall (for
- * visiting a friend's desk).
+ * visiting a friend's desk); `seats` the decorations one can sit on (shared/src/guild-decor.ts guildDecorSeats, in the
+ * hall's order, so every device picks the same).
  */
-export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[], now: number): HallPose | null {
+export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[], now: number, seats: Point[] = []): HallPose | null {
   if (m.presence === "offline") return null;
   const seat = layout.seats[m.seat % layout.seats.length]!;
   const secs = now / 1000;
@@ -200,8 +205,8 @@ export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[
   const shifted = secs + hallHash(m.id, "offset") * ACTIVITY_SECONDS;
   const k = Math.floor(shifted / ACTIVITY_SECONDS);
   const into = shifted - k * ACTIVITY_SECONDS;
-  const from = activity(layout, m, k - 1, present);
-  const to = activity(layout, m, k, present);
+  const from = activity(layout, m, k - 1, present, seats);
+  const to = activity(layout, m, k, present, seats);
   const path = hallPath(layout, from, to);
   // (a long way in a big hall: a brisker pace, so it is walked in most of the activity's time and nobody jumps)
   const far = length(path);
@@ -216,7 +221,7 @@ export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[
 
 // ── Walking by hand (GUILD.md §3.1) ───────────────────────────────────────────────────────────────────────────────────
 
-interface Rect {
+export interface Rect {
   x0: number;
   y0: number;
   x1: number;
@@ -252,4 +257,56 @@ export function hallInteract(layout: HallLayout, p: Point, extraSeats: Point[] =
   if (near && near.d < 1.3) return { anim: "sit", at: near.s };
   if (Math.hypot(layout.drink.x - p.x, layout.drink.y - p.y) < 1.2) return { anim: "drink", at: layout.drink };
   return { anim: "wave", at: p };
+}
+
+/**
+ * A way round whatever is in the way: a breadth-first search over half-tile steps, then shortened wherever a straight line
+ * is clear (null: no way there).
+ */
+export function hallRoute(L: HallLayout, solids: Rect[], from: Point, to: Point): Point[] | null {
+  const step = 0.5;
+  const cols = Math.ceil(L.width / step);
+  const rows = Math.ceil(L.height / step);
+  const cell = (p: Point) => [Math.min(cols - 1, Math.max(0, Math.round(p.x / step - 0.5))), Math.min(rows - 1, Math.max(0, Math.round(p.y / step - 0.5)))] as const;
+  const centre = (c: number, r: number) => ({ x: (c + 0.5) * step, y: (r + 0.5) * step });
+  const ok = (p: Point) => hallWalkable(L, p, solids);
+  const [sc, sr] = cell(from);
+  const [gc, gr] = cell(to);
+  const came = new Map<number, number>([[sr * cols + sc, -1]]);
+  const queue = [sr * cols + sc];
+  for (let i = 0; i < queue.length; i++) {
+    const at = queue[i]!;
+    if (at === gr * cols + gc) break;
+    const c = at % cols;
+    const r = Math.floor(at / cols);
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nc = c + dc;
+      const nr = r + dr;
+      const key = nr * cols + nc;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || came.has(key) || !ok(centre(nc, nr))) continue;
+      came.set(key, at);
+      queue.push(key);
+    }
+  }
+  if (!came.has(gr * cols + gc)) return null;
+  const cells: Point[] = [];
+  for (let k = gr * cols + gc; k !== -1; k = came.get(k)!) cells.unshift(centre(k % cols, Math.floor(k / cols)));
+  cells[cells.length - 1] = to;
+  // straight lines wherever nothing is in between
+  const clear = (a: Point, b: Point) => {
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.2);
+    for (let i = 1; i < n; i++) if (!ok({ x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n })) return false;
+    return true;
+  };
+  const out: Point[] = [];
+  let a = from;
+  let i = 0;
+  while (i < cells.length) {
+    let j = cells.length - 1;
+    while (j > i && !clear(a, cells[j]!)) j--;
+    out.push(cells[j]!);
+    a = cells[j]!;
+    i = j + 1;
+  }
+  return out;
 }
