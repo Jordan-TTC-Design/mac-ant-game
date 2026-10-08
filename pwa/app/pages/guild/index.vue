@@ -62,6 +62,7 @@ function place(kind: string, x: number, y: number) {
   return { x: snapDecor(cx), y: snapDecor(cy) };
 }
 function addDecor(kind: string) {
+  if (phone.value) sheetOpen.value = false;
   const k = guildDecorKind(kind)!;
   const { width } = guild.value!.rules;
   const at = place(kind, width / 2, k.wall ? WALL_ROWS : WALL_ROWS + 3);
@@ -195,11 +196,14 @@ const immersive = computed(() => !!guild.value && (inMacApp() || wide.value));
 const phone = computed(() => !!guild.value && !immersive.value);
 const menuOpen = ref(false);
 const chatOpen = ref(false);
+// (decorating on a phone: the catalog sheet folds away after a pick, so the hall is in full view; the bar below it brings it back)
+const sheetOpen = ref(true);
 // (the tab bar is left out here: the screen is small; "‹" and the menu go back to the main screen)
 watchEffect(() => document.documentElement.classList.toggle("guild-full", phone.value));
 onUnmounted(() => document.documentElement.classList.remove("guild-full"));
 watch(editing, (on) => {
   if (on) {
+    sheetOpen.value = true;
     menuOpen.value = false;
     chatOpen.value = false;
   }
@@ -216,7 +220,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
 </script>
 
 <template>
-  <main v-if="ok" class="page" :class="{ immersive, phone, sheet: phone && editing }">
+  <main v-if="ok" class="page" :class="{ immersive, phone, sheet: phone && editing && sheetOpen, bar: phone && editing && !sheetOpen }">
     <header v-if="!guild" class="topbar">
       <NuxtLink to="/" class="back" aria-label="回首頁">‹</NuxtLink>
       <div style="flex: 1">
@@ -327,7 +331,18 @@ onUnmounted(() => window.removeEventListener("resize", measure));
           </form>
         </section>
       </template>
-      <div class="side" :class="{ open: editing }">
+      <div v-if="phone && editing && !sheetOpen" class="edit-bar">
+        <button type="button" class="eb add" @click="sheetOpen = true">＋ 裝飾</button>
+        <template v-if="selected">
+          <button type="button" class="eb" @click="flipDecor">翻面</button>
+          <button type="button" class="eb" @click="removeDecor">移除</button>
+        </template>
+        <span class="grow" />
+        <button type="button" class="eb primary" :disabled="busy" @click="saveDecor">儲存</button>
+        <button type="button" class="eb" :disabled="busy" @click="editing = false">取消</button>
+      </div>
+      <div class="side" :class="{ open: editing && sheetOpen }">
+      <button v-if="phone && editing" type="button" class="fold" aria-label="收起" @click="sheetOpen = false">⌄ 收起看畫面</button>
       <GuildDecorPanel
         v-if="editing && role"
         :items="draft"
@@ -407,7 +422,14 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .phone input { -webkit-user-select: text; user-select: text; }
 .phone { padding: 0 !important; max-width: none !important; --glass: rgba(18, 26, 16, 0.74); --glass-line: rgba(255, 255, 255, 0.22); --top: calc(env(safe-area-inset-top) + 10px); }
 .phone .hall { position: fixed; top: 0; left: 0; right: 0; bottom: var(--pad-h); height: auto !important; margin: 0; z-index: 0; } /* (not the hall's own 100% high: that would go under the pad) */
-.phone.sheet .hall { bottom: 52dvh; }
+.phone.sheet .hall { bottom: 46dvh; }
+.phone.bar .hall { bottom: calc(env(safe-area-inset-bottom) + 58px); }
+.edit-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px); background: var(--bg-deep); border-top: 2px solid var(--glass-line); }
+.edit-bar .grow { flex: 1; }
+.eb { height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 15px; font-weight: 700; }
+.eb.primary { background: var(--accent, #6aa84f); border-color: transparent; }
+.eb:disabled { opacity: 0.5; }
+.fold { position: sticky; top: -8px; z-index: 2; display: block; width: 100%; margin: -8px 0 6px; padding: 8px; border: 0; background: var(--bg-deep); color: #c9d6c0; font-size: 14px; font-weight: 700; }
 .phone .head { position: fixed; top: var(--top); left: 10px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; max-width: calc(100vw - 76px); border-radius: 12px; background: var(--glass); border: 2px solid var(--glass-line); box-shadow: none; color: #fff; }
 .phone .head :deep(svg) { width: 34px; height: 34px; flex: none; }
 .phone .head .gname { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -439,7 +461,7 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .chat-sheet .btn:not(.primary) { background: rgba(255, 255, 255, 0.14); color: #fff; border-color: rgba(255, 255, 255, 0.25); }
 /* decorating: the catalog is a sheet from the bottom, the hall stays in sight above it */
 .phone .side { display: none; }
-.phone .side.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 52dvh; overflow-y: auto; padding: 8px 8px calc(env(safe-area-inset-bottom) + 8px); border-radius: 16px 16px 0 0; background: var(--bg-deep); border-top: 2px solid var(--glass-line); overscroll-behavior: contain; }
+.phone .side.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 46dvh; overflow-y: auto; padding: 8px 8px calc(env(safe-area-inset-bottom) + 8px); border-radius: 16px 16px 0 0; background: var(--bg-deep); border-top: 2px solid var(--glass-line); overscroll-behavior: contain; }
 .phone .side.open :deep(.grid) { max-height: none; }
 </style>
 
