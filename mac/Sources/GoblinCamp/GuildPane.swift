@@ -354,6 +354,34 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
 
     func debugCategory(_ title: String) { editor?.debugSelect(title) }
 
+    /// The same, with the window really on screen: each step lets the whole window (the panel's layout too) update.
+    func debugDragShown(steps: Int) -> String {
+        guard let uid = hall.decor.first?.uid, let window = paneView.window else { return "no pieces or window" }
+        window.displayIfNeeded()
+        let t0 = Date()
+        for i in 0..<steps {
+            hall.onMove?(uid, 4 + Double(i % 120) * 0.2, 6 + Double(i % 7) * 0.3)
+            hall.needsDisplay = true
+            window.displayIfNeeded()
+            RunLoop.current.run(until: Date())
+        }
+        return String(format: "%.1f ms a step on screen, %d pieces", Date().timeIntervalSince(t0) * 1000 / Double(steps), hall.decor.count)
+    }
+
+    /// Drags the first piece 100 steps across the hall, drawing the hall after each (a test: milliseconds a step).
+    func debugDrag(steps: Int = 100) -> String {
+        guard let uid = hall.decor.first?.uid else { return "no pieces" }
+        guard let rep = hall.bitmapImageRepForCachingDisplay(in: hall.bounds) else { return "no bitmap" }
+        hall.cacheDisplay(in: hall.bounds, to: rep) // (once first, so the art is loaded)
+        let t0 = Date()
+        for i in 0..<steps {
+            hall.onMove?(uid, 4 + Double(i % 120) * 0.2, 6 + Double(i % 7) * 0.3)
+            hall.cacheDisplay(in: hall.bounds, to: rep)
+        }
+        let each = Date().timeIntervalSince(t0) * 1000 / Double(steps)
+        return String(format: "%.1f ms a step (hall draw included), %d pieces, %d members", each, hall.decor.count, info?.guild?.members.count ?? 0)
+    }
+
     /// Clicks the first card of the open decorating panel the way a mouse would (a test: says what changed).
     func debugClickFirstCard() -> String {
         let alive = "controller alive: \(controller != nil || editor != nil)"

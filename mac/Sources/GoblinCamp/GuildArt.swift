@@ -148,12 +148,16 @@ final class GuildArt {
     /// One frame of a piece's strip.
     func frame(of piece: Piece, at t: Double) -> CGImage? {
         let f = piece.frames > 1 ? Int(t * (piece.fps > 0 ? piece.fps : 3)) % piece.frames : 0
-        let key = "\(ObjectIdentifier(piece.image).hashValue)#\(f)"
-        if let hit = frameCache[key] { return hit }
+        let key = PieceFrame(image: ObjectIdentifier(piece.image), index: f)
+        if let hit = pieceFrames[key] { return hit }
         let made = piece.image.cropping(to: CGRect(x: f * piece.w, y: 0, width: piece.w, height: piece.h))
-        frameCache[key] = made
+        pieceFrames[key] = made
         return made
     }
+
+    /// A frame of a decoration's strip (asked for every piece at every frame, so not a string key).
+    private struct PieceFrame: Hashable { let image: ObjectIdentifier; let index: Int }
+    private var pieceFrames: [PieceFrame: CGImage] = [:]
 
     /// Which frame of the strip `anim` facing `dir` shows `t` seconds in.
     func frameIndex(anim: String, dir: String, t: Double) -> Int {

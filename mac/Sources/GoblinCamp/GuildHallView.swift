@@ -20,10 +20,14 @@ final class GuildHallView: NSView {
     var members: [Member] = [] { didSet { ways = HallWays() } }
     var me: String?
     /// Everything in the hall (the desks too: all of it is decoration, GUILD.md §4.2).
-    var decor: [GuildInfo.Decor] = [] { didSet { furnish() } }
-    var floorBase = "oak"
-    var floorTiles: [String: String] = [:]
-    var wall = "stone"
+    var decor: [GuildInfo.Decor] = [] { didSet { if editing { furnishDirty = true } else { furnish() } } }
+    var floorBase = "oak" { didSet { groundVersion += 1 } }
+    var floorTiles: [String: String] = [:] { didSet { groundVersion += 1 } }
+    var wall = "stone" { didSet { groundVersion += 1 } }
+    /// The floor and the wall are drawn once into a picture and put on at every frame (a hall has over a thousand tiles; putting
+    /// each one on thirty times a second was what made decorating slow). Made again when any of these change.
+    private var groundVersion = 0
+    private var ground: (image: CGImage, version: Int, tile: CGFloat, scale: CGFloat, width: Int, height: Int)?
     /// Others walked by hand, as last heard (and when).
     var others: [String: (move: GuildMove, heard: Date)] = [:]
     /// What each member said last, over their head until then.
@@ -34,7 +38,19 @@ final class GuildHallView: NSView {
     var onTalk: (() -> Void)?
 
     // decorating (GuildDecorEditor): the hall is not walked in then; pieces are picked and dragged, or a floor brush paints
-    var editing = false { didSet { if editing { releaseHand() } else { selected = nil; brush = nil } } }
+    var editing = false {
+        didSet {
+            if editing {
+                releaseHand()
+            } else {
+                selected = nil
+                brush = nil
+                if furnishDirty { furnish() } // (the pieces moved meanwhile: the ways are worked out once, now)
+            }
+        }
+    }
+    /// The pieces changed while decorating: the hall's ways are looked at again afterwards, not at every drag.
+    private var furnishDirty = false
     var selected: String?
     /// A floor style to lay tile by tile (nil: picking pieces).
     var brush: String?
@@ -122,13 +138,26 @@ final class GuildHallView: NSView {
 
     // MARK: Each frame
 
+    /// Where each one was last put (kept so a frame that has no time left, or decorating, can show them where they were).
+    private var posesKept: [String: HallPose] = [:]
+    private var frameStart = Date()
+    /// What a frame may spend on working out the wanderers' ways (seconds); a way round many pieces is a search, and when
+    /// the hall changes every one of them is needed again.
+    private let wayBudget = 0.008
+
     private func autoPose(_ m: Member, _ now: Date) -> HallPose? {
+        // (no wandering while decorating: they stay where they were, and the pieces can be dragged without a search at each step)
+        if editing, let kept = posesKept[m.id] { return kept }
+        if Date().timeIntervalSince(frameStart) > wayBudget, let kept = posesKept[m.id] { return kept }
         let all = members.map { HallMember(id: $0.id, presence: $0.presence, seat: $0.seat) }
-        return hallPose(layout, HallMember(id: m.id, presence: m.presence, seat: m.seat), present: all.filter { $0.presence != "offline" }, now: now.timeIntervalSince1970 * 1000, ways: ways)
+        let pose = hallPose(layout, HallMember(id: m.id, presence: m.presence, seat: m.seat), present: all.filter { $0.presence != "offline" }, now: now.timeIntervalSince1970 * 1000, ways: ways)
+        posesKept[m.id] = pose
+        return pose
     }
 
     private func tick() {
         let now = Date()
+        frameStart = now
         let dt = min(0.1, now.timeIntervalSince(lastFrame))
         lastFrame = now
         stepHand(dt: dt, now: now)
@@ -190,19 +219,14 @@ final class GuildHallView: NSView {
             g.fillPath(using: .evenOdd)
         }
 
-        // floor and wall
-        for y in Int(guildWallRows)..<layout.height {
-            for x in 0..<layout.width {
-                if let tile = art.floorTile(floorTiles["\(x),\(y)"] ?? floorBase) { put(tile, CGFloat(x) * T, CGFloat(y) * T, art.tile, art.tile) }
-            }
+        // floor and wall: one picture of the whole hall (made again when it changed)
+        let scale = window?.backingScaleFactor ?? 2
+        if ground == nil || ground!.version != groundVersion || ground!.tile != T || ground!.scale != scale || ground!.width != layout.width || ground!.height != layout.height,
+           let image = makeGround(tile: T, scale: scale) {
+            ground = (image, groundVersion, T, scale, layout.width, layout.height)
         }
-        if let w = art.wallPiece(wall) {
-            let step = CGFloat(w.width) / CGFloat(art.tile)
-            var x: CGFloat = 0
-            while x < CGFloat(layout.width) {
-                put(w, x * T, 0, w.width, w.height)
-                x += step
-            }
+        if let ground {
+            put(ground.image, 0, 0, Int(CGFloat(layout.width) * T / px), Int(CGFloat(layout.height) * T / px))
         }
 
         // decorations and avatars, back to front by where their feet are
@@ -254,6 +278,39 @@ final class GuildHallView: NSView {
             g.setLineDash(phase: 0, lengths: [])
         }
         g.restoreGState()
+    }
+
+    /// The floor and the wall of the whole hall as one picture, `tile` points to a tile, `scale` pixels to a point.
+    private func makeGround(tile T: CGFloat, scale: CGFloat) -> CGImage? {
+        let wPts = CGFloat(layout.width) * T, hPts = CGFloat(layout.height) * T
+        guard wPts > 0, hPts > 0, let g = CGContext(data: nil, width: Int((wPts * scale).rounded()), height: Int((hPts * scale).rounded()), bitsPerComponent: 8, bytesPerRow: 0,
+                                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return nil }
+        g.interpolationQuality = .none
+        g.scaleBy(x: scale, y: scale)
+        g.translateBy(x: 0, y: hPts) // (so that y runs down, like the hall's)
+        g.scaleBy(x: 1, y: -1)
+        let px = T / CGFloat(art.tile)
+        func put(_ img: CGImage, _ x: CGFloat, _ y: CGFloat, _ w: Int, _ h: Int) {
+            g.saveGState()
+            g.translateBy(x: x, y: y + CGFloat(h) * px)
+            g.scaleBy(x: 1, y: -1)
+            g.draw(img, in: CGRect(x: 0, y: 0, width: CGFloat(w) * px, height: CGFloat(h) * px))
+            g.restoreGState()
+        }
+        for y in Int(guildWallRows)..<layout.height {
+            for x in 0..<layout.width {
+                if let tile = art.floorTile(floorTiles["\(x),\(y)"] ?? floorBase) { put(tile, CGFloat(x) * T, CGFloat(y) * T, art.tile, art.tile) }
+            }
+        }
+        if let w = art.wallPiece(wall) {
+            let step = CGFloat(w.width) / CGFloat(art.tile)
+            var x: CGFloat = 0
+            while x < CGFloat(layout.width) {
+                put(w, x * T, 0, w.width, w.height)
+                x += step
+            }
+        }
+        return g.makeImage()
     }
 
     private func label(_ g: CGContext, _ text: String, x: CGFloat, y: CGFloat, mine: Bool, size: CGFloat) {

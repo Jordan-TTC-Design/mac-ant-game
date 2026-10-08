@@ -94,7 +94,7 @@ enum GuildUI {
 }
 
 /// A panel on the right of the guild page: a title, a ✕, and a list that scrolls. Filled with `show`.
-final class GuildPanel: NSVisualEffectView {
+final class GuildPanel: NSView {
     let width: CGFloat
     private let stack = NSStackView()
     private let doc = TopDownView()
@@ -106,12 +106,10 @@ final class GuildPanel: NSVisualEffectView {
     init(title: String, sub: String = "", width: CGFloat = 380, close: @escaping () -> Void) {
         self.width = width
         super.init(frame: .zero)
-        material = .hudWindow
-        blendingMode = .withinWindow
-        state = .active
+        // (a plain dark backing, not a blur of what is behind: the hall moves, and a blur is made again at every frame)
         wantsLayer = true
         layer?.cornerRadius = 12
-        layer?.backgroundColor = NSColor(white: 0.06, alpha: 0.6).cgColor
+        layer?.backgroundColor = NSColor(white: 0.09, alpha: 0.95).cgColor
 
         titleLabel.stringValue = title
         titleLabel.font = .boldSystemFont(ofSize: 15)

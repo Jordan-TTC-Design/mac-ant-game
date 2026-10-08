@@ -1,4 +1,5 @@
 import AppKit
+import GuildRules
 import CampRules
 import UniformTypeIdentifiers
 import ServiceManagement
@@ -413,6 +414,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(t + 18) { shot(self.mainWindow.window, "roster-from-small") }
             if env["CAMP_TEST_MAIN_STAY"] == nil { after(t + 19) { NSApp.terminate(nil) } }
         }
+        if env["GUILD_PERF"] != nil { // how long the wanderers' routes take in a hall with many pieces
+            let art = GuildArt.shared
+            var pieces: [HallPlacedPiece] = []
+            var n = 0
+            for k in art.kinds where !(art.decorPiece(k.id)?.flat ?? true) && !(art.decorPiece(k.id)?.wall ?? true) && !(art.decorPiece(k.id)?.ceiling ?? true) {
+                guard let p = art.decorPiece(k.id) else { continue }
+                let x = 2.0 + Double(n % 14) * 2.2, y = 4.0 + Double(n / 14) * 2.4
+                let spec = HallPieceSpec(w: Double(p.w), h: Double(p.h), flat: p.flat, wall: p.wall, ceiling: p.ceiling, living: p.living, seat: p.seat.map { HallPoint(x: $0.x, y: $0.y) }, desk: p.desk, drink: p.drink)
+                pieces.append(HallPlacedPiece(x: x, y: y, flip: false, spec: spec))
+                n += 1
+                if n >= Int(env["GUILD_PERF"] ?? "") ?? 60 { break }
+            }
+            let layout = hallLayout(level: 3, furnishing: hallFurnishing(pieces))
+            let t0 = Date()
+            for i in 0..<10 { _ = hallRoute(layout, from: HallPoint(x: 1, y: 3), to: HallPoint(x: Double(layout.width) - 2, y: Double(layout.height) - 2 - Double(i) * 0.3)) }
+            log("perf: \(pieces.count) pieces, \(layout.solids.count) solids, hall \(layout.width)x\(layout.height): 10 routes in \(Int(Date().timeIntervalSince(t0) * 1000)) ms")
+            after(0.3) { NSApp.terminate(nil) }
+        }
         if let prefix = env["GUILD_DECODE"] { // the server's real answers (a probe run saved them), read the way the guild page reads them
             func check<T: Decodable>(_ name: String, _ type: T.Type, _ note: (T) -> String = { _ in "" }) {
                 guard let data = try? Data(contentsOf: URL(fileURLWithPath: "\(prefix)-\(name).json")) else { return log("decode \(name): no file") }
@@ -459,6 +478,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             self.guildPreviewWindow = w
             self.guildPane.debugShow(data, me: "me", panel: env["GUILD_SHOW_PANEL"] ?? "decor")
+            if let n = env["GUILD_SHOW_DRAG"].flatMap({ Int($0) }) {
+                after(3.0) { log("guild drag shown: \(self.guildPane.debugDragShown(steps: n))") }
+                after(4.0) { log("guild drag shown again: \(self.guildPane.debugDragShown(steps: n))") }
+                after(5.5) { NSApp.terminate(nil) }
+            }
             if env["GUILD_SHOW_POP"] != nil, let prefix = env["CAMP_SNAPSHOT"] { // popped out, on top, captured, and back
                 func shot(_ name: String) {
                     guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(self.guildWindow.window.windowNumber), [.boundsIgnoreFraming, .bestResolution]),
@@ -477,6 +501,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720), styleMask: [.titled], backing: .buffered, defer: false)
             self.guildPane.paneView.frame = NSRect(x: 0, y: 0, width: 1100, height: 720)
             w.contentView = self.guildPane.paneView
+            if env["GUILD_TEST_DRAG"] != nil { // the cost of dragging a piece in a busy hall
+                after(0.5) { self.guildPane.debugShow(data, me: "me", panel: "decor") }
+                after(3.0) { log("guild drag: \(self.guildPane.debugDrag(steps: Int(env["GUILD_TEST_DRAG"] ?? "") ?? 100))") }
+                after(8.0) { NSApp.terminate(nil) }
+                return
+            }
             if env["GUILD_TEST_CLICK"] != nil { // click the first catalog card the way a mouse does
                 var t = 0.5
                 for name in ["decor", "avatar", "donate", "members", "settings"] {

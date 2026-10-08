@@ -89,7 +89,7 @@ enum GuildStyles {
 /// Decorating the hall on the page itself (GUILD.md §4.2–4.3), no window of its own: the pieces are picked and dragged in the
 /// hall, a panel on the right holds the catalog, the floor and the wall. A copy of the list is changed and saved in one go.
 final class GuildDecorEditor: NSObject {
-    let view = NSVisualEffectView()
+    let view = NSView()
     /// Done (saved: the guild as the server now has it) or given up / out of date (nil).
     var onFinish: ((GuildInfo?, String?) -> Void)?
     /// The wall was changed (that goes at once).
@@ -177,12 +177,9 @@ final class GuildDecorEditor: NSObject {
     // MARK: The panel
 
     private func build() {
-        view.material = .hudWindow
-        view.blendingMode = .withinWindow
-        view.state = .active
-        view.wantsLayer = true
+        view.wantsLayer = true // (a plain dark backing, not a blur: see GuildPanel)
         view.layer?.cornerRadius = 12
-        view.layer?.backgroundColor = NSColor(white: 0.06, alpha: 0.6).cgColor
+        view.layer?.backgroundColor = NSColor(white: 0.09, alpha: 0.95).cgColor
 
         let title = NSTextField(labelWithString: "擺裝飾")
         title.font = .boldSystemFont(ofSize: 15)
@@ -274,12 +271,18 @@ final class GuildDecorEditor: NSObject {
 
     // MARK: What is shown
 
-    private var used: Int {
-        let size = Dictionary(art.kinds.map { ($0.id, $0.size) }, uniquingKeysWith: { a, _ in a })
-        return draft.reduce(0) { $0 + (size[$1.kind] ?? 0) }
+    /// What each kind takes of the room (made once: the catalog is hundreds of pieces and this is asked at every drag).
+    private lazy var sizes: [String: Int] = Dictionary(art.kinds.map { ($0.id, $0.size) }, uniquingKeysWith: { a, _ in a })
+    private var used: Int { draft.reduce(0) { $0 + (sizes[$1.kind] ?? 0) } }
+
+    /// Everything on the panel again, the catalog's cards too (when the tab, the mode, the brush or the wall changed).
+    private func refresh() {
+        refreshHeader()
+        layoutGrid()
     }
 
-    private func refresh() {
+    /// The room used, the picked piece and the buttons: what a placed or dragged piece changes (not the catalog's cards).
+    private func refreshHeader() {
         let u = used
         room.stringValue = "裝飾點數 \(u)／\(guild.rules.room)"
         room.textColor = u > guild.rules.room ? NSColor(calibratedRed: 1, green: 0.5, blue: 0.45, alpha: 1) : .secondaryLabelColor
@@ -309,7 +312,6 @@ final class GuildDecorEditor: NSObject {
         }
         categories.isHidden = mode != .decor
         fill.isHidden = mode != .floor
-        layoutGrid()
     }
 
     private func layoutGrid() {
@@ -375,7 +377,7 @@ final class GuildDecorEditor: NSObject {
 
     private func sync() {
         hall.decor = draft
-        refresh()
+        refreshHeader()
     }
 
     private func add(_ kind: String) {

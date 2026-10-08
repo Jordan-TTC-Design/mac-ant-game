@@ -67,6 +67,21 @@ public struct HallLayout {
     public let width, height: Int
     public let desks, seats, drinks: [HallPoint]
     public let solids: [HallRect]
+    /// For each tile of the hall, the solids that reach into it: a point is only checked against those (a hall can have hundreds
+    /// of pieces, and the routes ask about thousands of points). The answers are the same as checking every solid.
+    fileprivate let solidsAt: [[Int]]
+
+    fileprivate init(width: Int, height: Int, desks: [HallPoint], seats: [HallPoint], drinks: [HallPoint], solids: [HallRect]) {
+        self.width = width; self.height = height; self.desks = desks; self.seats = seats; self.drinks = drinks; self.solids = solids
+        var at = [[Int]](repeating: [], count: max(0, width * height))
+        for (i, r) in solids.enumerated() {
+            let x0 = max(0, Int(floor(r.x0))), x1 = min(width - 1, Int(floor(r.x1)))
+            let y0 = max(0, Int(floor(r.y0))), y1 = min(height - 1, Int(floor(r.y1)))
+            if x0 > x1 || y0 > y1 { continue }
+            for ty in y0...y1 { for tx in x0...x1 { at[ty * width + tx].append(i) } }
+        }
+        solidsAt = at
+    }
 }
 
 public func hallLayout(level: Int, furnishing: HallFurnishing = .empty) -> HallLayout {
@@ -192,7 +207,12 @@ private func item<T>(_ list: [T], _ i: Int) -> T? { list.indices.contains(i) ? l
 /// Whether feet may stand at `p`.
 public func hallWalkable(_ L: HallLayout, _ p: HallPoint) -> Bool {
     if p.x < 0.4 || p.x > Double(L.width) - 0.4 || p.y < guildWallRows + 0.5 || p.y > Double(L.height) - 0.1 { return false }
-    return !L.solids.contains { r in p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1 }
+    let tx = min(L.width - 1, max(0, Int(floor(p.x)))), ty = min(L.height - 1, max(0, Int(floor(p.y))))
+    for i in L.solidsAt[ty * L.width + tx] {
+        let r = L.solids[i]
+        if p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1 { return false }
+    }
+    return true
 }
 
 /// A step from `p` by (dx, dy), sliding along whatever is in the way.
