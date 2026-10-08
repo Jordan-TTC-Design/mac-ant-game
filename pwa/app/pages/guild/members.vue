@@ -7,8 +7,17 @@ import { GUILD_PRESENCE, GUILD_ROLE } from "~/composables/useGuild";
 // 公會成員 (GUILD.md): who is in, how each one is and how much they focused today; the leader and officers invite (by
 // friend code) and send people away, the leader sets roles and hands over the lead; anyone may leave.
 const ok = await useSignedIn();
-const { user, guild, role, busy, message, presence, act } = useGuild();
+const { user, live, guild, role, busy, message, presence, act } = useGuild();
 const code = ref("");
+onMounted(() => void live.loadFriends());
+/** Friends who could be invited: not in this guild, not invited already. */
+const friendsToAsk = computed(() => {
+  const g = guild.value;
+  if (!g) return [];
+  const taken = new Set([...g.members.map((m) => m.id), ...g.invited.map((p) => p.id)]);
+  return (live.state.friends?.friends ?? []).filter((f) => !taken.has(f.id));
+});
+const inviteFriend = (id: string, name: string) => act(() => api("POST", "guild/invites", { userId: id }), `邀請了${name}，等對方答應。`);
 
 const invite = () =>
   act(async () => {
@@ -72,6 +81,12 @@ async function leave() {
 
       <section v-if="role !== 'member'" class="panel">
         <h2>邀請</h2>
+        <div v-for="f in friendsToAsk" :key="f.id" class="row">
+          <img :src="`/sprites/${f.race}/icon.png`" class="pixel face" alt="" />
+          <span class="grow"><b>{{ f.name }}</b><br /><small>好友</small></span>
+          <button class="btn primary small" :disabled="busy || guild.members.length >= guild.rules.members" @click="inviteFriend(f.id, f.name)">邀請</button>
+        </div>
+        <p v-if="!friendsToAsk.length" class="muted">好友都邀過了（或還沒有好友）。也可以輸入對方的好友代碼：</p>
         <form class="add" @submit.prevent="invite">
           <input v-model="code" class="field" placeholder="對方的好友代碼" autocapitalize="characters" autocomplete="off" />
           <button class="btn primary" :disabled="busy || !code.trim() || guild.members.length >= guild.rules.members">邀請</button>
