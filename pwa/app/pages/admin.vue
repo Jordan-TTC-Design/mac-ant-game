@@ -145,7 +145,7 @@ function remove() {
   if (typed) void act("delete", { confirm: typed });
 }
 const ACTIONS: Record<string, string> = {
-  disable: "停用", enable: "恢復", "sign-out": "強制登出", verify: "標記已驗證", role: "改角色", delete: "刪除", restore: "復原", invites: "產生邀請碼",
+  disable: "停用", enable: "恢復", "sign-out": "強制登出", "send-reset": "寄重設密碼信", verify: "標記已驗證", role: "改角色", delete: "刪除", restore: "復原", invites: "產生邀請碼",
   backup: "手動備份", "backup-download": "下載備份", "backup-delete": "刪除備份",
 };
 
@@ -212,6 +212,7 @@ const STATE: Record<string, string> = { free: "可以用", used: "用掉了", ex
               <button v-if="!open.disabled" class="btn" :disabled="acting || open.id === me?.id" @click="act('disable', undefined, `停用 ${open.email}？它會立刻被登出，也不能再登入，直到恢復。`)">停用</button>
               <button v-else class="btn" :disabled="acting" @click="act('enable')">恢復</button>
               <button class="btn" :disabled="acting || open.id === me?.id" @click="act('sign-out', undefined, `把 ${open.email} 所有裝置都登出？`)">強制登出</button>
+              <button class="btn" :disabled="acting || open.disabled" @click="act('send-reset', undefined, `寄一封設定新密碼的信給 ${open.email}？他點連結後自己設定密碼（24 小時內有效），設好會從所有裝置登出一次。`)">寄重設密碼信</button>
               <button v-if="!open.verified" class="btn" :disabled="acting" @click="act('verify')">標記已驗證</button>
               <button v-if="open.role === 'user'" class="btn" :disabled="acting" @click="act('role', { role: 'admin' }, `把 ${open.email} 設成管理員？它可以進後台、管理所有帳號。`)">設為管理員</button>
               <button v-else class="btn" :disabled="acting || open.id === me?.id" @click="act('role', { role: 'user' })">取消管理員</button>

@@ -18,6 +18,15 @@ export function alreadyRegisteredMail(to: string, loginLink: string, resetLink: 
   };
 }
 
+/** The same link as `resetMail`, asked for by an admin: the person picks a password of their own. */
+export function adminResetMail(to: string, link: string, hours: number): Mail {
+  return {
+    to,
+    subject: "請設定你自己的密碼｜哥布林營地",
+    text: `管理員幫你寄了一封設定密碼的信。請打開下面的連結，設定一個只有你自己知道的新密碼（${hours} 小時內有效）：\n${link}\n\n設定好之後，用新密碼重新登入就可以了，所有裝置都會登出一次。\n如果你不需要，不用理會這封信，你的帳號沒有任何改變。${sign}`,
+  };
+}
+
 export function resetMail(to: string, link: string): Mail {
   return {
     to,

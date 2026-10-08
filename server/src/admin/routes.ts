@@ -3,13 +3,17 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
-import { adminLog, campResidents, camps, devices, expeditions, invites, notes, sessions, users, worldCells, worldPlayers } from "../db/schema.ts";
+import { adminLog, campResidents, camps, devices, emailTokens, expeditions, invites, notes, sessions, users, worldCells, worldPlayers } from "../db/schema.ts";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { BackupError, KEEP_AUTO_DAYS, MANUAL_MAX, nextSlot } from "../backup.ts";
 import { apiError, readJson } from "../http.ts";
-import { hashSecret, newInviteCode, normalizeCode } from "../lib/tokens.ts";
+import { hashSecret, newInviteCode, newToken, normalizeCode } from "../lib/tokens.ts";
+import { adminResetMail } from "../mail/templates.ts";
+
+/** How long the link in a mail an admin asked for works (longer than the 1 hour of 「忘記密碼」: nobody asked for it just now). */
+const ADMIN_RESET_HOURS = 24;
 
 const inviteInput = z.object({ count: z.number().int().min(1).max(50).default(1), days: z.number().int().min(1).max(90).default(14) });
 
@@ -228,6 +232,26 @@ export function adminRoutes(deps: AppDeps) {
     if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
     await db.update(users).set({ emailVerifiedAt: u.emailVerifiedAt ?? now() }).where(eq(users.id, u.id));
     await log(me.id, u.id, "verify");
+    return c.json({ ok: true });
+  });
+
+  /** Mails the person a link to set a password of their own (the same link as 「忘記密碼」, 24 hours); nothing changes until they use it. */
+  app.post("/users/:id/send-reset", async (c) => {
+    const me = c.get("session").user;
+    const u = await target(c.req.param("id"));
+    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
+    if (u.deletingAt) return apiError(c, 409, "conflict", "這個帳號正在等著被刪除，請先復原。");
+    const at = now();
+    // an older reset link stops working: only the newest mail counts
+    await db.update(emailTokens).set({ usedAt: at }).where(and(eq(emailTokens.userId, u.id), eq(emailTokens.purpose, "reset"), isNull(emailTokens.usedAt)));
+    const token = newToken("gce");
+    await db.insert(emailTokens).values({ userId: u.id, purpose: "reset", tokenHash: hashSecret(token), createdAt: at, expiresAt: new Date(at.getTime() + ADMIN_RESET_HOURS * 3_600_000) });
+    try {
+      await deps.mailer.send(adminResetMail(u.email, `${deps.config.APP_URL}/reset-password?token=${encodeURIComponent(token)}`, ADMIN_RESET_HOURS));
+    } catch (err) {
+      return apiError(c, 503, "unavailable", `信寄不出去：${err instanceof Error ? err.message : String(err)}`);
+    }
+    await log(me.id, u.id, "send-reset");
     return c.json({ ok: true });
   });
 
