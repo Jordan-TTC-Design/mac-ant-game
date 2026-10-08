@@ -238,6 +238,17 @@ function draw() {
   const viewTop = cam.y * T;
   g.save();
   g.translate(-Math.round(viewLeft), -Math.round(viewTop));
+  // round the hall (a view bigger than it): the floor goes on, darkened, so there is no black frame
+  const [x0, x1, y0, y1] = [Math.floor(cam.x), Math.ceil(cam.x + view.cols), Math.floor(cam.y), Math.ceil(cam.y + view.rows)];
+  const around = loaded.get(`/guild-hall/${hall.floors[props.floor.base] ?? Object.values(hall.floors)[0]}`);
+  if (around && (x0 < 0 || y0 < 0 || x1 > L.width || y1 > L.height)) {
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (x < 0 || x >= L.width || y < 0 || y >= L.height) g.drawImage(around, x * T, y * T, T, T);
+    g.beginPath();
+    g.rect(x0 * T, y0 * T, (x1 - x0) * T, (y1 - y0) * T);
+    g.rect(0, 0, L.width * T, L.height * T);
+    g.fillStyle = "rgba(20,15,10,0.72)";
+    g.fill("evenodd");
+  }
 
   // floor (its tiles), then the wall along the top
   const fallback = Object.values(hall.floors)[0];

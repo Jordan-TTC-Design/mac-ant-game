@@ -26,6 +26,9 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     private var chat: [GuildChatLine] = []
     private var myId: String?
     private var refresh: Timer?
+    /// The chat's lines show while typing and for a while after something is said; otherwise just the box, out of the way.
+    private var linesUntil = Date.distantPast
+    private var linesTimer: Timer?
 
     init(api: APIClient, myId: String?, sendLive: @escaping ([String: Any]) -> Void) {
         self.api = api
@@ -194,7 +197,9 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         return m.presence
     }
 
-    private func showChat() {
+    private func showChat(fresh: Bool = false) {
+        if fresh { linesUntil = Date().addingTimeInterval(10) }
+        foldLines()
         let recent = chat.suffix(5)
         chatLines.stringValue = recent.isEmpty ? "還沒有人說話，打個招呼吧。" : recent.map { "\($0.name)：\($0.text)" }.joined(separator: "\n")
         let now = Date()
@@ -222,7 +227,7 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         case "guild.say":
             guard let data = try? JSONSerialization.data(withJSONObject: event), let line = try? JSONDecoder().decode(GuildChatLine.self, from: data) else { return }
             if !chat.contains(line) { chat = Array((chat + [line]).suffix(50)) }
-            showChat()
+            showChat(fresh: true)
         default:
             break
         }
@@ -238,10 +243,21 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         Task { @MainActor in
             if let line = try? await self.api.request("POST", "guild/say", body: Body(text: String(text.prefix(GuildTiming.sayMax))), as: GuildChatLine.self), !self.chat.contains(line) {
                 self.chat = Array((self.chat + [line]).suffix(50))
-                self.showChat()
+                self.showChat(fresh: true)
             }
         }
     }
+
+    /// Shows the lines (typing, or something just said) or folds them away, and looks again when that may change.
+    private func foldLines() {
+        let typing = paneView.window?.firstResponder === sayField.currentEditor()
+        chatLines.isHidden = !(typing || Date() < linesUntil)
+        linesTimer?.invalidate()
+        if !chatLines.isHidden { linesTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in self?.foldLines() } }
+    }
+
+    func controlTextDidBeginEditing(_ obj: Notification) { foldLines() }
+    func controlTextDidEndEditing(_ obj: Notification) { foldLines() }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         if selector == #selector(NSResponder.cancelOperation(_:)) {
