@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PREVIEW ONLY: the six guild avatars (分身, GUILD.md section 2) - goblin, elf, undead x male, female.
+"""PREVIEW ONLY: the six guild avatars (角色, GUILD.md section 2) - goblin, elf, undead x male, female.
 
 Same chibi pixel style as the camp residents (mac/tools/make_goblin.py, make_elf.py, make_undead.py): one dark outline, a
 big round head, one shade and one light per colour - but on a 24x30 grid instead of 16x16, so faces and hair read.
@@ -987,7 +987,7 @@ def main():
     total_h = title_h + row_h * len(AVATARS) + 4
     art = Art(total_w, total_h, scale=S, color=(228, 198, 152, 255))
     wood_floor(art)
-    ptext(art, "公會分身 預覽：3 種族 × 男女（24×30 點陣，營地居民是 16×16）", 6, 5, 34,
+    ptext(art, "公會角色 預覽：3 種族 × 男女（24×30 點陣，營地居民是 16×16）", 6, 5, 34,
           (70, 44, 24, 255), stroke=(250, 236, 210, 255))
     for r, a in enumerate(AVATARS):
         y0 = title_h + r * row_h

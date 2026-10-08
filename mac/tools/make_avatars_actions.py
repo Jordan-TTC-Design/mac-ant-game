@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PREVIEW ONLY: basic actions for the six guild avatars (分身), built on make_avatars_preview.py's bodies.
+"""PREVIEW ONLY: basic actions for the six guild avatars (角色), built on make_avatars_preview.py's bodies.
 
 Ten actions, 2-4 frames each, shared by all six avatars: idle, wave, typing (focus), dozing on the desk (away), drinking at the
 water-elemental dispenser, stretch, sitting on a bench, chatting, cheering, and a high-five between two avatars.
@@ -538,7 +538,7 @@ ROWS = [
     ("聊天", "說話、點頭、泡泡", [("elf_m", lambda a: act_chat(a, "note")), ("gob_f", lambda a: act_chat(a, "heart")),
                            ("und_m", lambda a: act_chat(a, "tea"))]),
     ("歡呼", "開心地跳起來", [("und_f", act_cheer), ("gob_m", act_cheer), ("elf_m", act_cheer)]),
-    ("擊掌", "兩個分身一起（專注結束時）", [("pair", None)]),
+    ("擊掌", "兩個角色一起（專注結束時）", [("pair", None)]),
 ]
 
 
@@ -560,7 +560,7 @@ def main():
     title_h = 18
     art = pv.Art(width, title_h + row_h * len(rows) + 4, scale=S, color=(228, 198, 152, 255))
     pv.wood_floor(art)
-    pv.ptext(art, "公會分身 動作預覽（每個動作 2–4 格，6 個分身共用；每列示範 2–3 個分身）", 6, 4, 32, (70, 44, 24, 255),
+    pv.ptext(art, "公會角色 動作預覽（每個動作 2–4 格，6 個角色共用；每列示範 2–3 個角色）", 6, 4, 32, (70, 44, 24, 255),
              stroke=(250, 236, 210, 255))
     for r, (name, note, gs) in enumerate(rows):
         y0 = title_h + r * row_h

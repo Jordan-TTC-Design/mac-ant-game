@@ -44,7 +44,7 @@ onMounted(async () => {
   try {
     manifest = await art.load();
   } catch {
-    message.value = "分身的圖還沒準備好。";
+    message.value = "角色的圖還沒準備好。";
   }
   draw();
 });
@@ -141,14 +141,14 @@ const sexNames = computed(() => (look.value?.race === "undead" ? { m: "骨系", 
     <header class="topbar">
       <NuxtLink to="/guild" class="back">‹</NuxtLink>
       <div style="flex: 1">
-        <h1>我的分身</h1>
+        <h1>我的角色</h1>
         <div class="sub">在公會據點裡代表你</div>
       </div>
     </header>
 
     <template v-if="look">
       <section class="panel stage">
-        <canvas ref="preview" class="pixel" aria-label="分身預覽" />
+        <canvas ref="preview" class="pixel" aria-label="角色預覽" />
         <div class="moves">
           <button v-for="[a, label] in MOVES" :key="a" type="button" class="btn small" :class="{ primary: anim === a }" @click="play(a)">{{ label }}</button>
         </div>
@@ -183,7 +183,7 @@ const sexNames = computed(() => (look.value?.race === "undead" ? { m: "骨系", 
       </section>
 
       <p v-if="message" class="note">{{ message }}</p>
-      <button class="btn primary save" :disabled="busy" @click="save">儲存分身</button>
+      <button class="btn primary save" :disabled="busy" @click="save">儲存角色</button>
     </template>
   </main>
 </template>

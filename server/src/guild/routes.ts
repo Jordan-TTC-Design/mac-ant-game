@@ -383,7 +383,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     const me = c.get("session").user;
     const at = now();
     const race = await raceOf(me.id);
-    if (body.data.race !== race) return apiError(c, 400, "invalid_input", "分身的種族要和營地一樣。", { fields: { race: "分身的種族要和營地一樣。" } });
+    if (body.data.race !== race) return apiError(c, 400, "invalid_input", "角色的種族要和營地一樣。", { fields: { race: "角色的種族要和營地一樣。" } });
     const problem = avatarProblem(body.data);
     if (problem) return apiError(c, 400, "invalid_input", problem);
     await db

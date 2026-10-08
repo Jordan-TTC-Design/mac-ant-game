@@ -183,7 +183,7 @@ def seat_info(w, h, x=None):
 C1 = "辦公桌椅"
 
 
-@item("crystal_desk", "水晶球辦公桌", C1, 4, 40, 24, 2, 3, note="水晶球螢幕＋符文鍵盤；分身坐在後面")
+@item("crystal_desk", "水晶球辦公桌", C1, 4, 40, 24, 2, 3, note="水晶球螢幕＋符文鍵盤；角色坐在後面")
 def _(c, f):
     table(c, 1, 11, 38, 23, depth=2)
     R(c, 1, 14, 38, 20, "wood"); R(c, 1, 14, 38, 14, "wood_d"); R(c, 4, 17, 7, 17, "gold"); R(c, 32, 17, 35, 17, "gold")
@@ -233,7 +233,7 @@ def _(c, f):
         R(c, x, 9, x + 2, 11, "paper")
 
 
-@item("office_stool", "圓凳", C1, 1, 16, 8, seat=True, note="座面高度和分身坐姿一致")
+@item("office_stool", "圓凳", C1, 1, 16, 8, seat=True, note="座面高度和角色坐姿一致")
 def _(c, f):
     h = 8
     R(c, 1, h - 1 - SEAT_UP, 14, h - 1 - SEAT_UP, "wood_l"); R(c, 1, h - SEAT_UP, 14, h - SEAT_UP + 1, "wood")
@@ -725,7 +725,7 @@ def _(c, f):
             R(c, x0 + 1, yy, x0 + w - 2, yy, "ink") if k != "pink" else None
 
 
-@item("portrait", "會長肖像", C5, 1, 18, 22, wall=True, note="放上會長的分身模樣（之後可換）")
+@item("portrait", "會長肖像", C5, 1, 18, 22, wall=True, note="放上會長的角色模樣（之後可換）")
 def _(c, f):
     frame_border(c, 0, 0, 17, 21, "gold"); R(c, 2, 2, 15, 19, "blue_d")
     circle(c, 8.5, 9, 4, "skin"); R(c, 4, 4, 13, 6, "brown"); c.put(7, 9, "ink"); c.put(10, 9, "ink")

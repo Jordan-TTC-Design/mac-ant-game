@@ -17,7 +17,7 @@ function hold(pad: Pad, e: PointerEvent) {
 </script>
 
 <template>
-  <div class="pad" aria-label="操作分身">
+  <div class="pad" aria-label="操作角色">
     <div class="cross">
       <button
         v-for="p in PADS"

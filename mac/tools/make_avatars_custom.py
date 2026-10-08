@@ -778,7 +778,7 @@ def main():
     height = 24 + sum(sec_h + row_h * len(rows) for _n, rows in sections) + 4
     art = pv.Art(width, height, scale=4, color=(228, 198, 152, 255))
     pv.wood_floor(art)
-    pv.ptext(art, "公會分身 捏臉預覽：分圖層組合（後髮→身體臉型→衣服→眉眼嘴→前髮→頭飾披風手持）；選項先少、之後再加",
+    pv.ptext(art, "公會角色 捏臉預覽：分圖層組合（後髮→身體臉型→衣服→眉眼嘴→前髮→頭飾披風手持）；選項先少、之後再加",
              6, 4, 32, (70, 44, 24, 255), stroke=(250, 236, 210, 255))
     y = 24
     for name, rows in sections:

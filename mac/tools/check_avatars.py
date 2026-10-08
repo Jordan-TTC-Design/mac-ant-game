@@ -340,7 +340,7 @@ def main():
     img = Image.new("RGBA", (width, height), (228, 198, 152, 255))
     wood(img)
     d = ImageDraw.Draw(img)
-    text(d, (10, 8), f"公會分身 正式素材檢查：{FW}×{FH}、{M['frames']} 格、圖層 {' → '.join(M['layers'])}（照 manifest 組合、換色、描邊）",
+    text(d, (10, 8), f"公會角色 正式素材檢查：{FW}×{FH}、{M['frames']} 格、圖層 {' → '.join(M['layers'])}（照 manifest 組合、換色、描邊）",
          24)
     y = 50
     leftovers = 0
@@ -372,7 +372,7 @@ def main():
         x += cell
     y += row_h + 30
     if hall:
-        text(d, (8, y), "據點示意（家具、地板、牆，分身照座位點坐下）", 20)
+        text(d, (8, y), "據點示意（家具、地板、牆，角色照座位點坐下）", 20)
         img.alpha_composite(hall, (10, y + 30))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     img.save(OUT)

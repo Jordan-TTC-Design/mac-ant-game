@@ -9,7 +9,7 @@
   "frames": 2,
   "fps": 3,
   "file": "decor/crystal_desk.png",
-  "note": "水晶球螢幕＋符文鍵盤；分身坐在後面"
+  "note": "水晶球螢幕＋符文鍵盤；角色坐在後面"
  },
  {
   "id": "oak_desk",
@@ -81,7 +81,7 @@
    "facing": "front"
   },
   "file": "decor/office_stool.png",
-  "note": "座面高度和分身坐姿一致"
+  "note": "座面高度和角色坐姿一致"
  },
  {
   "id": "high_chair",
@@ -693,7 +693,7 @@
   "frames": 1,
   "wall": true,
   "file": "decor/portrait.png",
-  "note": "放上會長的分身模樣（之後可換）"
+  "note": "放上會長的角色模樣（之後可換）"
  },
  {
   "id": "shield_crest",

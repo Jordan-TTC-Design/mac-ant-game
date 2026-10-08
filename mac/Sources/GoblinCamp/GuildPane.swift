@@ -63,7 +63,7 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         paneView.addSubview(card)
 
         // the buttons, top right
-        for (label, path, tip) in [("🪑 擺裝飾", "/guild", "擺裝飾、鋪地板、換牆壁"), ("🧑‍🎨 分身", "/avatar", "捏自己的分身"), ("👥 成員", "/guild/members", "成員、邀請、職位"), ("⚙️ 設定", "/guild/settings", "名字、徽章、擺放紀錄（會長、幹部）")] {
+        for (label, path, tip) in [("🪑 擺裝飾", "/guild", "擺裝飾、鋪地板、換牆壁"), ("🧑‍🎨 角色", "/avatar", "捏自己的角色"), ("👥 成員", "/guild/members", "成員、邀請、職位"), ("⚙️ 設定", "/guild/settings", "名字、徽章、擺放紀錄（會長、幹部）")] {
             let b = ClosureButton(title: label) { [weak self] in self?.openWeb(path, title: label) }
             b.bezelStyle = .rounded
             b.controlSize = .small
