@@ -66,8 +66,8 @@ const asked = new Set<string>();
 const VIEW_NARROW = 16;
 const VIEW_WIDE = 28;
 /** Filling a window: a tile is this many points across, at least and at most. */
-const FILL_MIN = 40;
-const FILL_MAX = 72;
+const FILL_MIN = 24;
+const FILL_MAX = 40;
 const view = reactive({ cols: 16, rows: 10 });
 const cam = { x: 0, y: 0 };
 let lookingUntil = 0;
