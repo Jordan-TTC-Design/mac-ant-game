@@ -2,7 +2,6 @@
 import {
   DEFAULT_BADGE,
   GUILD_NAME_MAX,
-  GUILD_REJOIN_HOURS,
   GUILD_BUBBLE_MS,
   GUILD_MOVE_STALE_MS,
   GUILD_SAY_MAX,
@@ -10,92 +9,29 @@ import {
   hallLayout,
   hallPose,
   newDecorUid,
-  presenceNow,
   snapDecor,
   WALL_ROWS,
-  type GuildDecorLogEntry,
   type GuildMove,
   type GuildDecorPlaced,
   type HallFloor,
-  type GuildMemberView,
   type GuildResponse,
   type GuildRole,
 } from "@goblincamp/shared";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 
-// 公會 (GUILD.md): founding one or saying yes to an invitation; then the members and who is at their computer, inviting
-// (the leader and officers), the leader's badge and roles, and leaving; and the hall, which every member may decorate.
+// 公會 (GUILD.md): founding one or saying yes to an invitation; then the hall — everyone in it, walking one's own avatar,
+// talking, decorating. The members are on /guild/members, the leader's settings on /guild/settings.
 const ok = await useSignedIn();
-const { user } = useAccount();
-const live = useLive();
-const g = computed(() => live.state.guild);
-const guild = computed(() => g.value?.guild ?? null);
-const me = computed(() => guild.value?.members.find((m) => m.id === user.value?.id) ?? null);
-const role = computed<GuildRole | null>(() => me.value?.role ?? null);
-
-const busy = ref(false);
-const message = ref("");
+const { user, live, g, guild, role, busy, message, online, inHall, act } = useGuild();
 const name = ref("");
 const badge = ref(DEFAULT_BADGE);
 const drawing = ref(false);
-const code = ref("");
-const now = ref(Date.now());
-let clock: ReturnType<typeof setInterval> | undefined;
-onMounted(() => {
-  void live.loadGuild();
-  clock = setInterval(() => (now.value = Date.now()), 30_000);
-});
-onUnmounted(() => clearInterval(clock));
 
-async function act(work: () => Promise<unknown>, done = "") {
-  busy.value = true;
-  message.value = "";
-  try {
-    await work();
-    message.value = done;
-    await live.loadGuild();
-  } catch (e) {
-    message.value = e instanceof ApiError ? e.message : String(e);
-  } finally {
-    busy.value = false;
-  }
-}
 const found = () => act(() => api("POST", "guild", { name: name.value, badge: badge.value }), "公會建立了！");
 const join = (id: string) => act(() => api("POST", `guild/join/${id}`), "加入了！");
 const decline = (id: string) => act(() => api("DELETE", `guild/join/${id}`));
-const invite = () =>
-  act(async () => {
-    await api("POST", "guild/invites", { code: code.value.trim() });
-    code.value = "";
-  }, "邀請送出了，等對方答應。");
-const uninvite = (id: string) => act(() => api("DELETE", `guild/invites/${id}`));
-function openBadge() {
-  badge.value = guild.value?.badge ?? DEFAULT_BADGE;
-  drawing.value = true;
-}
-const saveBadge = () =>
-  act(async () => {
-    await api("PATCH", "guild", { badge: badge.value });
-    drawing.value = false;
-  }, "徽章換好了。");
-function leave() {
-  const last = guild.value?.members.length === 1;
-  const q = last ? "你是最後一個人，離開後公會就解散了。確定嗎？" : `離開後要等 ${GUILD_REJOIN_HOURS} 小時才能加入別的公會。確定嗎？`;
-  if (confirm(q)) void act(() => api("POST", "guild/leave"));
-}
-function kick(m: GuildMemberView) {
-  if (confirm(`請 ${m.name} 離開公會？`)) void act(() => api("DELETE", `guild/members/${m.id}`));
-}
-function setRole(m: GuildMemberView, to: GuildRole) {
-  if (to === "leader" && !confirm(`把會長交給 ${m.name}？你會變成幹部。`)) return;
-  void act(() => api("PUT", `guild/members/${m.id}/role`, { role: to }));
-}
 
-const PRESENCE = { focus: { dot: "#e2553f", text: "專注中" }, online: { dot: "#4caf50", text: "在線" }, away: { dot: "#e8c547", text: "離開" }, offline: { dot: "#9a9a9a", text: "離線" } };
-const ROLE: Record<GuildRole, string> = { leader: "會長", officer: "幹部", member: "成員" };
-const presence = (m: GuildMemberView) => (m.presence === "offline" ? "offline" : presenceNow(m.presence, m.seenAt ? new Date(m.seenAt) : null, new Date(now.value)));
-const online = computed(() => guild.value?.members.filter((m) => presence(m) !== "offline").length ?? 0);
 // decorating: a copy of the list is changed here and saved in one go (GUILD.md §4.2)
 const editing = ref(false);
 const draft = ref<GuildDecorPlaced[]>([]);
@@ -170,22 +106,6 @@ const saveDecor = () =>
       throw e;
     }
   }, "裝飾存好了。");
-const log = ref<GuildDecorLogEntry[] | null>(null);
-async function openLog() {
-  log.value = log.value ? null : ((await api<{ entries: GuildDecorLogEntry[] }>("GET", "guild/decor/log")).entries);
-}
-function restore(entry: GuildDecorLogEntry) {
-  if (!confirm(`把裝飾還原成 ${noteTime(entry.at)} ${entry.by} 改動之前的樣子？`)) return;
-  void act(async () => {
-    live.state.guild = await api<GuildResponse>("POST", "guild/decor/restore", { logId: entry.id });
-    log.value = null;
-  }, "還原了。");
-}
-const logLine = (e: GuildDecorLogEntry) =>
-  e.restored
-    ? "還原了裝飾"
-    : [e.added && `放了 ${e.added} 件`, e.moved && `動了 ${e.moved} 件`, e.removed && `收了 ${e.removed} 件`, e.floor && `鋪了 ${e.floor} 格地板`].filter(Boolean).join("、");
-
 // walking one's own avatar and talking (GUILD.md §3.1)
 const layout = computed(() => (guild.value ? hallLayout(guild.value.level) : null));
 const control = useHallControl(layout, () => {
@@ -205,6 +125,17 @@ onMounted(() => {
   void live.loadGuildChat();
 });
 onUnmounted(() => clearInterval(ticker));
+/** Where the camera keeps to: this one's avatar, walked by hand or wandering. */
+const follow = computed(() => {
+  if (control.pose.value) return { x: control.pose.value.x, y: control.pose.value.y };
+  void tick.value; // (wandering: looked at again every second; the camera eases in between)
+  const L = layout.value;
+  if (!L || !user.value) return null;
+  const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
+  const mine = order.find((m) => m.id === user.value!.id);
+  const at = mine && hallPose(L, mine, order.filter((m) => m.presence !== "offline"), Date.now());
+  return at ? { x: at.x, y: at.y } : null;
+});
 const hand = computed(() => {
   const out: Record<string, GuildMove & { since?: number }> = {};
   for (const [id, mv] of Object.entries(live.state.guildMoves)) if (tick.value - mv.heard < GUILD_MOVE_STALE_MS) out[id] = { ...mv, since: mv.heard };
@@ -247,13 +178,24 @@ onMounted(() => window.addEventListener("keydown", keys));
 onUnmounted(() => window.removeEventListener("keydown", keys));
 const recentChat = computed(() => live.state.guildChat.slice(-6));
 
-/** The members with how they are now (a Mac that went quiet since the last fetch counts as gone). */
-const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence: presence(m) })) ?? []);
+// The Mac's window (or any wide window): the hall fills it, like the camp, with the rest floating over it or sliding in
+// from the right; a phone keeps the page.
+const wide = ref(false);
+const immersive = computed(() => !!guild.value && (inMacApp() || wide.value));
+function measure() {
+  wide.value = window.innerWidth >= 1000;
+}
+onMounted(() => {
+  measure();
+  window.addEventListener("resize", measure);
+});
+onUnmounted(() => window.removeEventListener("resize", measure));
+
 </script>
 
 <template>
-  <main v-if="ok" class="page">
-    <header class="topbar">
+  <main v-if="ok" class="page" :class="{ immersive }">
+    <header v-if="!immersive" class="topbar">
       <div style="flex: 1">
         <h1>公會</h1>
         <div class="sub">大家一起在據點裡，看得到誰在電腦前</div>
@@ -291,13 +233,18 @@ const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence:
     </template>
 
     <template v-if="guild">
+      <div v-if="immersive" class="hud-top">
+        <button type="button" class="hud-btn" :class="{ on: editing }" @click="editing ? (editing = false) : startDecor()">🪑 {{ editing ? "擺裝飾中" : "擺裝飾" }}</button>
+        <NuxtLink to="/avatar" class="hud-btn">🧑‍🎨 分身</NuxtLink>
+        <NuxtLink to="/guild/members" class="hud-btn">👥 成員</NuxtLink>
+        <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="hud-btn">⚙️ 設定</NuxtLink>
+      </div>
       <section class="panel head">
         <GuildBadge :badge="guild.badge" :size="64" />
         <div class="grow">
           <b class="gname">{{ guild.name }}</b>
           <small>Lv {{ guild.level }}・{{ guild.members.length }}／{{ guild.rules.members }} 人・{{ online }} 人在線</small>
         </div>
-        <button v-if="role === 'leader' && !drawing" class="btn" @click="openBadge">改徽章</button>
       </section>
 
       <GuildHall
@@ -312,6 +259,8 @@ const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence:
         :selected="selected"
         :hand="hand"
         :bubbles="bubbles"
+        :follow="follow"
+        :fill="immersive"
         class="hall"
         @select="selected = $event"
         @move="moveDecor"
@@ -319,7 +268,7 @@ const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence:
         @walk-to="control.walkTo"
       />
       <template v-if="!editing">
-        <GuildPad class="phone-only" @pad="control.press" @a="control.pressA" @b="control.pressB" @talk="talk" />
+        <GuildPad v-if="!immersive" class="phone-only" @pad="control.press" @a="control.pressA" @b="control.pressB" @talk="talk" />
         <p class="hint desk-only">點地板走過去・方向鍵／WASD 走路・空白鍵坐下／喝水／揮手・Q 歡呼・Enter 說話</p>
         <section class="panel chat">
           <div v-for="line in recentChat" :key="line.id" class="line">
@@ -332,6 +281,7 @@ const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence:
           </form>
         </section>
       </template>
+      <div class="side" :class="{ open: !immersive || editing }">
       <GuildDecorPanel
         v-if="editing && role"
         :items="draft"
@@ -355,70 +305,13 @@ const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence:
         @save="saveDecor"
         @cancel="editing = false"
       />
-      <div v-else class="links">
+      <div v-else-if="!immersive" class="links">
         <button type="button" class="wide-link" @click="startDecor">🪑 擺裝飾</button>
         <NuxtLink to="/avatar" class="wide-link">🧑‍🎨 我的分身{{ g?.avatarChosen ? "" : "（還沒捏過）" }}</NuxtLink>
+        <NuxtLink to="/guild/members" class="wide-link">👥 成員</NuxtLink>
+        <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="wide-link">⚙️ 設定</NuxtLink>
       </div>
-      <button v-if="!editing" type="button" class="log-link" @click="openLog">{{ log ? "收起擺放紀錄" : "📜 擺放紀錄" }}</button>
-      <section v-if="log && !editing" class="panel">
-        <h2>擺放紀錄</h2>
-        <p v-if="!log.length" class="muted">還沒有人動過裝飾。</p>
-        <div v-for="e in log" :key="e.id" class="row">
-          <span class="grow"><b>{{ e.by }}</b> {{ logLine(e) }}<br /><small>{{ noteTime(e.at) }}</small></span>
-          <button v-if="role === 'leader'" class="btn small" :disabled="busy" @click="restore(e)">還原到這之前</button>
-        </div>
-      </section>
-
-      <section v-if="drawing" class="panel">
-        <BadgeEditor v-model="badge" />
-        <div class="tools">
-          <button class="btn primary" :disabled="busy" @click="saveBadge">儲存徽章</button>
-          <button class="btn" @click="drawing = false">取消</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>成員</h2>
-        <div v-for="m in guild.members" :key="m.id" class="row">
-          <span class="face-wrap">
-            <img :src="`/sprites/${m.race}/icon.png`" class="pixel face" alt="" />
-            <i class="dot" :style="{ background: PRESENCE[presence(m)].dot }" />
-          </span>
-          <span class="grow">
-            <b>{{ m.name }}</b> <small class="role" :class="m.role">{{ ROLE[m.role] }}</small>
-            <br />
-            <small>
-              {{ PRESENCE[presence(m)].text }}<template v-if="presence(m) === 'offline' && m.seenAt">・{{ noteTime(m.seenAt) }}來過</template>
-              <template v-if="m.focusToday">・今天專注 {{ m.focusToday }} 輪</template>
-            </small>
-          </span>
-          <span v-if="m.id !== user?.id && role === 'leader'" class="actions">
-            <button v-if="m.role === 'member'" class="btn small" :disabled="busy" @click="setRole(m, 'officer')">升幹部</button>
-            <button v-if="m.role === 'officer'" class="btn small" :disabled="busy" @click="setRole(m, 'member')">降成員</button>
-            <button class="btn small" :disabled="busy" @click="setRole(m, 'leader')">交會長</button>
-            <button class="btn small" :disabled="busy" @click="kick(m)">請離開</button>
-          </span>
-          <span v-else-if="m.id !== user?.id && role === 'officer' && m.role === 'member'" class="actions">
-            <button class="btn small" :disabled="busy" @click="kick(m)">請離開</button>
-          </span>
-        </div>
-      </section>
-
-      <section v-if="role !== 'member'" class="panel">
-        <h2>邀請</h2>
-        <form class="add" @submit.prevent="invite">
-          <input v-model="code" class="field" placeholder="對方的好友代碼" autocapitalize="characters" autocomplete="off" />
-          <button class="btn primary" :disabled="busy || !code.trim() || guild.members.length >= guild.rules.members">邀請</button>
-        </form>
-        <p v-if="guild.members.length >= guild.rules.members" class="muted">公會滿了，升級後可以收更多人。</p>
-        <div v-for="p in guild.invited" :key="p.id" class="row">
-          <img :src="`/sprites/${p.race}/icon.png`" class="pixel face" alt="" />
-          <span class="grow"><b>{{ p.name }}</b><br /><small>等對方答應・{{ noteTime(p.at) }}</small></span>
-          <button class="btn" :disabled="busy" @click="uninvite(p.id)">收回</button>
-        </div>
-      </section>
-
-      <button class="btn leave" :disabled="busy" @click="leave">離開公會</button>
+      </div>
     </template>
   </main>
 </template>
@@ -451,6 +344,21 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .tools { display: flex; gap: 8px; margin-top: 10px; }
 .leave { margin-top: 4px; }
 .hall { margin: 0 0 12px; }
+/* the Mac's window: the hall fills it; the name, buttons and chat float over it; the rest slides in from the right */
+.immersive { padding: 0 !important; max-width: none !important; }
+.immersive .hall { position: fixed; inset: 0; margin: 0; z-index: 0; }
+.immersive .head { position: fixed; top: 10px; left: 10px; z-index: 2; padding: 8px 12px; gap: 8px; background: rgba(255, 253, 246, 0.92); }
+.immersive .head :deep(svg) { width: 36px; height: 36px; }
+.immersive .head .gname { font-size: 16px; }
+.immersive .head .btn { display: none; }
+.hud-top { position: fixed; top: 10px; right: 10px; z-index: 3; display: flex; gap: 6px; }
+.hud-btn { border: 2px solid #1f1f1f; border-radius: 10px; background: rgba(255, 253, 246, 0.92); padding: 6px 10px; font-size: 13px; font-weight: 700; color: inherit; text-decoration: none; }
+.hud-btn.on { background: #e8c547; }
+.immersive .chat { position: fixed; left: 10px; bottom: 10px; z-index: 2; width: min(420px, 45vw); background: rgba(255, 253, 246, 0.88); }
+.immersive .hint { position: fixed; left: 10px; bottom: calc(10px + var(--chat-h, 0px)); z-index: 2; display: none; }
+.immersive > .note { position: fixed; top: 64px; left: 10px; z-index: 3; background: rgba(0, 0, 0, 0.6); padding: 4px 10px; border-radius: 8px; }
+.immersive .side { display: none; }
+.immersive .side.open { display: block; position: fixed; top: 54px; right: 10px; bottom: 10px; z-index: 3; width: 380px; overflow-y: auto; padding-right: 2px; }
 </style>
 
 <style scoped>

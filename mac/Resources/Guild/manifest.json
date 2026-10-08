@@ -10,7 +10,10 @@
   "elf_moss": "floors/elf_moss.png",
   "elf_roots": "floors/elf_roots.png",
   "undead_blackstone": "floors/undead_blackstone.png",
-  "undead_bone": "floors/undead_bone.png"
+  "undead_bone": "floors/undead_bone.png",
+  "plain_wood": "floors/plain_wood.png",
+  "plain_stone": "floors/plain_stone.png",
+  "plain_plaster": "floors/plain_plaster.png"
  },
  "walls": {
   "stone": {
@@ -49,6 +52,30 @@
    "file": "walls/undead_gothic.png",
    "corner": "walls/undead_gothic_corner.png",
    "side": "walls/undead_gothic_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "plain_plaster": {
+   "file": "walls/plain_plaster.png",
+   "corner": "walls/plain_plaster_corner.png",
+   "side": "walls/plain_plaster_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "plain_wood": {
+   "file": "walls/plain_wood.png",
+   "corner": "walls/plain_wood_corner.png",
+   "side": "walls/plain_wood_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "plain_stone": {
+   "file": "walls/plain_stone.png",
+   "corner": "walls/plain_stone_corner.png",
+   "side": "walls/plain_stone_side.png",
    "w": 16,
    "h": 32,
    "cap": 4
@@ -316,6 +343,9 @@
    "stone": "石磚",
    "carpet": "紅地毯",
    "marble": "棋盤格大理石",
+   "plain_wood": "素木地板",
+   "plain_stone": "素石地",
+   "plain_plaster": "灰泥地",
    "goblin_mud": "夯土地",
    "goblin_flagstone": "粗石板",
    "elf_moss": "苔蘚地",
@@ -326,6 +356,9 @@
   "walls": {
    "stone": "灰石牆",
    "wood": "木板牆",
+   "plain_plaster": "白灰泥牆",
+   "plain_wood": "素木牆",
+   "plain_stone": "素石牆",
    "goblin_hide": "獸皮帳幕牆",
    "elf_vines": "活藤樹牆",
    "undead_gothic": "哥德拱窗黑石牆"

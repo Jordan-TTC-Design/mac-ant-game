@@ -6,7 +6,7 @@ describe("guild hall", () => {
   it("has a desk for everyone at every level, all inside the hall below the wall", () => {
     for (const { level, members, width, height } of GUILD_LEVELS) {
       const hall = hallLayout(level);
-      expect(hall.seats.length).toBeGreaterThanOrEqual(members);
+      expect(hall.seats.length).toBe(members); // (one desk each, the rest of the floor free)
       for (const p of hall.pieces) {
         expect(p.x).toBeGreaterThan(0);
         expect(p.x).toBeLessThan(width);

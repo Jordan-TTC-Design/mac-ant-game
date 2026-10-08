@@ -52,13 +52,15 @@ const DESK_SEAT = { x: -3 / 16, y: -4 / 16 };
 const DRINK_AT = { x: 18 / 16, y: 0 };
 
 export function hallLayout(level: number, floor = "oak", wall = "stone"): HallLayout {
-  const { width, height } = guildLevel(level);
+  const { width, height, members } = guildLevel(level);
   const pieces: HallPiece[] = [];
   const seats: Point[] = [];
   const rows: number[] = [];
-  for (let y = FIRST_DESK_ROW; y <= height - 3; y += DESK_ROW_STEP) rows.push(y);
+  // one desk per member the guild can have, row by row from the top; the rest of the floor is left for decorating
+  const perRow = Math.floor((width - 4 - 3) / 3) + 1;
+  for (let y = FIRST_DESK_ROW; y <= height - 3 && rows.length * perRow < members; y += DESK_ROW_STEP) rows.push(y);
   for (const y of rows) {
-    for (let x = 3; x <= width - 4; x += 3) {
+    for (let x = 3; x <= width - 4 && seats.length < members; x += 3) {
       const seat = { x: x + DESK_SEAT.x, y: y + DESK_SEAT.y };
       pieces.push({ id: "desk", x, y });
       pieces.push({ id: "stool", x: seat.x, y: seat.y - 0.01 }); // (just behind its sitter)

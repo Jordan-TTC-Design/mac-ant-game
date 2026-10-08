@@ -22,6 +22,10 @@ const props = defineProps<{
   hand?: Record<string, GuildMove & { since?: number }>;
   /** What each member said last, shown over their head until `until` (ms). */
   bubbles?: Record<string, { text: string; until: number }>;
+  /** Where the camera keeps to (this one's avatar), when the hall is bigger than the view. */
+  follow?: { x: number; y: number } | null;
+  /** Fill the box it is in (the Mac's whole window), tiles sized to it, instead of a 16-tile-wide strip. */
+  fill?: boolean;
 }>();
 const emit = defineEmits<{ select: [uid: string | null]; move: [uid: string, x: number, y: number]; paint: [x: number, y: number]; walkTo: [x: number, y: number] }>();
 
@@ -57,11 +61,30 @@ function decorImage(file: string): HTMLImageElement | null {
 }
 const asked = new Set<string>();
 
-// decorating: tap a piece to pick it, drag to move it (in tiles, snapped to the art's pixels by the page)
+// The camera (GUILD.md §3.1): a phone sees about 16 × 10 tiles, a wide window up to 28 across; a bigger hall scrolls,
+// keeping to this one's avatar, and dragging the empty floor looks round (until the avatar moves again).
+const VIEW_NARROW = 16;
+const VIEW_WIDE = 28;
+/** Filling a window: a tile is this many points across, at least and at most. */
+const FILL_MIN = 40;
+const FILL_MAX = 72;
+const view = reactive({ cols: 16, rows: 10 });
+const cam = { x: 0, y: 0 };
+let lookingUntil = 0;
+let lookedFrom: { x: number; y: number } | null = null;
+function clampCam() {
+  // (a view bigger than the hall keeps the hall in its middle)
+  const L = layout.value;
+  cam.x = view.cols >= L.width ? (L.width - view.cols) / 2 : Math.min(Math.max(0, cam.x), L.width - view.cols);
+  cam.y = view.rows >= L.height ? (L.height - view.rows) / 2 : Math.min(Math.max(0, cam.y), L.height - view.rows);
+}
+
+// pointer: a tap walks there (or picks a piece while decorating), a drag on a piece moves it, a drag elsewhere looks round
 let dragging: { uid: string; dx: number; dy: number } | null = null;
+let press: { cx: number; cy: number; camX: number; camY: number; panning: boolean } | null = null;
 function tilesAt(e: PointerEvent): { x: number; y: number } {
   const r = canvas.value!.getBoundingClientRect();
-  return { x: ((e.clientX - r.left) / r.width) * layout.value.width, y: ((e.clientY - r.top) / r.height) * layout.value.height };
+  return { x: cam.x + ((e.clientX - r.left) / r.width) * view.cols, y: cam.y + ((e.clientY - r.top) / r.height) * view.rows };
 }
 function pieceAt(p: { x: number; y: number }): GuildDecorPlaced | null {
   // (the one drawn last, nearest the front, first)
@@ -88,33 +111,49 @@ function paintAt(e: PointerEvent) {
   if (x >= 0 && x < layout.value.width && y >= WALL_ROWS && y < layout.value.height) emit("paint", x, y);
 }
 function down(e: PointerEvent) {
-  if (!props.editing) {
-    // (not decorating: a tap or click walks this one's avatar there)
-    const p = tilesAt(e);
-    emit("walkTo", p.x, p.y);
-    return;
-  }
-  if (props.painting) {
+  canvas.value!.setPointerCapture(e.pointerId);
+  if (props.editing && props.painting) {
     painting = true;
-    canvas.value!.setPointerCapture(e.pointerId);
     paintAt(e);
     return;
   }
-  const p = tilesAt(e);
-  const d = pieceAt(p);
-  emit("select", d?.uid ?? null);
-  if (d) {
-    dragging = { uid: d.uid, dx: d.x - p.x, dy: d.y - p.y };
-    canvas.value!.setPointerCapture(e.pointerId);
+  if (props.editing) {
+    const p = tilesAt(e);
+    const d = pieceAt(p);
+    emit("select", d?.uid ?? null);
+    if (d) {
+      dragging = { uid: d.uid, dx: d.x - p.x, dy: d.y - p.y };
+      return;
+    }
   }
+  press = { cx: e.clientX, cy: e.clientY, camX: cam.x, camY: cam.y, panning: false };
 }
 function moveTo(e: PointerEvent) {
   if (painting) return paintAt(e);
-  if (!dragging) return;
-  const p = tilesAt(e);
-  emit("move", dragging.uid, p.x + dragging.dx, p.y + dragging.dy);
+  if (dragging) {
+    const p = tilesAt(e);
+    emit("move", dragging.uid, p.x + dragging.dx, p.y + dragging.dy);
+    return;
+  }
+  if (!press) return;
+  const dx = e.clientX - press.cx;
+  const dy = e.clientY - press.cy;
+  if (!press.panning && Math.hypot(dx, dy) < 8) return;
+  press.panning = true;
+  const perTile = canvas.value!.getBoundingClientRect().width / view.cols;
+  cam.x = press.camX - dx / perTile;
+  cam.y = press.camY - dy / perTile;
+  clampCam();
+  lookingUntil = Date.now() + 10_000;
+  lookedFrom = props.follow ? { ...props.follow } : null;
 }
-function up() {
+function up(e: PointerEvent) {
+  // (not decorating, a tap that did not drag walks this one's avatar there)
+  if (press && !press.panning && !props.editing) {
+    const p = tilesAt(e);
+    emit("walkTo", p.x, p.y);
+  }
+  press = null;
   dragging = null;
   painting = false;
 }
@@ -143,9 +182,28 @@ let scale = 2;
 function fit() {
   if (!box.value || !canvas.value || !hallInfo) return;
   const tile = hallInfo.tile;
-  const w = layout.value.width * tile;
-  const h = layout.value.height * tile;
+  const L = layout.value;
   const dpr = window.devicePixelRatio || 1;
+  if (props.fill) {
+    // tiles as big as fit the whole hall in, between FILL_MIN and FILL_MAX points, in whole pixels of the art
+    const bw = box.value.clientWidth;
+    const bh = box.value.clientHeight;
+    const want = Math.min(FILL_MAX, Math.max(FILL_MIN, Math.min(bw / L.width, bh / L.height)));
+    scale = Math.max(2, Math.round((want * dpr) / tile));
+    const perTile = (scale * tile) / dpr;
+    view.cols = bw / perTile;
+    view.rows = bh / perTile;
+    clampCam();
+    canvas.value.width = Math.round(bw * dpr);
+    canvas.value.height = Math.round(bh * dpr);
+    canvas.value.style.aspectRatio = "";
+    return;
+  }
+  view.cols = Math.min(L.width, box.value.clientWidth >= 700 ? VIEW_WIDE : VIEW_NARROW);
+  view.rows = Math.min(L.height, Math.round((view.cols * 10) / 16));
+  clampCam();
+  const w = view.cols * tile;
+  const h = view.rows * tile;
   scale = Math.max(2, Math.ceil((box.value.clientWidth * dpr) / w)); // (drawn a little big and shrunk to fit: names stay sharp)
   canvas.value.width = w * scale;
   canvas.value.height = h * scale;
@@ -163,7 +221,22 @@ function draw() {
   const T = hall.tile * scale;
   const L = layout.value;
   const now = Date.now();
-  g.clearRect(0, 0, c.width, c.height);
+  g.fillStyle = "#1e1912";
+  g.fillRect(0, 0, c.width, c.height);
+  // the camera keeps to the avatar (unless someone is looking round), easing there
+  const f = props.follow;
+  if (lookedFrom && f && Math.hypot(f.x - lookedFrom.x, f.y - lookedFrom.y) > 0.3) lookingUntil = 0;
+  if (f && now > lookingUntil && !press?.panning && !dragging) {
+    const tx = f.x - view.cols / 2;
+    const ty = f.y - 1 - view.rows / 2;
+    cam.x += (tx - cam.x) * 0.15;
+    cam.y += (ty - cam.y) * 0.15;
+    clampCam();
+  }
+  const viewLeft = cam.x * T;
+  const viewTop = cam.y * T;
+  g.save();
+  g.translate(-Math.round(viewLeft), -Math.round(viewTop));
 
   // floor (its tiles), then the wall along the top
   const fallback = Object.values(hall.floors)[0];
@@ -182,7 +255,7 @@ function draw() {
   }
   const wallInfo = hall.walls[props.wall] ?? Object.values(hall.walls)[0];
   const wall = wallInfo && loaded.get(`/guild-hall/${wallInfo.file}`);
-  if (wall) for (let x = 0; x * T < c.width; x += wall.width / hall.tile) g.drawImage(wall, x * T, 0, wall.width * scale, wall.height * scale);
+  if (wall) for (let x = 0; x < L.width; x += wall.width / hall.tile) g.drawImage(wall, x * T, 0, wall.width * scale, wall.height * scale);
 
   // furniture and avatars, back to front by where their feet are
   const items: { y: number; paint: () => void }[] = [];
@@ -248,7 +321,9 @@ function draw() {
     const fy = pose.y * T;
     const name = member.name;
     const mine = member.id === props.me;
-    const said = props.bubbles?.[hm.id];
+    // (off the view: no name or bubble pinned to its edge)
+    const seen = fx > viewLeft - 2 * T && fx < viewLeft + c.width + 2 * T && fy > viewTop - T && fy < viewTop + c.height + 3 * T;
+    const said = seen ? props.bubbles?.[hm.id] : undefined;
     if (said && said.until > now) {
       bubbles.push(() => {
         g.font = `${Math.max(10, 5 * scale)}px system-ui, sans-serif`;
@@ -257,8 +332,8 @@ function draw() {
         const text = said.text.length > 24 ? `${said.text.slice(0, 23)}…` : said.text;
         const w = g.measureText(text).width + 6 * scale;
         const h = Math.max(14, 8 * scale);
-        const top = Math.max(1, fy - (m.anchor.y + 4) * scale - h);
-        const left = Math.min(Math.max(1, fx - w / 2), c.width - w - 1);
+        const top = Math.max(viewTop + 1, fy - (m.anchor.y + 4) * scale - h);
+        const left = Math.min(Math.max(viewLeft + 1, fx - w / 2), viewLeft + c.width - w - 1);
         g.fillStyle = "rgba(255,253,246,0.96)";
         g.strokeStyle = "#1f1f1f";
         g.lineWidth = Math.max(1, scale / 2);
@@ -273,13 +348,13 @@ function draw() {
         g.fillText(text, left + w / 2, top + h / 2);
       });
     }
-    names.push(() => {
+    if (seen) names.push(() => {
       g.font = `600 ${Math.max(9, 4 * scale)}px system-ui, sans-serif`;
       g.textAlign = "center";
       g.textBaseline = "top";
       // (at a desk: under the desk's front edge)
       const atDesk = L.seats.some((st) => Math.abs(st.x - pose!.x) < 0.01 && Math.abs(st.y - pose!.y) < 0.01);
-      const ty = Math.min((pose!.y + (atDesk ? 0.3 : 0)) * T + 1.5 * scale, c.height - Math.max(9, 4 * scale) - 2 * scale);
+      const ty = Math.min((pose!.y + (atDesk ? 0.3 : 0)) * T + 1.5 * scale, viewTop + c.height - Math.max(9, 4 * scale) - 2 * scale);
       const w = g.measureText(name).width + 3 * scale;
       g.fillStyle = mine ? "rgba(232,197,71,0.9)" : "rgba(0,0,0,0.55)";
       g.fillRect(fx - w / 2, ty - 0.5 * scale, w, Math.max(9, 4 * scale) + scale);
@@ -308,6 +383,7 @@ function draw() {
   // the names last, so no desk hides them, and what was just said over everything
   for (const paint of names) paint();
   for (const paint of bubbles) paint();
+  g.restore();
 }
 
 /** A hand-walked avatar eased toward where it was last heard to be (moves come a few times a second). */
@@ -352,8 +428,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="box" class="hall">
-    <canvas ref="canvas" class="pixel" :class="{ editing }" role="img" @pointerdown="down" @pointermove="moveTo" @pointerup="up" @pointercancel="up" :aria-label="`公會據點：${members.filter((m) => m.presence !== 'offline').length} 人在裡面`" />
+  <div ref="box" class="hall" :class="{ fill }">
+    <canvas ref="canvas" class="pixel" :class="{ editing, fill }" role="img" @pointerdown="down" @pointermove="moveTo" @pointerup="up" @pointercancel="up" :aria-label="`公會據點：${members.filter((m) => m.presence !== 'offline').length} 人在裡面`" />
     <p v-if="problem" class="problem">{{ problem }}</p>
   </div>
 </template>
@@ -362,5 +438,7 @@ onUnmounted(() => {
 .hall { position: relative; width: 100%; border: 3px solid #1f1f1f; border-radius: 12px; overflow: hidden; background: #2a2018; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35); }
 canvas { display: block; width: 100%; image-rendering: pixelated; }
 canvas.editing { cursor: grab; touch-action: none; }
+.hall.fill { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
+canvas.fill { height: 100%; }
 .problem { margin: 0; padding: 24px; color: #f4e9cf; text-align: center; }
 </style>

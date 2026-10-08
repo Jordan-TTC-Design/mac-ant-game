@@ -249,6 +249,78 @@ def undead_gothic():
     return w, side, ("black_l", "black_x", "black")
 
 
+# --- plain styles (shared): calm, low-contrast backdrops (user, 2026-10-08: 素雅，不要花俏) ---------------------------------------
+P.update({
+    "pw": (208, 184, 150), "pw_s": (196, 172, 138), "pw_g": (202, 178, 144), "pw_l": (214, 190, 156),
+    "ps": (198, 197, 192), "ps_s": (186, 185, 180), "ps_g": (193, 192, 187),
+    "pp": (226, 215, 194), "pp_g": (221, 210, 189), "pp_l": (230, 220, 199),
+    "wp": (232, 225, 210), "wp_g": (226, 219, 204), "trim": (170, 134, 96), "trim_l": (186, 150, 110), "trim_d": (146, 112, 78),
+    "wb": (210, 184, 148), "wb_s": (196, 170, 134), "wb_l": (218, 193, 158), "wb_d": (170, 144, 110),
+    "wst": (200, 198, 192), "wst_s": (186, 184, 178), "wst_l": (210, 208, 202), "wst_d": (156, 154, 148),
+})
+
+
+def plain_wood_floor():
+    t = Tile(fill="pw")
+    for r, y in enumerate(range(0, 16, 4)):                                 # long planks, faint seams, staggered joints
+        t.rect(0, y + 3, 15, y + 3, "pw_s")
+        t.rect((r * 6 + 2) % 16, y, (r * 6 + 2) % 16, y + 2, "pw_s")
+    for x, y in ((5, 1), (12, 5), (3, 10), (10, 13)):                       # very faint grain
+        t.put(x, y, "pw_g"); t.put(x + 1, y, "pw_g")
+    return t
+
+
+def plain_stone_floor():
+    t = Tile(fill="ps")
+    t.rect(0, 15, 15, 15, "ps_s"); t.rect(15, 0, 15, 15, "ps_s")             # one wide slab per tile, faint seams
+    t.put(5, 6, "ps_g"); t.put(10, 11, "ps_g")
+    return t
+
+
+def plain_plaster_floor():
+    t = Tile(fill="pp")
+    for x, y, k in ((3, 4, "pp_g"), (11, 2, "pp_l"), (7, 11, "pp_g"), (14, 13, "pp_l")):
+        t.put(x, y, k)
+    return t
+
+
+def plain_plaster_wall():
+    w = wall_base()
+    w.rect(0, 0, 15, 3, "trim_l"); w.rect(0, 3, 15, 3, "trim")              # a simple wooden cap
+    w.rect(0, 4, 15, 27, "wp"); w.put(5, 12, "wp_g"); w.put(11, 19, "wp_g")
+    w.rect(0, 27, 15, 27, "trim_l"); w.rect(0, 28, 15, 31, "trim"); w.rect(0, 31, 15, 31, "trim_d")   # skirting
+    side = Tile(16, 16, fill="trim_l", wrap=False)
+    side.rect(0, 0, 0, 15, "trim"); side.rect(15, 0, 15, 15, "trim")
+    return w, side, ("trim", "trim_d", "trim_l")
+
+
+def plain_wood_wall():
+    w = wall_base()
+    w.rect(0, 0, 15, 3, "wb_l"); w.rect(0, 3, 15, 3, "wb_s")
+    w.rect(0, 4, 15, 28, "wb")
+    for x in (7, 15):                                                       # two wide boards per piece
+        w.rect(x, 4, x, 28, "wb_s")
+    w.rect(0, 29, 15, 31, "wb_d")
+    side = Tile(16, 16, fill="wb_l", wrap=False)
+    side.rect(0, 0, 0, 15, "wb_s"); side.rect(15, 0, 15, 15, "wb_s")
+    return w, side, ("wb", "wb_s", "wb_l")
+
+
+def plain_stone_wall():
+    w = wall_base()
+    w.rect(0, 0, 15, 3, "wst_l"); w.rect(0, 3, 15, 3, "wst_s")
+    w.rect(0, 4, 15, 28, "wst")
+    for r, y in enumerate(range(4, 28, 8)):                                 # large ashlar blocks, subtle joints
+        w.rect(0, y + 7, 15, y + 7, "wst_s")
+        x = 0 if r % 2 == 0 else 8
+        w.rect(x, y, x, y + 6, "wst_s")
+    w.rect(0, 29, 15, 31, "wst_d")
+    side = Tile(16, 16, fill="wst_l", wrap=False)
+    side.rect(0, 0, 0, 15, "wst_s"); side.rect(15, 0, 15, 15, "wst_s")
+    return w, side, ("wst", "wst_s", "wst_l")
+
+
+
 def corner_of(face, pillar):
     """The end of a run: the face with a pillar on its right, like the shared walls' corner piece."""
     k, dark, light = pillar
@@ -261,10 +333,14 @@ def corner_of(face, pillar):
     return c
 
 
-FLOORS = [("goblin_mud", "夯土地", "goblin", goblin_mud), ("goblin_flagstone", "粗石板", "goblin", goblin_flagstone),
+FLOORS = [("plain_wood", "素木地板", None, plain_wood_floor), ("plain_stone", "素石地", None, plain_stone_floor),
+          ("plain_plaster", "灰泥地", None, plain_plaster_floor),
+          ("goblin_mud", "夯土地", "goblin", goblin_mud), ("goblin_flagstone", "粗石板", "goblin", goblin_flagstone),
           ("elf_moss", "苔蘚地", "elf", elf_moss), ("elf_roots", "樹根木紋", "elf", elf_roots),
           ("undead_blackstone", "黑石磚", "undead", undead_blackstone), ("undead_bone", "骨片馬賽克", "undead", undead_bone)]
-WALLS = [("goblin_hide", "獸皮帳幕牆", "goblin", goblin_hide), ("elf_vines", "活藤樹牆", "elf", elf_vines),
+WALLS = [("plain_plaster", "白灰泥牆", None, plain_plaster_wall), ("plain_wood", "素木牆", None, plain_wood_wall),
+         ("plain_stone", "素石牆", None, plain_stone_wall),
+         ("goblin_hide", "獸皮帳幕牆", "goblin", goblin_hide), ("elf_vines", "活藤樹牆", "elf", elf_vines),
          ("undead_gothic", "哥德拱窗黑石牆", "undead", undead_gothic)]
 SHARED_NAMES = {"floors": {"oak": "橡木地板", "stone": "石磚", "carpet": "紅地毯", "marble": "棋盤格大理石"},
                 "walls": {"stone": "灰石牆", "wood": "木板牆"}}
@@ -323,7 +399,8 @@ def main():
         fn().image().save(os.path.join(GROOT, rel), optimize=True)
         man["floors"][fid] = rel
         names["floors"][fid] = name
-        race[fid] = r
+        if r:
+            race[fid] = r
     for wid, name, r, fn in WALLS:
         face, side, pillar = fn()
         files = {"file": f"walls/{wid}.png", "corner": f"walls/{wid}_corner.png", "side": f"walls/{wid}_side.png"}
@@ -332,7 +409,8 @@ def main():
         side.image().save(os.path.join(GROOT, files["side"]), optimize=True)
         man["walls"][wid] = dict(files, w=T, h=2 * T, cap=4)
         names["walls"][wid] = name
-        race[wid] = r
+        if r:
+            race[wid] = r
     man["names"] = names
     man["race"] = race
     with open(mpath, "w", encoding="utf-8") as f:
