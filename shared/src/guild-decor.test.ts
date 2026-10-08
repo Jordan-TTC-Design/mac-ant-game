@@ -18,8 +18,17 @@ describe("guild decorations", () => {
       expect(k.level).toBeGreaterThanOrEqual(1);
       expect(k.level).toBeLessThanOrEqual(7);
     }
-    // the first sets are all open from level 1 (later ones say their level)
-    expect(GUILD_DECOR.filter((k) => !k.race).every((k) => k.level === 1)).toBe(true);
+    // the first sets (and the race sets) are open from level 1; every guild level from 2 to 7 then unlocks its own 50 shared pieces
+    expect(GUILD_DECOR.filter((k) => !k.race && k.level === 1 && !k.season).length).toBeGreaterThanOrEqual(160);
+    expect(GUILD_DECOR.filter((k) => k.race).every((k) => k.level === 1)).toBe(true);
+    for (let level = 2; level <= 7; level++) {
+      const mine = GUILD_DECOR.filter((k) => k.level === level);
+      expect(mine.length, `level ${level}`).toBe(50);
+      expect(mine.every((k) => !k.race && !k.season)).toBe(true);
+      expect(new Set(mine.map((k) => k.category)).size, `level ${level} categories`).toBeGreaterThanOrEqual(12);
+    }
+    // holiday pieces can be put down by any guild
+    expect(GUILD_DECOR.filter((k) => k.season).every((k) => k.level === 1 && !k.race)).toBe(true);
   });
 
   it("checks unlocks, where things stand, and the room", () => {

@@ -25,8 +25,9 @@ EXTRAS = [
     {"id": "water_elemental", "name": "水精靈飲水台", "category": "廚房飲料", "size": 1, "w": 16, "h": 24, "frames": 3, "fps": 3, "file": "furniture/water_dispenser.png"},
 ]
 # Desks one works at (sitting behind), and the water one drinks beside (shared/src/guild-hall.ts hallFurnishing).
-DESKS = {"guild_desk", "crystal_desk", "oak_desk", "corner_desk", "guildmaster_desk", "drafting_table", "gob_log_desk", "elf_root_desk", "und_coffin_desk"}
-DRINKS = {"water_elemental", "water_cooler", "gob_waterskin", "elf_spring_basin"}
+DESKS = {"guild_desk", "crystal_desk", "oak_desk", "corner_desk", "guildmaster_desk", "drafting_table", "gob_log_desk", "elf_root_desk", "und_coffin_desk",
+         "l2_writing_desk", "l3_secretary_desk", "l6_commander_desk", "l7_archmage_desk"}
+DRINKS = {"water_elemental", "water_cooler", "gob_waterskin", "elf_spring_basin", "l3_big_cooler", "l6_water_trough", "l7_elixir_fountain"}
 
 items = json.load(open(CATALOG, encoding="utf-8")) + EXTRAS
 level = {item["id"]: int(item.get("level", 1)) for item in items}

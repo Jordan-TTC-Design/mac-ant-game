@@ -352,6 +352,8 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         }
     }
 
+    func debugCategory(_ title: String) { editor?.debugSelect(title) }
+
     /// Clicks the first card of the open decorating panel the way a mouse would (a test: says what changed).
     func debugClickFirstCard() -> String {
         let alive = "controller alive: \(controller != nil || editor != nil)"

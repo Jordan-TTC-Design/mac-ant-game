@@ -17,6 +17,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.modules.setdefault("make_guild_decor", sys.modules[__name__])  # (so the seasons file's `import make_guild_decor` is this one)
 import make_avatars_preview as pv  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
@@ -72,7 +73,7 @@ class Canvas(pv.C):
 
 class Item:
     def __init__(self, id, name, cat, size, w, h, frames=1, fps=0, wall=False, flat=False, seat=None, note="", draw=None,
-                 race=None, ceiling=False):
+                 race=None, ceiling=False, level=1, season=None):
         self.__dict__.update(locals())
         del self.__dict__["self"]
 
@@ -81,10 +82,11 @@ ITEMS = []
 RACE = [None]                 # the race set being defined (None: shared)
 
 
-def item(id, name, cat, size, w, h, frames=1, fps=None, wall=False, flat=False, seat=False, note="", ceiling=False):
+def item(id, name, cat, size, w, h, frames=1, fps=None, wall=False, flat=False, seat=False, note="", ceiling=False, level=1, season=None):
+    """`level`: the guild level that unlocks it; `season`: a holiday piece (shared/src/guild-seasons.ts), put down only while it is on."""
     def deco(fn):
         ITEMS.append(Item(id, name, cat, size, w, h, frames, fps if fps is not None else (0 if frames == 1 else 4), wall, flat,
-                          seat, note, fn, RACE[0], ceiling))
+                          seat, note, fn, RACE[0], ceiling, level, season))
         return fn
     return deco
 
@@ -3000,6 +3002,8 @@ RACE[0] = None
 # ===========================================================================================================================
 CATS = [C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13]
 SIZE_NAME = {1: "小", 2: "中", 4: "大"}
+LEVEL_THEMES = {2: "工坊與書房", 3: "會議室", 4: "庭院", 5: "宴會廳", 6: "訓練場", 7: "塔樓"}
+SEASON_NAMES = {"spring_festival": "春節", "lantern": "元宵", "dragon_boat": "端午", "mid_autumn": "中秋", "national": "國慶", "new_year": "跨年", "christmas": "聖誕"}
 
 
 def render(it):
@@ -3138,6 +3142,10 @@ def overview_compact(rendered, title, scale=3, width=1900):
 
 
 def main():
+    import make_guild_decor_seasons  # noqa: F401  (the holiday pieces: they register themselves with `item`)
+    for n in range(2, 8):                  # the pieces each guild level unlocks (make_guild_decor_lv<N>.py), when they are made
+        if os.path.exists(os.path.join(HERE, f"make_guild_decor_lv{n}.py")):
+            __import__(f"make_guild_decor_lv{n}")
     ids = [it.id for it in ITEMS]
     assert len(ids) == len(set(ids)), "duplicate ids"
     os.makedirs(OUTDIR, exist_ok=True)
@@ -3162,6 +3170,10 @@ def main():
             e["ceiling"] = True
         if it.race:
             e["race"] = it.race
+        if it.level != 1:
+            e["level"] = it.level
+        if it.season:
+            e["season"] = it.season
         e["file"] = f"decor/{it.id}.png"
         e["note"] = it.note
         catalog.append(e)
@@ -3172,7 +3184,7 @@ def main():
     for old in os.listdir(DOCS):
         if old.startswith("decor_shared_overview"):
             os.remove(os.path.join(DOCS, old))
-    shared = [(it, fr) for it, fr in rendered if it.race is None]
+    shared = [(it, fr) for it, fr in rendered if it.race is None and it.season is None and it.level == 1]
     pages = overview(shared)
     for i, p in enumerate(pages):
         p.save(os.path.join(DOCS, f"decor_shared_overview_{i + 1}.png"))
@@ -3184,6 +3196,25 @@ def main():
             if old.startswith(f"decor_{race}_overview"):
                 os.remove(os.path.join(DOCS, old))
         img.save(os.path.join(DOCS, f"decor_{race}_overview.png"))
+    # one overview per holiday, for the user to look at before the pieces go in
+    seasons = {}
+    for it, fr in rendered:
+        if it.season:
+            seasons.setdefault(it.season, []).append((it, fr))
+    for old in os.listdir(DOCS):
+        if old.startswith("decor_holiday_"):
+            os.remove(os.path.join(DOCS, old))
+    for season, mine in seasons.items():
+        overview_compact(mine, f"{SEASON_NAMES.get(season, season)}限定 總覽（{len(mine)} 樣；×3；節日期間才能擺新的）").save(os.path.join(DOCS, f"decor_holiday_{season}_overview.png"))
+    levels = {}
+    for it, fr in rendered:
+        if it.level > 1 and not it.season and it.race is None:
+            levels.setdefault(it.level, []).append((it, fr))
+    for old in os.listdir(DOCS):
+        if old.startswith("decor_level_"):
+            os.remove(os.path.join(DOCS, old))
+    for lv, mine in sorted(levels.items()):
+        overview_compact(mine, f"公會 {lv} 級解鎖：{LEVEL_THEMES.get(lv, '')}（{len(mine)} 樣；×3）").save(os.path.join(DOCS, f"decor_level_{lv}_overview.png"))
     for race in (None, "goblin", "elf", "undead"):
         its = [it for it in ITEMS if it.race == race]
         print(race or "shared", len(its), {c: sum(1 for it in its if it.cat == c) for c in CATS})

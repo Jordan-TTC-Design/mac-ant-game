@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, starterDecor, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
+import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, guildSeason, seasonWindow, starterDecor, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
 import { eq } from "drizzle-orm";
 import type { Database } from "../src/db/client.ts";
 import { camps, guilds } from "../src/db/schema.ts";
@@ -350,5 +350,40 @@ describe("公會", () => {
     // only once: taken away, it stays away
     await t.call("PUT", "/guild/decor", { version: 4, items: [mine] }, a.auth);
     expect((await guildOf(a)).guild!.decor.map((d) => d.uid)).toEqual(["mine0001"]);
+  });
+
+  it("a holiday piece is put down only while its season is on; what is already there stays after", async () => {
+    const a = await person("a@example.com");
+    await t.call("POST", "/guild", { name: "節日隊" }, a.auth);
+    // (the clock goes months on: the sign-in would run out, so this one signs in again after each jump)
+    const jump = async (ms: number) => {
+      t.advance(ms);
+      a.auth = bearer((await logIn(t, "a@example.com", "correct horse battery", mac(++macs))).body.token);
+    };
+    const put = async (items: object[]) => t.call("PUT", "/guild/decor", { version: (await guildOf(a)).guild!.decorVersion, items }, a.auth);
+    const decor = async () => (await guildOf(a)).guild!.decor;
+    const fu = { uid: "fu000001", kind: "cny_fu", x: 6, y: 2 };
+    expect(GUILD_DECOR.find((k) => k.id === "cny_fu")?.season).toBe("spring_festival");
+
+    // (the clock starts on 2026-10-01: 春節 is months away)
+    const early = await put([...(await decor()), fu]);
+    expect(early.status).toBe(400);
+    expect((early.body as { message: string }).message).toMatch(/春節限定/);
+    const shown = (await guildOf(a)).guild!.seasons.find((s) => s.id === "spring_festival")!;
+    expect(shown.on).toBe(false);
+    expect(shown.from).toBe(seasonWindow(guildSeason("spring_festival")!, 2027)!.from);
+
+    // in season: it can
+    const window = seasonWindow(guildSeason("spring_festival")!, 2027)!;
+    await jump(Date.parse(`${window.from}T09:00:00Z`) - t.now().getTime());
+    expect((await put([...(await decor()), fu])).status).toBe(200);
+    expect((await guildOf(a)).guild!.seasons.find((s) => s.id === "spring_festival")!.on).toBe(true);
+
+    // after the season: the piece stays and can be moved, but no new one can be put down
+    await jump(Date.parse(`${window.to}T09:00:00Z`) + 2 * 86_400_000 - t.now().getTime());
+    expect((await guildOf(a)).guild!.seasons.find((s) => s.id === "spring_festival")!.on).toBe(false);
+    expect((await put((await decor()).map((d) => (d.uid === fu.uid ? { ...d, x: 8 } : d)))).status).toBe(200);
+    expect((await decor()).find((d) => d.uid === fu.uid)?.x).toBe(8);
+    expect((await put([...(await decor()), { ...fu, uid: "fu000002", x: 10 }])).status).toBe(400);
   });
 });

@@ -489,7 +489,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             var at = 0.5
             for name in (env["GUILD_TEST_PANELS"] ?? "decor,avatar,donate,members,settings").split(separator: ",").map(String.init) {
-                after(at) { self.guildPane.debugShow(data, me: "me", panel: name) }
+                after(at) {
+                    self.guildPane.debugShow(data, me: "me", panel: name)
+                    if let tab = env["GUILD_TEST_CATEGORY"] { self.guildPane.debugCategory(tab) }
+                }
                 after(at + 1.5) {
                     let view = self.guildPane.paneView
                     view.layoutSubtreeIfNeeded()

@@ -156,6 +156,12 @@ final class GuildDecorEditor: NSObject {
         refresh()
     }
 
+    /// Picks a tab of the catalog (a test).
+    func debugSelect(_ title: String) {
+        categories.selectItem(withTitle: title)
+        categoryChanged()
+    }
+
     /// Takes the hall back from the editor.
     func release() {
         hall.editing = false
