@@ -8,6 +8,8 @@ pwa/public/camps
 pwa/public/world
 pwa/public/terrain
 pwa/public/decor
+pwa/public/avatars
+pwa/public/guild-hall
 server/.env
 .env
 .git
