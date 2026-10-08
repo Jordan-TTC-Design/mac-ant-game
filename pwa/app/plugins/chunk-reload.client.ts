@@ -6,5 +6,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     sessionStorage.setItem("gc-chunk-reload", "1");
     reloadNuxtApp({ persistState: false });
   });
-  nuxtApp.hook("app:mounted", () => setTimeout(() => sessionStorage.removeItem("gc-chunk-reload"), 10_000));
+  nuxtApp.hook("app:mounted", () => {
+    setTimeout(() => sessionStorage.removeItem("gc-chunk-reload"), 10_000);
+  });
 });
