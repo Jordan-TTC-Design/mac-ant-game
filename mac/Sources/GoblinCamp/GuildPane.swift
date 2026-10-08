@@ -354,6 +354,36 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
 
     func debugCategory(_ title: String) { editor?.debugSelect(title) }
 
+    private var liveTimer: Timer?
+
+    /// Drags the first piece about for `seconds` with real mouse events, one every 1/60 s, sent through the window like a mouse's
+    /// (a test: sampling the app meanwhile says what it does while one decorates).
+    func debugLiveDrag(seconds: Double) {
+        guard let uid = hall.decor.first?.uid, let d = hall.decor.first, let window = paneView.window else { return }
+        func event(_ type: NSEvent.EventType, _ tile: (Double, Double), _ n: Int) {
+            let p = hall.convert(hall.debugViewPoint(x: tile.0, y: tile.1), to: nil)
+            if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: n, clickCount: 1, pressure: 1) {
+                window.sendEvent(e)
+            }
+        }
+        _ = uid
+        event(.leftMouseDown, (d.x, d.y - 0.3), 0)
+        let start = Date()
+        var n = 1
+        liveTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
+            let a = Date().timeIntervalSince(start)
+            if a > seconds {
+                NSLog("GoblinCamp test: live drag: %d mouse events in %.0f s (about %.0f a second when nothing stalls)", n, seconds, 60.0)
+                event(.leftMouseUp, (d.x, d.y), n)
+                t.invalidate()
+                self?.liveTimer = nil
+                return
+            }
+            event(.leftMouseDragged, (d.x + 6 * sin(a * 3), d.y - 0.3 + 4 * cos(a * 2)), n)
+            n += 1
+        }
+    }
+
     /// The same, with the window really on screen: each step lets the whole window (the panel's layout too) update.
     func debugDragShown(steps: Int) -> String {
         guard let uid = hall.decor.first?.uid, let window = paneView.window else { return "no pieces or window" }

@@ -92,6 +92,8 @@ final class GuildHallView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    /// A click on the hall acts at once, also when the window was behind (it would only have brought the window forward).
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -104,6 +106,9 @@ final class GuildHallView: NSView {
     /// A tile is this many points: between the camp's little goblins and the avatars drawn big (2026-10-08 使用者：「取跟營地
     /// 大小的中間值」), in whole pixels of the art for the screen.
     static let tileTarget: CGFloat = 24
+
+    /// Where a tile point of the hall is in this view (a test sends mouse events there).
+    func debugViewPoint(x: Double, y: Double) -> NSPoint { NSPoint(x: (CGFloat(x) - cam.x) * tilePoints, y: (CGFloat(y) - cam.y) * tilePoints) }
 
     private func fitTiles() {
         let scale = window?.backingScaleFactor ?? 2
@@ -273,7 +278,7 @@ final class GuildHallView: NSView {
             let box = CGRect(x: CGFloat(d.x) * T - CGFloat(k.w) / 2 * px, y: CGFloat(d.y) * T - CGFloat(k.h) * px, width: CGFloat(k.w) * px, height: CGFloat(k.h) * px).insetBy(dx: -2, dy: -2)
             g.setStrokeColor(NSColor(calibratedRed: 0.91, green: 0.77, blue: 0.28, alpha: 1).cgColor)
             g.setLineWidth(2)
-            g.setLineDash(phase: CGFloat(t * 12), lengths: [6, 4])
+            g.setLineDash(phase: CGFloat((t * 12).truncatingRemainder(dividingBy: 10)), lengths: [6, 4]) // (not t * 12 itself: t is seconds since 1970, and the dasher counts its way to the phase, which took about a second per stroke)
             g.stroke(box)
             g.setLineDash(phase: 0, lengths: [])
         }

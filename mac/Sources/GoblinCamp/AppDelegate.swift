@@ -478,6 +478,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             self.guildPreviewWindow = w
             self.guildPane.debugShow(data, me: "me", panel: env["GUILD_SHOW_PANEL"] ?? "decor")
+            if let n = env["GUILD_SHOW_LIVE"].flatMap({ Double($0) }) {
+                after(3.0) { self.guildPane.debugLiveDrag(seconds: n) }
+                after(3.0 + n + 1) { NSApp.terminate(nil) }
+            }
             if let n = env["GUILD_SHOW_DRAG"].flatMap({ Int($0) }) {
                 after(3.0) { log("guild drag shown: \(self.guildPane.debugDragShown(steps: n))") }
                 after(4.0) { log("guild drag shown again: \(self.guildPane.debugDragShown(steps: n))") }
