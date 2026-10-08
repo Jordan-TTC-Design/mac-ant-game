@@ -20,13 +20,13 @@ public struct GuildLevel {
 }
 
 public let guildLevels: [GuildLevel] = [
-    GuildLevel(level: 1, members: 5, width: 16, height: 10, room: 40),
-    GuildLevel(level: 2, members: 8, width: 20, height: 12, room: 60),
-    GuildLevel(level: 3, members: 12, width: 24, height: 14, room: 85),
-    GuildLevel(level: 4, members: 16, width: 28, height: 16, room: 110),
-    GuildLevel(level: 5, members: 20, width: 32, height: 18, room: 140),
-    GuildLevel(level: 6, members: 25, width: 36, height: 20, room: 175),
-    GuildLevel(level: 7, members: 30, width: 40, height: 22, room: 220),
+    GuildLevel(level: 1, members: 5, width: 32, height: 20, room: 40),
+    GuildLevel(level: 2, members: 8, width: 40, height: 24, room: 60),
+    GuildLevel(level: 3, members: 12, width: 48, height: 28, room: 85),
+    GuildLevel(level: 4, members: 16, width: 56, height: 32, room: 110),
+    GuildLevel(level: 5, members: 20, width: 64, height: 36, room: 140),
+    GuildLevel(level: 6, members: 25, width: 72, height: 40, room: 175),
+    GuildLevel(level: 7, members: 30, width: 80, height: 44, room: 220),
 ]
 
 public func guildLevel(_ level: Int) -> GuildLevel {
@@ -61,6 +61,8 @@ public struct HallLayout {
 
 /// Desks in rows: the first desk row's y, then every deskRowStep tiles; columns from x = 3, every 3 tiles.
 private let firstDeskRow = guildWallRows + 2.5
+/// At most this many desks side by side; the block of desks stands in the middle of the hall.
+private let desksPerRow = 6
 private let deskRowStep = 2.5
 /// Where the sitter's feet go from the desk's floor point (Resources/Guild/manifest.json: desk seat − anchor, in tiles).
 private let deskSeat = HallPoint(x: -3.0 / 16, y: -4.0 / 16)
@@ -73,21 +75,23 @@ public func hallLayout(level: Int) -> HallLayout {
     var pieces: [HallPiece] = []
     var seats: [HallPoint] = []
     var rows: [Double] = []
-    // one desk per member the guild can have, row by row from the top; the rest of the floor is left for decorating
-    let perRow = Int(((width - 4 - 3) / 3).rounded(.down)) + 1
-    var y = firstDeskRow
-    while y <= height - 3 && rows.count * perRow < members {
-        rows.append(y)
-        y += deskRowStep
+    // one desk per member the guild can have, in a block in the middle under the wall; the rest of the floor is for decorating
+    let cols = min(desksPerRow, members)
+    let left = (width / 2 - Double((cols - 1) * 3) / 2).rounded(.down)
+    var r = 0
+    while r * cols < members {
+        rows.append(firstDeskRow + Double(r) * deskRowStep)
+        r += 1
     }
     for y in rows {
-        var x = 3.0
-        while x <= width - 4 && seats.count < members {
+        var c = 0
+        while c < cols && seats.count < members {
+            let x = left + Double(c * 3)
             let seat = HallPoint(x: x + deskSeat.x, y: y + deskSeat.y)
             pieces.append(HallPiece(id: "desk", x: x, y: y))
             pieces.append(HallPiece(id: "stool", x: seat.x, y: seat.y - 0.01)) // (just behind its sitter)
             seats.append(seat)
-            x += 3
+            c += 1
         }
     }
     let aisles = [(rows.first ?? .nan) - deskRowStep / 2] + rows.map { $0 + deskRowStep / 2 }
@@ -214,8 +218,9 @@ public func hallPath(_ layout: HallLayout, from a: HallPoint, to b: HallPoint) -
     let by = nearest(b.y)
     var pts = [a, HallPoint(x: a.x, y: ay)]
     if ay != by {
-        // (between aisles, cross at the hall's left or right edge, whichever is nearer, where there are no desks)
-        let side = (a.x + b.x) / 2 < Double(layout.width) / 2 ? 1.5 : Double(layout.width) - 1.5
+        // (between aisles, go round the block of desks on whichever side is nearer)
+        let desks = layout.pieces.filter { $0.id == "desk" }.map(\.x)
+        let side = (a.x + b.x) / 2 < Double(layout.width) / 2 ? desks.min()! - 2 : desks.max()! + 2
         pts += [HallPoint(x: side, y: ay), HallPoint(x: side, y: by)]
     }
     pts += [HallPoint(x: b.x, y: by), b]
@@ -260,9 +265,12 @@ public func hallPose(_ layout: HallLayout, _ m: HallMember, present: [HallMember
     let from = activity(layout, m, k - 1, present)
     let to = activity(layout, m, k, present)
     let path = hallPath(layout, from: from.point, to: to.point)
-    let walk = length(path) / guildWalkSpeed
+    // (a long way in a big hall: a brisker pace, so it is walked in most of the activity's time and nobody jumps)
+    let far = length(path)
+    let pace = max(guildWalkSpeed, far / (guildActivitySeconds * 0.8))
+    let walk = far / pace
     if into < walk {
-        let (at, dir, flip) = along(path, into * guildWalkSpeed)
+        let (at, dir, flip) = along(path, into * pace)
         return HallPose(x: at.x, y: at.y, anim: "walk", dir: dir, flip: flip, t: into)
     }
     return HallPose(x: to.x, y: to.y, anim: to.anim, dir: to.dir, flip: false, t: into - walk)

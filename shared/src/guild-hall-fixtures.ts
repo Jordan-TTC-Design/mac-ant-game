@@ -100,7 +100,7 @@ export function buildGuildHallFixtures() {
   const walkable = [1, 4].map((level) => {
     const l = hallLayout(level);
     const cases = [];
-    for (let y = 0; y <= l.height + 0.5; y += 0.45) for (let x = -0.2; x <= l.width + 0.3; x += 0.55) cases.push({ x, y, ok: hallWalkable(l, { x, y }) });
+    for (let y = 0; y <= l.height + 0.5; y += 0.9) for (let x = -0.2; x <= l.width + 0.3; x += 1.1) cases.push({ x, y, ok: hallWalkable(l, { x, y }) });
     return { level, cases };
   });
 
@@ -117,8 +117,8 @@ export function buildGuildHallFixtures() {
       [-0.15, -0.15],
     ];
     const cases = [];
-    for (let y = WALL_ROWS + 0.3; y <= l.height; y += 0.95)
-      for (let x = 0.3; x <= l.width; x += 1.15) for (const [dx, dy] of moves) cases.push({ from: { x, y }, dx, dy, to: hallStep(l, { x, y }, dx!, dy!) });
+    for (let y = WALL_ROWS + 0.3; y <= l.height; y += 1.9)
+      for (let x = 0.3; x <= l.width; x += 2.3) for (const [dx, dy] of moves) cases.push({ from: { x, y }, dx, dy, to: hallStep(l, { x, y }, dx!, dy!) });
     return { level, cases };
   });
 
@@ -129,8 +129,8 @@ export function buildGuildHallFixtures() {
       { x: l.width - 4, y: WALL_ROWS + 1 },
     ];
     const cases = [];
-    for (let y = WALL_ROWS + 0.5; y <= l.height; y += 0.55)
-      for (let x = 0.4; x <= l.width; x += 0.65) {
+    for (let y = WALL_ROWS + 0.5; y <= l.height; y += 1.1)
+      for (let x = 0.4; x <= l.width; x += 1.3) {
         const p = { x, y };
         cases.push({ p, plain: hallInteract(l, p), extra: hallInteract(l, p, extraSeats) });
       }

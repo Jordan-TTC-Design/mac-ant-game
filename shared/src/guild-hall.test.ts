@@ -25,7 +25,8 @@ describe("guild hall", () => {
       expect(a.x === b.x || a.y === b.y).toBe(true); // straight lines only
       if (a.x !== b.x) expect(deskRows.some((y) => Math.abs(y - a.y) < 0.4)).toBe(false); // sideways only off the desk rows
       // up or down only at the edges or at a desk's own column
-      if (a.y !== b.y) expect(a.x <= 1.5 || a.x >= hall.width - 1.5 || hall.seats.some((s) => s.x === a.x) || a.x === hall.drink.x).toBe(true);
+      const desks = hall.pieces.filter((p) => p.id === "desk").map((p) => p.x);
+      if (a.y !== b.y) expect(a.x <= Math.min(...desks) - 2 || a.x >= Math.max(...desks) + 2 || hall.seats.some((s) => s.x === a.x) || a.x === hall.drink.x).toBe(true);
     }
   });
 

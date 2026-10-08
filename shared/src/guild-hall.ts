@@ -46,6 +46,8 @@ export interface HallLayout {
 /** Desks in rows: the first desk row's y, then every DESK_ROW_STEP tiles; columns from x = 3, every 3 tiles. */
 const FIRST_DESK_ROW = WALL_ROWS + 2.5;
 const DESK_ROW_STEP = 2.5;
+/** At most this many desks side by side; the block of desks stands in the middle of the hall. */
+const DESKS_PER_ROW = 6;
 /** Where the sitter's feet go from the desk's floor point (mac/Resources/Guild/manifest.json: desk seat − anchor, in tiles). */
 const DESK_SEAT = { x: -3 / 16, y: -4 / 16 };
 /** The water elemental's `use` point from its floor point (where a drinker stands). */
@@ -56,11 +58,13 @@ export function hallLayout(level: number, floor = "oak", wall = "stone"): HallLa
   const pieces: HallPiece[] = [];
   const seats: Point[] = [];
   const rows: number[] = [];
-  // one desk per member the guild can have, row by row from the top; the rest of the floor is left for decorating
-  const perRow = Math.floor((width - 4 - 3) / 3) + 1;
-  for (let y = FIRST_DESK_ROW; y <= height - 3 && rows.length * perRow < members; y += DESK_ROW_STEP) rows.push(y);
+  // one desk per member the guild can have, in a block in the middle under the wall; the rest of the floor is for decorating
+  const cols = Math.min(DESKS_PER_ROW, members);
+  const left = Math.floor(width / 2 - ((cols - 1) * 3) / 2);
+  for (let r = 0; r * cols < members; r++) rows.push(FIRST_DESK_ROW + r * DESK_ROW_STEP);
   for (const y of rows) {
-    for (let x = 3; x <= width - 4 && seats.length < members; x += 3) {
+    for (let c = 0; c < cols && seats.length < members; c++) {
+      const x = left + c * 3;
       const seat = { x: x + DESK_SEAT.x, y: y + DESK_SEAT.y };
       pieces.push({ id: "desk", x, y });
       pieces.push({ id: "stool", x: seat.x, y: seat.y - 0.01 }); // (just behind its sitter)
@@ -151,8 +155,9 @@ export function hallPath(layout: HallLayout, a: Point, b: Point): Point[] {
   const by = nearest(b.y);
   const pts: Point[] = [a, { x: a.x, y: ay }];
   if (ay !== by) {
-    // (between aisles, cross at the hall's left or right edge, whichever is nearer, where there are no desks)
-    const side = (a.x + b.x) / 2 < layout.width / 2 ? 1.5 : layout.width - 1.5;
+    // (between aisles, go round the block of desks on whichever side is nearer)
+    const desks = layout.pieces.filter((p) => p.id === "desk").map((p) => p.x);
+    const side = (a.x + b.x) / 2 < layout.width / 2 ? Math.min(...desks) - 2 : Math.max(...desks) + 2;
     pts.push({ x: side, y: ay }, { x: side, y: by });
   }
   pts.push({ x: b.x, y: by }, b);
@@ -198,9 +203,12 @@ export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[
   const from = activity(layout, m, k - 1, present);
   const to = activity(layout, m, k, present);
   const path = hallPath(layout, from, to);
-  const walk = length(path) / WALK_SPEED;
+  // (a long way in a big hall: a brisker pace, so it is walked in most of the activity's time and nobody jumps)
+  const far = length(path);
+  const pace = Math.max(WALK_SPEED, far / (ACTIVITY_SECONDS * 0.8));
+  const walk = far / pace;
   if (into < walk) {
-    const { at, dir, flip } = along(path, into * WALK_SPEED);
+    const { at, dir, flip } = along(path, into * pace);
     return { ...at, anim: "walk", dir, flip, t: into };
   }
   return { x: to.x, y: to.y, anim: to.anim, dir: to.dir, flip: false, t: into - walk };

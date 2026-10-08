@@ -19,13 +19,13 @@ export interface GuildLevel {
 }
 
 export const GUILD_LEVELS: readonly GuildLevel[] = [
-  { level: 1, members: 5, width: 16, height: 10, room: 40 },
-  { level: 2, members: 8, width: 20, height: 12, room: 60 },
-  { level: 3, members: 12, width: 24, height: 14, room: 85 },
-  { level: 4, members: 16, width: 28, height: 16, room: 110 },
-  { level: 5, members: 20, width: 32, height: 18, room: 140 },
-  { level: 6, members: 25, width: 36, height: 20, room: 175 },
-  { level: 7, members: 30, width: 40, height: 22, room: 220 },
+  { level: 1, members: 5, width: 32, height: 20, room: 40 },
+  { level: 2, members: 8, width: 40, height: 24, room: 60 },
+  { level: 3, members: 12, width: 48, height: 28, room: 85 },
+  { level: 4, members: 16, width: 56, height: 32, room: 110 },
+  { level: 5, members: 20, width: 64, height: 36, room: 140 },
+  { level: 6, members: 25, width: 72, height: 40, room: 175 },
+  { level: 7, members: 30, width: 80, height: 44, room: 220 },
 ];
 
 export function guildLevel(level: number): GuildLevel {

@@ -243,11 +243,11 @@ describe("公會", () => {
     let res = await t.call("PUT", "/guild/decor", { version: 0, items: [], floor }, b.auth);
     expect((res.body as GuildResponse).guild!.floor).toEqual(floor);
     // off the hall, under the wall, a race's floor without that race, or no such floor
-    for (const bad of [{ base: "oak", tiles: { "40,4": "carpet" } }, { base: "oak", tiles: { "3,1": "carpet" } }, { base: "elf_moss", tiles: {} }, { base: "lava", tiles: {} }]) {
+    for (const bad of [{ base: "oak", tiles: { "80,4": "carpet" } }, { base: "oak", tiles: { "3,1": "carpet" } }, { base: "elf_moss", tiles: {} }, { base: "lava", tiles: {} }]) {
       expect((await t.call("PUT", "/guild/decor", { version: 1, items: [], floor: bad }, b.auth)).status).toBe(400);
     }
     const log = (await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[];
-    expect(log[0]).toMatchObject({ added: 0, floor: 16 * 8 }); // (every tile of the 16×8 floor changed: stone, two of them carpet)
+    expect(log[0]).toMatchObject({ added: 0, floor: 32 * 18 }); // (every tile of the 32×18 floor changed: stone, two of them carpet)
     res = await t.call("POST", "/guild/decor/restore", { logId: log[0]!.id }, a.auth);
     expect((res.body as GuildResponse).guild!.floor).toEqual({ base: "oak", tiles: {} });
 
