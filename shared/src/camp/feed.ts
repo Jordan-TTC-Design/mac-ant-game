@@ -98,6 +98,8 @@ export function feedEntry(e: CampEvent, noun = "居民"): FeedEntry | null {
           return message ? line("👑", message, "camp") : null;
         case "food":
           return message ? line("🍖", message, "camp") : null;
+        case "guild-donate":
+          return message ? line("🏰", message, "camp") : null;
         default:
           return null; // (gear moved about, the decorations, the story: not worth a line)
       }

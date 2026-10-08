@@ -290,6 +290,9 @@ export interface GuildView {
   wall: string;
   /** The races among the members (each unlocks its decoration set). */
   races: string[];
+  /** Contribution given so far, and what the next level still needs (null: at the top). */
+  points: number;
+  toNext: number | null;
 }
 
 export interface GuildInviteView {
@@ -379,4 +382,52 @@ export interface GuildChatLine {
   name: string;
   text: string;
   at: string;
+}
+
+// ── Donating to the guild (GUILD.md §4.1) ──────────────────────────────────────────────────────────────────────────────
+
+/** The contribution a guild needs in all to be each level (index = level − 1); it goes up by itself, never down. */
+export const GUILD_LEVEL_POINTS: readonly number[] = [0, 3000, 9000, 20000, 40000, 70000, 120000];
+
+/** The level a guild with this much contribution is. */
+export function guildLevelFor(points: number): number {
+  let level = 1;
+  for (let i = 0; i < GUILD_LEVEL_POINTS.length; i++) if (points >= GUILD_LEVEL_POINTS[i]!) level = i + 1;
+  return level;
+}
+
+/** Contribution still needed for the next level (null: at the top). */
+export function guildPointsToNext(points: number): number | null {
+  const next = GUILD_LEVEL_POINTS[guildLevelFor(points)];
+  return next === undefined ? null : next - points;
+}
+
+/** The rare finds (the workshop's best gear is made from them): worth much more. */
+const RARE_MATERIALS = new Set([
+  "shiny_bead", "golden_fur", "night_heart", "golden_frog_eye", "alpha_mane", "shaman_charm", "cursed_steel", "captain_badge", "queen_silk",
+  "heartwood", "naiad_tear", "river_pearl", "rat_crown", "royal_jelly", "golem_core", "vampire_fang", "rabbit_foot", "amber",
+]);
+
+/** What one of a camp material is worth to the guild (0: not something that can be given). */
+export function donationPoints(id: string, known: (id: string) => boolean): number {
+  if (!known(id)) return 0;
+  if (id === "log" || id === "stone") return 1;
+  if (id.startsWith("scrap_")) return 2;
+  if (id.startsWith("ration_") || id.startsWith("food_")) return 3;
+  if (id === "crystal_shard") return 5;
+  if (RARE_MATERIALS.has(id)) return 30;
+  return 4;
+}
+
+export const guildDonateInput = z.object({ materials: z.record(z.string().max(40), z.number().int().min(1).max(100_000)) });
+
+/** `GET /api/guild/donations`: the guild's ledger. */
+export interface GuildDonations {
+  points: number;
+  level: number;
+  toNext: number | null;
+  /** Everyone's contribution, most first. */
+  members: { id: string; name: string; points: number }[];
+  /** The latest gifts, newest first. */
+  recent: { name: string; materials: Record<string, number>; points: number; at: string }[];
 }

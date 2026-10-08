@@ -19,6 +19,9 @@ import {
   hallStyleOpen,
   hallWallInput,
   GUILD_SAY_PER_MINUTE,
+  guildDonateInput,
+  guildPointsToNext,
+  type GuildDonations,
   guildSayInput,
   type GuildChatLine,
   guildCreateInput,
@@ -41,7 +44,9 @@ import { requireAuth } from "../auth/session.ts";
 import type { Database } from "../db/client.ts";
 import { apiError, readJson } from "../http.ts";
 import { pushToPhones } from "../push/phones.ts";
-import { avatars, camps, guildChat, guildDecorLog, guildInvites, guildMembers, guilds, users } from "../db/schema.ts";
+import { avatars, camps, guildChat, guildDecorLog, guildDonations, guildInvites, guildMembers, guilds, users } from "../db/schema.ts";
+import { runCommand } from "../camp/commands.ts";
+import { advanceCamp, campView, lockCamp } from "../camp/service.ts";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -197,6 +202,8 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         decorVersion: guild!.decorVersion,
         floor: guild!.floor,
         wall: guild!.wall,
+        points: guild!.points,
+        toNext: guildPointsToNext(guild!.points),
         races: [...new Set(members.map((r) => r.race ?? "goblin"))].sort(),
       },
       invites: [],
@@ -492,6 +499,56 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     if (!done) return apiError(c, 404, "not_found", "這筆紀錄已經沒有了。");
     await tell(mine.guildId);
     return c.json(await view(me.id));
+  });
+
+  /** Gives camp materials to the guild (a camp command, so the camp's books and devices follow; GUILD.md §4.1). */
+  app.post("/donate", async (c) => {
+    const body = await readJson(c, guildDonateInput);
+    if ("response" in body) return body.response;
+    const me = c.get("session").user;
+    const out = await db.transaction(async (tx) => {
+      const camp = await lockCamp(tx, me.id);
+      if (!camp) return null;
+      await advanceCamp(tx, camp, now());
+      const result = await runCommand(tx, camp, { kind: "guild-donate", materials: body.data.materials }, now());
+      return { result, view: await campView(tx, camp) };
+    });
+    if (!out) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
+    if (!out.result.ok) return apiError(c, out.result.code === "not_enough" ? 409 : 400, out.result.code === "not_enough" ? "conflict" : "invalid_input", out.result.message);
+    deps.hub.notify(me.id, { type: "camp.changed", version: out.view.version });
+    const mine = await membership(me.id);
+    await tell(mine?.guildId ?? null);
+    return c.json({ message: out.result.message, guild: await view(me.id) });
+  });
+
+  /** The guild's ledger: everyone's contribution and the latest gifts. */
+  app.get("/donations", async (c) => {
+    const me = c.get("session").user;
+    const mine = await membership(me.id);
+    if (!mine) return apiError(c, 404, "not_found", "你還沒有加入公會。");
+    const [guild] = await db.select().from(guilds).where(eq(guilds.id, mine.guildId));
+    const totals = await db
+      .select({ id: guildMembers.userId, name: users.displayName, points: sql<number>`coalesce(sum(${guildDonations.points}), 0)::int` })
+      .from(guildMembers)
+      .innerJoin(users, eq(users.id, guildMembers.userId))
+      .leftJoin(guildDonations, and(eq(guildDonations.userId, guildMembers.userId), eq(guildDonations.guildId, mine.guildId)))
+      .where(eq(guildMembers.guildId, mine.guildId))
+      .groupBy(guildMembers.userId, users.displayName);
+    const recent = await db
+      .select({ d: guildDonations, name: users.displayName })
+      .from(guildDonations)
+      .leftJoin(users, eq(users.id, guildDonations.userId))
+      .where(eq(guildDonations.guildId, mine.guildId))
+      .orderBy(desc(guildDonations.at))
+      .limit(30);
+    const body: GuildDonations = {
+      points: guild!.points,
+      level: guild!.level,
+      toNext: guildPointsToNext(guild!.points),
+      members: totals.sort((a, b) => b.points - a.points),
+      recent: recent.map((r) => ({ name: r.name ?? "", materials: r.d.materials, points: r.d.points, at: r.d.at.toISOString() })),
+    };
+    return c.json(body);
   });
 
   /** Says something in the hall: it floats over the sayer's avatar, and goes in the chat (kept a week). */

@@ -236,6 +236,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
       <div v-if="immersive" class="hud-top">
         <button type="button" class="hud-btn" :class="{ on: editing }" @click="editing ? (editing = false) : startDecor()">🪑 {{ editing ? "擺裝飾中" : "擺裝飾" }}</button>
         <NuxtLink to="/avatar" class="hud-btn">🧑‍🎨 角色</NuxtLink>
+        <NuxtLink to="/guild/donate" class="hud-btn">🎁 捐獻</NuxtLink>
         <NuxtLink to="/guild/members" class="hud-btn">👥 成員</NuxtLink>
         <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="hud-btn">⚙️ 設定</NuxtLink>
       </div>
@@ -309,6 +310,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         <button type="button" class="wide-link" @click="startDecor">🪑 擺裝飾</button>
         <NuxtLink to="/avatar" class="wide-link">🧑‍🎨 我的角色{{ g?.avatarChosen ? "" : "（還沒捏過）" }}</NuxtLink>
         <NuxtLink to="/guild/members" class="wide-link">👥 成員</NuxtLink>
+        <NuxtLink to="/guild/donate" class="wide-link">🎁 捐獻</NuxtLink>
         <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="wide-link">⚙️ 設定</NuxtLink>
       </div>
       </div>

@@ -49,9 +49,10 @@ import {
   type GearItem,
   type Wearer,
 } from "@goblincamp/shared/camp";
-import { itemRule, materialName } from "@goblincamp/shared/world";
+import { itemRule, materialName, MATERIALS } from "@goblincamp/shared/world";
+import { donationPoints, guildLevelFor } from "@goblincamp/shared";
 import type { Tx } from "../auth/session.ts";
-import { campEvents, campResidents, camps } from "../db/schema.ts";
+import { campEvents, campResidents, camps, guildDonations, guildMembers, guilds } from "../db/schema.ts";
 import { addEvent, campRaceLevel, HALF_BREED_LIFESPAN, refundFor } from "./service.ts";
 import { questMetrics } from "./quests.ts";
 import { merchantArrivals, merchantBought } from "./merchant.ts";
@@ -392,6 +393,28 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (problem) return { ok: false, code: problem.includes("點數") ? "no_room" : "not_allowed", message: problem };
       changes.decor = items;
       message = "";
+      break;
+    }
+    case "guild-donate": {
+      // camp materials to the player's guild: worth contribution, which raises its level (GUILD.md §4.1)
+      const [member] = await tx.select({ guildId: guildMembers.guildId }).from(guildMembers).where(eq(guildMembers.userId, camp.userId));
+      if (!member) return { ok: false, code: "not_allowed", message: "你還沒有加入公會。" };
+      let points = 0;
+      for (const [id, n] of Object.entries(command.materials)) {
+        const each = donationPoints(id, (m) => m in MATERIALS);
+        if (!each) return { ok: false, code: "not_allowed", message: `${materialName(id)}不能捐。` };
+        points += each * n;
+      }
+      if (!points) return { ok: false, code: "not_allowed", message: "沒有要捐的東西。" };
+      if (!canAfford(materials, command.materials)) return { ok: false, code: "not_enough", message: `素材不夠：要 ${cost(command.materials)}。` };
+      spend(materials, command.materials);
+      const [guild] = await tx.select().from(guilds).where(eq(guilds.id, member.guildId)).for("update");
+      const total = guild!.points + points;
+      const level = Math.max(guild!.level, guildLevelFor(total));
+      await tx.update(guilds).set({ points: total, level }).where(eq(guilds.id, member.guildId));
+      await tx.insert(guildDonations).values({ guildId: member.guildId, userId: camp.userId, materials: command.materials, points, at: now });
+      extra = { guildId: member.guildId, points, ...(level > guild!.level ? { leveled: level } : {}) };
+      message = `捐了 ${cost(command.materials)} 給公會（貢獻 +${points}）。${level > guild!.level ? `公會升到 ${level} 級了！` : ""}`;
       break;
     }
     case "story": {

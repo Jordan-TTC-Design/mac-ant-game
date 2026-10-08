@@ -464,6 +464,8 @@ export const guilds = pgTable("guilds", {
   /** The floor (one style and tiles laid with others) and the wall style (GUILD.md §4.3). */
   floor: jsonb("floor").$type<import("@goblincamp/shared").HallFloor>().notNull().default({ base: "oak", tiles: {} }),
   wall: text("wall").notNull().default("stone"),
+  /** Contribution the members gave (camp materials, GUILD.md §4.1); the level follows it. */
+  points: integer("points").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull(),
 });
 
@@ -534,4 +536,18 @@ export const guildChat = pgTable(
     at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
   },
   (t) => [index("guild_chat_guild_idx").on(t.guildId, t.at)],
+);
+
+/** Gifts to a guild: who gave what, worth how much (the guild's ledger). */
+export const guildDonations = pgTable(
+  "guild_donations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: uuid("guild_id").notNull().references(() => guilds.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    materials: jsonb("materials").$type<Record<string, number>>().notNull(),
+    points: integer("points").notNull(),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+  },
+  (t) => [index("guild_donations_guild_idx").on(t.guildId, t.at)],
 );

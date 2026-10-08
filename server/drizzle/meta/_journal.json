@@ -211,6 +211,13 @@
       "when": 1791451941971,
       "tag": "0029_hall_floor_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791454163340,
+      "tag": "0030_guild_donations",
+      "breakpoints": true
     }
   ]
 }

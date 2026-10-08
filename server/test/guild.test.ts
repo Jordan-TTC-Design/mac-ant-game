@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
+import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
+import { eq } from "drizzle-orm";
 import type { Database } from "../src/db/client.ts";
+import { camps } from "../src/db/schema.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
 let database: Database;
@@ -296,5 +298,43 @@ describe("公會", () => {
     await t.app.live.receive(a.id, JSON.stringify({ type: "guild.move", x: 4, y: 5, dir: "side", flip: true, anim: "walk" }));
     await t.app.live.receive(a.id, JSON.stringify({ type: "guild.release" }));
     expect(b.heard.map((e) => e.type)).toEqual(["guild.move", "guild.move", "guild.release"]);
+  });
+
+  it("donates camp materials: the camp pays, the guild gains contribution and levels up, the ledger shows it", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "捐獻隊" }, a.auth)).body as GuildResponse).guild!;
+    await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
+    await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
+    expect((await guildOf(a)).guild).toMatchObject({ points: 0, level: 1, toNext: 3000 });
+    await database.db.update(camps).set({ materials: { log: 2500, stone: 1100, golden_fur: 3 } }).where(eq(camps.userId, b.id));
+    a.heard.length = 0;
+
+    // more than the camp has, a thing that is no material, nothing at all
+    expect((await t.call("POST", "/guild/donate", { materials: { log: 9999 } }, b.auth)).status).toBe(409);
+    expect((await t.call("POST", "/guild/donate", { materials: { moon_rock: 1 } }, b.auth)).status).toBe(400);
+    expect((await t.call("POST", "/guild/donate", { materials: {} }, b.auth)).status).toBe(400);
+
+    let res = await t.call("POST", "/guild/donate", { materials: { log: 2000, stone: 500 } }, b.auth);
+    expect(res.status).toBe(200);
+    expect(res.body.guild.guild).toMatchObject({ points: 2500, level: 1, toNext: 500 });
+    expect(a.heard.some((e) => e.type === "guild.changed")).toBe(true);
+    const camp = (await t.call("GET", "/camp", undefined, b.auth)).body;
+    expect(camp.materials).toMatchObject({ log: 500, stone: 600 });
+
+    // 3 golden furs (30 each) push it over 3000: level 2, more members and room
+    res = await t.call("POST", "/guild/donate", { materials: { golden_fur: 3, stone: 410 } }, b.auth);
+    expect(res.body.message).toMatch(/升到 2 級/);
+    expect(res.body.guild.guild).toMatchObject({ points: 3000, level: 2, rules: { members: 8 } });
+
+    const ledger = (await t.call("GET", "/guild/donations", undefined, a.auth)).body as GuildDonations;
+    expect(ledger.members.map((m) => [m.id, m.points])).toEqual([
+      [b.id, 3000],
+      [a.id, 0],
+    ]);
+    expect(ledger.recent[0]).toMatchObject({ materials: { golden_fur: 3, stone: 410 }, points: 500 });
+    // not in a guild: nothing to give to
+    const c = await person("c@example.com");
+    expect((await t.call("POST", "/guild/donate", { materials: { log: 1 } }, c.auth)).status).toBe(400);
   });
 });

@@ -100,6 +100,8 @@ export const campCommand = z.discriminatedUnion("kind", [
     /** Grown ones taken for meat since (their ids: they must be gone from `animals`). */
     butchered: z.array(z.number().int()).max(40).optional(),
   }),
+  /** Gives camp materials to the player's guild (GUILD.md §4.1; the server's /api/guild/donate sends it). */
+  z.object({ requestId, kind: z.literal("guild-donate"), materials: z.record(z.string().max(40), z.number().int().min(1).max(100_000)) }),
   /** The camp's decorations as the player arranged them (the whole list: decor.ts checks room and race). */
   z.object({
     requestId,
