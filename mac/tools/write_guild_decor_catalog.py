@@ -16,7 +16,18 @@ OUT = os.path.join(HERE, "..", "..", "shared", "src", "guild-decor-catalog.ts")
 MAC_OUT = os.path.join(HERE, "..", "Resources", "Guild", "decor.json")
 TOP_LEVEL = 7
 
-items = json.load(open(CATALOG, encoding="utf-8"))
+# The pieces a new guild starts with that were the hall's own furniture before (mac/Resources/Guild/furniture), so they can be
+# moved and taken away like any other (2026-10-08 使用者：「所有的東西都應該要能移除或是放置」).
+EXTRAS = [
+    {"id": "guild_desk", "name": "公會辦公桌", "category": "辦公桌椅", "size": 2, "w": 40, "h": 22, "frames": 2, "fps": 3, "file": "furniture/desk.png"},
+    {"id": "fireplace", "name": "壁爐", "category": "燈具", "size": 4, "w": 48, "h": 40, "frames": 3, "fps": 6, "file": "furniture/fireplace.png"},
+    {"id": "water_elemental", "name": "水精靈飲水台", "category": "廚房飲料", "size": 1, "w": 16, "h": 24, "frames": 3, "fps": 3, "file": "furniture/water_dispenser.png"},
+]
+# Desks one works at (sitting behind), and the water one drinks beside (shared/src/guild-hall.ts hallFurnishing).
+DESKS = {"guild_desk", "crystal_desk", "oak_desk", "corner_desk", "guildmaster_desk", "drafting_table", "gob_log_desk", "elf_root_desk", "und_coffin_desk"}
+DRINKS = {"water_elemental", "water_cooler", "gob_waterskin", "elf_spring_basin"}
+
+items = json.load(open(CATALOG, encoding="utf-8")) + EXTRAS
 level = {item["id"]: int(item.get("level", 1)) for item in items}
 assert all(1 <= v <= TOP_LEVEL for v in level.values()), "a level is out of 1–7"
 
@@ -40,6 +51,9 @@ for item in items:
         "flat": bool(item.get("flat")),
         "ceiling": bool(item.get("ceiling")),
         "seat": {"x": seat["x"], "y": seat["y"], "facing": seat.get("facing", "front")} if seat else None,
+        "desk": item["id"] in DESKS,
+        "drink": item["id"] in DRINKS,
+        "living": item["category"] == "會動的",
     }
     rows.append("  " + json.dumps(row, ensure_ascii=False))
     mac[row["id"]] = row
@@ -67,6 +81,10 @@ export interface GuildDecorKind {
   ceiling: boolean;
   /** Where a sitter's feet go (sprite px), for things to sit on. */
   seat: { x: number; y: number; facing: string } | null;
+  /** A desk one works at; water one drinks beside; one of the little living things (not in the way). */
+  desk: boolean;
+  drink: boolean;
+  living: boolean;
 }
 
 export const GUILD_DECOR: readonly GuildDecorKind[] = [

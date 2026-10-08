@@ -18,6 +18,7 @@ import {
   hallFloorProblem,
   hallStyleOpen,
   hallWallInput,
+  starterDecor,
   GUILD_SAY_PER_MINUTE,
   guildDonateInput,
   guildPointsToNext,
@@ -159,7 +160,14 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         avatarChosen: own.chosen,
       };
     }
-    const [guild] = await db.select().from(guilds).where(eq(guilds.id, me.guildId));
+    let [guild] = await db.select().from(guilds).where(eq(guilds.id, me.guildId));
+    if (guild && !guild.furnished) {
+      // (a guild from before the starter furniture was decoration: it gets the set once, behind what it put down)
+      const had = new Set(guild.decor.map((d) => d.uid));
+      const decor = [...starterDecor(guild.level).filter((d) => !had.has(d.uid)), ...guild.decor];
+      [guild] = await db.update(guilds).set({ decor, decorVersion: guild.decorVersion + 1, furnished: true }).where(and(eq(guilds.id, guild.id), eq(guilds.furnished, false))).returning();
+      guild ??= (await db.select().from(guilds).where(eq(guilds.id, me.guildId)))[0];
+    }
     const members = await db
       .select({ m: guildMembers, name: users.displayName, race: camps.race, focus: camps.focus, avatar: avatars.avatar })
       .from(guildMembers)
@@ -227,7 +235,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     const [taken] = await db.select({ id: guilds.id }).from(guilds).where(sql`${guilds.name} = ${body.data.name}`);
     if (taken) return apiError(c, 409, "conflict", "這個公會名字已經有人用了。", { fields: { name: "這個公會名字已經有人用了。" } });
     const guildId = await db.transaction(async (tx) => {
-      const [g] = await tx.insert(guilds).values({ name: body.data.name, badge: body.data.badge ?? DEFAULT_BADGE, createdAt: at }).returning();
+      const [g] = await tx.insert(guilds).values({ name: body.data.name, badge: body.data.badge ?? DEFAULT_BADGE, createdAt: at, decor: starterDecor(1), furnished: true }).returning();
       await tx.insert(guildMembers).values({ userId: me.id, guildId: g!.id, role: "leader", joinedAt: at });
       await tx.delete(guildInvites).where(eq(guildInvites.userId, me.id));
       return g!.id;

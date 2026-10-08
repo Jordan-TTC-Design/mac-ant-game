@@ -1,8 +1,13 @@
 /**
- * The guild hall (GUILD.md §3, §4): where things stand in it, and what each member's avatar is doing at a moment. Worked
- * out from the time and the members alone, so every Mac and phone looking at the hall sees the same thing without the
- * server sending positions: someone focusing types at their desk, someone away dozes on it, someone there wanders (a drink
- * at the water elemental, a sit on the bench, a chat at a friend's desk, a stretch), someone offline is not there.
+ * The guild hall (GUILD.md §3, §4): what each member's avatar is doing at a moment, worked out from the time, the members
+ * and what stands in the hall, so every Mac and phone looking at it sees the same thing without the server sending
+ * positions: someone focusing types at their desk, someone away dozes on it, someone there wanders (a drink at the water
+ * elemental, a sit on a bench or a sofa, a chat at a friend's desk, a stretch), someone offline is not there.
+ *
+ * Everything in the hall is a decoration the members put down (a new guild gets a starter set: shared/src/guild-decor.ts
+ * STARTER_DECOR), so the desks, the water and the seats are wherever the members put them: `hallFurnishing` works out from
+ * the pieces where one works, drinks and sits, and what is in the way. Nobody walks through anything: every way is found
+ * round it (`hallRoute`).
  *
  * Positions are in tiles from the hall's top left; an avatar's or a piece's position is where its feet (bottom middle) are.
  * The top WALL_ROWS rows are the wall.
@@ -23,73 +28,67 @@ export interface Point {
   y: number;
 }
 
-export interface HallPiece extends Point {
-  /** The furniture id in mac/Resources/Guild/manifest.json. */
-  id: string;
-  flip?: boolean;
+/** Somewhere feet cannot go (tiles). */
+export interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
 }
 
-export interface HallLayout {
+/** What the pieces in the hall make of it: where one works (a desk's sitter, in the hall's order), sits, drinks, cannot go. */
+export interface HallFurnishing {
+  desks: Point[];
+  seats: Point[];
+  drinks: Point[];
+  solids: Rect[];
+}
+
+export interface HallLayout extends HallFurnishing {
   width: number;
   height: number;
-  floor: string;
-  wall: string;
-  pieces: HallPiece[];
-  /** Where each desk's sitter is, in seat order (members get them by when they joined). */
-  seats: Point[];
-  /** Where to stand for a drink, the bench's seats, and the rows free of desks to walk along. */
-  drink: Point;
-  bench: Point[];
-  aisles: number[];
 }
 
-/** Desks in rows: the first desk row's y, then every DESK_ROW_STEP tiles; columns from x = 3, every 3 tiles. */
-const FIRST_DESK_ROW = WALL_ROWS + 2.5;
-const DESK_ROW_STEP = 2.5;
-/** At most this many desks side by side; the block of desks stands in the middle of the hall. */
-const DESKS_PER_ROW = 6;
-/** Where the sitter's feet go from the desk's floor point (mac/Resources/Guild/manifest.json: desk seat − anchor, in tiles). */
-const DESK_SEAT = { x: -3 / 16, y: -4 / 16 };
-/** The water elemental's `use` point from its floor point (where a drinker stands). */
-const DRINK_AT = { x: 18 / 16, y: 0 };
+export function hallLayout(level: number, furnishing: HallFurnishing = { desks: [], seats: [], drinks: [], solids: [] }): HallLayout {
+  const { width, height } = guildLevel(level);
+  return { width, height, ...furnishing };
+}
 
-export function hallLayout(level: number, floor = "oak", wall = "stone"): HallLayout {
-  const { width, height, members } = guildLevel(level);
-  const pieces: HallPiece[] = [];
-  const seats: Point[] = [];
-  const rows: number[] = [];
-  // one desk per member the guild can have, in a block in the middle under the wall; the rest of the floor is for decorating
-  const cols = Math.min(DESKS_PER_ROW, members);
-  const left = Math.floor(width / 2 - ((cols - 1) * 3) / 2);
-  for (let r = 0; r * cols < members; r++) rows.push(FIRST_DESK_ROW + r * DESK_ROW_STEP);
-  for (const y of rows) {
-    for (let c = 0; c < cols && seats.length < members; c++) {
-      const x = left + c * 3;
-      const seat = { x: x + DESK_SEAT.x, y: y + DESK_SEAT.y };
-      pieces.push({ id: "desk", x, y });
-      pieces.push({ id: "stool", x: seat.x, y: seat.y - 0.01 }); // (just behind its sitter)
-      seats.push(seat);
+/** What a piece is, as far as the hall's life goes (its art's size in pixels, and what it is for). */
+export interface HallPieceSpec {
+  w: number;
+  h: number;
+  flat: boolean;
+  wall: boolean;
+  ceiling: boolean;
+  /** One of the little living things (they are not in the way). */
+  living: boolean;
+  /** Where a sitter's feet go on it (sprite pixels), for things to sit on. */
+  seat: { x: number; y: number } | null;
+  /** A desk: one works sitting behind it. A water source: one drinks beside it. */
+  desk: boolean;
+  drink: boolean;
+}
+
+/** From a desk's floor point to where its sitter's feet go, and from a water source to where a drinker stands (tiles). */
+const DESK_SEAT = { x: -3 / 16, y: -4 / 16 };
+const DRINK_AT = 1.1;
+
+/** Where one works, sits and drinks among these pieces, and what of them is in the way, in their order. */
+export function hallFurnishing(pieces: readonly { x: number; y: number; flip?: boolean; spec: HallPieceSpec }[]): HallFurnishing {
+  const out: HallFurnishing = { desks: [], seats: [], drinks: [], solids: [] };
+  for (const { x, y, flip, spec } of pieces) {
+    if (spec.desk) out.desks.push({ x: x + (flip ? -DESK_SEAT.x : DESK_SEAT.x), y: y + DESK_SEAT.y });
+    if (spec.seat) {
+      const dx = (spec.seat.x - spec.w / 2) / 16;
+      out.seats.push({ x: x + (flip ? -dx : dx), y: y + (spec.seat.y - spec.h) / 16 });
     }
+    if (spec.drink) out.drinks.push({ x: x + (flip ? -DRINK_AT : DRINK_AT), y });
+    if (spec.flat || spec.wall || spec.ceiling || spec.living) continue;
+    const half = Math.max(0.2, (spec.w / 2 - 2) / 16);
+    out.solids.push({ x0: x - half, y0: y - Math.min(spec.h, 10) / 16, x1: x + half, y1: y });
   }
-  const aisles = [rows[0]! - DESK_ROW_STEP / 2, ...rows.map((y) => y + DESK_ROW_STEP / 2)];
-  const bottom = height - 0.9;
-  const bench: Point[] = [
-    { x: 2.5, y: bottom },
-    { x: 3.5, y: bottom },
-  ];
-  pieces.push(
-    { id: "fireplace", x: width / 2, y: WALL_ROWS + 0.2 },
-    { id: "banner", x: 3, y: WALL_ROWS - 0.2 },
-    { id: "banner", x: width - 3, y: WALL_ROWS - 0.2 },
-    { id: "bookshelf", x: 1.2, y: WALL_ROWS + 0.4 },
-    { id: "water_dispenser", x: width - 2.8, y: WALL_ROWS + 0.6 },
-    { id: "bench", x: 3, y: bottom },
-    { id: "plant", x: 0.8, y: bottom },
-    { id: "plant", x: width - 0.8, y: bottom },
-    { id: "rug", x: width / 2, y: height - 1.2 },
-  );
-  const drink = { x: width - 2.8 + DRINK_AT.x, y: WALL_ROWS + 0.6 + DRINK_AT.y };
-  return { width, height, floor, wall, pieces, seats, drink, bench, aisles };
+  return out;
 }
 
 /** What an avatar is doing right now. */
@@ -105,7 +104,7 @@ export interface HallPose extends Point {
 export interface HallMember {
   id: string;
   presence: Presence;
-  /** Their place in the seat order. */
+  /** Their place in the desk order (by when they joined): the desk they work at, if there are that many. */
   seat: number;
 }
 
@@ -124,48 +123,140 @@ export function hallHash(...parts: (string | number)[]): number {
   return (h >>> 0) / 0x100000000;
 }
 
+// ── Where feet may go ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Whether feet may stand at `p`. */
+export function hallWalkable(L: HallLayout, p: Point): boolean {
+  if (p.x < 0.4 || p.x > L.width - 0.4 || p.y < WALL_ROWS + 0.5 || p.y > L.height - 0.1) return false;
+  return !L.solids.some((r) => p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1);
+}
+
+/** A step from `p` by (dx, dy), sliding along whatever is in the way. */
+export function hallStep(L: HallLayout, p: Point, dx: number, dy: number): Point {
+  const both = { x: p.x + dx, y: p.y + dy };
+  if (hallWalkable(L, both)) return both;
+  const sideways = { x: p.x + dx, y: p.y };
+  if (dx && hallWalkable(L, sideways)) return sideways;
+  const upDown = { x: p.x, y: p.y + dy };
+  if (dy && hallWalkable(L, upDown)) return upDown;
+  return p;
+}
+
+/** What pressing A does near `p`: sit at a desk or on a seat within reach (snapping onto it), drink beside water, or wave. */
+export function hallInteract(L: HallLayout, p: Point): { anim: HallAnim; at: Point } {
+  let near: { s: Point; d: number } | null = null;
+  for (const s of [...L.desks, ...L.seats]) {
+    const d = Math.hypot(s.x - p.x, s.y - p.y);
+    if (!near || d < near.d) near = { s, d };
+  }
+  if (near && near.d < 1.3) return { anim: "sit", at: near.s };
+  for (const w of L.drinks) if (Math.hypot(w.x - p.x, w.y - p.y) < 1.2) return { anim: "drink", at: w };
+  return { anim: "wave", at: p };
+}
+
+/**
+ * A way from `from` to `to` round whatever is in the way: a breadth-first search over half-tile steps (starting even from
+ * inside a piece, like a seat), shortened wherever a straight line is clear. Where `to` cannot be reached (inside a desk, a
+ * sofa) it goes to the nearest place that can, then the last step onto it. The points after `from`.
+ */
+export function hallRoute(L: HallLayout, from: Point, to: Point): Point[] {
+  const step = 0.5;
+  const cols = Math.ceil(L.width / step);
+  const rows = Math.ceil(L.height / step);
+  const cell = (p: Point) => Math.min(rows - 1, Math.max(0, Math.floor(p.y / step))) * cols + Math.min(cols - 1, Math.max(0, Math.floor(p.x / step)));
+  const centre = (k: number) => ({ x: ((k % cols) + 0.5) * step, y: (Math.floor(k / cols) + 0.5) * step });
+  const start = cell(from);
+  const goal = cell(to);
+  const came = new Map<number, number>([[start, -1]]);
+  const queue = [start];
+  let reached = false;
+  for (let i = 0; i < queue.length; i++) {
+    const at = queue[i]!;
+    if (at === goal) {
+      reached = true;
+      break;
+    }
+    const c = at % cols;
+    const r = Math.floor(at / cols);
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nc = c + dc;
+      const nr = r + dr;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+      const key = nr * cols + nc;
+      if (came.has(key) || !hallWalkable(L, centre(key))) continue;
+      came.set(key, at);
+      queue.push(key);
+    }
+  }
+  let end = goal;
+  if (!reached) {
+    // (the reachable place nearest `to`, the first of equals in the search's order)
+    let best = Infinity;
+    for (const k of queue) {
+      const c = centre(k);
+      const d = Math.hypot(c.x - to.x, c.y - to.y);
+      if (d < best) {
+        best = d;
+        end = k;
+      }
+    }
+  }
+  const cells: Point[] = [];
+  for (let k = end; k !== -1; k = came.get(k)!) cells.unshift(centre(k));
+  cells.shift(); // (the cell one starts in: one starts at `from` itself)
+  if (reached && cells.length) cells[cells.length - 1] = to;
+  else cells.push(to);
+  // straight lines wherever nothing is in between
+  const clear = (a: Point, b: Point) => {
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.2);
+    for (let i = 1; i < n; i++) if (!hallWalkable(L, { x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n })) return false;
+    return true;
+  };
+  const out: Point[] = [];
+  let a = from;
+  let i = 0;
+  while (i < cells.length) {
+    let j = cells.length - 1;
+    while (j > i && !clear(a, cells[j]!)) j--;
+    out.push(cells[j]!);
+    a = cells[j]!;
+    i = j + 1;
+  }
+  return out;
+}
+
+// ── What each one is doing ────────────────────────────────────────────────────────────────────────────────────────────
+
 interface Doing extends Point {
   anim: HallAnim;
   dir: HallDir;
 }
 
-/** What someone who is there chooses to do in their `k`th activity. */
-function activity(layout: HallLayout, m: HallMember, k: number, present: HallMember[], seats: Point[]): Doing {
-  const seat = layout.seats[m.seat % layout.seats.length]!;
-  const roll = hallHash(m.id, k);
-  const others = present.filter((o) => o.id !== m.id);
-  if (roll < 0.3) return { ...seat, anim: "sit", dir: "front" };
-  if (roll < 0.45) return { ...layout.drink, anim: "drink", dir: "front" };
-  if (roll < 0.6) {
-    // (the bench, or a seat among the decorations: a sofa, an armchair…)
-    const benches = [...layout.bench, ...seats];
-    return { ...benches[Math.floor(hallHash(m.id, k, "bench") * benches.length)]!, anim: "sit", dir: "front" };
+/** Somewhere free to stand, picked by these words (a few tries; else the middle of the hall). */
+function freeSpot(L: HallLayout, ...parts: (string | number)[]): Point {
+  for (let i = 0; i < 8; i++) {
+    const p = { x: 1 + hallHash(...parts, "x", i) * (L.width - 2), y: WALL_ROWS + 1 + hallHash(...parts, "y", i) * (L.height - WALL_ROWS - 1.5) };
+    if (hallWalkable(L, p)) return p;
   }
-  if (roll < 0.8 && others.length) {
-    const friend = others[Math.floor(hallHash(m.id, k, "who") * others.length)]!;
-    const at = layout.seats[friend.seat % layout.seats.length]!;
-    return { x: at.x + 1.1, y: at.y, anim: "chat", dir: "side" };
-  }
-  if (roll < 0.88) return { x: seat.x - 1.1, y: seat.y, anim: "stretch", dir: "front" };
-  const aisle = layout.aisles[Math.floor(hallHash(m.id, k, "aisle") * layout.aisles.length)]!;
-  return { x: 1.5 + hallHash(m.id, k, "x") * (layout.width - 3), y: aisle, anim: "idle", dir: "front" };
+  return { x: L.width / 2, y: L.height - 1 };
 }
 
-/** The way from `a` to `b`: to the nearest aisle, along it, then to `b` (so nobody walks through a desk). */
-export function hallPath(layout: HallLayout, a: Point, b: Point): Point[] {
-  if (Math.abs(a.y - b.y) < 0.01) return [a, b];
-  const nearest = (y: number) => layout.aisles.reduce((best, x) => (Math.abs(x - y) < Math.abs(best - y) ? x : best));
-  const ay = nearest(a.y);
-  const by = nearest(b.y);
-  const pts: Point[] = [a, { x: a.x, y: ay }];
-  if (ay !== by) {
-    // (between aisles, go round the block of desks on whichever side is nearer)
-    const desks = layout.pieces.filter((p) => p.id === "desk").map((p) => p.x);
-    const side = (a.x + b.x) / 2 < layout.width / 2 ? Math.min(...desks) - 2 : Math.max(...desks) + 2;
-    pts.push({ x: side, y: ay }, { x: side, y: by });
+/** What someone who is there chooses to do in their `k`th activity. */
+function activity(L: HallLayout, m: HallMember, k: number, present: HallMember[]): Doing {
+  const desk = L.desks[m.seat];
+  const roll = hallHash(m.id, k);
+  const others = present.filter((o) => o.id !== m.id);
+  const idle = (): Doing => ({ ...freeSpot(L, m.id, k), anim: "idle", dir: "front" });
+  if (roll < 0.3) return desk ? { ...desk, anim: "sit", dir: "front" } : idle();
+  if (roll < 0.45) return L.drinks.length ? { ...L.drinks[Math.floor(hallHash(m.id, k, "drink") * L.drinks.length)]!, anim: "drink", dir: "front" } : idle();
+  if (roll < 0.6) return L.seats.length ? { ...L.seats[Math.floor(hallHash(m.id, k, "bench") * L.seats.length)]!, anim: "sit", dir: "front" } : idle();
+  if (roll < 0.8 && others.length) {
+    const friend = others[Math.floor(hallHash(m.id, k, "who") * others.length)]!;
+    const at = L.desks[friend.seat];
+    return at ? { x: at.x + 1.1, y: at.y, anim: "chat", dir: "side" } : idle();
   }
-  pts.push({ x: b.x, y: by }, b);
-  return pts.filter((p, i) => i === 0 || Math.hypot(p.x - pts[i - 1]!.x, p.y - pts[i - 1]!.y) > 0.01);
+  if (roll < 0.88) return desk ? { x: desk.x - 1.1, y: desk.y, anim: "stretch", dir: "front" } : idle();
+  return idle();
 }
 
 function length(path: Point[]) {
@@ -193,21 +284,29 @@ function along(path: Point[], d: number): { at: Point; dir: HallDir; flip: boole
 
 /**
  * What member `m` is doing at `now` (ms): null when offline (not in the hall). `present` is everyone in the hall (for
- * visiting a friend's desk); `seats` the decorations one can sit on (shared/src/guild-decor.ts guildDecorSeats, in the
- * hall's order, so every device picks the same).
+ * visiting a friend's desk). The ways walked are found anew for each activity; `ways` keeps them (one map per layout: a
+ * new one when the hall changes), since this is asked every frame.
  */
-export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[], now: number, seats: Point[] = []): HallPose | null {
+export function hallPose(L: HallLayout, m: HallMember, present: HallMember[], now: number, ways?: Map<string, Point[]>): HallPose | null {
   if (m.presence === "offline") return null;
-  const seat = layout.seats[m.seat % layout.seats.length]!;
   const secs = now / 1000;
-  if (m.presence === "focus") return { ...seat, anim: "type", dir: "front", flip: false, t: secs };
-  if (m.presence === "away") return { ...seat, anim: "doze", dir: "front", flip: false, t: secs };
+  const desk = L.desks[m.seat];
+  if (m.presence === "focus" || m.presence === "away") {
+    // (no desk for them: they stand by the wall)
+    if (!desk) return { ...freeSpot(L, m.id, "wall"), anim: "idle", dir: "front", flip: false, t: secs };
+    return { ...desk, anim: m.presence === "focus" ? "type" : "doze", dir: "front", flip: false, t: secs };
+  }
   const shifted = secs + hallHash(m.id, "offset") * ACTIVITY_SECONDS;
   const k = Math.floor(shifted / ACTIVITY_SECONDS);
   const into = shifted - k * ACTIVITY_SECONDS;
-  const from = activity(layout, m, k - 1, present, seats);
-  const to = activity(layout, m, k, present, seats);
-  const path = hallPath(layout, from, to);
+  const from = activity(L, m, k - 1, present);
+  const to = activity(L, m, k, present);
+  const key = `${m.id}|${k}`;
+  let path = ways?.get(key);
+  if (!path) {
+    path = [from, ...hallRoute(L, from, to)];
+    ways?.set(key, path);
+  }
   // (a long way in a big hall: a brisker pace, so it is walked in most of the activity's time and nobody jumps)
   const far = length(path);
   const pace = Math.max(WALK_SPEED, far / (ACTIVITY_SECONDS * 0.8));
@@ -217,96 +316,4 @@ export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[
     return { ...at, anim: "walk", dir, flip, t: into };
   }
   return { x: to.x, y: to.y, anim: to.anim, dir: to.dir, flip: false, t: into - walk };
-}
-
-// ── Walking by hand (GUILD.md §3.1) ───────────────────────────────────────────────────────────────────────────────────
-
-export interface Rect {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
-
-/** Where feet cannot go: the desks (and what stands along the back wall is out of reach anyway, below the wall's edge). */
-export function hallSolids(layout: HallLayout): Rect[] {
-  return layout.pieces.filter((p) => p.id === "desk").map((p) => ({ x0: p.x - 1.25, y0: p.y - 0.6, x1: p.x + 1.25, y1: p.y }));
-}
-
-/** Whether feet may stand at `p`. */
-export function hallWalkable(layout: HallLayout, p: Point, solids: Rect[] = hallSolids(layout)): boolean {
-  if (p.x < 0.4 || p.x > layout.width - 0.4 || p.y < WALL_ROWS + 0.5 || p.y > layout.height - 0.1) return false;
-  return !solids.some((r) => p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1);
-}
-
-/** A step from `p` by (dx, dy), sliding along whatever is in the way. */
-export function hallStep(layout: HallLayout, p: Point, dx: number, dy: number, solids: Rect[] = hallSolids(layout)): Point {
-  const both = { x: p.x + dx, y: p.y + dy };
-  if (hallWalkable(layout, both, solids)) return both;
-  const sideways = { x: p.x + dx, y: p.y };
-  if (dx && hallWalkable(layout, sideways, solids)) return sideways;
-  const upDown = { x: p.x, y: p.y + dy };
-  if (dy && hallWalkable(layout, upDown, solids)) return upDown;
-  return p;
-}
-
-/** What pressing A does near `p`: sit on a seat within reach (snapping onto it), drink at the water elemental, or wave. */
-export function hallInteract(layout: HallLayout, p: Point, extraSeats: Point[] = []): { anim: HallAnim; at: Point } {
-  const seats = [...layout.seats, ...layout.bench, ...extraSeats];
-  const near = seats.map((s) => ({ s, d: Math.hypot(s.x - p.x, s.y - p.y) })).sort((a, b) => a.d - b.d)[0];
-  if (near && near.d < 1.3) return { anim: "sit", at: near.s };
-  if (Math.hypot(layout.drink.x - p.x, layout.drink.y - p.y) < 1.2) return { anim: "drink", at: layout.drink };
-  return { anim: "wave", at: p };
-}
-
-/**
- * A way round whatever is in the way: a breadth-first search over half-tile steps, then shortened wherever a straight line
- * is clear (null: no way there).
- */
-export function hallRoute(L: HallLayout, solids: Rect[], from: Point, to: Point): Point[] | null {
-  const step = 0.5;
-  const cols = Math.ceil(L.width / step);
-  const rows = Math.ceil(L.height / step);
-  const cell = (p: Point) => [Math.min(cols - 1, Math.max(0, Math.round(p.x / step - 0.5))), Math.min(rows - 1, Math.max(0, Math.round(p.y / step - 0.5)))] as const;
-  const centre = (c: number, r: number) => ({ x: (c + 0.5) * step, y: (r + 0.5) * step });
-  const ok = (p: Point) => hallWalkable(L, p, solids);
-  const [sc, sr] = cell(from);
-  const [gc, gr] = cell(to);
-  const came = new Map<number, number>([[sr * cols + sc, -1]]);
-  const queue = [sr * cols + sc];
-  for (let i = 0; i < queue.length; i++) {
-    const at = queue[i]!;
-    if (at === gr * cols + gc) break;
-    const c = at % cols;
-    const r = Math.floor(at / cols);
-    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const nc = c + dc;
-      const nr = r + dr;
-      const key = nr * cols + nc;
-      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows || came.has(key) || !ok(centre(nc, nr))) continue;
-      came.set(key, at);
-      queue.push(key);
-    }
-  }
-  if (!came.has(gr * cols + gc)) return null;
-  const cells: Point[] = [];
-  for (let k = gr * cols + gc; k !== -1; k = came.get(k)!) cells.unshift(centre(k % cols, Math.floor(k / cols)));
-  cells[cells.length - 1] = to;
-  // straight lines wherever nothing is in between
-  const clear = (a: Point, b: Point) => {
-    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.2);
-    for (let i = 1; i < n; i++) if (!ok({ x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n })) return false;
-    return true;
-  };
-  const out: Point[] = [];
-  let a = from;
-  let i = 0;
-  while (i < cells.length) {
-    let j = cells.length - 1;
-    while (j > i && !clear(a, cells[j]!)) j--;
-    out.push(cells[j]!);
-    a = cells[j]!;
-    i = j + 1;
-  }
-  return out;
 }

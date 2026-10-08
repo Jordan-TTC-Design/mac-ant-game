@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { guildDecorKind, guildDecorSeats, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
+import { guildDecorKind, guildFurnishing, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
 import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
 
 /**
- * The guild hall (GUILD.md §3–4): the floor, walls and furniture, and every member who is in, doing what shared/src/guild-hall.ts
+ * The guild hall (GUILD.md §3–4): the floor, walls and decorations (desks and all), and every member who is in, doing what shared/src/guild-hall.ts
  * says they are doing now (the avatars' art: useAvatarArt), among the decorations the members put down. While decorating, a
  * piece is picked by tapping it and moved by dragging it.
  */
@@ -157,9 +157,12 @@ function up(e: PointerEvent) {
   painting = false;
 }
 
-const layout = computed(() => hallLayout(props.level));
-/** Seats among the decorations (the wanderers sit on them too). */
-const decorSeats = computed(() => guildDecorSeats(props.decor));
+/** The hall as the pieces put down make it: where one works, sits, drinks and cannot go. */
+const layout = computed(() => hallLayout(props.level, guildFurnishing(props.decor)));
+/** The ways the wanderers walk, kept while the hall and who is in it stay the same. */
+let ways = new Map<string, import("@goblincamp/shared").Point[]>();
+watch([layout, () => props.members.map((m) => `${m.id}:${m.presence}`).join()], () => (ways = new Map()));
+
 const seatOrder = computed(() => [...props.members].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)));
 const hallMembers = computed<HallMember[]>(() => seatOrder.value.map((m, i) => ({ id: m.id, presence: m.presence, seat: i })));
 
@@ -269,17 +272,8 @@ function draw() {
   const wall = wallInfo && loaded.get(`/guild-hall/${wallInfo.file}`);
   if (wall) for (let x = 0; x < L.width; x += wall.width / hall.tile) g.drawImage(wall, x * T, 0, wall.width * scale, wall.height * scale);
 
-  // furniture and avatars, back to front by where their feet are
+  // decorations and avatars, back to front by where their feet are
   const items: { y: number; paint: () => void }[] = [];
-  for (const p of L.pieces) {
-    const f = hall.furniture[p.id];
-    const img = f && loaded.get(`/guild-hall/${f.file}`);
-    if (!f || !img) continue;
-    const frames = f.frames ?? 1;
-    const frame = frames > 1 ? Math.floor((now / 1000) * (f.fps ?? 4)) % frames : 0;
-    // (flat pieces, like the rug, lie under everything)
-    items.push({ y: f.flat ? -1 : p.y, paint: () => g.drawImage(img, frame * f.w, 0, f.w, f.h, p.x * T - f.anchor.x * scale, p.y * T - f.anchor.y * scale, f.w * scale, f.h * scale) });
-  }
   const overhead: (() => void)[] = [];
   for (const d of props.decor) {
     const k = guildDecorKind(d.kind);
@@ -321,7 +315,7 @@ function draw() {
   for (const hm of hallMembers.value) {
     const member = seatOrder.value[hm.seat]!;
     const handPose = props.hand?.[hm.id];
-    let pose: HallPose | null = handPose ? smoothed(hm.id, handPose, now) : hallPose(L, hm, present, now, decorSeats.value);
+    let pose: HallPose | null = handPose ? smoothed(hm.id, handPose, now) : hallPose(L, hm, present, now, ways);
     if (!handPose) shown.delete(hm.id);
     if (!pose) continue;
     const moment = moments.get(hm.id);
@@ -365,7 +359,7 @@ function draw() {
       g.textAlign = "center";
       g.textBaseline = "top";
       // (at a desk: under the desk's front edge)
-      const atDesk = L.seats.some((st) => Math.abs(st.x - pose!.x) < 0.01 && Math.abs(st.y - pose!.y) < 0.01);
+      const atDesk = L.desks.some((st) => Math.abs(st.x - pose!.x) < 0.01 && Math.abs(st.y - pose!.y) < 0.01);
       const ty = Math.min((pose!.y + (atDesk ? 0.3 : 0)) * T + 1.5 * scale, viewTop + c.height - Math.max(9, 4 * scale) - 2 * scale);
       const w = g.measureText(name).width + 3 * scale;
       g.fillStyle = mine ? "rgba(232,197,71,0.9)" : "rgba(0,0,0,0.55)";

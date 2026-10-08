@@ -218,6 +218,13 @@
       "when": 1791454163340,
       "tag": "0030_guild_donations",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791457453697,
+      "tag": "0031_guild_furnished",
+      "breakpoints": true
     }
   ]
 }

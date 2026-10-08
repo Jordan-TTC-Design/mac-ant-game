@@ -14,6 +14,9 @@ final class GuildArt {
         /// Where a sitter's feet go (sprite pixels; nil: not for sitting), and whether it is one of the little living things.
         var seat: (x: Double, y: Double)? = nil
         var living = false
+        /// A desk one works at; water one drinks beside.
+        var desk = false
+        var drink = false
     }
 
     private(set) var ready = false
@@ -112,7 +115,8 @@ final class GuildArt {
                 }
                 decor[id] = Piece(image: img, w: w, h: hh, frames: d["frames"] as? Int ?? 1, fps: (d["fps"] as? NSNumber)?.doubleValue ?? 0,
                                   anchorX: Double(w) / 2, anchorY: Double(hh), flat: d["flat"] as? Bool ?? false, wall: d["wall"] as? Bool ?? false, ceiling: d["ceiling"] as? Bool ?? false,
-                                  seat: seat, living: d["category"] as? String == "會動的")
+                                  seat: seat, living: d["living"] as? Bool ?? (d["category"] as? String == "會動的"),
+                                  desk: d["desk"] as? Bool ?? false, drink: d["drink"] as? Bool ?? false)
             }
         }
         ready = !layers.isEmpty && !floors.isEmpty

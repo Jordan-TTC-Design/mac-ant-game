@@ -1,0 +1,1 @@
+ALTER TABLE "guilds" ADD COLUMN "furnished" boolean DEFAULT false NOT NULL;

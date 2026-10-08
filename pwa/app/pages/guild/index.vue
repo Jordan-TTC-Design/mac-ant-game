@@ -6,8 +6,7 @@ import {
   GUILD_MOVE_STALE_MS,
   GUILD_SAY_MAX,
   guildDecorKind,
-  guildDecorSeats,
-  guildDecorSolids,
+  guildFurnishing,
   hallLayout,
   hallPose,
   newDecorUid,
@@ -109,7 +108,7 @@ const saveDecor = () =>
     }
   }, "裝飾存好了。");
 // walking one's own avatar and talking (GUILD.md §3.1)
-const layout = computed(() => (guild.value ? hallLayout(guild.value.level) : null));
+const layout = computed(() => (guild.value ? hallLayout(guild.value.level, guildFurnishing(guild.value.decor)) : null));
 const control = useHallControl(layout, () => {
   // (where this one's avatar is wandering right now, so taking it over does not make it jump)
   const L = layout.value;
@@ -117,9 +116,9 @@ const control = useHallControl(layout, () => {
   const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
   const mine = order.find((m) => m.id === user.value!.id);
   const present = order.filter((m) => m.presence !== "offline");
-  const at = mine && hallPose(L, mine, present, Date.now(), guildDecorSeats(guild.value.decor));
-  return at ? { x: at.x, y: at.y } : { x: L.width / 2, y: L.aisles.at(-1)! };
-}, () => guildDecorSolids(guild.value?.decor ?? []), () => guildDecorSeats(guild.value?.decor ?? []));
+  const at = mine && hallPose(L, mine, present, Date.now());
+  return at ? { x: at.x, y: at.y } : { x: L.width / 2, y: L.height - 2 };
+});
 const tick = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
@@ -127,6 +126,9 @@ onMounted(() => {
   void live.loadGuildChat();
 });
 onUnmounted(() => clearInterval(ticker));
+/** The ways the camera's wanderer walks (kept while the hall stays the same). */
+let followWays = new Map<string, import("@goblincamp/shared").Point[]>();
+watch(layout, () => (followWays = new Map()));
 /** Where the camera keeps to: this one's avatar, walked by hand or wandering. */
 const follow = computed(() => {
   if (control.pose.value) return { x: control.pose.value.x, y: control.pose.value.y };
@@ -135,7 +137,7 @@ const follow = computed(() => {
   if (!L || !user.value) return null;
   const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
   const mine = order.find((m) => m.id === user.value!.id);
-  const at = mine && hallPose(L, mine, order.filter((m) => m.presence !== "offline"), Date.now(), guildDecorSeats(guild.value?.decor ?? []));
+  const at = mine && hallPose(L, mine, order.filter((m) => m.presence !== "offline"), Date.now(), followWays);
   return at ? { x: at.x, y: at.y } : null;
 });
 const hand = computed(() => {

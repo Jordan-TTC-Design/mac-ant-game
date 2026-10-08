@@ -44,7 +44,30 @@ func samePoints(_ what: String, _ want: Any?, _ got: [HallPoint]) {
     expect("\(what) count", list.count == got.count, "\(list.count) vs \(got.count)")
     for (i, (w, g)) in zip(list, got).enumerated() { samePoint("\(what)[\(i)]", w, g) }
 }
-func layoutOf(_ any: Any?) -> HallLayout { hallLayout(level: Int(number((any as? [String: Any])?["level"]) ?? 1)) }
+func sameRects(_ what: String, _ want: Any?, _ got: [HallRect]) {
+    let list = want as? [[String: Any]] ?? []
+    expect("\(what) count", list.count == got.count, "\(list.count) vs \(got.count)")
+    for (i, (w, g)) in zip(list, got).enumerated() {
+        for (key, value) in [("x0", g.x0), ("y0", g.y0), ("x1", g.x1), ("y1", g.y1)] { same("\(what)[\(i)].\(key)", w[key], value) }
+    }
+}
+func sameFurnishing(_ what: String, _ want: [String: Any], _ got: HallFurnishing) {
+    samePoints("\(what).desks", want["desks"], got.desks)
+    samePoints("\(what).seats", want["seats"], got.seats)
+    samePoints("\(what).drinks", want["drinks"], got.drinks)
+    sameRects("\(what).solids", want["solids"], got.solids)
+}
+/// The pieces as the fixtures write them ({x, y, flip, spec}).
+func pieces(_ any: Any?) -> [HallPlacedPiece] {
+    (any as? [[String: Any]] ?? []).map { j in
+        let s = j["spec"] as? [String: Any] ?? [:]
+        let flag = { (key: String) in s[key] as? Bool ?? false }
+        let spec = HallPieceSpec(
+            w: number(s["w"]) ?? .nan, h: number(s["h"]) ?? .nan, flat: flag("flat"), wall: flag("wall"), ceiling: flag("ceiling"),
+            living: flag("living"), seat: s["seat"] is [String: Any] ? point(s["seat"]) : nil, desk: flag("desk"), drink: flag("drink"))
+        return HallPlacedPiece(x: number(j["x"]) ?? .nan, y: number(j["y"]) ?? .nan, flip: j["flip"] as? Bool ?? false, spec: spec)
+    }
+}
 
 // the constants and the level table
 let rules = root["rules"] as? [String: Any] ?? [:]
@@ -65,28 +88,27 @@ for item in root["hashes"] as? [[String: Any]] ?? [] {
     expect("hallHash(\(parts))", number(item["hash"]) == got, "\(item["hash"] ?? "nil") vs \(got)")
 }
 
-// hallLayout
-for j in root["layouts"] as? [[String: Any]] ?? [] {
+// the halls: each one's furnishing worked out from its pieces
+var layouts: [HallLayout] = []
+for (i, j) in (root["halls"] as? [[String: Any]] ?? []).enumerated() {
     let level = Int(number(j["level"]) ?? 0)
-    let l = hallLayout(level: level)
-    let tag = "layout \(level)"
-    same("\(tag).width", j["width"], Double(l.width))
-    same("\(tag).height", j["height"], Double(l.height))
-    let pieces = j["pieces"] as? [[String: Any]] ?? []
-    expect("\(tag).pieces count", pieces.count == l.pieces.count, "\(pieces.count) vs \(l.pieces.count)")
-    for (i, (w, g)) in zip(pieces, l.pieces).enumerated() {
-        expect("\(tag).pieces[\(i)].id", w["id"] as? String == g.id, "\(w["id"] ?? "nil") vs \(g.id)")
-        samePoint("\(tag).pieces[\(i)]", w, HallPoint(x: g.x, y: g.y))
-    }
-    samePoints("\(tag).seats", j["seats"], l.seats)
-    samePoint("\(tag).drink", j["drink"], l.drink)
-    samePoints("\(tag).bench", j["bench"], l.bench)
-    let aisles = j["aisles"] as? [Any] ?? []
-    expect("\(tag).aisles count", aisles.count == l.aisles.count, "\(aisles.count) vs \(l.aisles.count)")
-    for (i, (w, g)) in zip(aisles, l.aisles).enumerated() { same("\(tag).aisles[\(i)]", w, g) }
+    let l = hallLayout(level: level, furnishing: hallFurnishing(pieces(j["pieces"])))
+    layouts.append(l)
+    let tag = "hall \(i) (\(j["name"] ?? "?"))"
+    let want = j["layout"] as? [String: Any] ?? [:]
+    same("\(tag).width", want["width"], Double(l.width))
+    same("\(tag).height", want["height"], Double(l.height))
+    sameFurnishing(tag, want, HallFurnishing(desks: l.desks, seats: l.seats, drinks: l.drinks, solids: l.solids))
+}
+func layoutOf(_ group: [String: Any]) -> HallLayout {
+    let i = Int(number(group["hall"]) ?? -1)
+    return layouts.indices.contains(i) ? layouts[i] : hallLayout(level: 1)
+}
+for (i, j) in (root["furnishings"] as? [[String: Any]] ?? []).enumerated() {
+    sameFurnishing("furnishing \(i)", j["furnishing"] as? [String: Any] ?? [:], hallFurnishing(pieces(j["pieces"])))
 }
 
-// hallPose
+// hallPose, worked out anew each time and with the ways kept between frames
 for scene in root["poses"] as? [[String: Any]] ?? [] {
     let layout = layoutOf(scene)
     let members = (scene["members"] as? [[String: Any]] ?? []).map {
@@ -94,33 +116,34 @@ for scene in root["poses"] as? [[String: Any]] ?? [] {
     }
     let presentIds = scene["present"] as? [String] ?? []
     let present = members.filter { presentIds.contains($0.id) }
-    let seats = (scene["seats"] as? [[String: Any]] ?? []).map { HallPoint(x: number($0["x"]) ?? 0, y: number($0["y"]) ?? 0) }
+    let ways = HallWays()
     for moment in scene["times"] as? [[String: Any]] ?? [] {
         let now = number(moment["now"]) ?? 0
         for (want, m) in zip(moment["poses"] as? [Any] ?? [], members) {
-            let tag = "pose of \(m.id) (hall \(layout.width)×\(layout.height)) at \(now)"
-            let got = hallPose(layout, m, present: present, now: now, seats: seats)
-            guard let w = want as? [String: Any] else {
-                expect(tag, got == nil, "nil vs \(String(describing: got))")
-                continue
+            for (how, got) in [("fresh", hallPose(layout, m, present: present, now: now)), ("kept", hallPose(layout, m, present: present, now: now, ways: ways))] {
+                let tag = "pose of \(m.id) (hall \(scene["hall"] ?? "?"), \(how)) at \(now)"
+                guard let w = want as? [String: Any] else {
+                    expect(tag, got == nil, "nil vs \(String(describing: got))")
+                    continue
+                }
+                guard let got else { expect(tag, false, "\(w) vs nil"); continue }
+                same("\(tag).x", w["x"], got.x)
+                same("\(tag).y", w["y"], got.y)
+                same("\(tag).t", w["t"], got.t)
+                expect("\(tag).anim", w["anim"] as? String == got.anim, "\(w["anim"] ?? "nil") vs \(got.anim)")
+                expect("\(tag).dir", w["dir"] as? String == got.dir, "\(w["dir"] ?? "nil") vs \(got.dir)")
+                expect("\(tag).flip", w["flip"] as? Bool == got.flip, "\(w["flip"] ?? "nil") vs \(got.flip)")
             }
-            guard let got else { expect(tag, false, "\(w) vs nil"); continue }
-            same("\(tag).x", w["x"], got.x)
-            same("\(tag).y", w["y"], got.y)
-            same("\(tag).t", w["t"], got.t)
-            expect("\(tag).anim", w["anim"] as? String == got.anim, "\(w["anim"] ?? "nil") vs \(got.anim)")
-            expect("\(tag).dir", w["dir"] as? String == got.dir, "\(w["dir"] ?? "nil") vs \(got.dir)")
-            expect("\(tag).flip", w["flip"] as? Bool == got.flip, "\(w["flip"] ?? "nil") vs \(got.flip)")
         }
     }
 }
 
-// walking: the wanderers' paths, and by hand
-for group in root["paths"] as? [[String: Any]] ?? [] {
+// the ways round things, and walking by hand
+for group in root["routes"] as? [[String: Any]] ?? [] {
     let layout = layoutOf(group)
     for c in group["cases"] as? [[String: Any]] ?? [] {
         let (a, b) = (point(c["from"]), point(c["to"]))
-        samePoints("hallPath(\(a) → \(b))", c["path"], hallPath(layout, from: a, to: b))
+        samePoints("hallRoute(\(a) → \(b))", c["route"], hallRoute(layout, from: a, to: b))
     }
 }
 for group in root["walkable"] as? [[String: Any]] ?? [] {
@@ -140,14 +163,11 @@ for group in root["steps"] as? [[String: Any]] ?? [] {
 }
 for group in root["interacts"] as? [[String: Any]] ?? [] {
     let layout = layoutOf(group)
-    let extraSeats = (group["extraSeats"] as? [Any] ?? []).map { point($0) }
     for c in group["cases"] as? [[String: Any]] ?? [] {
         let p = point(c["p"])
-        for (key, got) in [("plain", hallInteract(layout, p, extraSeats: [])), ("extra", hallInteract(layout, p, extraSeats: extraSeats))] {
-            let w = c[key] as? [String: Any] ?? [:]
-            expect("hallInteract(\(p)) \(key).anim", w["anim"] as? String == got.anim, "\(w["anim"] ?? "nil") vs \(got.anim)")
-            samePoint("hallInteract(\(p)) \(key).at", w["at"], got.at)
-        }
+        let got = hallInteract(layout, p)
+        expect("hallInteract(\(p)).anim", c["anim"] as? String == got.anim, "\(c["anim"] ?? "nil") vs \(got.anim)")
+        samePoint("hallInteract(\(p)).at", c["at"], got.at)
     }
 }
 
