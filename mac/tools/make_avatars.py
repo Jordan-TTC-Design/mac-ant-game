@@ -2008,6 +2008,9 @@ def main():
     print(f"avatars: frames {N}, {FW}x{FH}; wrote {len(written)} PNGs, {size / 1024:.0f} KB, + manifest.json")
     g = write_guild()
     print(f"guild: wrote {len(g)} PNGs, {sum(os.path.getsize(p) for p in g) / 1024:.0f} KB, + manifest.json")
+    # (the race floors and walls live in make_guild_tiles.py, which merges them into the manifest just rewritten)
+    import subprocess
+    subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "make_guild_tiles.py")], check=True)
 
 
 if __name__ == "__main__":

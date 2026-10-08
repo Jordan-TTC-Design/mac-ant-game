@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponse, ClaudeResponse, FriendsResponse, GuildResponse, PomodoroAction, PomodoroResponse, PomodoroState, ServerEvent } from "@goblincamp/shared";
+import type { ChatMessage, ChatResponse, ClaudeResponse, FriendsResponse, GuildChatLine, GuildMove, GuildResponse, PomodoroAction, PomodoroResponse, PomodoroState, ServerEvent } from "@goblincamp/shared";
 import { pomodoroAt, pomodoroSegments } from "@goblincamp/shared";
 import { ApiError, api } from "~/utils/api";
 
@@ -20,7 +20,11 @@ const state = reactive<{
   chat: ChatResponse | null;
   /** The guild this account is in (or its invitations), and its avatar. */
   guild: GuildResponse | null;
-}>({ friends: null, pomodoro: null, pomodoroLoaded: false, clockOffset: 0, claude: null, chatWith: null, chat: null, guild: null });
+  /** Members walking their avatars by hand: where each one last was, and when that was heard (this phone's clock). */
+  guildMoves: Record<string, GuildMove & { heard: number }>;
+  /** What was said in the hall (the last 50), newest last. */
+  guildChat: GuildChatLine[];
+}>({ friends: null, pomodoro: null, pomodoroLoaded: false, clockOffset: 0, claude: null, chatWith: null, chat: null, guild: null, guildMoves: {}, guildChat: [] });
 let started = false;
 
 async function quietly<T>(work: () => Promise<T>): Promise<T | null> {
@@ -49,6 +53,10 @@ const loadGuild = async () => {
   const out = await quietly(() => api<GuildResponse>("GET", "guild"));
   if (out) state.guild = out;
 };
+const loadGuildChat = async () => {
+  const out = await quietly(() => api<{ lines: GuildChatLine[] }>("GET", "guild/chat"));
+  if (out) state.guildChat = out.lines;
+};
 const loadChat = async () => {
   if (!state.chatWith) return;
   const id = state.chatWith;
@@ -70,6 +78,15 @@ function onEvent(e: Event) {
   if (event.type === "pomodoro.changed" && event.version !== state.pomodoro?.version) void loadPomodoro();
   if (event.type === "claude.changed") void loadClaude();
   if (event.type === "guild.changed") void loadGuild();
+  if (event.type === "guild.move") {
+    const { type: _, userId, ...move } = event;
+    state.guildMoves[userId] = { ...move, heard: Date.now() };
+  }
+  if (event.type === "guild.release") delete state.guildMoves[event.userId];
+  if (event.type === "guild.say" && !state.guildChat.some((l) => l.id === event.id)) {
+    const { type: _, ...line } = event;
+    state.guildChat = [...state.guildChat, line].slice(-50);
+  }
   if (event.type === "guild.presence") {
     const m = state.guild?.guild?.members.find((x) => x.id === event.userId);
     if (m) Object.assign(m, { presence: event.state, seenAt: event.at });
@@ -143,6 +160,7 @@ export function useLive() {
     loadFriends,
     loadClaude,
     loadGuild,
+    loadGuildChat,
     pomodoroNow,
     pomodoro,
     openChat,

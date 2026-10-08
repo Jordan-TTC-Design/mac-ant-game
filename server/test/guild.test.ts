@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, PRESENCE_TTL_SECONDS, randomAvatar, type GuildDecorLogEntry, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
+import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -229,5 +229,72 @@ describe("公會", () => {
     res = await t.call("POST", "/guild/decor/restore", { logId: log[0]!.id }, a.auth);
     expect((res.body as GuildResponse).guild!.decor.map((d) => d.uid)).toEqual(["lamp0001", "plant001"]);
     expect(((await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[])[0]).toMatchObject({ restored: true, added: 1 });
+  });
+
+  it("lays floor tiles with the decorations (logged, can go back); the wall is the leader's and officers'", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "地板隊" }, a.auth)).body as GuildResponse).guild!;
+    await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
+    await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
+    expect((await guildOf(b)).guild).toMatchObject({ floor: { base: "oak", tiles: {} }, wall: "stone" });
+
+    const floor = { base: "stone", tiles: { "3,4": "carpet", "4,4": "carpet" } };
+    let res = await t.call("PUT", "/guild/decor", { version: 0, items: [], floor }, b.auth);
+    expect((res.body as GuildResponse).guild!.floor).toEqual(floor);
+    // off the hall, under the wall, a race's floor without that race, or no such floor
+    for (const bad of [{ base: "oak", tiles: { "40,4": "carpet" } }, { base: "oak", tiles: { "3,1": "carpet" } }, { base: "elf_moss", tiles: {} }, { base: "lava", tiles: {} }]) {
+      expect((await t.call("PUT", "/guild/decor", { version: 1, items: [], floor: bad }, b.auth)).status).toBe(400);
+    }
+    const log = (await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[];
+    expect(log[0]).toMatchObject({ added: 0, floor: 16 * 8 }); // (every tile of the 16×8 floor changed: stone, two of them carpet)
+    res = await t.call("POST", "/guild/decor/restore", { logId: log[0]!.id }, a.auth);
+    expect((res.body as GuildResponse).guild!.floor).toEqual({ base: "oak", tiles: {} });
+
+    expect((await t.call("PUT", "/guild/wall", { wall: "wood" }, b.auth)).status).toBe(403);
+    expect((await t.call("PUT", "/guild/wall", { wall: "elf_vines" }, a.auth)).status).toBe(400);
+    expect((await t.call("PUT", "/guild/wall", { wall: "goblin_hide" }, a.auth)).body.guild.wall).toBe("goblin_hide");
+  });
+
+  it("talks in the hall, and passes hand-walked moves to the other members only", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const outsider = await person("c@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "聊天室" }, a.auth)).body as GuildResponse).guild!;
+    await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
+    await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
+    b.heard.length = 0;
+
+    const said = await t.call("POST", "/guild/say", { text: "  早安！  " }, a.auth);
+    expect(said.body).toMatchObject({ userId: a.id, text: "早安！" });
+    expect(b.heard).toContainEqual(expect.objectContaining({ type: "guild.say", userId: a.id, text: "早安！" }));
+    expect(outsider.heard.some((e) => e.type === "guild.say")).toBe(false);
+    expect((await t.call("POST", "/guild/say", { text: "" }, a.auth)).status).toBe(400);
+    expect((await t.call("POST", "/guild/say", { text: "嗨" }, outsider.auth)).status).toBe(404);
+    for (let i = 0; i < 20; i++) {
+      t.advance(10); // (in order)
+      await t.call("POST", "/guild/say", { text: `${i}` }, b.auth);
+    }
+    expect((await t.call("POST", "/guild/say", { text: "太多了" }, b.auth)).status).toBe(429);
+    const lines = (await t.call("GET", "/guild/chat", undefined, a.auth)).body.lines as GuildChatLine[];
+    expect(lines).toHaveLength(21);
+    expect(lines[0]!.text).toBe("早安！");
+
+    // a move from a's page reaches b, not a itself, not the outsider; junk is dropped
+    b.heard.length = 0;
+    a.heard.length = 0;
+    await t.app.live.receive(a.id, JSON.stringify({ type: "guild.move", x: 3, y: 5, dir: "side", flip: true, anim: "walk" }));
+    await t.app.live.receive(a.id, "not json");
+    await t.app.live.receive(a.id, JSON.stringify({ type: "guild.move", x: "far" }));
+    expect(b.heard).toEqual([{ type: "guild.move", userId: a.id, x: 3, y: 5, dir: "side", flip: true, anim: "walk" }]);
+    expect(a.heard).toEqual([]);
+    expect(outsider.heard.some((e) => e.type === "guild.move")).toBe(false);
+    // too fast: dropped; later: passed on; letting go
+    await t.app.live.receive(a.id, JSON.stringify({ type: "guild.move", x: 4, y: 5, dir: "side", flip: true, anim: "walk" }));
+    expect(b.heard).toHaveLength(1);
+    t.advance(200);
+    await t.app.live.receive(a.id, JSON.stringify({ type: "guild.move", x: 4, y: 5, dir: "side", flip: true, anim: "walk" }));
+    await t.app.live.receive(a.id, JSON.stringify({ type: "guild.release" }));
+    expect(b.heard.map((e) => e.type)).toEqual(["guild.move", "guild.move", "guild.release"]);
   });
 });

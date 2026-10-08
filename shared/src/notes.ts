@@ -94,6 +94,11 @@ export type ServerEvent =
   | { type: "guild.changed" }
   /** A guild member's Mac said how they are (GUILD.md §3). */
   | { type: "guild.presence"; userId: string; state: "focus" | "online" | "away" | "offline"; at: string }
+  /** A guild member is walking their avatar by hand (GUILD.md §3.1): where it is now; and when they stopped. */
+  | ({ type: "guild.move"; userId: string } & import("./guild.ts").GuildMove)
+  | { type: "guild.release"; userId: string }
+  /** Something said in the guild hall. */
+  | ({ type: "guild.say" } & import("./guild.ts").GuildChatLine)
   /** The shared pomodoro changed (fetch it, unless this version is already here). */
   | { type: "pomodoro.changed"; version: number }
   /** A Claude question came, was answered or went away. */

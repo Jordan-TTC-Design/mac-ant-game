@@ -203,3 +203,43 @@ export function hallPose(layout: HallLayout, m: HallMember, present: HallMember[
   }
   return { x: to.x, y: to.y, anim: to.anim, dir: to.dir, flip: false, t: into - walk };
 }
+
+// ── Walking by hand (GUILD.md §3.1) ───────────────────────────────────────────────────────────────────────────────────
+
+interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Where feet cannot go: the desks (and what stands along the back wall is out of reach anyway, below the wall's edge). */
+export function hallSolids(layout: HallLayout): Rect[] {
+  return layout.pieces.filter((p) => p.id === "desk").map((p) => ({ x0: p.x - 1.25, y0: p.y - 0.6, x1: p.x + 1.25, y1: p.y }));
+}
+
+/** Whether feet may stand at `p`. */
+export function hallWalkable(layout: HallLayout, p: Point, solids: Rect[] = hallSolids(layout)): boolean {
+  if (p.x < 0.4 || p.x > layout.width - 0.4 || p.y < WALL_ROWS + 0.5 || p.y > layout.height - 0.1) return false;
+  return !solids.some((r) => p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1);
+}
+
+/** A step from `p` by (dx, dy), sliding along whatever is in the way. */
+export function hallStep(layout: HallLayout, p: Point, dx: number, dy: number, solids: Rect[] = hallSolids(layout)): Point {
+  const both = { x: p.x + dx, y: p.y + dy };
+  if (hallWalkable(layout, both, solids)) return both;
+  const sideways = { x: p.x + dx, y: p.y };
+  if (dx && hallWalkable(layout, sideways, solids)) return sideways;
+  const upDown = { x: p.x, y: p.y + dy };
+  if (dy && hallWalkable(layout, upDown, solids)) return upDown;
+  return p;
+}
+
+/** What pressing A does near `p`: sit on a seat within reach (snapping onto it), drink at the water elemental, or wave. */
+export function hallInteract(layout: HallLayout, p: Point, extraSeats: Point[] = []): { anim: HallAnim; at: Point } {
+  const seats = [...layout.seats, ...layout.bench, ...extraSeats];
+  const near = seats.map((s) => ({ s, d: Math.hypot(s.x - p.x, s.y - p.y) })).sort((a, b) => a.d - b.d)[0];
+  if (near && near.d < 1.3) return { anim: "sit", at: near.s };
+  if (Math.hypot(layout.drink.x - p.x, layout.drink.y - p.y) < 1.2) return { anim: "drink", at: layout.drink };
+  return { anim: "wave", at: p };
+}

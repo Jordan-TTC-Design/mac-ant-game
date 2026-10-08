@@ -461,6 +461,9 @@ export const guilds = pgTable("guilds", {
   /** The decorations put down in the hall (shared/src/guild-decor.ts), and a number that grows with every change to them. */
   decor: jsonb("decor").$type<import("@goblincamp/shared").GuildDecorPlaced[]>().notNull().default([]),
   decorVersion: integer("decor_version").notNull().default(0),
+  /** The floor (one style and tiles laid with others) and the wall style (GUILD.md §4.3). */
+  floor: jsonb("floor").$type<import("@goblincamp/shared").HallFloor>().notNull().default({ base: "oak", tiles: {} }),
+  wall: text("wall").notNull().default("stone"),
   createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull(),
 });
 
@@ -476,7 +479,9 @@ export const guildDecorLog = pgTable(
     moved: integer("moved").notNull(),
     removed: integer("removed").notNull(),
     restored: boolean("restored").notNull().default(false),
+    floorChanged: integer("floor_changed").notNull().default(0),
     before: jsonb("before").$type<import("@goblincamp/shared").GuildDecorPlaced[]>().notNull(),
+    floorBefore: jsonb("floor_before").$type<import("@goblincamp/shared").HallFloor>(),
   },
   (t) => [index("guild_decor_log_guild_idx").on(t.guildId, t.at)],
 );
@@ -517,3 +522,16 @@ export const avatars = pgTable("avatars", {
   leftGuildAt: timestamp("left_guild_at", { withTimezone: true, precision: 3 }),
   updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull(),
 });
+
+/** What was said in a guild hall (GUILD.md §3.1); kept a week. */
+export const guildChat = pgTable(
+  "guild_chat",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: uuid("guild_id").notNull().references(() => guilds.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    text: text("text").notNull(),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+  },
+  (t) => [index("guild_chat_guild_idx").on(t.guildId, t.at)],
+);

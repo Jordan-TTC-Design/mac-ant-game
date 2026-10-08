@@ -286,6 +286,8 @@ export interface GuildView {
   /** The decorations put down (shared/src/guild-decor.ts), and the version to send back when changing them. */
   decor: import("./guild-decor.ts").GuildDecorPlaced[];
   decorVersion: number;
+  floor: import("./guild-decor.ts").HallFloor;
+  wall: string;
   /** The races among the members (each unlocks its decoration set). */
   races: string[];
 }
@@ -337,3 +339,44 @@ export const AVATAR_LABELS: Record<string, string> = {
   black: "黑", darkbrown: "深棕", chestnut: "栗色", orange: "橘紅", yellow: "蜜黃", blonde: "淡金", silver: "銀白", pink: "粉紅", mint: "薄荷", navy: "深藍", forest: "森綠",
   cyan: "青", violet: "紫", green: "綠",
 };
+
+// ── Walking one's avatar by hand, and talking (GUILD.md §3.1) ──────────────────────────────────────────────────────────
+
+/** While someone walks their avatar, their page sends where it is this often at most, and at least every heartbeat. */
+export const GUILD_MOVE_MS = 120;
+export const GUILD_MOVE_HEARTBEAT_MS = 4000;
+/** Heard nothing for this long: they let go (their avatar goes back to doing things by itself). */
+export const GUILD_MOVE_STALE_MS = 12_000;
+/** No key, tap or click for this long: the page lets go by itself. */
+export const GUILD_MOVE_IDLE_MS = 120_000;
+
+/** Where a hand-walked avatar is and what it is doing (tiles; the anims of shared/src/guild-hall.ts). */
+export const guildMoveSchema = z.object({
+  x: z.number().finite().min(0).max(64),
+  y: z.number().finite().min(0).max(64),
+  dir: z.enum(["front", "back", "side"]),
+  flip: z.boolean(),
+  anim: z.enum(["idle", "walk", "sit", "type", "doze", "drink", "wave", "stretch", "chat", "cheer"]),
+});
+export type GuildMove = z.infer<typeof guildMoveSchema>;
+
+/** What a page sends up the WebSocket. */
+export const guildClientMessage = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("guild.move") }).extend(guildMoveSchema.shape),
+  z.object({ type: z.literal("guild.release") }),
+]);
+
+export const GUILD_SAY_MAX = 120;
+/** Lines one account may say in a minute. */
+export const GUILD_SAY_PER_MINUTE = 20;
+/** How long a line stays over its sayer's head. */
+export const GUILD_BUBBLE_MS = 6000;
+export const guildSayInput = z.object({ text: z.string().trim().min(1).max(GUILD_SAY_MAX) });
+
+export interface GuildChatLine {
+  id: string;
+  userId: string;
+  name: string;
+  text: string;
+  at: string;
+}

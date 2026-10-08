@@ -3,13 +3,20 @@ import {
   DEFAULT_BADGE,
   GUILD_NAME_MAX,
   GUILD_REJOIN_HOURS,
+  GUILD_BUBBLE_MS,
+  GUILD_MOVE_STALE_MS,
+  GUILD_SAY_MAX,
   guildDecorKind,
+  hallLayout,
+  hallPose,
   newDecorUid,
   presenceNow,
   snapDecor,
   WALL_ROWS,
   type GuildDecorLogEntry,
+  type GuildMove,
   type GuildDecorPlaced,
+  type HallFloor,
   type GuildMemberView,
   type GuildResponse,
   type GuildRole,
@@ -94,9 +101,15 @@ const editing = ref(false);
 const draft = ref<GuildDecorPlaced[]>([]);
 const draftVersion = ref(0);
 const selected = ref<string | null>(null);
+const mode = ref<"decor" | "floor" | "wall">("decor");
+const brush = ref("oak");
+const draftFloor = ref<HallFloor>({ base: "oak", tiles: {} });
 const shownDecor = computed(() => (editing.value ? draft.value : (guild.value?.decor ?? [])));
+const shownFloor = computed(() => (editing.value ? draftFloor.value : (guild.value?.floor ?? { base: "oak", tiles: {} })));
 function startDecor() {
   draft.value = structuredClone(toRaw(guild.value?.decor ?? []));
+  draftFloor.value = structuredClone(toRaw(guild.value?.floor ?? { base: "oak", tiles: {} }));
+  mode.value = "decor";
   draftVersion.value = guild.value?.decorVersion ?? 0;
   selected.value = null;
   editing.value = true;
@@ -136,10 +149,21 @@ function lockDecor() {
   const d = draft.value.find((p) => p.uid === selected.value);
   if (d) d.locked = !d.locked;
 }
+/** Lays the brush's floor on one tile (the base style needs no tile of its own). */
+function paintTile(x: number, y: number) {
+  const key = `${x},${y}`;
+  const tiles = draftFloor.value.tiles;
+  if (brush.value === draftFloor.value.base) delete tiles[key];
+  else tiles[key] = brush.value;
+}
+function fillFloor() {
+  draftFloor.value = { base: brush.value, tiles: {} };
+}
+const setWall = (id: string) => act(async () => (live.state.guild = await api<GuildResponse>("PUT", "guild/wall", { wall: id })), "牆壁換好了。");
 const saveDecor = () =>
   act(async () => {
     try {
-      live.state.guild = await api<GuildResponse>("PUT", "guild/decor", { version: draftVersion.value, items: draft.value });
+      live.state.guild = await api<GuildResponse>("PUT", "guild/decor", { version: draftVersion.value, items: draft.value, floor: draftFloor.value });
       editing.value = false;
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) editing.value = false; // (someone else saved: start again from theirs)
@@ -158,7 +182,70 @@ function restore(entry: GuildDecorLogEntry) {
   }, "還原了。");
 }
 const logLine = (e: GuildDecorLogEntry) =>
-  e.restored ? "還原了裝飾" : [e.added && `放了 ${e.added} 件`, e.moved && `動了 ${e.moved} 件`, e.removed && `收了 ${e.removed} 件`].filter(Boolean).join("、");
+  e.restored
+    ? "還原了裝飾"
+    : [e.added && `放了 ${e.added} 件`, e.moved && `動了 ${e.moved} 件`, e.removed && `收了 ${e.removed} 件`, e.floor && `鋪了 ${e.floor} 格地板`].filter(Boolean).join("、");
+
+// walking one's own avatar and talking (GUILD.md §3.1)
+const layout = computed(() => (guild.value ? hallLayout(guild.value.level) : null));
+const control = useHallControl(layout, () => {
+  // (where this one's avatar is wandering right now, so taking it over does not make it jump)
+  const L = layout.value;
+  if (!L || !guild.value || !user.value) return null;
+  const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
+  const mine = order.find((m) => m.id === user.value!.id);
+  const present = order.filter((m) => m.presence !== "offline");
+  const at = mine && hallPose(L, mine, present, Date.now());
+  return at ? { x: at.x, y: at.y } : { x: L.width / 2, y: L.aisles.at(-1)! };
+});
+const tick = ref(Date.now());
+let ticker: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  ticker = setInterval(() => (tick.value = Date.now()), 1000);
+  void live.loadGuildChat();
+});
+onUnmounted(() => clearInterval(ticker));
+const hand = computed(() => {
+  const out: Record<string, GuildMove & { since?: number }> = {};
+  for (const [id, mv] of Object.entries(live.state.guildMoves)) if (tick.value - mv.heard < GUILD_MOVE_STALE_MS) out[id] = { ...mv, since: mv.heard };
+  if (control.pose.value && user.value) out[user.value.id] = control.pose.value;
+  return out;
+});
+const bubbles = computed(() => {
+  const out: Record<string, { text: string; until: number }> = {};
+  for (const line of live.state.guildChat) {
+    const until = Date.parse(line.at) + GUILD_BUBBLE_MS;
+    if (until > tick.value) out[line.userId] = { text: line.text, until };
+  }
+  return out;
+});
+const sayBox = ref<HTMLInputElement>();
+const saying = ref("");
+async function say() {
+  const text = saying.value.trim();
+  if (!text) return;
+  saying.value = "";
+  try {
+    const line = await api<import("@goblincamp/shared").GuildChatLine>("POST", "guild/say", { text });
+    if (!live.state.guildChat.some((l) => l.id === line.id)) live.state.guildChat = [...live.state.guildChat, line].slice(-50);
+  } catch (e) {
+    message.value = e instanceof ApiError ? e.message : String(e);
+  }
+}
+function talk() {
+  sayBox.value?.focus();
+}
+// Enter to talk, Esc to stop typing (on the Mac)
+function keys(e: KeyboardEvent) {
+  const inBox = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (e.key === "Enter" && !inBox && guild.value && !editing.value) {
+    e.preventDefault();
+    talk();
+  } else if (e.key === "Escape" && e.target === sayBox.value) sayBox.value?.blur();
+}
+onMounted(() => window.addEventListener("keydown", keys));
+onUnmounted(() => window.removeEventListener("keydown", keys));
+const recentChat = computed(() => live.state.guildChat.slice(-6));
 
 /** The members with how they are now (a Mac that went quiet since the last fetch counts as gone). */
 const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence: presence(m) })) ?? []);
@@ -218,12 +305,33 @@ const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence:
         :members="inHall"
         :me="user?.id"
         :decor="shownDecor"
+        :floor="shownFloor"
+        :wall="guild.wall"
         :editing="editing"
+        :painting="editing && mode === 'floor'"
         :selected="selected"
+        :hand="hand"
+        :bubbles="bubbles"
         class="hall"
         @select="selected = $event"
         @move="moveDecor"
+        @paint="paintTile"
+        @walk-to="control.walkTo"
       />
+      <template v-if="!editing">
+        <GuildPad class="phone-only" @pad="control.press" @a="control.pressA" @b="control.pressB" @talk="talk" />
+        <p class="hint desk-only">點地板走過去・方向鍵／WASD 走路・空白鍵坐下／喝水／揮手・Q 歡呼・Enter 說話</p>
+        <section class="panel chat">
+          <div v-for="line in recentChat" :key="line.id" class="line">
+            <b>{{ line.name }}</b>：{{ line.text }} <small>{{ noteTime(line.at) }}</small>
+          </div>
+          <p v-if="!recentChat.length" class="muted">還沒有人說話，打個招呼吧。</p>
+          <form class="say" @submit.prevent="say">
+            <input ref="sayBox" v-model="saying" class="field" :maxlength="GUILD_SAY_MAX" placeholder="說點什麼…（Enter 送出）" enterkeyhint="send" />
+            <button class="btn primary" :disabled="!saying.trim()">說</button>
+          </form>
+        </section>
+      </template>
       <GuildDecorPanel
         v-if="editing && role"
         :items="draft"
@@ -233,6 +341,13 @@ const inHall = computed(() => guild.value?.members.map((m) => ({ ...m, presence:
         :role="role"
         :selected="selected"
         :busy="busy"
+        :mode="mode"
+        :brush="brush"
+        :wall="guild.wall"
+        @mode="mode = $event"
+        @brush="brush = $event"
+        @fill-all="fillFloor"
+        @wall="setWall"
         @add="addDecor"
         @flip="flipDecor"
         @remove="removeDecor"
@@ -341,5 +456,15 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 <style scoped>
 .wide-link { display: block; margin: 0 0 12px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; text-decoration: none; font-weight: 700; text-align: center; border: 0; font-size: 15px; width: 100%; }
 .links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chat { display: grid; gap: 4px; }
+.chat .line { font-size: 14px; line-height: 1.4; word-break: break-word; }
+.chat .line small { color: #999; font-size: 11px; }
+.say { display: flex; gap: 6px; margin-top: 4px; }
+.say .field { flex: 1; }
+.phone-only { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .phone-only { display: flex; }
+  .desk-only { display: none; }
+}
 .log-link { display: block; margin: -4px auto 12px; background: none; border: 0; color: #c9d6c0; font-size: 13px; }
 </style>

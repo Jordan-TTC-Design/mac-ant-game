@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { guildDecorKind, hallLayout, hallPose, type GuildDecorPlaced, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
+import { guildDecorKind, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
 import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
 
 /**
@@ -7,8 +7,23 @@ import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
  * says they are doing now (the avatars' art: useAvatarArt), among the decorations the members put down. While decorating, a
  * piece is picked by tapping it and moved by dragging it.
  */
-const props = defineProps<{ level: number; members: GuildMemberView[]; me?: string; decor: GuildDecorPlaced[]; editing?: boolean; selected?: string | null }>();
-const emit = defineEmits<{ select: [uid: string | null]; move: [uid: string, x: number, y: number] }>();
+const props = defineProps<{
+  level: number;
+  members: GuildMemberView[];
+  me?: string;
+  decor: GuildDecorPlaced[];
+  floor: HallFloor;
+  wall: string;
+  editing?: boolean;
+  /** Laying floor tiles: a tap or a drag paints the tiles under it. */
+  painting?: boolean;
+  selected?: string | null;
+  /** Avatars walked by hand (GUILD.md §3.1), this one's and others': where they are and what they are doing. */
+  hand?: Record<string, GuildMove & { since?: number }>;
+  /** What each member said last, shown over their head until `until` (ms). */
+  bubbles?: Record<string, { text: string; until: number }>;
+}>();
+const emit = defineEmits<{ select: [uid: string | null]; move: [uid: string, x: number, y: number]; paint: [x: number, y: number]; walkTo: [x: number, y: number] }>();
 
 interface HallManifest {
   tile: number;
@@ -65,8 +80,26 @@ function pieceAt(p: { x: number; y: number }): GuildDecorPlaced | null {
     }) ?? null
   );
 }
+let painting = false;
+function paintAt(e: PointerEvent) {
+  const p = tilesAt(e);
+  const x = Math.floor(p.x);
+  const y = Math.floor(p.y);
+  if (x >= 0 && x < layout.value.width && y >= WALL_ROWS && y < layout.value.height) emit("paint", x, y);
+}
 function down(e: PointerEvent) {
-  if (!props.editing) return;
+  if (!props.editing) {
+    // (not decorating: a tap or click walks this one's avatar there)
+    const p = tilesAt(e);
+    emit("walkTo", p.x, p.y);
+    return;
+  }
+  if (props.painting) {
+    painting = true;
+    canvas.value!.setPointerCapture(e.pointerId);
+    paintAt(e);
+    return;
+  }
   const p = tilesAt(e);
   const d = pieceAt(p);
   emit("select", d?.uid ?? null);
@@ -76,12 +109,14 @@ function down(e: PointerEvent) {
   }
 }
 function moveTo(e: PointerEvent) {
+  if (painting) return paintAt(e);
   if (!dragging) return;
   const p = tilesAt(e);
   emit("move", dragging.uid, p.x + dragging.dx, p.y + dragging.dy);
 }
 function up() {
   dragging = null;
+  painting = false;
 }
 
 const layout = computed(() => hallLayout(props.level));
@@ -130,10 +165,22 @@ function draw() {
   const now = Date.now();
   g.clearRect(0, 0, c.width, c.height);
 
-  // floor, then the wall along the top
-  const floor = loaded.get(`/guild-hall/${hall.floors[L.floor] ?? Object.values(hall.floors)[0]}`);
-  if (floor) for (let y = 2; y < L.height; y++) for (let x = 0; x < L.width; x++) g.drawImage(floor, x * T, y * T, T, T);
-  const wallInfo = hall.walls[L.wall] ?? Object.values(hall.walls)[0];
+  // floor (its tiles), then the wall along the top
+  const fallback = Object.values(hall.floors)[0];
+  for (let y = WALL_ROWS; y < L.height; y++) {
+    for (let x = 0; x < L.width; x++) {
+      const id = props.floor.tiles[`${x},${y}`] ?? props.floor.base;
+      const tile = loaded.get(`/guild-hall/${hall.floors[id] ?? fallback}`);
+      if (tile) g.drawImage(tile, x * T, y * T, T, T);
+    }
+  }
+  if (props.painting) {
+    g.strokeStyle = "rgba(255,255,255,0.18)";
+    g.lineWidth = 1;
+    for (let x = 0; x <= L.width; x++) g.strokeRect(x * T, WALL_ROWS * T, 0, (L.height - WALL_ROWS) * T);
+    for (let y = WALL_ROWS; y <= L.height; y++) g.strokeRect(0, y * T, L.width * T, 0);
+  }
+  const wallInfo = hall.walls[props.wall] ?? Object.values(hall.walls)[0];
   const wall = wallInfo && loaded.get(`/guild-hall/${wallInfo.file}`);
   if (wall) for (let x = 0; x * T < c.width; x += wall.width / hall.tile) g.drawImage(wall, x * T, 0, wall.width * scale, wall.height * scale);
 
@@ -185,9 +232,12 @@ function draw() {
   }
   const names: (() => void)[] = [];
   const present = hallMembers.value.filter((x) => x.presence !== "offline");
+  const bubbles: (() => void)[] = [];
   for (const hm of hallMembers.value) {
     const member = seatOrder.value[hm.seat]!;
-    let pose: HallPose | null = hallPose(L, hm, present, now);
+    const handPose = props.hand?.[hm.id];
+    let pose: HallPose | null = handPose ? smoothed(hm.id, handPose, now) : hallPose(L, hm, present, now);
+    if (!handPose) shown.delete(hm.id);
     if (!pose) continue;
     const moment = moments.get(hm.id);
     if (moment && moment.until > now && pose.anim !== "walk") pose = { ...pose, anim: moment.anim as HallPose["anim"], dir: "front", t: (now - moment.from) / 1000 };
@@ -198,6 +248,31 @@ function draw() {
     const fy = pose.y * T;
     const name = member.name;
     const mine = member.id === props.me;
+    const said = props.bubbles?.[hm.id];
+    if (said && said.until > now) {
+      bubbles.push(() => {
+        g.font = `${Math.max(10, 5 * scale)}px system-ui, sans-serif`;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        const text = said.text.length > 24 ? `${said.text.slice(0, 23)}…` : said.text;
+        const w = g.measureText(text).width + 6 * scale;
+        const h = Math.max(14, 8 * scale);
+        const top = Math.max(1, fy - (m.anchor.y + 4) * scale - h);
+        const left = Math.min(Math.max(1, fx - w / 2), c.width - w - 1);
+        g.fillStyle = "rgba(255,253,246,0.96)";
+        g.strokeStyle = "#1f1f1f";
+        g.lineWidth = Math.max(1, scale / 2);
+        g.beginPath();
+        g.roundRect(left, top, w, h, 3 * scale);
+        g.moveTo(fx - 2 * scale, top + h);
+        g.lineTo(fx, top + h + 3 * scale);
+        g.lineTo(fx + 2 * scale, top + h);
+        g.fill();
+        g.stroke();
+        g.fillStyle = "#1f1f1f";
+        g.fillText(text, left + w / 2, top + h / 2);
+      });
+    }
     names.push(() => {
       g.font = `600 ${Math.max(9, 4 * scale)}px system-ui, sans-serif`;
       g.textAlign = "center";
@@ -230,8 +305,21 @@ function draw() {
   items.sort((a, b) => a.y - b.y);
   for (const it of items) it.paint();
   for (const paint of overhead) paint();
-  // the names last, so no desk hides them
+  // the names last, so no desk hides them, and what was just said over everything
   for (const paint of names) paint();
+  for (const paint of bubbles) paint();
+}
+
+/** A hand-walked avatar eased toward where it was last heard to be (moves come a few times a second). */
+const shown = new Map<string, { x: number; y: number; at: number }>();
+function smoothed(id: string, to: GuildMove & { since?: number }, now: number): HallPose {
+  const was = shown.get(id);
+  const far = !was || Math.hypot(was.x - to.x, was.y - to.y) > 3;
+  const k = was ? Math.min(1, (now - was.at) / 90) : 1;
+  const x = far ? to.x : was!.x + (to.x - was!.x) * k;
+  const y = far ? to.y : was!.y + (to.y - was!.y) * k;
+  shown.set(id, { x, y, at: now });
+  return { x, y, anim: to.anim, dir: to.dir, flip: to.flip, t: (now - (to.since ?? 0)) / 1000 };
 }
 
 let resize: ResizeObserver | undefined;

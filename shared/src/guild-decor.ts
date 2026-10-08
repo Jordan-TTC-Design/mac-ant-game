@@ -36,10 +36,70 @@ export const guildDecorPlacedSchema = z.object({
 });
 export type GuildDecorPlaced = z.infer<typeof guildDecorPlacedSchema>;
 
+// ── Floors and walls (GUILD.md §4.3) ──────────────────────────────────────────────────────────────────────────────────
+
+/** The floor styles (mac/Resources/Guild/manifest.json `floors`): the race's ones need a member of that race. */
+export const HALL_FLOORS: readonly { id: string; name: string; race: string | null }[] = [
+  { id: "oak", name: "橡木地板", race: null },
+  { id: "stone", name: "石磚", race: null },
+  { id: "carpet", name: "紅地毯", race: null },
+  { id: "marble", name: "棋盤格大理石", race: null },
+  { id: "goblin_mud", name: "夯土地", race: "goblin" },
+  { id: "goblin_flagstone", name: "粗石板", race: "goblin" },
+  { id: "elf_moss", name: "苔蘚地", race: "elf" },
+  { id: "elf_roots", name: "樹根木紋", race: "elf" },
+  { id: "undead_blackstone", name: "黑石磚", race: "undead" },
+  { id: "undead_bone", name: "骨片馬賽克", race: "undead" },
+];
+export const HALL_WALLS: readonly { id: string; name: string; race: string | null }[] = [
+  { id: "stone", name: "灰石牆", race: null },
+  { id: "wood", name: "木板牆", race: null },
+  { id: "goblin_hide", name: "獸皮帳幕牆", race: "goblin" },
+  { id: "elf_vines", name: "活藤樹牆", race: "elf" },
+  { id: "undead_gothic", name: "哥德拱窗黑石牆", race: "undead" },
+];
+export const hallStyleOpen = (s: { race: string | null }, races: ReadonlySet<string>) => !s.race || races.has(s.race);
+
+/** The hall's floor: one style for all of it, and tiles laid with another ("x,y" → style; y below the wall). */
+export const hallFloorSchema = z.object({
+  base: z.string().max(30),
+  tiles: z.record(z.string().regex(/^\d{1,2},\d{1,2}$/), z.string().max(30)),
+});
+export type HallFloor = z.infer<typeof hallFloorSchema>;
+export const DEFAULT_HALL_FLOOR: HallFloor = { base: "oak", tiles: {} };
+
+/** Why this floor cannot be the hall's (null: it can). A style already down stays even if its race left. */
+export function hallFloorProblem(floor: HallFloor, level: number, races: ReadonlySet<string>, before: HallFloor = DEFAULT_HALL_FLOOR): string | null {
+  const { width, height } = guildLevel(level);
+  const had = new Set([before.base, ...Object.values(before.tiles)]);
+  for (const id of new Set([floor.base, ...Object.values(floor.tiles)])) {
+    const style = HALL_FLOORS.find((f) => f.id === id);
+    if (!style) return "沒有這種地板。";
+    if (!had.has(id) && !hallStyleOpen(style, races)) return "這種地板要公會裡有這個種族的成員才能用。";
+  }
+  for (const key of Object.keys(floor.tiles)) {
+    const [x, y] = key.split(",").map(Number) as [number, number];
+    if (x >= width || y < WALL_ROWS || y >= height) return "地板鋪到據點外面了。";
+  }
+  return null;
+}
+
+/** How many of the hall's tiles differ between two floors (for the log). */
+export function hallFloorChanged(a: HallFloor, b: HallFloor, level: number): number {
+  const { width, height } = guildLevel(level);
+  let n = 0;
+  for (let y = WALL_ROWS; y < height; y++) for (let x = 0; x < width; x++) if ((a.tiles[`${x},${y}`] ?? a.base) !== (b.tiles[`${x},${y}`] ?? b.base)) n++;
+  return n;
+}
+
+export const hallWallInput = z.object({ wall: z.string().max(30) });
+
 export const guildDecorInput = z.object({
   /** The version this list was made from (someone else saved in between: refused, fetch and try again). */
   version: z.number().int().min(0),
   items: z.array(guildDecorPlacedSchema).max(GUILD_DECOR_MAX_ITEMS),
+  /** The floor too, when it was changed. */
+  floor: hallFloorSchema.optional(),
 });
 export const guildDecorRestoreInput = z.object({ logId: z.uuid() });
 
@@ -128,4 +188,6 @@ export interface GuildDecorLogEntry {
   removed: number;
   /** A going-back by the leader (to the list before entry `restored`). */
   restored: boolean;
+  /** Floor tiles changed. */
+  floor: number;
 }

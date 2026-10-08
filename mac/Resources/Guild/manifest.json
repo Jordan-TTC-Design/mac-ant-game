@@ -4,7 +4,13 @@
   "oak": "floors/oak.png",
   "stone": "floors/stone.png",
   "carpet": "floors/carpet.png",
-  "marble": "floors/marble.png"
+  "marble": "floors/marble.png",
+  "goblin_mud": "floors/goblin_mud.png",
+  "goblin_flagstone": "floors/goblin_flagstone.png",
+  "elf_moss": "floors/elf_moss.png",
+  "elf_roots": "floors/elf_roots.png",
+  "undead_blackstone": "floors/undead_blackstone.png",
+  "undead_bone": "floors/undead_bone.png"
  },
  "walls": {
   "stone": {
@@ -19,6 +25,30 @@
    "file": "walls/wood.png",
    "corner": "walls/wood_corner.png",
    "side": "walls/wood_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "goblin_hide": {
+   "file": "walls/goblin_hide.png",
+   "corner": "walls/goblin_hide_corner.png",
+   "side": "walls/goblin_hide_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "elf_vines": {
+   "file": "walls/elf_vines.png",
+   "corner": "walls/elf_vines_corner.png",
+   "side": "walls/elf_vines_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "undead_gothic": {
+   "file": "walls/undead_gothic.png",
+   "corner": "walls/undead_gothic_corner.png",
+   "side": "walls/undead_gothic_side.png",
    "w": 16,
    "h": 32,
    "cap": 4
@@ -279,5 +309,37 @@
   "flat": "flat: true pieces lie on the floor (draw with the floor, not y-sorted).",
   "wall": "wall: true pieces hang on the back wall (anchor = bottom centre of the sprite).",
   "walls": "A wall piece is 1 tile wide and 2 tiles tall: the top 4 px is the wall's cap seen from above, the rest its face. Repeat it along the back wall; `corner` ends a run (mirror it for the other end); `side` is the cap of a left/right wall seen from above (repeat it down)."
+ },
+ "names": {
+  "floors": {
+   "oak": "橡木地板",
+   "stone": "石磚",
+   "carpet": "紅地毯",
+   "marble": "棋盤格大理石",
+   "goblin_mud": "夯土地",
+   "goblin_flagstone": "粗石板",
+   "elf_moss": "苔蘚地",
+   "elf_roots": "樹根木紋",
+   "undead_blackstone": "黑石磚",
+   "undead_bone": "骨片馬賽克"
+  },
+  "walls": {
+   "stone": "灰石牆",
+   "wood": "木板牆",
+   "goblin_hide": "獸皮帳幕牆",
+   "elf_vines": "活藤樹牆",
+   "undead_gothic": "哥德拱窗黑石牆"
+  }
+ },
+ "race": {
+  "goblin_mud": "goblin",
+  "goblin_flagstone": "goblin",
+  "elf_moss": "elf",
+  "elf_roots": "elf",
+  "undead_blackstone": "undead",
+  "undead_bone": "undead",
+  "goblin_hide": "goblin",
+  "elf_vines": "elf",
+  "undead_gothic": "undead"
  }
 }

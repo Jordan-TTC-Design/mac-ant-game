@@ -173,6 +173,13 @@ function syncSoon() {
   debounce = setTimeout(() => void syncNow(), 1000);
 }
 
+// pages send things up the socket too (the guild hall: where the avatar walked by hand is, GUILD.md §3.1)
+if (import.meta.client) {
+  window.addEventListener("gc:client-message", (e) => {
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify((e as CustomEvent).detail));
+  });
+}
+
 function connect() {
   if (socket || !state.saved) return;
   // (in development Nitro's proxy does not carry WebSockets, so it goes straight to the server; the session cookie goes

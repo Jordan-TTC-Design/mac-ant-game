@@ -13,6 +13,14 @@ import {
   guildDecorInput,
   guildDecorProblem,
   guildDecorRestoreInput,
+  HALL_WALLS,
+  hallFloorChanged,
+  hallFloorProblem,
+  hallStyleOpen,
+  hallWallInput,
+  GUILD_SAY_PER_MINUTE,
+  guildSayInput,
+  type GuildChatLine,
   guildCreateInput,
   guildInviteInput,
   guildLevel,
@@ -28,11 +36,12 @@ import {
 } from "@goblincamp/shared";
 import { focusToday } from "@goblincamp/shared/camp";
 import type { AppDeps, AppEnv } from "../app.ts";
+import type { guildLive } from "./live.ts";
 import { requireAuth } from "../auth/session.ts";
 import type { Database } from "../db/client.ts";
 import { apiError, readJson } from "../http.ts";
 import { pushToPhones } from "../push/phones.ts";
-import { avatars, camps, guildDecorLog, guildInvites, guildMembers, guilds, users } from "../db/schema.ts";
+import { avatars, camps, guildChat, guildDecorLog, guildInvites, guildMembers, guilds, users } from "../db/schema.ts";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -64,7 +73,7 @@ async function settleLeader(tx: Tx | Db, guildId: string) {
 }
 
 /** 公會 (GUILD.md): founding, invitations, members and their roles, the badge, avatars and who is at their computer. */
-export function guildRoutes(deps: AppDeps) {
+export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) {
   const app = new Hono<AppEnv>();
   const { db } = deps.database;
   const now = deps.now ?? (() => new Date());
@@ -79,6 +88,7 @@ export function guildRoutes(deps: AppDeps) {
   }
   /** Tells every member (and anyone else named) to fetch the guild again. */
   async function tell(guildId: string | null, ...others: string[]) {
+    live?.forget(); // (who is in which guild may have changed)
     const ids = new Set([...(guildId ? await memberIds(guildId) : []), ...others]);
     for (const id of ids) deps.hub.notify(id, { type: "guild.changed" });
   }
@@ -185,6 +195,8 @@ export function guildRoutes(deps: AppDeps) {
         invited: invited.map((r) => ({ id: r.id, name: r.name, race: r.race ?? "goblin", at: r.at.toISOString() })),
         decor: guild!.decor,
         decorVersion: guild!.decorVersion,
+        floor: guild!.floor,
+        wall: guild!.wall,
         races: [...new Set(members.map((r) => r.race ?? "goblin"))].sort(),
       },
       invites: [],
@@ -413,13 +425,15 @@ export function guildRoutes(deps: AppDeps) {
       const races = new Set(
         (await tx.select({ race: camps.race }).from(guildMembers).leftJoin(camps, eq(camps.userId, guildMembers.userId)).where(eq(guildMembers.guildId, mine.guildId))).map((r) => r.race ?? "goblin"),
       );
-      const problem = guildDecorProblem(body.data.items, guild!.level, races, guild!.decor);
+      const floor = body.data.floor ?? guild!.floor;
+      const problem = guildDecorProblem(body.data.items, guild!.level, races, guild!.decor) ?? hallFloorProblem(floor, guild!.level, races, guild!.floor);
       if (problem) return { error: 400 as const, message: problem };
       const change = guildDecorChange(guild!.decor, body.data.items, mine.role);
       if (typeof change === "string") return { error: 403 as const, message: change };
-      if (!change.added && !change.moved && !change.removed) return { ok: true };
-      await tx.update(guilds).set({ decor: body.data.items, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
-      await tx.insert(guildDecorLog).values({ guildId: mine.guildId, userId: me.id, at, ...change, before: guild!.decor });
+      const floorChanged = hallFloorChanged(guild!.floor, floor, guild!.level);
+      if (!change.added && !change.moved && !change.removed && !floorChanged) return { ok: true };
+      await tx.update(guilds).set({ decor: body.data.items, floor, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
+      await tx.insert(guildDecorLog).values({ guildId: mine.guildId, userId: me.id, at, ...change, floorChanged, before: guild!.decor, floorBefore: guild!.floor });
       await tx.delete(guildDecorLog).where(and(eq(guildDecorLog.guildId, mine.guildId), lt(guildDecorLog.at, new Date(at.getTime() - GUILD_DECOR_LOG_DAYS * DAY))));
       return { ok: true };
     });
@@ -440,7 +454,7 @@ export function guildRoutes(deps: AppDeps) {
       .where(eq(guildDecorLog.guildId, mine.guildId))
       .orderBy(desc(guildDecorLog.at))
       .limit(100);
-    const entries: GuildDecorLogEntry[] = rows.map((r) => ({ id: r.l.id, by: r.name ?? "", at: r.l.at.toISOString(), added: r.l.added, moved: r.l.moved, removed: r.l.removed, restored: r.l.restored }));
+    const entries: GuildDecorLogEntry[] = rows.map((r) => ({ id: r.l.id, by: r.name ?? "", at: r.l.at.toISOString(), added: r.l.added, moved: r.l.moved, removed: r.l.removed, restored: r.l.restored, floor: r.l.floorChanged }));
     return c.json({ entries });
   });
 
@@ -459,7 +473,8 @@ export function guildRoutes(deps: AppDeps) {
       if (!entry) return false;
       const was = new Set(guild!.decor.map((d) => d.uid));
       const back = new Set(entry.before.map((d) => d.uid));
-      await tx.update(guilds).set({ decor: entry.before, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
+      const floor = entry.floorBefore ?? guild!.floor;
+      await tx.update(guilds).set({ decor: entry.before, floor, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
       await tx.insert(guildDecorLog).values({
         guildId: mine.guildId,
         userId: me.id,
@@ -468,11 +483,68 @@ export function guildRoutes(deps: AppDeps) {
         moved: 0,
         removed: guild!.decor.filter((d) => !back.has(d.uid)).length,
         restored: true,
+        floorChanged: hallFloorChanged(guild!.floor, floor, guild!.level),
         before: guild!.decor,
+        floorBefore: guild!.floor,
       });
       return true;
     });
     if (!done) return apiError(c, 404, "not_found", "這筆紀錄已經沒有了。");
+    await tell(mine.guildId);
+    return c.json(await view(me.id));
+  });
+
+  /** Says something in the hall: it floats over the sayer's avatar, and goes in the chat (kept a week). */
+  app.post("/say", async (c) => {
+    const body = await readJson(c, guildSayInput);
+    if ("response" in body) return body.response;
+    const me = c.get("session").user;
+    const at = now();
+    const mine = await membership(me.id);
+    if (!mine) return apiError(c, 404, "not_found", "你還沒有加入公會。");
+    const [{ n }] = (await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(guildChat)
+      .where(and(eq(guildChat.userId, me.id), gt(guildChat.at, new Date(at.getTime() - 60_000))))) as [{ n: number }];
+    if (n >= GUILD_SAY_PER_MINUTE) return apiError(c, 429, "rate_limited", "說太快了，休息一下。");
+    const [row] = await db.insert(guildChat).values({ guildId: mine.guildId, userId: me.id, text: body.data.text, at }).returning();
+    await db.delete(guildChat).where(and(eq(guildChat.guildId, mine.guildId), lt(guildChat.at, new Date(at.getTime() - 7 * DAY))));
+    const line: GuildChatLine = { id: row!.id, userId: me.id, name: me.displayName, text: row!.text, at: at.toISOString() };
+    for (const id of await memberIds(mine.guildId)) deps.hub.notify(id, { type: "guild.say", ...line });
+    return c.json(line, 201);
+  });
+
+  /** The last 50 things said, oldest first. */
+  app.get("/chat", async (c) => {
+    const me = c.get("session").user;
+    const mine = await membership(me.id);
+    if (!mine) return apiError(c, 404, "not_found", "你還沒有加入公會。");
+    const rows = await db
+      .select({ l: guildChat, name: users.displayName })
+      .from(guildChat)
+      .leftJoin(users, eq(users.id, guildChat.userId))
+      .where(eq(guildChat.guildId, mine.guildId))
+      .orderBy(desc(guildChat.at))
+      .limit(50);
+    const lines: GuildChatLine[] = rows.reverse().map((r) => ({ id: r.l.id, userId: r.l.userId ?? "", name: r.name ?? "", text: r.l.text, at: r.l.at.toISOString() }));
+    return c.json({ lines });
+  });
+
+  /** The leader or an officer changes the hall's wall (a race's needs a member of that race). */
+  app.put("/wall", async (c) => {
+    const body = await readJson(c, hallWallInput);
+    if ("response" in body) return body.response;
+    const me = c.get("session").user;
+    const mine = await membership(me.id);
+    if (!mine) return apiError(c, 404, "not_found", "你還沒有加入公會。");
+    if (mine.role === "member") return apiError(c, 403, "forbidden", "只有會長和幹部可以換牆壁。");
+    const style = HALL_WALLS.find((w) => w.id === body.data.wall);
+    if (!style) return apiError(c, 400, "invalid_input", "沒有這種牆壁。");
+    const races = new Set(
+      (await db.select({ race: camps.race }).from(guildMembers).leftJoin(camps, eq(camps.userId, guildMembers.userId)).where(eq(guildMembers.guildId, mine.guildId))).map((r) => r.race ?? "goblin"),
+    );
+    if (!hallStyleOpen(style, races)) return apiError(c, 400, "invalid_input", "這種牆壁要公會裡有這個種族的成員才能用。");
+    await db.update(guilds).set({ wall: style.id }).where(eq(guilds.id, mine.guildId));
     await tell(mine.guildId);
     return c.json(await view(me.id));
   });

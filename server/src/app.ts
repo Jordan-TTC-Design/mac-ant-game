@@ -17,6 +17,7 @@ import { claudeRoutes } from "./claude/routes.ts";
 import { feedbackRoutes } from "./feedback/routes.ts";
 import { friendRoutes } from "./friends/routes.ts";
 import { guildRoutes } from "./guild/routes.ts";
+import { guildLive } from "./guild/live.ts";
 import { pomodoroRoutes } from "./pomodoro/routes.ts";
 import { NoPushSender, type PushSender } from "./push/sender.ts";
 import { Hub, type Socket } from "./realtime/hub.ts";
@@ -60,7 +61,8 @@ export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; 
   app.route("/world", worldRoutes(deps));
   app.route("/admin", adminRoutes(deps));
   app.route("/friends", friendRoutes(deps));
-  app.route("/guild", guildRoutes(deps));
+  const live = guildLive(deps);
+  app.route("/guild", guildRoutes(deps, live));
   app.route("/pomodoro", pomodoroRoutes(deps));
   app.route("/claude", claudeRoutes(deps));
   app.route("/feedback", feedbackRoutes(deps));
@@ -86,8 +88,13 @@ export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; 
           const hello: ServerEvent = { type: "hello", userId: session.user.id };
           ws.send(JSON.stringify(hello));
         },
+        onMessage(event) {
+          // (pages say where the avatar they are walking is: GUILD.md §3.1)
+          if (typeof event.data === "string" && event.data.length < 1000) void live.receive(session.user.id, event.data);
+        },
         onClose() {
           if (socket) deps.hub.remove(session.user.id, socket);
+          void live.receive(session.user.id, JSON.stringify({ type: "guild.release" })); // (a closed page lets go)
         },
       };
     }),
@@ -98,5 +105,5 @@ export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; 
     return c.json({ error: "internal", message: "伺服器出了點問題，請稍後再試。" }, 500);
   });
 
-  return Object.assign(root, { deps, injectWebSocket });
+  return Object.assign(root, { deps, injectWebSocket, live });
 }

@@ -1,10 +1,46 @@
 <script setup lang="ts">
-import { GUILD_DECOR, GUILD_DECOR_CATEGORIES, guildDecorKind, guildDecorRoomUsed, guildDecorUnlocked, type GuildDecorKind, type GuildDecorPlaced, type GuildRole } from "@goblincamp/shared";
+import {
+  GUILD_DECOR,
+  GUILD_DECOR_CATEGORIES,
+  guildDecorKind,
+  guildDecorRoomUsed,
+  guildDecorUnlocked,
+  HALL_FLOORS,
+  HALL_WALLS,
+  hallStyleOpen,
+  type GuildDecorKind,
+  type GuildDecorPlaced,
+  type GuildRole,
+} from "@goblincamp/shared";
 
-// The catalog while decorating the hall (GUILD.md §4.2): the room used, the categories, every piece (the ones not unlocked yet
-// greyed, saying what they need), and what can be done to the piece picked in the hall.
-const props = defineProps<{ items: GuildDecorPlaced[]; level: number; room: number; races: string[]; role: GuildRole; selected: string | null; busy: boolean }>();
-const emit = defineEmits<{ add: [kind: string]; flip: []; remove: []; lock: []; save: []; cancel: [] }>();
+// The catalog while decorating the hall (GUILD.md §4.2–4.3): decorations (the room used, the categories, every piece — the
+// ones not unlocked yet greyed, saying what they need — and what can be done to the piece picked in the hall), the floor
+// (a style to lay tile by tile, or over all of it) and the wall (the leader and officers).
+const props = defineProps<{
+  items: GuildDecorPlaced[];
+  level: number;
+  room: number;
+  races: string[];
+  role: GuildRole;
+  selected: string | null;
+  busy: boolean;
+  mode: "decor" | "floor" | "wall";
+  brush: string;
+  wall: string;
+}>();
+const emit = defineEmits<{
+  add: [kind: string];
+  flip: [];
+  remove: [];
+  lock: [];
+  save: [];
+  cancel: [];
+  mode: [mode: "decor" | "floor" | "wall"];
+  brush: [id: string];
+  fillAll: [];
+  wall: [id: string];
+}>();
+const tile = (file: string) => ({ backgroundImage: `url(/guild-hall/${file})` });
 
 const RACE_NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
 const tab = ref<string>(GUILD_DECOR_CATEGORIES[0]);
@@ -41,6 +77,52 @@ function why(k: GuildDecorKind) {
       <span class="room" :class="{ over: used > room }">裝飾點數 {{ used }}／{{ room }}</span>
     </div>
 
+    <div class="modes">
+      <button type="button" class="tab" :class="{ on: mode === 'decor' }" @click="emit('mode', 'decor')">🪑 裝飾</button>
+      <button type="button" class="tab" :class="{ on: mode === 'floor' }" @click="emit('mode', 'floor')">🟫 地板</button>
+      <button v-if="role !== 'member'" type="button" class="tab" :class="{ on: mode === 'wall' }" @click="emit('mode', 'wall')">🧱 牆壁</button>
+    </div>
+
+    <template v-if="mode === 'floor'">
+      <p class="hint">選一種地板，在據點裡點一下或拖過去，一格一格鋪；或整片換掉。</p>
+      <div class="styles">
+        <button
+          v-for="f in HALL_FLOORS"
+          :key="f.id"
+          type="button"
+          class="style"
+          :class="{ on: brush === f.id, shut: !hallStyleOpen(f, raceSet) }"
+          :disabled="!hallStyleOpen(f, raceSet)"
+          @click="emit('brush', f.id)"
+        >
+          <span class="swatch pixel" :style="tile(`floors/${f.id}.png`)" />
+          <small>{{ f.name }}</small>
+          <small v-if="!hallStyleOpen(f, raceSet)" class="pts">要有{{ RACE_NAMES[f.race ?? ""] }}</small>
+        </button>
+      </div>
+      <button type="button" class="btn small" @click="emit('fillAll')">整片換成這種</button>
+    </template>
+
+    <template v-else-if="mode === 'wall'">
+      <p class="hint">整個據點的牆一起換，馬上生效。</p>
+      <div class="styles">
+        <button
+          v-for="w in HALL_WALLS"
+          :key="w.id"
+          type="button"
+          class="style"
+          :class="{ on: wall === w.id, shut: !hallStyleOpen(w, raceSet) }"
+          :disabled="!hallStyleOpen(w, raceSet) || busy"
+          @click="emit('wall', w.id)"
+        >
+          <span class="swatch tall pixel" :style="tile(`walls/${w.id}.png`)" />
+          <small>{{ w.name }}</small>
+          <small v-if="!hallStyleOpen(w, raceSet)" class="pts">要有{{ RACE_NAMES[w.race ?? ""] }}</small>
+        </button>
+      </div>
+    </template>
+
+    <template v-else>
     <div v-if="picked && pickedKind" class="picked">
       <span class="grow">{{ pickedKind.name }}<template v-if="picked.locked">・🔒 鎖住了</template></span>
       <button type="button" class="btn small" :disabled="!canTouch" @click="emit('flip')">↔︎ 翻面</button>
@@ -68,6 +150,7 @@ function why(k: GuildDecorKind) {
         <small class="pts">{{ open ? `${k.size} 點` : why(k) }}</small>
       </button>
     </div>
+    </template>
 
     <div class="actions">
       <button type="button" class="btn primary" :disabled="busy || used > room" @click="emit('save')">儲存</button>
@@ -94,5 +177,13 @@ function why(k: GuildDecorKind) {
 .item small { font-size: 11px; line-height: 1.2; text-align: center; }
 .pts { color: #777; }
 .actions { display: flex; gap: 8px; }
+.modes { display: flex; gap: 6px; }
+.styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+.style { display: grid; justify-items: center; gap: 3px; border: 2px solid #1f1f1f; border-radius: 10px; background: #f3ead6; padding: 6px 4px; color: inherit; }
+.style.on { background: #e8c547; }
+.style.shut { opacity: 0.45; }
+.style small { font-size: 11px; text-align: center; }
+.swatch { width: 48px; height: 48px; background-size: 24px 24px; image-rendering: pixelated; border: 1px solid rgba(0, 0, 0, 0.3); }
+.swatch.tall { width: 48px; height: 48px; background-size: 24px 48px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 </style>

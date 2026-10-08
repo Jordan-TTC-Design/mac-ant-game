@@ -51,3 +51,20 @@ describe("guild hall", () => {
     expect([...anims]).toEqual(expect.arrayContaining(["walk", "sit", "drink", "chat"]));
   });
 });
+
+describe("walking by hand", () => {
+  it("cannot walk into a desk or the wall, slides along them, and sits when near a seat", async () => {
+    const { hallStep, hallWalkable, hallInteract } = await import("./guild-hall.ts");
+    const hall = hallLayout(1);
+    const desk = hall.pieces.find((p) => p.id === "desk")!;
+    expect(hallWalkable(hall, { x: desk.x, y: desk.y - 0.3 })).toBe(false);
+    expect(hallWalkable(hall, { x: desk.x, y: 1 })).toBe(false);
+    // walking down into a desk from the aisle above stops; walking diagonally slides sideways
+    const above = { x: desk.x, y: desk.y - 1.25 };
+    expect(hallStep(hall, above, 0, 0.7)).toEqual(above);
+    expect(hallStep(hall, above, 0.2, 0.7)).toEqual({ x: desk.x + 0.2, y: above.y });
+    expect(hallInteract(hall, above)).toEqual({ anim: "sit", at: hall.seats[0] });
+    expect(hallInteract(hall, { x: hall.drink.x - 0.3, y: hall.drink.y + 0.4 }).anim).toBe("drink");
+    expect(hallInteract(hall, { x: hall.width / 2, y: hall.height - 2 }).anim).toBe("wave");
+  });
+});
