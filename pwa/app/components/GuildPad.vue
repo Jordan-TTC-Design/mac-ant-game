@@ -44,18 +44,21 @@ function hold(pad: Pad, e: PointerEvent) {
 </template>
 
 <style scoped>
-.pad { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin: 0 0 12px; border-radius: 18px; background: #c9c3b3; border: 3px solid #1f1f1f; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35); user-select: none; -webkit-user-select: none; touch-action: none; }
-.cross { display: grid; grid-template: ". u ." 40px "l c r" 40px ". d ." 40px / 40px 40px 40px; }
-.dir { border: 0; background: #2b2b2b; color: #bbb; font-size: 14px; padding: 0; }
-.dir:active { background: #444; }
-.dir:nth-child(1) { border-radius: 6px 6px 0 0; }
-.dir:nth-child(2) { border-radius: 6px 0 0 6px; }
-.dir:nth-child(3) { border-radius: 0 6px 6px 0; }
-.dir:nth-child(4) { border-radius: 0 0 6px 6px; }
-.hub { grid-area: c; background: #2b2b2b; }
-.talk { width: 48px; height: 48px; border-radius: 50%; border: 3px solid #1f1f1f; background: #fffdf6; font-size: 22px; }
-.ab { display: flex; gap: 12px; transform: rotate(-20deg); }
-.round { width: 52px; height: 52px; border-radius: 50%; border: 0; background: #9c2a4d; color: #f4e9cf; font-weight: 800; font-size: 18px; box-shadow: 0 3px 0 #5e1830; }
-.round:active { transform: translateY(2px); box-shadow: 0 1px 0 #5e1830; }
-.b { margin-top: 22px; }
+/* floating over the bottom of the hall, above the tab bar: the cross on the left, A and B on the right, 💬 between; the pad itself
+   does not catch touches, only its buttons do, so the hall can still be tapped and dragged round them */
+.pad { position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + 12px); z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+.pad > * { pointer-events: auto; }
+.cross { display: grid; grid-template: ". u ." 44px "l c r" 44px ". d ." 44px / 44px 44px 44px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35)); }
+.dir { border: 0; background: rgba(24, 30, 22, 0.62); color: rgba(255, 255, 255, 0.85); font-size: 15px; padding: 0; touch-action: none; }
+.dir:active { background: rgba(232, 197, 71, 0.85); color: #2b1d00; }
+.dir:nth-child(1) { border-radius: 10px 10px 0 0; }
+.dir:nth-child(2) { border-radius: 10px 0 0 10px; }
+.dir:nth-child(3) { border-radius: 0 10px 10px 0; }
+.dir:nth-child(4) { border-radius: 0 0 10px 10px; }
+.hub { grid-area: c; background: rgba(24, 30, 22, 0.62); }
+.talk { width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28); background: rgba(24, 30, 22, 0.62); font-size: 20px; margin-bottom: 8px; }
+.ab { display: flex; gap: 12px; transform: rotate(-20deg); margin-bottom: 8px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35)); }
+.round { width: 56px; height: 56px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); background: rgba(156, 42, 77, 0.78); color: #f4e9cf; font-weight: 800; font-size: 18px; touch-action: none; }
+.round:active { background: rgba(232, 197, 71, 0.9); color: #2b1d00; transform: translateY(2px); }
+.b { margin-top: 24px; }
 </style>

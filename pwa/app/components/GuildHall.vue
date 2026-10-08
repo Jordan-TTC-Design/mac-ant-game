@@ -445,6 +445,6 @@ onUnmounted(() => {
 canvas { display: block; width: 100%; image-rendering: pixelated; }
 canvas.editing { cursor: grab; touch-action: none; }
 .hall.fill { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
-canvas.fill { height: 100%; }
+canvas.fill { height: 100%; touch-action: none; } /* (it fills the screen: a drag looks round, a pinch or double tap does not zoom the page) */
 .problem { margin: 0; padding: 24px; color: #f4e9cf; text-align: center; }
 </style>

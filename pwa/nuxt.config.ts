@@ -13,7 +13,7 @@ export default defineNuxtConfig({
       title: "哥布林營地",
       htmlAttrs: { lang: "zh-Hant-TW" },
       meta: [
-        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+        { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#2f4a2a" },
         { name: "mobile-web-app-capable", content: "yes" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
