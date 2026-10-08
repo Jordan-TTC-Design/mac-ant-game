@@ -198,6 +198,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
 <template>
   <main v-if="ok" class="page" :class="{ immersive }">
     <header v-if="!immersive" class="topbar">
+      <NuxtLink to="/" class="back" aria-label="回首頁">‹</NuxtLink>
       <div style="flex: 1">
         <h1>公會</h1>
         <div class="sub">大家一起在據點裡，看得到誰在電腦前</div>
@@ -347,6 +348,7 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .tools { display: flex; gap: 8px; margin-top: 10px; }
 .leave { margin-top: 4px; }
+.back { color: #fff3c4; font-size: 30px; text-decoration: none; padding: 0 10px 0 0; }
 .hall { margin: 0 0 12px; }
 /* the Mac's window: the hall fills it; the name, buttons and chat float over it; the rest slides in from the right */
 .immersive { padding: 0 !important; max-width: none !important; }

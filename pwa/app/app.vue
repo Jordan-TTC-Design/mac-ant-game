@@ -3,7 +3,7 @@
 // before signing in).
 const route = useRoute();
 const { user } = useAccount();
-const TABBED = ["/", "/notes", "/pomodoro", "/camp", "/workshop", "/roster", "/friends", "/settings", "/claude", "/feed"];
+const TABBED = ["/", "/notes", "/pomodoro", "/camp", "/workshop", "/roster", "/friends", "/settings", "/claude", "/feed", "/guild"];
 // (in the Mac app the window's sidebar does the tab bar's job)
 const mac = inMacApp();
 if (mac) document.documentElement.classList.add("in-mac");
