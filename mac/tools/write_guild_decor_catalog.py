@@ -9,6 +9,7 @@ none (2026-10-08: everything made so far is open from the start; the next batche
 """
 import json
 import os
+import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CATALOG = os.path.join(HERE, "guild_decor_catalog.json")
@@ -30,6 +31,9 @@ DRINKS = {"water_elemental", "water_cooler", "gob_waterskin", "elf_spring_basin"
 items = json.load(open(CATALOG, encoding="utf-8")) + EXTRAS
 level = {item["id"]: int(item.get("level", 1)) for item in items}
 assert all(1 <= v <= TOP_LEVEL for v in level.values()), "a level is out of 1–7"
+# A holiday piece names its season (shared/src/guild-seasons.ts GUILD_SEASONS): put down only while the season is on.
+SEASONS = set(re.findall(r'\{ id: "([a-z_]+)", name: ', open(os.path.join(HERE, "..", "..", "shared", "src", "guild-seasons.ts"), encoding="utf-8").read()))
+assert all(item.get("season") is None or item["season"] in SEASONS for item in items), "a piece names a season that does not exist"
 
 rows = []
 mac = {}
@@ -42,6 +46,7 @@ for item in items:
         "race": item.get("race"),
         "size": item["size"],
         "level": level[item["id"]],
+        "season": item.get("season"),
         "file": item["file"],
         "w": item["w"],
         "h": item["h"],
@@ -69,6 +74,8 @@ export interface GuildDecorKind {
   size: number;
   /** The guild level that unlocks it. */
   level: number;
+  /** A holiday piece: the season (shared/src/guild-seasons.ts) it can be put down in; null: always. */
+  season: string | null;
   /** Under mac/Resources/Guild (public/guild-hall on the phone): a strip of `frames` frames, each w × h, standing on its bottom middle. */
   file: string;
   w: number;

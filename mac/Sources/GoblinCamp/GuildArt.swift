@@ -22,6 +22,8 @@ final class GuildArt {
     /// One kind of decoration as the catalog lists it (shared/src/guild-decor-catalog.ts, written for the Mac as decor.json).
     struct DecorKind {
         let id: String; let name: String; let category: String; let race: String?; let size: Int; let level: Int
+        /// A holiday piece: the season it can be put down in (nil: always).
+        let season: String?
     }
 
     private(set) var ready = false
@@ -120,7 +122,7 @@ final class GuildArt {
                     return (x, y)
                 }
                 kinds.append(DecorKind(id: id, name: d["name"] as? String ?? id, category: d["category"] as? String ?? "", race: d["race"] as? String,
-                                       size: d["size"] as? Int ?? 1, level: d["level"] as? Int ?? 1))
+                                       size: d["size"] as? Int ?? 1, level: d["level"] as? Int ?? 1, season: d["season"] as? String))
                 decor[id] = Piece(image: img, w: w, h: hh, frames: d["frames"] as? Int ?? 1, fps: (d["fps"] as? NSNumber)?.doubleValue ?? 0,
                                   anchorX: Double(w) / 2, anchorY: Double(hh), flat: d["flat"] as? Bool ?? false, wall: d["wall"] as? Bool ?? false, ceiling: d["ceiling"] as? Bool ?? false,
                                   seat: seat, living: d["living"] as? Bool ?? (d["category"] as? String == "會動的"),

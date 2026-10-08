@@ -142,13 +142,19 @@ final class GuildDonatePanel: GuildPanelController, GuildPanelInit {
             field.controlSize = .small
             field.translatesAutoresizingMaskIntoConstraints = false
             field.widthAnchor.constraint(equalToConstant: 56).isActive = true
+            // (the total follows each key, not only Return or leaving the field; the box is tidied when one leaves it)
             let handler = FieldHandler { [weak self, weak field] in
                 guard let self, let field else { return }
                 let v = max(0, min(n, Int(field.stringValue.trimmingCharacters(in: .whitespaces)) ?? 0))
                 self.give[id] = v == 0 ? nil : v
-                field.stringValue = v == 0 ? "" : String(v)
                 self.updateTotal()
             }
+            handler.onEnd = { [weak self, weak field] in
+                guard let self, let field else { return }
+                let v = self.give[id] ?? 0
+                field.stringValue = v == 0 ? "" : String(v)
+            }
+            field.delegate = handler
             field.target = handler
             field.action = #selector(FieldHandler.fire)
             objc_setAssociatedObject(field, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
@@ -200,11 +206,17 @@ final class GuildDonatePanel: GuildPanelController, GuildPanelInit {
     }
 }
 
-/// Calls back when a text field is finished with (Return, or leaving it).
-final class FieldHandler: NSObject {
+/// Calls back when a text field changes (each key), is sent (Return), or is left.
+final class FieldHandler: NSObject, NSTextFieldDelegate {
     private let body: () -> Void
+    var onEnd: (() -> Void)?
     init(_ body: @escaping () -> Void) { self.body = body }
     @objc func fire() { body() }
+    func controlTextDidChange(_ obj: Notification) { body() }
+    func controlTextDidEndEditing(_ obj: Notification) {
+        body()
+        onEnd?()
+    }
 }
 
 // MARK: 成員

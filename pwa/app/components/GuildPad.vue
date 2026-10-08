@@ -44,9 +44,8 @@ function hold(pad: Pad, e: PointerEvent) {
 </template>
 
 <style scoped>
-/* floating over the bottom of the hall, above the tab bar: the cross on the left, A and B on the right, 💬 between; the pad itself
-   does not catch touches, only its buttons do, so the hall can still be tapped and dragged round them */
-.pad { position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + 12px); z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; padding: 0 16px; pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+/* a strip of its own under the hall (the hall does not go under it): the cross on the left, A and B on the right, 💬 between */
+.pad { position: fixed; left: 0; right: 0; bottom: 0; height: var(--pad-h); z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 16px env(safe-area-inset-bottom); background: var(--bg-deep); border-top: 2px solid rgba(255, 255, 255, 0.16); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
 .pad > * { pointer-events: auto; }
 .cross { display: grid; grid-template: ". u ." 44px "l c r" 44px ". d ." 44px / 44px 44px 44px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35)); }
 .dir { border: 0; background: rgba(24, 30, 22, 0.62); color: rgba(255, 255, 255, 0.85); font-size: 15px; padding: 0; touch-action: none; }
@@ -56,7 +55,7 @@ function hold(pad: Pad, e: PointerEvent) {
 .dir:nth-child(3) { border-radius: 0 10px 10px 0; }
 .dir:nth-child(4) { border-radius: 0 0 10px 10px; }
 .hub { grid-area: c; background: rgba(24, 30, 22, 0.62); }
-.talk { width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28); background: rgba(24, 30, 22, 0.62); font-size: 20px; margin-bottom: 8px; }
+.talk { width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28); background: rgba(24, 30, 22, 0.62); font-size: 20px; margin-top: 40px; }
 .ab { display: flex; gap: 12px; transform: rotate(-20deg); margin-bottom: 8px; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35)); }
 .round { width: 56px; height: 56px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); background: rgba(156, 42, 77, 0.78); color: #f4e9cf; font-weight: 800; font-size: 18px; touch-action: none; }
 .round:active { background: rgba(232, 197, 71, 0.9); color: #2b1d00; transform: translateY(2px); }

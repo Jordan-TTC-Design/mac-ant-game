@@ -4,13 +4,14 @@ import {
   GUILD_DECOR_CATEGORIES,
   guildDecorKind,
   guildDecorRoomUsed,
-  guildDecorUnlocked,
+  seasonRange,
   HALL_FLOORS,
   HALL_WALLS,
   hallStyleOpen,
   type GuildDecorKind,
   type GuildDecorPlaced,
   type GuildRole,
+  type GuildSeasonView,
 } from "@goblincamp/shared";
 
 // The catalog while decorating the hall (GUILD.md §4.2–4.3): decorations (the room used, the categories, every piece — the
@@ -21,6 +22,8 @@ const props = defineProps<{
   level: number;
   room: number;
   races: string[];
+  /** The holiday seasons as the server says they are today (a holiday piece can only be put down while its season is on). */
+  seasons: GuildSeasonView[];
   role: GuildRole;
   selected: string | null;
   busy: boolean;
@@ -43,12 +46,18 @@ const emit = defineEmits<{
 const tile = (file: string) => ({ backgroundImage: `url(/guild-hall/${file})` });
 
 const RACE_NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
+/** The tab of the holiday pieces, in front of the categories (when there are any). */
+const HOLIDAY = "節日限定";
+const tabs = computed(() => (GUILD_DECOR.some((k) => k.season) ? [HOLIDAY, ...GUILD_DECOR_CATEGORIES] : [...GUILD_DECOR_CATEGORIES]));
 const tab = ref<string>(GUILD_DECOR_CATEGORIES[0]);
+const seasonOf = (k: GuildDecorKind) => props.seasons.find((s) => s.id === k.season);
+/** Whether this piece may be put down now: its level, its race, its season. */
+const isOpen = (k: GuildDecorKind) => k.level <= props.level && (!k.race || raceSet.value.has(k.race)) && (!k.season || !!seasonOf(k)?.on);
 const used = computed(() => guildDecorRoomUsed(props.items));
 const raceSet = computed(() => new Set(props.races));
 const kinds = computed(() =>
-  GUILD_DECOR.filter((k) => k.category === tab.value)
-    .map((k) => ({ k, open: guildDecorUnlocked(k, props.level, raceSet.value) }))
+  GUILD_DECOR.filter((k) => (tab.value === HOLIDAY ? !!k.season : k.category === tab.value))
+    .map((k) => ({ k, open: isOpen(k) }))
     .sort((a, b) => Number(b.open) - Number(a.open) || a.k.level - b.k.level),
 );
 const picked = computed(() => props.items.find((d) => d.uid === props.selected) ?? null);
@@ -66,7 +75,13 @@ function thumb(k: GuildDecorKind) {
 }
 function why(k: GuildDecorKind) {
   if (k.level > props.level) return `Lv ${k.level}`;
-  return `要有${RACE_NAMES[k.race ?? ""] ?? ""}`;
+  if (k.race && !raceSet.value.has(k.race)) return `要有${RACE_NAMES[k.race] ?? ""}`;
+  const s = seasonOf(k);
+  return s ? `${s.name} ${seasonRange(s)}` : "節日限定";
+}
+/** The line under an open piece: what it takes, and the season it belongs to. */
+function cost(k: GuildDecorKind) {
+  return `${k.size} 點${k.season ? `・${seasonOf(k)?.name ?? ""}` : ""}`;
 }
 </script>
 
@@ -132,7 +147,7 @@ function why(k: GuildDecorKind) {
     <p v-else class="hint">點下面的裝飾放進據點，在據點裡拖著移動；點一下已經放的可以翻面、收掉。</p>
 
     <div class="tabs">
-      <button v-for="c in GUILD_DECOR_CATEGORIES" :key="c" type="button" class="tab" :class="{ on: tab === c }" @click="tab = c">{{ c }}</button>
+      <button v-for="c in tabs" :key="c" type="button" class="tab" :class="{ on: tab === c }" @click="tab = c">{{ c }}</button>
     </div>
     <div class="grid">
       <button
@@ -147,7 +162,7 @@ function why(k: GuildDecorKind) {
       >
         <span class="thumb pixel" :style="thumb(k)" />
         <small>{{ k.name }}</small>
-        <small class="pts">{{ open ? `${k.size} 點` : why(k) }}</small>
+        <small class="pts">{{ open ? cost(k) : why(k) }}</small>
       </button>
     </div>
     </template>

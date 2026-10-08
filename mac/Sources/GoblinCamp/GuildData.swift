@@ -49,6 +49,10 @@ struct GuildInfo: Decodable {
     }
 
     struct Guild: Decodable {
+        private enum CodingKeys: String, CodingKey {
+            case id, name, badge, level, rules, members, decor, decorVersion, floor, wall, races, points, toNext, invited
+            case seasonList = "seasons"
+        }
         let id: String
         let name: String
         let badge: String
@@ -62,8 +66,30 @@ struct GuildInfo: Decodable {
         let races: [String]
         let points: Int
         let toNext: Int?
+        /// The holiday seasons as the server says they are today (shared/src/guild-seasons.ts guildSeasonViews).
+        /// (An older server does not send it.)
+        let seasonList: [Season]?
+        var seasons: [Season] { seasonList ?? [] }
         /// Asked and not answered yet (only the leader and officers are sent this).
         let invited: [Invited]
+    }
+
+    struct Season: Decodable {
+        let id: String
+        let name: String
+        /// When it is on (or next on), "yyyy-mm-dd".
+        let from: String
+        let to: String
+        let on: Bool
+
+        /// "2/7～2/22".
+        var range: String {
+            func md(_ d: String) -> String {
+                let p = d.split(separator: "-").compactMap { Int($0) }
+                return p.count == 3 ? "\(p[1])/\(p[2])" : d
+            }
+            return "\(md(from))～\(md(to))"
+        }
     }
 
     struct Invited: Decodable {

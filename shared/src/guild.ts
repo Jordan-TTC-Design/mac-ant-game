@@ -293,6 +293,8 @@ export interface GuildView {
   /** Contribution given so far, and what the next level still needs (null: at the top). */
   points: number;
   toNext: number | null;
+  /** The holiday seasons (shared/src/guild-seasons.ts): which is on today, and when each is (next) on. */
+  seasons: import("./guild-seasons.ts").GuildSeasonView[];
 }
 
 export interface GuildInviteView {

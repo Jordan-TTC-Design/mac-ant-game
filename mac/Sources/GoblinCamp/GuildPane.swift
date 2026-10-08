@@ -352,6 +352,25 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         }
     }
 
+    /// Clicks the first card of the open decorating panel the way a mouse would (a test: says what changed).
+    func debugClickFirstCard() -> String {
+        let alive = "controller alive: \(controller != nil || editor != nil)"
+        if controller != nil { return alive }
+        guard let panel = panel else { return "no panel (editor \(editor == nil ? "nil" : "set"), controller \(controller == nil ? "nil" : "set"), info \(info == nil ? "nil" : "set"), me \(myId ?? "nil"))" }
+        guard let window = paneView.window else { return "no window" }
+        func cards(_ v: NSView) -> [CatalogCell] { (v as? CatalogCell).map { [$0] } ?? v.subviews.flatMap(cards) }
+        guard let cell = cards(panel).first else { return "no card" }
+        let before = hall.decor.count
+        let p = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                window.sendEvent(e)
+            }
+        }
+        let hit = window.contentView?.hitTest(paneView.superview?.convert(p, from: nil) ?? p)
+        return "\(alive); decor \(before) -> \(hall.decor.count); hit view: \(hit.map { String(describing: type(of: $0)) } ?? "nil")"
+    }
+
     // MARK: Panels on the page
 
     /// Says what just happened for a few seconds.
@@ -369,8 +388,9 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     }
 
     /// Puts a panel on the right of the page (closing the one that was there).
+    /// (The caller has closed the one before, and made the new controller: this must not tear that down, or its buttons do nothing.)
     private func open(panel view: NSView, width: CGFloat = 380) {
-        closePanel()
+        panel?.removeFromSuperview()
         panel = view
         hall.rightInset = width + 20
         paneView.addSubview(view)

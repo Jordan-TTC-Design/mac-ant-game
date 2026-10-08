@@ -81,6 +81,8 @@ enum GuildStyles {
     ]
     static let races = ["goblin": "哥布林", "elf": "精靈", "undead": "死靈"]
     /// The categories, in the order the catalog's tabs show them (shared/src/guild-decor.ts GUILD_DECOR_CATEGORIES).
+    /// The tab of the holiday pieces (in front of the categories, when there are any).
+    static let holiday = "節日限定"
     static let categories = ["辦公桌椅", "櫃子收納", "桌上小物", "燈具", "牆上掛飾", "地毯", "植物", "雕像與紀念物", "休閒娛樂", "廚房飲料", "門窗與隔間", "戶外", "會動的"]
 }
 
@@ -202,7 +204,8 @@ final class GuildDecorEditor: NSObject {
         picked.setViews([pickedName, flipButton, removeButton, lockButton], in: .leading)
         picked.spacing = 6
 
-        categories.addItems(withTitles: GuildStyles.categories)
+        categories.addItems(withTitles: (art.kinds.contains { $0.season != nil } ? [GuildStyles.holiday] : []) + GuildStyles.categories)
+        categories.selectItem(withTitle: category)
         categories.target = self
         categories.action = #selector(categoryChanged)
         categories.controlSize = .small
@@ -308,14 +311,21 @@ final class GuildDecorEditor: NSObject {
         var cells: [CatalogCell] = []
         switch mode {
         case .decor:
-            let open = { (k: GuildArt.DecorKind) in k.level <= self.guild.level && (k.race == nil || self.races.contains(k.race!)) }
-            let all = art.kinds.filter { $0.category == category }
+            // (a holiday piece needs its season on today, as the server says: the days are worked out only there)
+            let season = { (k: GuildArt.DecorKind) in self.guild.seasons.first { $0.id == k.season } }
+            let open = { (k: GuildArt.DecorKind) in
+                k.level <= self.guild.level && (k.race == nil || self.races.contains(k.race!)) && (k.season == nil || season(k)?.on == true)
+            }
+            let all = art.kinds.filter { category == GuildStyles.holiday ? $0.season != nil : $0.category == category }
             for k in all.filter(open) + all.filter({ !open($0) }) {
                 let piece = art.decorPiece(k.id)
                 let shut = !open(k)
-                let why = k.level > guild.level ? "Lv \(k.level)" : "要有\(GuildStyles.races[k.race ?? ""] ?? "")"
+                let why = k.level > guild.level ? "Lv \(k.level)"
+                    : (k.race != nil && !races.contains(k.race!)) ? "要有\(GuildStyles.races[k.race ?? ""] ?? "")"
+                    : season(k).map { "\($0.name) \($0.range)" } ?? "節日限定"
+                let cost = "\(k.size) 點" + (season(k).map { "・\($0.name)" } ?? "")
                 cells.append(CatalogCell(image: piece.flatMap { art.frame(of: $0, at: 0) }, pixels: NSSize(width: piece?.w ?? 16, height: piece?.h ?? 16), name: k.name,
-                                         sub: shut ? why : "\(k.size) 點", shut: shut || busy) { [weak self] in self?.add(k.id) })
+                                         sub: shut ? why : cost, shut: shut || busy) { [weak self] in self?.add(k.id) })
             }
         case .floor:
             for f in GuildStyles.floors {

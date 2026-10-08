@@ -19,6 +19,8 @@ import {
   hallStyleOpen,
   hallWallInput,
   starterDecor,
+  taipeiDay,
+  guildSeasonViews,
   GUILD_SAY_PER_MINUTE,
   guildDonateInput,
   guildPointsToNext,
@@ -212,6 +214,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         wall: guild!.wall,
         points: guild!.points,
         toNext: guildPointsToNext(guild!.points),
+        seasons: guildSeasonViews(taipeiDay(at)),
         races: [...new Set(members.map((r) => r.race ?? "goblin"))].sort(),
       },
       invites: [],
@@ -441,7 +444,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         (await tx.select({ race: camps.race }).from(guildMembers).leftJoin(camps, eq(camps.userId, guildMembers.userId)).where(eq(guildMembers.guildId, mine.guildId))).map((r) => r.race ?? "goblin"),
       );
       const floor = body.data.floor ?? guild!.floor;
-      const problem = guildDecorProblem(body.data.items, guild!.level, races, guild!.decor) ?? hallFloorProblem(floor, guild!.level, races, guild!.floor);
+      const problem = guildDecorProblem(body.data.items, guild!.level, races, guild!.decor, taipeiDay(at)) ?? hallFloorProblem(floor, guild!.level, races, guild!.floor);
       if (problem) return { error: 400 as const, message: problem };
       const change = guildDecorChange(guild!.decor, body.data.items, mine.role);
       if (typeof change === "string") return { error: 403 as const, message: change };

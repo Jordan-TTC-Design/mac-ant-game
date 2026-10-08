@@ -185,7 +185,6 @@ function keys(e: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", keys));
 onUnmounted(() => window.removeEventListener("keydown", keys));
 const recentChat = computed(() => live.state.guildChat.slice(-6));
-const lastLine = computed(() => live.state.guildChat.at(-1) ?? null);
 
 // The Mac's window (or any wide window): the hall fills it, like the camp, with the rest floating over it or sliding in
 // from the right; a phone keeps the page.
@@ -196,6 +195,9 @@ const immersive = computed(() => !!guild.value && (inMacApp() || wide.value));
 const phone = computed(() => !!guild.value && !immersive.value);
 const menuOpen = ref(false);
 const chatOpen = ref(false);
+// (the tab bar is left out here: the screen is small; "‹" and the menu go back to the main screen)
+watchEffect(() => document.documentElement.classList.toggle("guild-full", phone.value));
+onUnmounted(() => document.documentElement.classList.remove("guild-full"));
 watch(editing, (on) => {
   if (on) {
     menuOpen.value = false;
@@ -304,12 +306,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
       <template v-if="!editing">
         <GuildPad v-if="phone" @pad="control.press" @a="control.pressA" @b="control.pressB" @talk="talk" />
         <template v-if="phone">
-          <button v-if="!chatOpen" type="button" class="chat-strip" @click="talk">
-            <span>💬</span>
-            <span v-if="lastLine" class="txt"><b>{{ lastLine.name }}</b>：{{ lastLine.text }}</span>
-            <span v-else class="txt dim">說點什麼…</span>
-          </button>
-          <section v-else class="chat-sheet">
+          <section v-if="chatOpen" class="chat-sheet">
             <div v-for="line in recentChat" :key="line.id" class="line"><b>{{ line.name }}</b>：{{ line.text }} <small>{{ noteTime(line.at) }}</small></div>
             <p v-if="!recentChat.length" class="dim">還沒有人說話，打個招呼吧。</p>
             <form class="say" @submit.prevent="say">
@@ -337,6 +334,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :level="guild.level"
         :room="guild.rules.room"
         :races="guild.races"
+        :seasons="guild.seasons"
         :role="role"
         :selected="selected"
         :busy="busy"
@@ -405,8 +403,10 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .immersive .side.open { display: block; position: fixed; top: 54px; right: 10px; bottom: 10px; z-index: 3; width: 380px; overflow-y: auto; padding-right: 2px; }
 
 /* a phone: the hall fills the screen above the tab bar; everything else floats over it (the same dark glass as the Mac's) */
+.phone, .phone * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.phone input { -webkit-user-select: text; user-select: text; }
 .phone { padding: 0 !important; max-width: none !important; --glass: rgba(18, 26, 16, 0.74); --glass-line: rgba(255, 255, 255, 0.22); --top: calc(env(safe-area-inset-top) + 10px); }
-.phone .hall { position: fixed; top: 0; left: 0; right: 0; bottom: var(--tabbar-h); margin: 0; z-index: 0; }
+.phone .hall { position: fixed; top: 0; left: 0; right: 0; bottom: var(--pad-h); height: auto !important; margin: 0; z-index: 0; } /* (not the hall's own 100% high: that would go under the pad) */
 .phone.sheet .hall { bottom: 52dvh; }
 .phone .head { position: fixed; top: var(--top); left: 10px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; max-width: calc(100vw - 76px); border-radius: 12px; background: var(--glass); border: 2px solid var(--glass-line); box-shadow: none; color: #fff; }
 .phone .head :deep(svg) { width: 34px; height: 34px; flex: none; }
@@ -424,10 +424,8 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .menu-list > *:first-child { border-top: 0; }
 .menu-list .leave-link { border-top: 2px solid rgba(255, 255, 255, 0.22); color: #ffe9a8; }
 .menu-list > *:active { background: rgba(255, 255, 255, 0.14); }
-/* the chat folds to one line over the pad; tapping it opens the lines and the box at the top (out of the keyboard's way) */
-.chat-strip { position: fixed; left: 10px; right: 10px; bottom: calc(var(--tabbar-h) + 164px); z-index: 2; display: flex; align-items: center; gap: 8px; width: auto; max-width: 520px; margin: 0 auto; padding: 8px 14px; border: 2px solid var(--glass-line); border-radius: 999px; background: var(--glass); color: #fff; font-size: 13px; text-align: left; }
-.chat-strip .txt { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.chat-strip .dim, .chat-sheet .dim { color: #b9c7b1; }
+/* the chat opens from the pad's 💬: the lines and the box at the top (out of the keyboard's way) */
+.chat-sheet .dim { color: #b9c7b1; }
 .chat-sheet { position: fixed; top: calc(var(--top) + 60px); left: 10px; right: 10px; z-index: 6; display: grid; gap: 4px; max-width: 520px; margin: 0 auto; padding: 10px 12px; border: 2px solid var(--glass-line); border-radius: 14px; background: rgba(18, 26, 16, 0.94); color: #fff; }
 .chat-sheet .line { font-size: 14px; line-height: 1.4; word-break: break-word; }
 .chat-sheet .line small { color: #9fb096; font-size: 11px; }
@@ -435,7 +433,8 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .chat-sheet .say { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 /* the box and its two buttons are the same height */
 .chat-sheet .field, .chat-sheet .btn { height: 42px; min-height: 42px; margin: 0; padding-top: 0; padding-bottom: 0; border-radius: 10px; }
-.chat-sheet .field { flex: 1; min-width: 0; padding-left: 12px; padding-right: 12px; }
+.chat-sheet .field { flex: 1; min-width: 0; padding-left: 12px; padding-right: 12px; color: #1f1f1f; background: #fffdf6; }
+.chat-sheet .field::placeholder { color: #8a8a80; }
 .chat-sheet .btn { flex: none; min-width: 44px; padding-left: 12px; padding-right: 12px; }
 .chat-sheet .btn:not(.primary) { background: rgba(255, 255, 255, 0.14); color: #fff; border-color: rgba(255, 255, 255, 0.25); }
 /* decorating: the catalog is a sheet from the bottom, the hall stays in sight above it */

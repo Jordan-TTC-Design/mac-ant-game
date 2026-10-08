@@ -477,6 +477,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720), styleMask: [.titled], backing: .buffered, defer: false)
             self.guildPane.paneView.frame = NSRect(x: 0, y: 0, width: 1100, height: 720)
             w.contentView = self.guildPane.paneView
+            if env["GUILD_TEST_CLICK"] != nil { // click the first catalog card the way a mouse does
+                var t = 0.5
+                for name in ["decor", "avatar", "donate", "members", "settings"] {
+                    after(t) { self.guildPane.debugShow(data, me: "me", panel: name) }
+                    after(t + 0.8) { w.makeKeyAndOrderFront(nil); log("guild click \(name): \(self.guildPane.debugClickFirstCard())") }
+                    t += 1.5
+                }
+                after(t + 0.5) { NSApp.terminate(nil) }
+                return
+            }
             var at = 0.5
             for name in (env["GUILD_TEST_PANELS"] ?? "decor,avatar,donate,members,settings").split(separator: ",").map(String.init) {
                 after(at) { self.guildPane.debugShow(data, me: "me", panel: name) }

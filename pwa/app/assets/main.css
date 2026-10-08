@@ -18,6 +18,10 @@
   color-scheme: light;
 }
 .in-mac { --tabbar-h: 0px; }
+/* the guild page on a phone is full-screen: no tab bar, a strip for the pad at the bottom */
+:root { --pad-h: calc(152px + env(safe-area-inset-bottom)); }
+.guild-full .tabbar { display: none !important; }
+.guild-full { --tabbar-h: env(safe-area-inset-bottom); }
 * { box-sizing: border-box; }
 /* the document itself never scrolls (no bounce either): pages scroll inside #scroller, so the fixed tab bar stays put on iPhone */
 html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--ink); }
