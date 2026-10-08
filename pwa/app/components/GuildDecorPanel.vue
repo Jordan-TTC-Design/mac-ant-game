@@ -176,7 +176,7 @@ function why(k: GuildDecorKind) {
 .thumb { display: block; background-repeat: no-repeat; image-rendering: pixelated; }
 .item small { font-size: 11px; line-height: 1.2; text-align: center; }
 .pts { color: #777; }
-.actions { display: flex; gap: 8px; }
+.actions { display: flex; gap: 8px; position: sticky; bottom: 0; margin: 0 -20px -20px; padding: 10px 20px calc(env(safe-area-inset-bottom) + 12px); background: var(--card); border-top: 1px solid var(--line); border-radius: 0 0 14px 14px; z-index: 1; } /* (stays at the bottom of the sheet, so saving is never scrolled away) */
 .modes { display: flex; gap: 6px; }
 .styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
 .style { display: grid; justify-items: center; gap: 3px; border: 2px solid #1f1f1f; border-radius: 10px; background: #f3ead6; padding: 6px 4px; color: inherit; }

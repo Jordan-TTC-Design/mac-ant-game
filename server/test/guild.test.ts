@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
+import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, starterDecor, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
 import { eq } from "drizzle-orm";
 import type { Database } from "../src/db/client.ts";
-import { camps } from "../src/db/schema.ts";
+import { camps, guilds } from "../src/db/schema.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
 let database: Database;
@@ -197,7 +197,8 @@ describe("公會", () => {
     const g = ((await t.call("POST", "/guild", { name: "裝潢隊" }, a.auth)).body as GuildResponse).guild!;
     await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
     await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
-    expect((await guildOf(b)).guild).toMatchObject({ decor: [], decorVersion: 0, races: ["elf", "goblin"] });
+    // a new hall comes furnished, and all of it is decoration anyone may take away
+    expect((await guildOf(b)).guild).toMatchObject({ decor: starterDecor(1), decorVersion: 0, races: ["elf", "goblin"] });
 
     const kind = GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race)!.id;
     const lamp = { uid: "lamp0001", kind, x: 4, y: 6 };
@@ -224,7 +225,7 @@ describe("公會", () => {
     expect(log.map((e) => [e.by, e.added, e.moved, e.removed])).toEqual([
       ["咕嚕", 0, 0, 1],
       ["咕嚕", 0, 1, 0], // (the lock)
-      ["咕嚕", 2, 0, 0],
+      ["咕嚕", 2, 0, starterDecor(1).length], // (the starter furniture went, the lamp and plant came)
     ]);
     // the leader goes back to before the plant was taken away; only the leader may
     expect((await t.call("POST", "/guild/decor/restore", { logId: log[0]!.id }, b.auth)).status).toBe(403);
@@ -336,5 +337,18 @@ describe("公會", () => {
     // not in a guild: nothing to give to
     const c = await person("c@example.com");
     expect((await t.call("POST", "/guild/donate", { materials: { log: 1 } }, c.auth)).status).toBe(400);
+  });
+
+  it("a guild from before the starter furniture gets it once, behind what it had put down", async () => {
+    const a = await person("a@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "老公會" }, a.auth)).body as GuildResponse).guild!;
+    const mine = { uid: "mine0001", kind: GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race)!.id, x: 4, y: 6 };
+    await database.db.update(guilds).set({ decor: [mine], furnished: false, decorVersion: 3 }).where(eq(guilds.id, g.id));
+    const first = (await guildOf(a)).guild!;
+    expect(first.decor.map((d) => d.uid)).toEqual([...starterDecor(1).map((d) => d.uid), "mine0001"]);
+    expect(first.decorVersion).toBe(4);
+    // only once: taken away, it stays away
+    await t.call("PUT", "/guild/decor", { version: 4, items: [mine] }, a.auth);
+    expect((await guildOf(a)).guild!.decor.map((d) => d.uid)).toEqual(["mine0001"]);
   });
 });

@@ -466,6 +466,8 @@ export const guilds = pgTable("guilds", {
   wall: text("wall").notNull().default("stone"),
   /** Contribution the members gave (camp materials, GUILD.md §4.1); the level follows it. */
   points: integer("points").notNull().default(0),
+  /** Whether the hall got its starter furniture (shared/src/guild-decor.ts starterDecor); guilds from before that get it once. */
+  furnished: boolean("furnished").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull(),
 });
 

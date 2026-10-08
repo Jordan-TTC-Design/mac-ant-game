@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { GUILD_DECOR, type GuildDecorKind } from "./guild-decor-catalog.ts";
 import { guildLevel, type GuildRole } from "./guild.ts";
-import { WALL_ROWS, type Point, type Rect } from "./guild-hall.ts";
+import { hallFurnishing, WALL_ROWS, type HallFurnishing } from "./guild-hall.ts";
 
 export { GUILD_DECOR, type GuildDecorKind };
 
@@ -144,28 +144,37 @@ export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: num
   return null;
 }
 
-/** Where one sits on each piece made for sitting (a sofa, an armchair…), in the hall's order: the feet, in tiles. */
-export function guildDecorSeats(items: readonly GuildDecorPlaced[]): Point[] {
-  const out: Point[] = [];
+/** What the pieces put down make of the hall: where one works, sits and drinks, and what is in the way (guild-hall.ts). */
+export function guildFurnishing(items: readonly GuildDecorPlaced[]): HallFurnishing {
+  const pieces = [];
   for (const d of items) {
     const k = BY_ID.get(d.kind);
-    if (!k?.seat) continue;
-    const dx = (k.seat.x - k.w / 2) / 16;
-    out.push({ x: d.x + (d.flip ? -dx : dx), y: d.y + (k.seat.y - k.h) / 16 });
+    if (k) pieces.push({ x: d.x, y: d.y, flip: d.flip, spec: { w: k.w, h: k.h, flat: k.flat, wall: k.wall, ceiling: k.ceiling, living: k.living, seat: k.seat, desk: k.desk, drink: k.drink } });
   }
-  return out;
+  return hallFurnishing(pieces);
 }
 
-/** What stands in the way among the decorations: not rugs, wall or ceiling pieces, or the little living things. */
-export function guildDecorSolids(items: readonly GuildDecorPlaced[]): Rect[] {
-  const out: Rect[] = [];
-  for (const d of items) {
-    const k = BY_ID.get(d.kind);
-    if (!k || k.flat || k.wall || k.ceiling || k.category === "會動的") continue;
-    const half = Math.max(0.2, (k.w / 2 - 2) / 16);
-    out.push({ x0: d.x - half, y0: d.y - Math.min(k.h, 10) / 16, x1: d.x + half, y1: d.y });
-  }
-  return out;
+/**
+ * What a new guild's hall starts with (what used to be its fixed furniture): a desk for each of the first five members under
+ * the wall, the fireplace, two banners, a bookshelf, the water, a bench, two plants and a rug. All of it is ordinary
+ * decoration, to move or take away (2026-10-08).
+ */
+export function starterDecor(level = 1): GuildDecorPlaced[] {
+  const { width, height } = guildLevel(level);
+  const bottom = height - 0.9;
+  const desks = [-6, -3, 0, 3, 6].map((dx, i) => ({ uid: `start_desk${i}`, kind: "guild_desk", x: Math.floor(width / 2) + dx, y: WALL_ROWS + 2.5 }));
+  return [
+    ...desks,
+    { uid: "start_fire", kind: "fireplace", x: width / 2, y: WALL_ROWS + 0.2 },
+    { uid: "start_flag1", kind: "guild_banner", x: 3, y: WALL_ROWS },
+    { uid: "start_flag2", kind: "guild_banner", x: width - 3, y: WALL_ROWS },
+    { uid: "start_books", kind: "bookshelf_tall", x: 1.2, y: WALL_ROWS + 0.4 },
+    { uid: "start_water", kind: "water_elemental", x: width - 2.8, y: WALL_ROWS + 0.6 },
+    { uid: "start_bench", kind: "long_bench", x: 3, y: bottom },
+    { uid: "start_plant1", kind: "potted_fern", x: 0.8, y: bottom },
+    { uid: "start_plant2", kind: "potted_fern", x: width - 0.8, y: bottom },
+    { uid: "start_rug", kind: "red_rug", x: width / 2, y: height - 1.2 },
+  ];
 }
 
 export interface GuildDecorChange {

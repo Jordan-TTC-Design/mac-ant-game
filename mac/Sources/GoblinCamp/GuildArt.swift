@@ -14,9 +14,18 @@ final class GuildArt {
         /// Where a sitter's feet go (sprite pixels; nil: not for sitting), and whether it is one of the little living things.
         var seat: (x: Double, y: Double)? = nil
         var living = false
+        /// A desk one works at; water one drinks beside.
+        var desk = false
+        var drink = false
+    }
+
+    /// One kind of decoration as the catalog lists it (shared/src/guild-decor-catalog.ts, written for the Mac as decor.json).
+    struct DecorKind {
+        let id: String; let name: String; let category: String; let race: String?; let size: Int; let level: Int
     }
 
     private(set) var ready = false
+    private(set) var kinds: [DecorKind] = []
     // the avatars
     private(set) var frameW = 32, frameH = 40, frames = 1
     private(set) var anchorX = 16.0, anchorY = 37.0
@@ -110,12 +119,23 @@ final class GuildArt {
                     guard let x = (s["x"] as? NSNumber)?.doubleValue, let y = (s["y"] as? NSNumber)?.doubleValue else { return nil }
                     return (x, y)
                 }
+                kinds.append(DecorKind(id: id, name: d["name"] as? String ?? id, category: d["category"] as? String ?? "", race: d["race"] as? String,
+                                       size: d["size"] as? Int ?? 1, level: d["level"] as? Int ?? 1))
                 decor[id] = Piece(image: img, w: w, h: hh, frames: d["frames"] as? Int ?? 1, fps: (d["fps"] as? NSNumber)?.doubleValue ?? 0,
                                   anchorX: Double(w) / 2, anchorY: Double(hh), flat: d["flat"] as? Bool ?? false, wall: d["wall"] as? Bool ?? false, ceiling: d["ceiling"] as? Bool ?? false,
-                                  seat: seat, living: d["category"] as? String == "會動的")
+                                  seat: seat, living: d["living"] as? Bool ?? (d["category"] as? String == "會動的"),
+                                  desk: d["desk"] as? Bool ?? false, drink: d["drink"] as? Bool ?? false)
             }
         }
+        kinds.sort { $0.level != $1.level ? $0.level < $1.level : $0.name < $1.name }
         ready = !layers.isEmpty && !floors.isEmpty
+    }
+
+    /// One colour standing for a recolouring option (its middle shade), for the avatar maker's dots; `option` is as the options
+    /// list it (a skin's is the race, sex and name together, as the art's manifest keys it).
+    func swatch(_ channel: String, _ option: String) -> NSColor? {
+        guard let hexes = recolor[channel]?.options[option], !hexes.isEmpty, let c = GuildArt.rgb(hexes[min(1, hexes.count - 1)]) else { return nil }
+        return NSColor(calibratedRed: CGFloat(c.0) / 255, green: CGFloat(c.1) / 255, blue: CGFloat(c.2) / 255, alpha: 1)
     }
 
     func floorTile(_ id: String) -> CGImage? { floors[id] ?? floors["oak"] }
