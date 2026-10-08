@@ -514,7 +514,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if env["GUILD_TEST_CLICK"] != nil { // click the first catalog card the way a mouse does
                 var t = 0.5
                 for name in ["decor", "avatar", "donate", "members", "settings"] {
-                    after(t) { self.guildPane.debugShow(data, me: "me", panel: name) }
+                    after(t) {
+                        if name == "donate" { GuildDonatePanel.debugHave = ["log": 5, "stone": 3, "shiny_bead": 2] }
+                        self.guildPane.debugShow(data, me: "me", panel: name)
+                        if name == "donate" { after(0.4) { w.makeKeyAndOrderFront(nil); self.guildPane.debugTypeDonation("2"); self.guildPane.debugShow(data, me: "me", panel: "donate"); self.guildPane.debugShow(data, me: "me", panel: "donate"); log("guild donate: redrawn") } }
+                    }
                     after(t + 0.8) { w.makeKeyAndOrderFront(nil); log("guild click \(name): \(self.guildPane.debugClickFirstCard())") }
                     t += 1.5
                 }

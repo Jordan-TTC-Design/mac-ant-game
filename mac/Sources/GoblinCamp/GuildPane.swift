@@ -31,7 +31,7 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     /// The side panel that is open (decorating, and the others), one at a time.
     private var panel: NSView?
     private var editor: GuildDecorEditor?
-    private var controller: GuildPanelController?
+    private(set) var controller: GuildPanelController?
 
     private var info: GuildInfo?
     private var chat: [GuildChatLine] = []
@@ -351,6 +351,8 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         default: break
         }
     }
+
+    func debugTypeDonation(_ text: String) { (controller as? GuildDonatePanel)?.debugType(text) }
 
     func debugCategory(_ title: String) { editor?.debugSelect(title) }
 

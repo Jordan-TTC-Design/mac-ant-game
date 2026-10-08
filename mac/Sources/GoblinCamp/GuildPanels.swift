@@ -51,7 +51,7 @@ final class GuildDonatePanel: GuildPanelController, GuildPanelInit {
     private var give: [String: Int] = [:]
     private var busy = false
     private var fields: [String: NSTextField] = [:]
-    private let totalLabel = NSTextField(labelWithString: "")
+    private var totalLabel = NSTextField(labelWithString: "")
     private var donateButton: ClosureButton?
 
     struct Ledger: Decodable {
@@ -85,9 +85,20 @@ final class GuildDonatePanel: GuildPanelController, GuildPanelInit {
 
     func guildChanged() { render() }
 
+    /// A test: types into the first box the way a person does (the box becomes the one being edited).
+    func debugType(_ text: String) {
+        guard let f = fields.values.first, let w = f.window else { return }
+        w.makeFirstResponder(f)
+        (f.currentEditor() as? NSTextView)?.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+    }
+
+    /// A test: materials to show without a server.
+    static var debugHave: [String: Int]?
+
     private func load() {
         struct Camp: Decodable { let materials: [String: Int] }
         Task { @MainActor in
+            if let h = Self.debugHave { self.have = h; self.render(); return }
             self.have = (try? await self.ctx.api.request("GET", "camp", as: Camp.self))?.materials ?? [:]
             self.ledger = try? await self.ctx.api.request("GET", "guild/donations", as: Ledger.self)
             self.render()
@@ -169,6 +180,7 @@ final class GuildDonatePanel: GuildPanelController, GuildPanelInit {
         if !rows.isEmpty {
             let b = GuildUI.button("捐出", prominent: true) { [weak self] in self?.donate() }
             donateButton = b
+            totalLabel = NSTextField(labelWithString: "") // (a fresh one each time: the old one is still inside the row being thrown away)
             totalLabel.font = .boldSystemFont(ofSize: 12)
             out.append(GuildUI.row([totalLabel, NSView(), b]))
             updateTotal()
@@ -227,7 +239,7 @@ final class GuildMembersPanel: GuildPanelController, GuildPanelInit {
     let view: GuildPanel
     private let ctx: GuildContext
     private var friends: [Friend] = []
-    private let codeField = NSTextField()
+    private var codeField = NSTextField()
 
     struct Friend: Decodable { let id: String; let name: String; let race: String }
 
@@ -298,6 +310,7 @@ final class GuildMembersPanel: GuildPanelController, GuildPanelInit {
                 out.append(GuildUI.row([GuildUI.label(f.name, bold: true), GuildUI.note("好友"), NSView(), b]))
             }
             if ask.isEmpty { out.append(GuildUI.note("好友都邀過了（或還沒有好友）。也可以輸入對方的好友代碼：", width: inner)) }
+            codeField = NSTextField(string: codeField.stringValue) // (new ones each draw: a field kept inside the row being thrown away upsets the layout engine)
             codeField.placeholderString = "對方的好友代碼"
             codeField.controlSize = .small
             let send = GuildUI.button("邀請", prominent: true) { [weak self] in
@@ -351,7 +364,7 @@ final class GuildSettingsPanel: GuildPanelController, GuildPanelInit {
     let view: GuildPanel
     private let ctx: GuildContext
     private var log: [Entry] = []
-    private let nameField = NSTextField()
+    private var nameField = NSTextField()
     private var badge = ""
     private var editor: BadgeEditorView?
     private var drawn = false
@@ -406,6 +419,7 @@ final class GuildSettingsPanel: GuildPanelController, GuildPanelInit {
         if role == "member" { out.append(GuildUI.note("這一頁是會長和幹部用的。", width: inner)) }
         if role == "leader" {
             out.append(GuildUI.heading("公會名字"))
+            nameField = NSTextField(string: nameField.stringValue)
             nameField.controlSize = .small
             nameField.setContentHuggingPriority(.defaultLow, for: .horizontal)
             out.append(GuildUI.row([nameField, GuildUI.button("改名", prominent: true) { [weak self] in
@@ -466,7 +480,7 @@ final class GuildSettingsPanel: GuildPanelController, GuildPanelInit {
 final class GuildFoundPanel: GuildPanelController, GuildPanelInit {
     let view: GuildPanel
     private let ctx: GuildContext
-    private let nameField = NSTextField()
+    private var nameField = NSTextField()
     private var badge = GuildBadgeArt.standard
     private var editor: BadgeEditorView?
     private var drawing = false
@@ -500,6 +514,7 @@ final class GuildFoundPanel: GuildPanelController, GuildPanelInit {
         if let until = info.waitUntil, let at = ISO8601DateFormatter.guild.date(from: until), at > Date() {
             out.append(GuildUI.note("剛離開公會，\(GuildUI.ago(until))後才能加入或建立新的。", width: inner))
         }
+        nameField = NSTextField(string: nameField.stringValue)
         nameField.placeholderString = "公會名字（2～16 個字）"
         nameField.controlSize = .small
         out.append(nameField)
