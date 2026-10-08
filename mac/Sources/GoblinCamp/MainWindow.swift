@@ -19,12 +19,13 @@ extension MainPane {
 /// small window (or the desktop): this one is for looking things up and doing things.
 final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSToolbarDelegate {
     enum Page: String, CaseIterable {
-        case camp, world, quests, feed, workshop, roster, notes, account, manual
+        case camp, world, guild, quests, feed, workshop, roster, notes, account, manual
 
         var title: String {
             switch self {
             case .camp: return "營地"
             case .world: return "大世界"
+            case .guild: return "公會"
             case .quests: return "任務"
             case .feed: return "動態"
             case .workshop: return "工坊"
@@ -40,7 +41,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
         var minWidth: CGFloat {
             switch self {
             case .camp: return 300
-            case .world, .quests, .feed: return 360
+            case .world, .guild, .quests, .feed: return 360
             case .account, .manual: return 420
             case .workshop: return 600
             case .notes: return 620
@@ -52,6 +53,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             switch self {
             case .camp: return "tent"
             case .world: return "globe.asia.australia"
+            case .guild: return "building.columns"
             case .quests: return "checklist"
             case .feed: return "clock.arrow.circlepath"
             case .workshop: return "hammer"

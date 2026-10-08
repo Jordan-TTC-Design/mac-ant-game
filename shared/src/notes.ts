@@ -90,6 +90,10 @@ export type ServerEvent =
   | { type: "hello"; userId: string }
   /** Friends or messages changed (a message came, an ask, a yes). */
   | { type: "friends.changed"; from?: string }
+  /** The guild (its members, invitations, badge…) or an invitation to one changed: fetch it. */
+  | { type: "guild.changed" }
+  /** A guild member's Mac said how they are (GUILD.md §3). */
+  | { type: "guild.presence"; userId: string; state: "focus" | "online" | "away" | "offline"; at: string }
   /** The shared pomodoro changed (fetch it, unless this version is already here). */
   | { type: "pomodoro.changed"; version: number }
   /** A Claude question came, was answered or went away. */

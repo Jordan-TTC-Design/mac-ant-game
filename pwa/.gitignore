@@ -6,3 +6,5 @@ public/terrain/
 .output/
 dist
 public/decor/
+public/avatars/
+public/guild-hall/

@@ -1,0 +1,283 @@
+{
+ "tile": 16,
+ "floors": {
+  "oak": "floors/oak.png",
+  "stone": "floors/stone.png",
+  "carpet": "floors/carpet.png",
+  "marble": "floors/marble.png"
+ },
+ "walls": {
+  "stone": {
+   "file": "walls/stone.png",
+   "corner": "walls/stone_corner.png",
+   "side": "walls/stone_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "wood": {
+   "file": "walls/wood.png",
+   "corner": "walls/wood_corner.png",
+   "side": "walls/wood_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  }
+ },
+ "furniture": {
+  "desk": {
+   "file": "furniture/desk.png",
+   "w": 40,
+   "h": 22,
+   "frames": 2,
+   "fps": 3,
+   "anchor": {
+    "x": 20,
+    "y": 21
+   },
+   "seat": {
+    "x": 17,
+    "y": 17,
+    "behind": false,
+    "facing": "front"
+   },
+   "solid": [
+    3,
+    1
+   ]
+  },
+  "stool": {
+   "file": "furniture/stool.png",
+   "w": 18,
+   "h": 5,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 9,
+    "y": 4
+   },
+   "seat": {
+    "x": 9,
+    "y": 4,
+    "behind": true,
+    "facing": "front"
+   },
+   "solid": [
+    1,
+    1
+   ]
+  },
+  "stool_side": {
+   "file": "furniture/stool_side.png",
+   "w": 13,
+   "h": 5,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 6,
+    "y": 4
+   },
+   "seat": {
+    "x": 6,
+    "y": 4,
+    "behind": true,
+    "facing": "side"
+   },
+   "solid": [
+    1,
+    1
+   ]
+  },
+  "bench": {
+   "file": "furniture/bench.png",
+   "w": 32,
+   "h": 14,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 16,
+    "y": 13
+   },
+   "seat": {
+    "x": 16,
+    "y": 13,
+    "behind": true,
+    "facing": "front"
+   },
+   "solid": [
+    2,
+    1
+   ]
+  },
+  "bench_side": {
+   "file": "furniture/bench_side.png",
+   "w": 16,
+   "h": 14,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 7,
+    "y": 13
+   },
+   "seat": {
+    "x": 7,
+    "y": 13,
+    "behind": true,
+    "facing": "side"
+   },
+   "solid": [
+    2,
+    1
+   ]
+  },
+  "armchair": {
+   "file": "furniture/armchair.png",
+   "w": 30,
+   "h": 18,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 15,
+    "y": 17
+   },
+   "seat": {
+    "x": 15,
+    "y": 17,
+    "behind": true,
+    "facing": "front"
+   },
+   "solid": [
+    2,
+    1
+   ]
+  },
+  "armchair_side": {
+   "file": "furniture/armchair_side.png",
+   "w": 20,
+   "h": 18,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 8,
+    "y": 17
+   },
+   "seat": {
+    "x": 8,
+    "y": 17,
+    "behind": true,
+    "facing": "side"
+   },
+   "solid": [
+    2,
+    1
+   ]
+  },
+  "water_dispenser": {
+   "file": "furniture/water_dispenser.png",
+   "w": 16,
+   "h": 24,
+   "frames": 3,
+   "fps": 3,
+   "anchor": {
+    "x": 8,
+    "y": 23
+   },
+   "solid": [
+    1,
+    1
+   ],
+   "use": {
+    "x": 26,
+    "y": 23,
+    "anim": "drink",
+    "note": "where a drinking avatar stands (its anchor), facing front"
+   }
+  },
+  "rug": {
+   "file": "furniture/rug.png",
+   "w": 48,
+   "h": 32,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 24,
+    "y": 32
+   },
+   "solid": [
+    0,
+    0
+   ],
+   "flat": true
+  },
+  "plant": {
+   "file": "furniture/plant.png",
+   "w": 16,
+   "h": 24,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 8,
+    "y": 23
+   },
+   "solid": [
+    1,
+    1
+   ]
+  },
+  "bookshelf": {
+   "file": "furniture/bookshelf.png",
+   "w": 32,
+   "h": 40,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 16,
+    "y": 39
+   },
+   "solid": [
+    2,
+    1
+   ]
+  },
+  "fireplace": {
+   "file": "furniture/fireplace.png",
+   "w": 48,
+   "h": 40,
+   "frames": 3,
+   "fps": 6,
+   "anchor": {
+    "x": 24,
+    "y": 39
+   },
+   "solid": [
+    3,
+    1
+   ]
+  },
+  "banner": {
+   "file": "furniture/banner.png",
+   "w": 16,
+   "h": 32,
+   "frames": 1,
+   "fps": 0,
+   "anchor": {
+    "x": 8,
+    "y": 32
+   },
+   "solid": [
+    0,
+    0
+   ],
+   "wall": true
+  }
+ },
+ "notes": {
+  "scale": "Same pixel scale as the avatars (an avatar is about 1.5 x 2 tiles).",
+  "anchor": "Each furniture `anchor` is its floor point (sprite px): place it on the floor and y-sort by it.",
+  "seat": "`seat` is where a sitting avatar's anchor goes (sprite px). Chairs (behind: true) are drawn BEFORE the avatar that sits on them; the desk (behind: false) is drawn AFTER it (the avatar sits behind the desk, hands on the rune board, using the type/doze/sit front frames).",
+  "side": "*_side chairs face left like the avatar's side frames; mirror both together for right.",
+  "flat": "flat: true pieces lie on the floor (draw with the floor, not y-sorted).",
+  "wall": "wall: true pieces hang on the back wall (anchor = bottom centre of the sprite).",
+  "walls": "A wall piece is 1 tile wide and 2 tiles tall: the top 4 px is the wall's cap seen from above, the rest its face. Repeat it along the back wall; `corner` ends a run (mirror it for the other end); `side` is the cap of a left/right wall seen from above (repeat it down)."
+ }
+}

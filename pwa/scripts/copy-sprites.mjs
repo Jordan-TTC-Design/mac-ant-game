@@ -1,6 +1,6 @@
 // Copies the Mac app's art (every race's sprite sheets, the camp looks, the decorations, the big world's foes) and writes the names the phone shows
 // (breeds, materials), so the phone shows the very same camp. public/sprites and public/camps are not in git.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,4 +64,9 @@ for (const id of readdirSync(join(resources, "Animals"))) {
   for (const drop of readJson(path).drops ?? []) names.materials[drop.id] ??= drop.name;
 }
 writeFileSync(join(sprites, "names.json"), JSON.stringify(names));
+
+// the guild hall (GUILD.md, mac/tools/make_avatars.py): the avatars' layers and the hall's floors, walls and furniture
+for (const [from, to] of [["Avatars", "avatars"], ["Guild", "guild-hall"]]) {
+  if (existsSync(join(resources, from))) cpSync(join(resources, from), join(here, "../public", to), { recursive: true });
+}
 console.log("sprites copied");

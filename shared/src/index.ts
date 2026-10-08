@@ -4,6 +4,9 @@ export * from "./auth.ts";
 export * from "./claude.ts";
 export * from "./feedback.ts";
 export * from "./friends.ts";
+export * from "./guild.ts";
+export * from "./guild-hall.ts";
+export * from "./guild-decor.ts";
 export * from "./notes.ts";
 export * from "./pomodoro.ts";
 

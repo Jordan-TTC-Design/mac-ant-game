@@ -46,6 +46,8 @@ const lastRaid = computed(() => camp.state.saved?.raids[0] ?? null);
 const friends = computed(() => live.state.friends);
 const unread = computed(() => friends.value?.friends.reduce((n, f) => n + f.unread, 0) ?? 0);
 const waiting = computed(() => live.state.claude?.waiting ?? []);
+const guild = computed(() => live.state.guild);
+const guildOnline = computed(() => guild.value?.guild?.members.filter((m) => m.presence !== "offline").length ?? 0);
 const answering = ref(false);
 const answerProblem = ref("");
 async function answer(action: "allow" | "deny") {
@@ -135,6 +137,17 @@ const hello = computed(() => {
         <small v-if="unread" class="accent">{{ unread }} 則新訊息</small>
         <small v-else-if="friends?.incoming.length" class="accent">{{ friends.incoming.length }} 人想加你好友</small>
         <small v-else>{{ friends ? `${friends.friends.length} 位好友` : "…" }}</small>
+      </NuxtLink>
+
+      <NuxtLink to="/guild" class="card">
+        <span class="icon">🏰</span>
+        <b>公會</b>
+        <template v-if="guild?.guild">
+          <small>{{ guild.guild.name }}・Lv {{ guild.guild.level }}</small>
+          <small>{{ guildOnline }}／{{ guild.guild.members.length }} 人在線</small>
+        </template>
+        <small v-else-if="guild?.invites.length" class="accent">{{ guild.invites.length }} 個公會邀請你</small>
+        <small v-else>建立公會・邀請同事</small>
       </NuxtLink>
 
       <NuxtLink to="/claude" class="card">

@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponse, ClaudeResponse, FriendsResponse, PomodoroAction, PomodoroResponse, PomodoroState, ServerEvent } from "@goblincamp/shared";
+import type { ChatMessage, ChatResponse, ClaudeResponse, FriendsResponse, GuildResponse, PomodoroAction, PomodoroResponse, PomodoroState, ServerEvent } from "@goblincamp/shared";
 import { pomodoroAt, pomodoroSegments } from "@goblincamp/shared";
 import { ApiError, api } from "~/utils/api";
 
@@ -18,7 +18,9 @@ const state = reactive<{
   /** The chat open now (its friend's id), and its messages. */
   chatWith: string | null;
   chat: ChatResponse | null;
-}>({ friends: null, pomodoro: null, pomodoroLoaded: false, clockOffset: 0, claude: null, chatWith: null, chat: null });
+  /** The guild this account is in (or its invitations), and its avatar. */
+  guild: GuildResponse | null;
+}>({ friends: null, pomodoro: null, pomodoroLoaded: false, clockOffset: 0, claude: null, chatWith: null, chat: null, guild: null });
 let started = false;
 
 async function quietly<T>(work: () => Promise<T>): Promise<T | null> {
@@ -43,6 +45,10 @@ const loadClaude = async () => {
   const out = await quietly(() => api<ClaudeResponse>("GET", "claude"));
   if (out) state.claude = out;
 };
+const loadGuild = async () => {
+  const out = await quietly(() => api<GuildResponse>("GET", "guild"));
+  if (out) state.guild = out;
+};
 const loadChat = async () => {
   if (!state.chatWith) return;
   const id = state.chatWith;
@@ -63,6 +69,11 @@ function onEvent(e: Event) {
   }
   if (event.type === "pomodoro.changed" && event.version !== state.pomodoro?.version) void loadPomodoro();
   if (event.type === "claude.changed") void loadClaude();
+  if (event.type === "guild.changed") void loadGuild();
+  if (event.type === "guild.presence") {
+    const m = state.guild?.guild?.members.find((x) => x.id === event.userId);
+    if (m) Object.assign(m, { presence: event.state, seenAt: event.at });
+  }
 }
 function onVisible() {
   if (document.visibilityState !== "visible") return;
@@ -70,6 +81,7 @@ function onVisible() {
   void loadPomodoro();
   void loadClaude();
   void loadChat();
+  void loadGuild();
 }
 
 export function useLive() {
@@ -130,6 +142,7 @@ export function useLive() {
     refresh: onVisible,
     loadFriends,
     loadClaude,
+    loadGuild,
     pomodoroNow,
     pomodoro,
     openChat,

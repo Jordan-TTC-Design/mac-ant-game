@@ -451,3 +451,69 @@ export const worldLandmarks = pgTable("world_landmarks", {
   kind: text("kind"),
   name: text("name"),
 });
+
+/** A guild (shared/src/guild.ts, GUILD.md): its name, the badge the leader drew (16×16 hex digits) and its level. */
+export const guilds = pgTable("guilds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: citext("name").notNull().unique(),
+  badge: text("badge").notNull(),
+  level: integer("level").notNull().default(1),
+  /** The decorations put down in the hall (shared/src/guild-decor.ts), and a number that grows with every change to them. */
+  decor: jsonb("decor").$type<import("@goblincamp/shared").GuildDecorPlaced[]>().notNull().default([]),
+  decorVersion: integer("decor_version").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull(),
+});
+
+/** Every change to a hall's decorations: who, when, how much, and the list as it was before (for going back), GUILD_DECOR_LOG_DAYS. */
+export const guildDecorLog = pgTable(
+  "guild_decor_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: uuid("guild_id").notNull().references(() => guilds.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+    added: integer("added").notNull(),
+    moved: integer("moved").notNull(),
+    removed: integer("removed").notNull(),
+    restored: boolean("restored").notNull().default(false),
+    before: jsonb("before").$type<import("@goblincamp/shared").GuildDecorPlaced[]>().notNull(),
+  },
+  (t) => [index("guild_decor_log_guild_idx").on(t.guildId, t.at)],
+);
+
+/**
+ * Who is in which guild: one guild per account (the key), one leader per guild. `presence` is what the member's Mac said
+ * last and when (shared/src/guild.ts `presenceNow` turns an old one into offline).
+ */
+export const guildMembers = pgTable(
+  "guild_members",
+  {
+    userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+    guildId: uuid("guild_id").notNull().references(() => guilds.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["leader", "officer", "member"] }).notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true, precision: 3 }).notNull(),
+    presence: text("presence", { enum: ["focus", "online", "away", "offline"] }),
+    presenceAt: timestamp("presence_at", { withTimezone: true, precision: 3 }),
+  },
+  (t) => [index("guild_members_guild_idx").on(t.guildId)],
+);
+
+/** Invitations to a guild, waiting for a yes (GUILD_INVITE_DAYS at most). */
+export const guildInvites = pgTable(
+  "guild_invites",
+  {
+    guildId: uuid("guild_id").notNull().references(() => guilds.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.guildId, t.userId] }), index("guild_invites_user_idx").on(t.userId)],
+);
+
+/** Each account's guild avatar (shared/src/guild.ts `Avatar`), and when it last left a guild (the wait before the next). */
+export const avatars = pgTable("avatars", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  avatar: jsonb("avatar").$type<import("@goblincamp/shared").Avatar>(),
+  leftGuildAt: timestamp("left_guild_at", { withTimezone: true, precision: 3 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull(),
+});

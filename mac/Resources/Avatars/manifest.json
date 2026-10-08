@@ -1,0 +1,792 @@
+{
+ "frameW": 32,
+ "frameH": 40,
+ "anchor": {
+  "x": 16,
+  "y": 37
+ },
+ "seatY": 3,
+ "frames": 56,
+ "layers": [
+  "hair_back",
+  "body",
+  "bottom",
+  "top",
+  "shoes",
+  "brows",
+  "eyes",
+  "mouth",
+  "hair_front",
+  "hat",
+  "fx"
+ ],
+ "render": {
+  "order": "For frame i draw every layer's frame i in `layers` order at the same spot, after swapping the recolor keys (exact RGB). Side frames face LEFT: mirror the whole composite for right.",
+  "outline": "After `hat` and before `fx`, add a 1-px outline: every transparent pixel with an opaque 4-neighbour becomes outline[bodyType key]. fx strips carry their own outline.",
+  "hats": "When a hat is worn use hair_front_flat (and hair_back_flat when present) instead of hair_front/hair_back.",
+  "frameOffset": "Add frameOffset[body][i] to y for every layer (and the outline) of that body (the spirit floats).",
+  "missing": "A layer whose key is missing from `files` is empty for that option."
+ },
+ "outline": {
+  "goblin_m": "#1f2b14",
+  "goblin_f": "#1f2b14",
+  "elf_m": "#3a2a26",
+  "elf_f": "#3a2a26",
+  "undead_m": "#221e2e",
+  "undead_f": "#3e3a68"
+ },
+ "frameOffset": {
+  "undead_f": [
+   0,
+   -1,
+   -1,
+   0,
+   0,
+   -1,
+   -1,
+   0,
+   0,
+   -1,
+   -1,
+   0,
+   0,
+   -1,
+   -1,
+   0,
+   0,
+   -1,
+   -1,
+   0,
+   0,
+   -1,
+   -1,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ]
+ },
+ "anims": {
+  "idle": {
+   "front": {
+    "frames": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "fps": 3,
+    "loop": true
+   },
+   "back": {
+    "frames": [
+     4,
+     5,
+     6,
+     7
+    ],
+    "fps": 3,
+    "loop": true
+   },
+   "side": {
+    "frames": [
+     8,
+     9,
+     10,
+     11
+    ],
+    "fps": 3,
+    "loop": true
+   }
+  },
+  "walk": {
+   "front": {
+    "frames": [
+     12,
+     13,
+     14,
+     15
+    ],
+    "fps": 8,
+    "loop": true
+   },
+   "back": {
+    "frames": [
+     16,
+     17,
+     18,
+     19
+    ],
+    "fps": 8,
+    "loop": true
+   },
+   "side": {
+    "frames": [
+     20,
+     21,
+     22,
+     23
+    ],
+    "fps": 8,
+    "loop": true
+   }
+  },
+  "sit": {
+   "front": {
+    "frames": [
+     24,
+     25
+    ],
+    "fps": 2,
+    "loop": true
+   },
+   "side": {
+    "frames": [
+     26,
+     27
+    ],
+    "fps": 2,
+    "loop": true
+   }
+  },
+  "type": {
+   "front": {
+    "frames": [
+     28,
+     29,
+     30,
+     31
+    ],
+    "fps": 6,
+    "loop": true
+   }
+  },
+  "doze": {
+   "front": {
+    "frames": [
+     32,
+     33,
+     34
+    ],
+    "fps": 2,
+    "loop": true
+   }
+  },
+  "drink": {
+   "front": {
+    "frames": [
+     35,
+     36,
+     37
+    ],
+    "fps": 3,
+    "loop": false
+   }
+  },
+  "wave": {
+   "front": {
+    "frames": [
+     38,
+     39,
+     40
+    ],
+    "fps": 6,
+    "loop": false
+   }
+  },
+  "stretch": {
+   "front": {
+    "frames": [
+     41,
+     42,
+     43,
+     44
+    ],
+    "fps": 3,
+    "loop": false
+   }
+  },
+  "chat": {
+   "front": {
+    "frames": [
+     45,
+     46,
+     47
+    ],
+    "fps": 3,
+    "loop": true
+   }
+  },
+  "cheer": {
+   "front": {
+    "frames": [
+     48,
+     49,
+     50,
+     51
+    ],
+    "fps": 6,
+    "loop": false
+   }
+  },
+  "highfive": {
+   "side": {
+    "frames": [
+     52,
+     53,
+     54,
+     55
+    ],
+    "fps": 6,
+    "loop": false
+   }
+  }
+ },
+ "highfive": {
+  "anchorGap": 17,
+  "note": "Two avatars facing each other, anchors this many px apart."
+ },
+ "files": {
+  "body": {
+   "goblin_m_round": "body/goblin_m_round.png",
+   "goblin_m_pointed": "body/goblin_m_pointed.png",
+   "goblin_m_square": "body/goblin_m_square.png",
+   "goblin_f_round": "body/goblin_f_round.png",
+   "goblin_f_pointed": "body/goblin_f_pointed.png",
+   "goblin_f_square": "body/goblin_f_square.png",
+   "elf_m_round": "body/elf_m_round.png",
+   "elf_m_pointed": "body/elf_m_pointed.png",
+   "elf_m_square": "body/elf_m_square.png",
+   "elf_f_round": "body/elf_f_round.png",
+   "elf_f_pointed": "body/elf_f_pointed.png",
+   "elf_f_square": "body/elf_f_square.png",
+   "undead_m_round": "body/undead_m_round.png",
+   "undead_m_pointed": "body/undead_m_pointed.png",
+   "undead_m_square": "body/undead_m_square.png",
+   "undead_f_round": "body/undead_f_round.png",
+   "undead_f_pointed": "body/undead_f_pointed.png",
+   "undead_f_square": "body/undead_f_square.png"
+  },
+  "hair_front": {
+   "goblin_m_tuft": "hair_front/goblin_m_tuft.png",
+   "goblin_m_mohawk": "hair_front/goblin_m_mohawk.png",
+   "goblin_m_topknot": "hair_front/goblin_m_topknot.png",
+   "goblin_m_bald_ring": "hair_front/goblin_m_bald_ring.png",
+   "goblin_m_dreads": "hair_front/goblin_m_dreads.png",
+   "goblin_m_wild": "hair_front/goblin_m_wild.png",
+   "goblin_m_bun": "hair_front/goblin_m_bun.png",
+   "goblin_m_spikes": "hair_front/goblin_m_spikes.png",
+   "goblin_f_braids": "hair_front/goblin_f_braids.png",
+   "goblin_f_bun": "hair_front/goblin_f_bun.png",
+   "goblin_f_dreads": "hair_front/goblin_f_dreads.png",
+   "goblin_f_wild": "hair_front/goblin_f_wild.png",
+   "goblin_f_tuft": "hair_front/goblin_f_tuft.png",
+   "goblin_f_pigtails": "hair_front/goblin_f_pigtails.png",
+   "goblin_f_mohawk": "hair_front/goblin_f_mohawk.png",
+   "goblin_f_bob": "hair_front/goblin_f_bob.png",
+   "elf_m_neat": "hair_front/elf_m_neat.png",
+   "elf_m_long": "hair_front/elf_m_long.png",
+   "elf_m_halfup": "hair_front/elf_m_halfup.png",
+   "elf_m_ponytail": "hair_front/elf_m_ponytail.png",
+   "elf_m_side_braid": "hair_front/elf_m_side_braid.png",
+   "elf_m_waves": "hair_front/elf_m_waves.png",
+   "elf_m_messy": "hair_front/elf_m_messy.png",
+   "elf_m_braided_crown": "hair_front/elf_m_braided_crown.png",
+   "elf_f_long_wreath": "hair_front/elf_f_long_wreath.png",
+   "elf_f_braided_crown": "hair_front/elf_f_braided_crown.png",
+   "elf_f_side_braid": "hair_front/elf_f_side_braid.png",
+   "elf_f_waves": "hair_front/elf_f_waves.png",
+   "elf_f_long": "hair_front/elf_f_long.png",
+   "elf_f_ponytail": "hair_front/elf_f_ponytail.png",
+   "elf_f_halfup": "hair_front/elf_f_halfup.png",
+   "elf_f_wreath_updo": "hair_front/elf_f_wreath_updo.png",
+   "undead_m_hood": "hair_front/undead_m_hood.png",
+   "undead_m_crack": "hair_front/undead_m_crack.png",
+   "undead_m_horns": "hair_front/undead_m_horns.png",
+   "undead_m_long_horns": "hair_front/undead_m_long_horns.png",
+   "undead_m_ragged_hood": "hair_front/undead_m_ragged_hood.png",
+   "undead_m_bone_crown": "hair_front/undead_m_bone_crown.png",
+   "undead_m_candle": "hair_front/undead_m_candle.png",
+   "undead_f_drift": "hair_front/undead_f_drift.png",
+   "undead_f_flame": "hair_front/undead_f_flame.png",
+   "undead_f_mist": "hair_front/undead_f_mist.png",
+   "undead_f_wisp_twins": "hair_front/undead_f_wisp_twins.png",
+   "undead_f_glass_short": "hair_front/undead_f_glass_short.png",
+   "undead_f_long_wave": "hair_front/undead_f_long_wave.png",
+   "undead_f_side_wisp": "hair_front/undead_f_side_wisp.png",
+   "undead_f_flame_crown": "hair_front/undead_f_flame_crown.png"
+  },
+  "hair_front_flat": {
+   "goblin_m_tuft": "hair_front_flat/goblin_m_tuft.png",
+   "goblin_m_mohawk": "hair_front_flat/goblin_m_mohawk.png",
+   "goblin_m_topknot": "hair_front_flat/goblin_m_topknot.png",
+   "goblin_m_bald_ring": "hair_front_flat/goblin_m_bald_ring.png",
+   "goblin_m_dreads": "hair_front_flat/goblin_m_dreads.png",
+   "goblin_m_wild": "hair_front_flat/goblin_m_wild.png",
+   "goblin_m_bun": "hair_front_flat/goblin_m_bun.png",
+   "goblin_m_spikes": "hair_front_flat/goblin_m_spikes.png",
+   "goblin_f_braids": "hair_front_flat/goblin_f_braids.png",
+   "goblin_f_bun": "hair_front_flat/goblin_f_bun.png",
+   "goblin_f_dreads": "hair_front_flat/goblin_f_dreads.png",
+   "goblin_f_wild": "hair_front_flat/goblin_f_wild.png",
+   "goblin_f_tuft": "hair_front_flat/goblin_f_tuft.png",
+   "goblin_f_pigtails": "hair_front_flat/goblin_f_pigtails.png",
+   "goblin_f_mohawk": "hair_front_flat/goblin_f_mohawk.png",
+   "goblin_f_bob": "hair_front_flat/goblin_f_bob.png",
+   "elf_m_neat": "hair_front_flat/elf_m_neat.png",
+   "elf_m_long": "hair_front_flat/elf_m_long.png",
+   "elf_m_halfup": "hair_front_flat/elf_m_halfup.png",
+   "elf_m_ponytail": "hair_front_flat/elf_m_ponytail.png",
+   "elf_m_side_braid": "hair_front_flat/elf_m_side_braid.png",
+   "elf_m_waves": "hair_front_flat/elf_m_waves.png",
+   "elf_m_messy": "hair_front_flat/elf_m_messy.png",
+   "elf_m_braided_crown": "hair_front_flat/elf_m_braided_crown.png",
+   "elf_f_long_wreath": "hair_front_flat/elf_f_long_wreath.png",
+   "elf_f_braided_crown": "hair_front_flat/elf_f_braided_crown.png",
+   "elf_f_side_braid": "hair_front_flat/elf_f_side_braid.png",
+   "elf_f_waves": "hair_front_flat/elf_f_waves.png",
+   "elf_f_long": "hair_front_flat/elf_f_long.png",
+   "elf_f_ponytail": "hair_front_flat/elf_f_ponytail.png",
+   "elf_f_halfup": "hair_front_flat/elf_f_halfup.png",
+   "elf_f_wreath_updo": "hair_front_flat/elf_f_wreath_updo.png",
+   "undead_m_hood": "hair_front_flat/undead_m_hood.png",
+   "undead_m_crack": "hair_front_flat/undead_m_crack.png",
+   "undead_m_ragged_hood": "hair_front_flat/undead_m_ragged_hood.png",
+   "undead_f_drift": "hair_front_flat/undead_f_drift.png",
+   "undead_f_flame": "hair_front_flat/undead_f_flame.png",
+   "undead_f_mist": "hair_front_flat/undead_f_mist.png",
+   "undead_f_wisp_twins": "hair_front_flat/undead_f_wisp_twins.png",
+   "undead_f_glass_short": "hair_front_flat/undead_f_glass_short.png",
+   "undead_f_long_wave": "hair_front_flat/undead_f_long_wave.png",
+   "undead_f_side_wisp": "hair_front_flat/undead_f_side_wisp.png",
+   "undead_f_flame_crown": "hair_front_flat/undead_f_flame_crown.png"
+  },
+  "hair_back": {
+   "goblin_m_dreads": "hair_back/goblin_m_dreads.png",
+   "goblin_m_wild": "hair_back/goblin_m_wild.png",
+   "goblin_f_braids": "hair_back/goblin_f_braids.png",
+   "goblin_f_dreads": "hair_back/goblin_f_dreads.png",
+   "goblin_f_wild": "hair_back/goblin_f_wild.png",
+   "goblin_f_pigtails": "hair_back/goblin_f_pigtails.png",
+   "elf_m_long": "hair_back/elf_m_long.png",
+   "elf_m_halfup": "hair_back/elf_m_halfup.png",
+   "elf_m_ponytail": "hair_back/elf_m_ponytail.png",
+   "elf_m_side_braid": "hair_back/elf_m_side_braid.png",
+   "elf_m_waves": "hair_back/elf_m_waves.png",
+   "elf_m_braided_crown": "hair_back/elf_m_braided_crown.png",
+   "elf_f_long_wreath": "hair_back/elf_f_long_wreath.png",
+   "elf_f_braided_crown": "hair_back/elf_f_braided_crown.png",
+   "elf_f_side_braid": "hair_back/elf_f_side_braid.png",
+   "elf_f_waves": "hair_back/elf_f_waves.png",
+   "elf_f_long": "hair_back/elf_f_long.png",
+   "elf_f_ponytail": "hair_back/elf_f_ponytail.png",
+   "elf_f_halfup": "hair_back/elf_f_halfup.png",
+   "elf_f_wreath_updo": "hair_back/elf_f_wreath_updo.png",
+   "undead_f_drift": "hair_back/undead_f_drift.png",
+   "undead_f_flame": "hair_back/undead_f_flame.png",
+   "undead_f_mist": "hair_back/undead_f_mist.png",
+   "undead_f_wisp_twins": "hair_back/undead_f_wisp_twins.png",
+   "undead_f_long_wave": "hair_back/undead_f_long_wave.png",
+   "undead_f_side_wisp": "hair_back/undead_f_side_wisp.png",
+   "undead_f_flame_crown": "hair_back/undead_f_flame_crown.png"
+  },
+  "hair_back_flat": {
+   "goblin_m_dreads": "hair_back_flat/goblin_m_dreads.png",
+   "goblin_m_wild": "hair_back_flat/goblin_m_wild.png",
+   "goblin_f_braids": "hair_back_flat/goblin_f_braids.png",
+   "goblin_f_dreads": "hair_back_flat/goblin_f_dreads.png",
+   "goblin_f_wild": "hair_back_flat/goblin_f_wild.png",
+   "goblin_f_pigtails": "hair_back_flat/goblin_f_pigtails.png",
+   "elf_m_long": "hair_back_flat/elf_m_long.png",
+   "elf_m_halfup": "hair_back_flat/elf_m_halfup.png",
+   "elf_m_ponytail": "hair_back_flat/elf_m_ponytail.png",
+   "elf_m_side_braid": "hair_back_flat/elf_m_side_braid.png",
+   "elf_m_waves": "hair_back_flat/elf_m_waves.png",
+   "elf_m_braided_crown": "hair_back_flat/elf_m_braided_crown.png",
+   "elf_f_long_wreath": "hair_back_flat/elf_f_long_wreath.png",
+   "elf_f_braided_crown": "hair_back_flat/elf_f_braided_crown.png",
+   "elf_f_side_braid": "hair_back_flat/elf_f_side_braid.png",
+   "elf_f_waves": "hair_back_flat/elf_f_waves.png",
+   "elf_f_long": "hair_back_flat/elf_f_long.png",
+   "elf_f_ponytail": "hair_back_flat/elf_f_ponytail.png",
+   "elf_f_halfup": "hair_back_flat/elf_f_halfup.png",
+   "undead_f_drift": "hair_back_flat/undead_f_drift.png",
+   "undead_f_flame": "hair_back_flat/undead_f_flame.png",
+   "undead_f_mist": "hair_back_flat/undead_f_mist.png",
+   "undead_f_wisp_twins": "hair_back_flat/undead_f_wisp_twins.png",
+   "undead_f_long_wave": "hair_back_flat/undead_f_long_wave.png",
+   "undead_f_side_wisp": "hair_back_flat/undead_f_side_wisp.png",
+   "undead_f_flame_crown": "hair_back_flat/undead_f_flame_crown.png"
+  },
+  "eyes": {
+   "goblin_m_round": "eyes/goblin_m_round.png",
+   "goblin_m_narrow": "eyes/goblin_m_narrow.png",
+   "goblin_m_sparkle": "eyes/goblin_m_sparkle.png",
+   "goblin_m_dot": "eyes/goblin_m_dot.png",
+   "goblin_m_sleepy": "eyes/goblin_m_sleepy.png",
+   "goblin_m_sharp": "eyes/goblin_m_sharp.png",
+   "goblin_m_lashes": "eyes/goblin_m_lashes.png",
+   "goblin_m_wide": "eyes/goblin_m_wide.png",
+   "goblin_f_round": "eyes/goblin_f_round.png",
+   "goblin_f_narrow": "eyes/goblin_f_narrow.png",
+   "goblin_f_sparkle": "eyes/goblin_f_sparkle.png",
+   "goblin_f_dot": "eyes/goblin_f_dot.png",
+   "goblin_f_sleepy": "eyes/goblin_f_sleepy.png",
+   "goblin_f_sharp": "eyes/goblin_f_sharp.png",
+   "goblin_f_lashes": "eyes/goblin_f_lashes.png",
+   "goblin_f_wide": "eyes/goblin_f_wide.png",
+   "elf_round": "eyes/elf_round.png",
+   "elf_narrow": "eyes/elf_narrow.png",
+   "elf_sparkle": "eyes/elf_sparkle.png",
+   "elf_dot": "eyes/elf_dot.png",
+   "elf_sleepy": "eyes/elf_sleepy.png",
+   "elf_sharp": "eyes/elf_sharp.png",
+   "elf_lashes": "eyes/elf_lashes.png",
+   "elf_wide": "eyes/elf_wide.png",
+   "skeleton_round": "eyes/skeleton_round.png",
+   "skeleton_narrow": "eyes/skeleton_narrow.png",
+   "skeleton_sparkle": "eyes/skeleton_sparkle.png",
+   "skeleton_dot": "eyes/skeleton_dot.png",
+   "skeleton_sleepy": "eyes/skeleton_sleepy.png",
+   "skeleton_sharp": "eyes/skeleton_sharp.png",
+   "skeleton_lashes": "eyes/skeleton_lashes.png",
+   "skeleton_wide": "eyes/skeleton_wide.png",
+   "spirit_round": "eyes/spirit_round.png",
+   "spirit_narrow": "eyes/spirit_narrow.png",
+   "spirit_sparkle": "eyes/spirit_sparkle.png",
+   "spirit_dot": "eyes/spirit_dot.png",
+   "spirit_sleepy": "eyes/spirit_sleepy.png",
+   "spirit_sharp": "eyes/spirit_sharp.png",
+   "spirit_lashes": "eyes/spirit_lashes.png",
+   "spirit_wide": "eyes/spirit_wide.png"
+  },
+  "mouth": {
+   "goblin_m_line": "mouth/goblin_m_line.png",
+   "goblin_m_smile": "mouth/goblin_m_smile.png",
+   "goblin_m_smirk": "mouth/goblin_m_smirk.png",
+   "goblin_m_open": "mouth/goblin_m_open.png",
+   "goblin_m_pout": "mouth/goblin_m_pout.png",
+   "goblin_m_cat": "mouth/goblin_m_cat.png",
+   "goblin_f_line": "mouth/goblin_f_line.png",
+   "goblin_f_smile": "mouth/goblin_f_smile.png",
+   "goblin_f_smirk": "mouth/goblin_f_smirk.png",
+   "goblin_f_open": "mouth/goblin_f_open.png",
+   "goblin_f_pout": "mouth/goblin_f_pout.png",
+   "goblin_f_cat": "mouth/goblin_f_cat.png",
+   "elf_line": "mouth/elf_line.png",
+   "elf_smile": "mouth/elf_smile.png",
+   "elf_smirk": "mouth/elf_smirk.png",
+   "elf_open": "mouth/elf_open.png",
+   "elf_pout": "mouth/elf_pout.png",
+   "elf_cat": "mouth/elf_cat.png",
+   "skeleton_teeth": "mouth/skeleton_teeth.png",
+   "skeleton_grin": "mouth/skeleton_grin.png",
+   "skeleton_gap": "mouth/skeleton_gap.png",
+   "skeleton_jaw": "mouth/skeleton_jaw.png",
+   "skeleton_fang": "mouth/skeleton_fang.png",
+   "skeleton_stitch": "mouth/skeleton_stitch.png",
+   "spirit_line": "mouth/spirit_line.png",
+   "spirit_smile": "mouth/spirit_smile.png",
+   "spirit_smirk": "mouth/spirit_smirk.png",
+   "spirit_open": "mouth/spirit_open.png",
+   "spirit_pout": "mouth/spirit_pout.png",
+   "spirit_cat": "mouth/spirit_cat.png"
+  },
+  "brows": {
+   "goblin_m_thin": "brows/goblin_m_thin.png",
+   "goblin_m_thick": "brows/goblin_m_thick.png",
+   "goblin_m_faint": "brows/goblin_m_faint.png",
+   "goblin_f_thin": "brows/goblin_f_thin.png",
+   "goblin_f_thick": "brows/goblin_f_thick.png",
+   "goblin_f_faint": "brows/goblin_f_faint.png",
+   "elf_thin": "brows/elf_thin.png",
+   "elf_thick": "brows/elf_thick.png",
+   "elf_faint": "brows/elf_faint.png",
+   "spirit_thin": "brows/spirit_thin.png",
+   "spirit_thick": "brows/spirit_thick.png",
+   "spirit_faint": "brows/spirit_faint.png"
+  },
+  "top": {
+   "goblin_m_default": "top/goblin_m_default.png",
+   "goblin_f_default": "top/goblin_f_default.png",
+   "elf_m_default": "top/elf_m_default.png",
+   "elf_f_default": "top/elf_f_default.png",
+   "undead_m_default": "top/undead_m_default.png",
+   "undead_f_default": "top/undead_f_default.png"
+  },
+  "bottom": {
+   "goblin_m_default": "bottom/goblin_m_default.png",
+   "goblin_f_default": "bottom/goblin_f_default.png",
+   "elf_m_default": "bottom/elf_m_default.png",
+   "elf_f_default": "bottom/elf_f_default.png",
+   "undead_f_default": "bottom/undead_f_default.png"
+  },
+  "shoes": {
+   "goblin_m_default": "shoes/goblin_m_default.png",
+   "goblin_f_default": "shoes/goblin_f_default.png",
+   "elf_m_default": "shoes/elf_m_default.png",
+   "elf_f_default": "shoes/elf_f_default.png",
+   "undead_m_default": "shoes/undead_m_default.png"
+  },
+  "hat": {
+   "feather_cap": "hat/feather_cap.png"
+  },
+  "fx": "fx.png"
+ },
+ "bodyType": {
+  "goblin_m": "goblin_m",
+  "goblin_f": "goblin_f",
+  "elf_m": "elf",
+  "elf_f": "elf",
+  "undead_m": "skeleton",
+  "undead_f": "spirit"
+ },
+ "recolor": {
+  "skin": {
+   "keys": [
+    "#a000a0",
+    "#ff00ff",
+    "#ff80ff"
+   ],
+   "options": {
+    "goblin_m_light": [
+     "#649441",
+     "#88c858",
+     "#bde0a3"
+    ],
+    "goblin_m_grass": [
+     "#4c862c",
+     "#6db33f",
+     "#9ad462"
+    ],
+    "goblin_m_moss": [
+     "#3f6f2d",
+     "#56963e",
+     "#a2c594"
+    ],
+    "goblin_m_deep": [
+     "#2f5729",
+     "#407638",
+     "#95b391"
+    ],
+    "goblin_f_light": [
+     "#649441",
+     "#88c858",
+     "#bde0a3"
+    ],
+    "goblin_f_grass": [
+     "#4c862c",
+     "#6db33f",
+     "#9ad462"
+    ],
+    "goblin_f_moss": [
+     "#3f6f2d",
+     "#56963e",
+     "#a2c594"
+    ],
+    "goblin_f_deep": [
+     "#2f5729",
+     "#407638",
+     "#95b391"
+    ],
+    "elf_m_fair": [
+     "#e2c0a6",
+     "#fae2cc",
+     "#fff0e2"
+    ],
+    "elf_m_warm": [
+     "#b19983",
+     "#f0d0b2",
+     "#f6e5d4"
+    ],
+    "elf_m_tan": [
+     "#a28263",
+     "#dcb086",
+     "#ebd3bc"
+    ],
+    "elf_m_bronze": [
+     "#896448",
+     "#ba8862",
+     "#d9bda8"
+    ],
+    "elf_f_fair": [
+     "#e2c0a6",
+     "#fae2cc",
+     "#fff0e2"
+    ],
+    "elf_f_warm": [
+     "#b19983",
+     "#f0d0b2",
+     "#f6e5d4"
+    ],
+    "elf_f_tan": [
+     "#a28263",
+     "#dcb086",
+     "#ebd3bc"
+    ],
+    "elf_f_bronze": [
+     "#896448",
+     "#ba8862",
+     "#d9bda8"
+    ],
+    "undead_m_bone": [
+     "#c4beac",
+     "#f0ecde",
+     "#fffcf4"
+    ],
+    "undead_m_ivory": [
+     "#aba189",
+     "#e8daba",
+     "#f2ead9"
+    ],
+    "undead_m_ash": [
+     "#989694",
+     "#ceccc8",
+     "#e4e2e0"
+    ],
+    "undead_m_slate": [
+     "#7a7c80",
+     "#a6a8ae",
+     "#cecfd2"
+    ],
+    "undead_f_pale_blue": [
+     "#c4d4ee",
+     "#e8f2fc",
+     "#ffffff"
+    ],
+    "undead_f_ice": [
+     "#9eb0b7",
+     "#d6eef8",
+     "#e8f5fb"
+    ],
+    "undead_f_pale_violet": [
+     "#ada7ba",
+     "#eae2fc",
+     "#f3effd"
+    ],
+    "undead_f_lavender": [
+     "#9b92b4",
+     "#d2c6f4",
+     "#e6dff8"
+    ]
+   }
+  },
+  "hair": {
+   "keys": [
+    "#00a000",
+    "#00ff00",
+    "#80ff80"
+   ],
+   "options": {
+    "black": [
+     "#221e2a",
+     "#36303e",
+     "#605a6c"
+    ],
+    "darkbrown": [
+     "#2e1e16",
+     "#462e20",
+     "#704e34"
+    ],
+    "chestnut": [
+     "#704624",
+     "#966434",
+     "#c49254"
+    ],
+    "orange": [
+     "#a83e24",
+     "#d66034",
+     "#f69058"
+    ],
+    "yellow": [
+     "#b06c26",
+     "#de963a",
+     "#f8c270"
+    ],
+    "blonde": [
+     "#ceba76",
+     "#f2e6ac",
+     "#fffce0"
+    ],
+    "silver": [
+     "#b0b4c6",
+     "#dee2ea",
+     "#fcfdff"
+    ],
+    "pink": [
+     "#c6688c",
+     "#f096b4",
+     "#ffc6d8"
+    ],
+    "lavender": [
+     "#866ebc",
+     "#b096de",
+     "#d8c6f6"
+    ],
+    "mint": [
+     "#54a6ba",
+     "#80d6d6",
+     "#c8faf6"
+    ],
+    "navy": [
+     "#304280",
+     "#4662ac",
+     "#708ed4"
+    ],
+    "forest": [
+     "#30603a",
+     "#488452",
+     "#70ac70"
+    ]
+   }
+  },
+  "flame": {
+   "keys": [
+    "#ff0000"
+   ],
+   "options": {
+    "cyan": [
+     "#78f0dc"
+    ],
+    "violet": [
+     "#c88cff"
+    ],
+    "green": [
+     "#96f06e"
+    ],
+    "orange": [
+     "#ffaa50"
+    ]
+   }
+  }
+ }
+}

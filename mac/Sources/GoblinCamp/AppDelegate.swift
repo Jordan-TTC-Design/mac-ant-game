@@ -42,6 +42,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var sync = SyncEngine(notes: notes)
     /// The camp's books from the server (server/CAMP.md).
     private lazy var ledger = CampLedger(api: sync.api)
+    /// Whether the player is at this Mac, for the guild hall (GuildPresence.swift).
+    private lazy var guildPresence: GuildPresence = {
+        let presence = GuildPresence(api: sync.api)
+        presence.signedIn = { [weak self] in self?.sync.user != nil }
+        presence.current = { [weak self] in
+            guard let self else { return .online }
+            if self.isSilenced || self.colony.pomodoro.phase == .focus { return .focus }
+            return self.idleSeconds >= AppDelegate.awayAfter ? .away : .online
+        }
+        return presence
+    }()
     /// The camp is kept by the server and needs signing in. Tests that drop the nest by themselves (`CAMP_AUTO_NEST`) or ask
     /// for it (`CAMP_LOCAL_CAMP`) keep the old camp that lives only on this Mac, unless `CAMP_SERVER_CAMP` is set.
     private let serverCamp: Bool = {
@@ -138,6 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.noteWall.reload()
         }
         sync.start()
+        guildPresence.start()
         if settings.moveToWindowOnly() { Diagnostics.note("walking range moved to the camp window (the others are switched off for now)") }
         setupMenuBar()
         setupMainMenu()
@@ -406,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 var at = 0.0
                 let only = env["CAMP_TEST_MAIN_PAGES"]?.split(separator: ",").map(String.init) // (just these pages)
                 for page in self.mainWindow.pages() where only?.contains(page.rawValue) ?? true {
-                    let wait = [.world, .quests, .feed].contains(page) ? 9.0 : 3.0 // (a web page loads first)
+                    let wait = [.world, .guild, .quests, .feed].contains(page) ? 9.0 : 3.0 // (a web page loads first)
                     after(at) { self.mainWindow.show(page); if page == .roster { self.roster.select(row: 1) } }
                     after(at + wait) {
                         let window = self.mainWindow.window
@@ -1367,6 +1379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         persist()
+        guildPresence.quit()
         ExitLog.ended()
     }
 
@@ -1717,6 +1730,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Speaks (unless hidden: then only the badge counts it) when the pomodoro starts, rests, or ends.
     private func pomodoroEvent(_ event: Pomodoro.Event) {
+        guildPresence.check()
         if event == .focusDone { Stats.shared.pomodoroCompleted(focusSeconds: colony.pomodoro.focusSeconds); return }
         if event == .finished, pomodoroChangedMode {
             pomodoroChangedMode = false
@@ -3172,6 +3186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !automatic { pomodoroChangedMode = false }
         if ProcessInfo.processInfo.environment["CAMP_DEBUG"] != nil { NSLog("GoblinCamp: mode -> \(String(describing: mode)) automatic \(automatic)") }
         userMode = mode
+        defer { guildPresence.check() }
         hideTimer?.invalidate()
         hideTimer = nil
         hiddenUntil = nil
@@ -3865,7 +3880,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let main = MainWindow()
         main.pages = { [weak self] in
             guard let self else { return [] }
-            let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .quests, .feed] : []
+            let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .guild, .quests, .feed] : []
             let camp: [MainWindow.Page] = self.isWindowMode ? [.camp] : [] // (on the desktop, the camp is not in a window)
             return camp + online + [.workshop, .roster, .notes, .account, .manual]
         }
@@ -3876,7 +3891,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func pane(for page: MainWindow.Page) -> MainPane? {
         switch page {
         case .camp: return ensureMapWindow()
-        case .world, .quests, .feed:
+        case .world, .guild, .quests, .feed:
             if let pane = webPanes[page] { return pane }
             let pane = WebPane(api: sync.api, path: "/\(page.rawValue)")
             webPanes[page] = pane
