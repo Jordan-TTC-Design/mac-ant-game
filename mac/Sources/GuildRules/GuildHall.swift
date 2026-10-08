@@ -20,13 +20,13 @@ public struct GuildLevel {
 }
 
 public let guildLevels: [GuildLevel] = [
-    GuildLevel(level: 1, members: 5, width: 32, height: 20, room: 40),
-    GuildLevel(level: 2, members: 8, width: 40, height: 24, room: 60),
-    GuildLevel(level: 3, members: 12, width: 48, height: 28, room: 85),
-    GuildLevel(level: 4, members: 16, width: 56, height: 32, room: 110),
-    GuildLevel(level: 5, members: 20, width: 64, height: 36, room: 140),
-    GuildLevel(level: 6, members: 25, width: 72, height: 40, room: 175),
-    GuildLevel(level: 7, members: 30, width: 80, height: 44, room: 220),
+    GuildLevel(level: 1, members: 5, width: 32, height: 20, room: 160),
+    GuildLevel(level: 2, members: 8, width: 40, height: 24, room: 240),
+    GuildLevel(level: 3, members: 12, width: 48, height: 28, room: 340),
+    GuildLevel(level: 4, members: 16, width: 56, height: 32, room: 440),
+    GuildLevel(level: 5, members: 20, width: 64, height: 36, room: 560),
+    GuildLevel(level: 6, members: 25, width: 72, height: 40, room: 700),
+    GuildLevel(level: 7, members: 30, width: 80, height: 44, room: 880),
 ]
 
 public func guildLevel(_ level: Int) -> GuildLevel {

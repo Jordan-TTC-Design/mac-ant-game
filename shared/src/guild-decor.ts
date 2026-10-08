@@ -11,7 +11,7 @@ import { WALL_ROWS } from "./guild-hall.ts";
 export { GUILD_DECOR, type GuildDecorKind };
 
 /** However much room there is, no more than this many pieces (the hall has to draw them). */
-export const GUILD_DECOR_MAX_ITEMS = 300;
+export const GUILD_DECOR_MAX_ITEMS = 1000;
 /** Changes kept in the log (and how far back the leader can go). */
 export const GUILD_DECOR_LOG_DAYS = 7;
 /** Positions are kept to a sixteenth of a tile (one pixel of the art). */
