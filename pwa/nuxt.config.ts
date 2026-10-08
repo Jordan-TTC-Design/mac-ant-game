@@ -55,7 +55,10 @@ export default defineNuxtConfig({
         { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
       ],
     },
-    injectManifest: { globPatterns: ["**/*.{js,css,html,png,svg,ico,woff2}"] },
+    // Only the app itself is kept up front. The pictures (over 1,600 sprites, avatar layers, decorations) are kept as they are first
+    // seen (service-worker/sw.ts): a new version of the app has to fetch everything listed here before it can take over, and with
+    // all the pictures listed that failed on phones, so they stayed on the old version for good.
+    injectManifest: { globPatterns: ["**/*.{js,css,html,svg,ico,woff2}", "icons/*.png"] },
     devOptions: { enabled: true, type: "module" },
   },
 });
