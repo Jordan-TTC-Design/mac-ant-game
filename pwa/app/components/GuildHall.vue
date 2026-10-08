@@ -65,9 +65,8 @@ const asked = new Set<string>();
 // keeping to this one's avatar, and dragging the empty floor looks round (until the avatar moves again).
 const VIEW_NARROW = 16;
 const VIEW_WIDE = 28;
-/** Filling a window: a tile is this many points across, at least and at most. */
-const FILL_MIN = 24;
-const FILL_MAX = 40;
+/** Filling a window: a tile is this many points across (between the camp's goblins and the avatars drawn big). */
+const FILL_TILE = 24;
 const view = reactive({ cols: 16, rows: 10 });
 const cam = { x: 0, y: 0 };
 let lookingUntil = 0;
@@ -185,10 +184,10 @@ function fit() {
   const L = layout.value;
   const dpr = window.devicePixelRatio || 1;
   if (props.fill) {
-    // tiles as big as fit the whole hall in, between FILL_MIN and FILL_MAX points, in whole pixels of the art
+    // FILL_TILE points a tile, in whole pixels of the art; a smaller hall sits in the middle, a bigger one scrolls
     const bw = box.value.clientWidth;
     const bh = box.value.clientHeight;
-    const want = Math.min(FILL_MAX, Math.max(FILL_MIN, Math.min(bw / L.width, bh / L.height)));
+    const want = FILL_TILE;
     scale = Math.max(2, Math.round((want * dpr) / tile));
     const perTile = (scale * tile) / dpr;
     view.cols = bw / perTile;

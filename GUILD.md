@@ -258,7 +258,7 @@
 - **地板與牆壁**（第四批）：擺裝飾面板多了「🟫 地板」（選一種，在據點裡點或拖過去一格一格鋪，或整片換掉；跟裝飾一起存、記在擺放紀錄、可以還原）與「🧱 牆壁」（會長和幹部，馬上生效）。種族的地板、牆壁要公會裡有那個種族；`mac/tools/make_guild_tiles.py` 畫，`make_avatars.py` 之後會自動接著跑它。
 - **自己操作、說話**（第四批）：點地板走過去（繞開桌子，點桌子會走到後面坐下）、方向鍵／WASD、空白鍵或 E＝A（坐下／喝水／揮手）、Q＝B（歡呼）、Enter 說話；手機在據點下面有十字鍵、A、B、💬。位置走 WebSocket（`server/src/guild/live.ts`，伺服器不存，只轉給同公會的人；有變才送、每 4 秒一次心跳，12 秒沒消息或 2 分鐘沒操作就放手）。說話 `POST /api/guild/say`（每分鐘 20 句，存一週），頭上冒泡 6 秒，下面有最近的聊天。
 - **鏡頭與頁面**（第五批）：據點比畫面大時有鏡頭：手機約 16×10 格、寬視窗最多 28 格，跟著自己的分身，拖空地可以看別處；寬視窗（≥1000）據點填滿整個視窗。桌子只擺人數上限那麼多張，其他地方留給裝飾。網頁拆成三頁：`/guild`（據點、聊天、擺裝飾）、`/guild/members`（成員、邀請、職位、離開）、`/guild/settings`（會長和幹部：名字、徽章、擺放紀錄與還原）。素雅的地板與牆壁各 3 種。
-- **Mac 原生**（2026-10-08 使用者：「我希望公會頁面希望是直接像營地那樣的 mac 原生」「這樣我才能快速使用」）：Mac 的公會頁改用 Swift 畫（和營地一樣，可以彈出），進行中。
+- **Mac 原生**（2026-10-08 使用者：「我希望公會頁面希望是直接像營地那樣的 mac 原生」「這樣我才能快速使用」）：Mac 的公會頁改用 Swift 畫（`GuildPane.swift`、`GuildHallView.swift`、`GuildArt.swift`）：據點填滿頁面、每格 24 點（取營地與原本大小的中間值），名字、按鈕、聊天浮在上面；點擊走過去、方向鍵／WASD、空白鍵／E、Q、Return 說話。據點的規則在 `mac/Sources/GuildRules`（從 `shared/src/guild-hall.ts` 一模一樣搬過來，`pnpm guild:check` 用 `shared/src/guild-hall-fixtures.json` 比對）。擺裝飾、分身、成員、設定先開網頁的小視窗。還沒做：彈出成小視窗。
 - **素材**：`mac/tools/make_avatars.py` 產生 `mac/Resources/Avatars/`（分身圖層＋manifest）與 `mac/Resources/Guild/`（地板、牆、家具＋manifest），手機網頁建置時複製到 `public/avatars`、`public/guild-hall`。
 
 ### 8.1 技術上要做的

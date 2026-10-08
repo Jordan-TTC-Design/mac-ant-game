@@ -2732,6 +2732,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch type {
         case "pomodoro.changed":
             pullPomodoro()
+        case _ where type.hasPrefix("guild."):
+            guildPane.event(type, event)
         case "friends.changed":
             // (with `from`: a message from that friend)
             if let from = event["from"] as? String { tellMessage(from: from) }
@@ -3868,6 +3870,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var workshopWindow: WorkshopWindow?
     /// The web app's pages in the main window, made when first opened.
     private var webPanes: [MainWindow.Page: WebPane] = [:]
+    /// The 公會 page, native like the camp (GuildPane.swift).
+    private lazy var guildPane = GuildPane(api: sync.api, myId: sync.user?.id) { [weak self] message in self?.sync.sendLive(message) }
     private var worldWindow: WebPane? { webPanes[.world] }
     private lazy var accountPane: AccountPane = {
         let pane = AccountPane()
@@ -3891,7 +3895,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func pane(for page: MainWindow.Page) -> MainPane? {
         switch page {
         case .camp: return ensureMapWindow()
-        case .world, .guild, .quests, .feed:
+        case .guild:
+            guildPane.signedIn(as: sync.user?.id)
+            return guildPane
+        case .world, .quests, .feed:
             if let pane = webPanes[page] { return pane }
             let pane = WebPane(api: sync.api, path: "/\(page.rawValue)")
             webPanes[page] = pane

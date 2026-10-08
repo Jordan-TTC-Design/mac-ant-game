@@ -279,6 +279,12 @@ final class SyncEngine {
 
     // MARK: The WebSocket
 
+    /// Sends a message up the WebSocket (the guild hall: where the avatar walked by hand is); dropped when not connected.
+    func sendLive(_ message: [String: Any]) {
+        guard let socket, let data = try? JSONSerialization.data(withJSONObject: message), let text = String(data: data, encoding: .utf8) else { return }
+        socket.send(.string(text)) { _ in }
+    }
+
     private func connectSocket() {
         guard socket == nil, user != nil, let task = api.webSocket() else { return }
         socket = task
