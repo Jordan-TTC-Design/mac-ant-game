@@ -33,6 +33,19 @@ final class GuildHallView: NSView {
     /// Return was pressed (GuildPane focuses the chat box).
     var onTalk: (() -> Void)?
 
+    // decorating (GuildDecorEditor): the hall is not walked in then; pieces are picked and dragged, or a floor brush paints
+    var editing = false { didSet { if editing { releaseHand() } else { selected = nil; brush = nil } } }
+    var selected: String?
+    /// A floor style to lay tile by tile (nil: picking pieces).
+    var brush: String?
+    var onSelect: ((String?) -> Void)?
+    var onMove: ((String, Double, Double) -> Void)?
+    var onPaint: ((Int, Int) -> Void)?
+    var onRemove: ((String) -> Void)?
+    var onEscape: (() -> Void)?
+    private var carrying: (uid: String, dx: Double, dy: Double)?
+    private var painting = false
+
     private(set) var layout = hallLayout(level: 1)
     /// The ways the wanderers walk, kept while the hall and who is in it stay the same.
     private var ways = HallWays()
@@ -83,8 +96,11 @@ final class GuildHallView: NSView {
         tilePoints = px * CGFloat(art.tile) / scale
     }
     private var viewTiles: CGSize { CGSize(width: bounds.width / tilePoints, height: bounds.height / tilePoints) }
+    /// Room on the right a panel covers (GuildPane): the hall is looked at, and centred, in what is left.
+    var rightInset: CGFloat = 0
+    private var seenTiles: CGSize { CGSize(width: max(1, bounds.width - rightInset) / tilePoints, height: bounds.height / tilePoints) }
     private func clampCam() {
-        let v = viewTiles
+        let v = seenTiles
         let w = CGFloat(layout.width), h = CGFloat(layout.height)
         cam.x = v.width >= w ? (w - v.width) / 2 : min(max(0, cam.x), w - v.width)
         cam.y = v.height >= h ? (h - v.height) / 2 : min(max(0, cam.y), h - v.height)
@@ -118,8 +134,8 @@ final class GuildHallView: NSView {
         stepHand(dt: dt, now: now)
         fitTiles()
         // the camera keeps to this one's avatar (unless someone is looking round)
-        if now > lookingUntil, drag?.panning != true, let f = followPoint(now) {
-            let v = viewTiles
+        if !editing, now > lookingUntil, drag?.panning != true, let f = followPoint(now) {
+            let v = seenTiles
             cam.x += (CGFloat(f.x) - v.width / 2 - cam.x) * 0.15
             cam.y += (CGFloat(f.y) - 1 - v.height / 2 - cam.y) * 0.15
         }
@@ -229,6 +245,14 @@ final class GuildHallView: NSView {
         for item in items { item.paint() }
         for paint in overhead { paint() }
         for paint in labels { paint() }
+        if editing, let uid = selected, let d = decor.first(where: { $0.uid == uid }), let k = art.decorPiece(d.kind) {
+            let box = CGRect(x: CGFloat(d.x) * T - CGFloat(k.w) / 2 * px, y: CGFloat(d.y) * T - CGFloat(k.h) * px, width: CGFloat(k.w) * px, height: CGFloat(k.h) * px).insetBy(dx: -2, dy: -2)
+            g.setStrokeColor(NSColor(calibratedRed: 0.91, green: 0.77, blue: 0.28, alpha: 1).cgColor)
+            g.setLineWidth(2)
+            g.setLineDash(phase: CGFloat(t * 12), lengths: [6, 4])
+            g.stroke(box)
+            g.setLineDash(phase: 0, lengths: [])
+        }
         g.restoreGState()
     }
 
@@ -265,10 +289,51 @@ final class GuildHallView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        drag = (convert(event.locationInWindow, from: nil), cam, false)
+        let p = convert(event.locationInWindow, from: nil)
+        drag = (p, cam, false)
+        carrying = nil
+        painting = false
+        guard editing else { return }
+        let at = tiles(at: p)
+        if brush != nil {
+            painting = true
+            paint(at)
+        } else if let d = pieceAt(at) {
+            selected = d.uid
+            onSelect?(d.uid)
+            carrying = (d.uid, d.x - at.x, d.y - at.y)
+        }
+    }
+
+    /// The piece standing at this point of the hall (the one in front, where several overlap).
+    private func pieceAt(_ p: HallPoint) -> GuildInfo.Decor? {
+        var best: (d: GuildInfo.Decor, rank: Double)?
+        for d in decor {
+            guard let k = art.decorPiece(d.kind) else { continue }
+            let halfW = Double(k.w) / 32, h = Double(k.h) / 16
+            guard p.x >= d.x - halfW, p.x <= d.x + halfW, p.y >= d.y - h, p.y <= d.y else { continue }
+            let rank = k.flat ? -1 : k.ceiling ? 1000 : d.y
+            if best == nil || rank >= best!.rank { best = (d, rank) }
+        }
+        return best?.d
+    }
+
+    private func paint(_ p: HallPoint) {
+        let x = Int(floor(p.x)), y = Int(floor(p.y))
+        guard x >= 0, x < layout.width, y >= Int(guildWallRows), y < layout.height else { return }
+        onPaint?(x, y)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if editing, painting {
+            paint(tiles(at: convert(event.locationInWindow, from: nil)))
+            return
+        }
+        if editing, let c = carrying {
+            let at = tiles(at: convert(event.locationInWindow, from: nil))
+            onMove?(c.uid, at.x + c.dx, at.y + c.dy)
+            return
+        }
         guard var d = drag else { return }
         let p = convert(event.locationInWindow, from: nil)
         if !d.panning && hypot(p.x - d.start.x, p.y - d.start.y) < 6 { return }
@@ -280,14 +345,29 @@ final class GuildHallView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { drag = nil }
+        defer {
+            drag = nil
+            carrying = nil
+            painting = false
+        }
         guard let d = drag, !d.panning else { return }
+        if editing {
+            // (a click on nothing puts the selection down)
+            if brush == nil, carrying == nil, selected != nil { selected = nil; onSelect?(nil) }
+            return
+        }
         walk(to: tiles(at: convert(event.locationInWindow, from: nil)))
     }
 
     private static let pads: [UInt16: String] = [126: "up", 125: "down", 123: "left", 124: "right", 13: "up", 1: "down", 0: "left", 2: "right"] // arrows, W S A D
 
     override func keyDown(with event: NSEvent) {
+        if editing {
+            if event.keyCode == 51 || event.keyCode == 117, let uid = selected { onRemove?(uid) } // delete
+            else if event.keyCode == 53 { onEscape?() }
+            else { super.keyDown(with: event) }
+            return
+        }
         if let pad = GuildHallView.pads[event.keyCode] {
             if !event.isARepeat, take() {
                 held.insert(pad)

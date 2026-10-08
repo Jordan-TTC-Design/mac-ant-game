@@ -413,6 +413,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(t + 18) { shot(self.mainWindow.window, "roster-from-small") }
             if env["CAMP_TEST_MAIN_STAY"] == nil { after(t + 19) { NSApp.terminate(nil) } }
         }
+        if let prefix = env["GUILD_DECODE"] { // the server's real answers (a probe run saved them), read the way the guild page reads them
+            func check<T: Decodable>(_ name: String, _ type: T.Type, _ note: (T) -> String = { _ in "" }) {
+                guard let data = try? Data(contentsOf: URL(fileURLWithPath: "\(prefix)-\(name).json")) else { return log("decode \(name): no file") }
+                do { log("decode \(name): ok \(note(try JSONDecoder().decode(T.self, from: data)))") } catch { log("decode \(name): FAILED \(error)") }
+            }
+            struct Out: Decodable { let message: String; let guild: GuildInfo }
+            struct Camp: Decodable { let materials: [String: Int] }
+            struct Entries: Decodable { let entries: [GuildSettingsPanel.Entry] }
+            struct Friends: Decodable { let friends: [GuildMembersPanel.Friend] }
+            let g: (GuildInfo) -> String = { "guild=\($0.guild?.name ?? "nil") members=\($0.guild?.members.count ?? 0) decor=\($0.guild?.decor.count ?? 0) invites=\($0.invites.count) invited=\($0.guild?.invited.count ?? 0)" }
+            for n in ["noguild", "invited-view", "leader-view", "after-decor", "restored", "officer-view", "after-leave"] { check(n, GuildInfo.self, g) }
+            check("donated", Out.self) { "\($0.message) | \(g($0.guild))" }
+            check("donations", GuildDonatePanel.Ledger.self) { "members=\($0.members.count) recent=\($0.recent.count)" }
+            check("log", Entries.self) { "entries=\($0.entries.count)" }
+            check("camp", Camp.self) { "\($0.materials)" }
+            check("friends", Friends.self) { "friends=\($0.friends.count)" }
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.sortedKeys]
+            let d = [GuildInfo.Decor(uid: "AbCdEfGhIj", kind: "oak_desk", x: 8, y: 9.5, flip: nil, locked: nil), GuildInfo.Decor(uid: "start_bench", kind: "long_bench", x: 3, y: 19.1, flip: true, locked: true)]
+            log("encode decor: \(String(data: (try? enc.encode(d)) ?? Data(), encoding: .utf8) ?? "?")")
+            log("encode floor: \(String(data: (try? enc.encode(GuildInfo.Floor(base: "stone", tiles: ["3,5": "oak"]))) ?? Data(), encoding: .utf8) ?? "?")")
+            log("encode avatar: \(String(data: (try? enc.encode(AvatarKit.standard("goblin", "f"))) ?? Data(), encoding: .utf8) ?? "?")")
+            log("encode undead avatar: \(String(data: (try? enc.encode(AvatarKit.standard("undead", "m"))) ?? Data(), encoding: .utf8) ?? "?")")
+            var kit: [String: Any] = [:]
+            for race in ["goblin", "elf", "undead"] {
+                for sex in ["m", "f"] {
+                    let o = AvatarKit.options(race, sex)
+                    let std = (try? JSONSerialization.jsonObject(with: enc.encode(AvatarKit.standard(race, sex)))) ?? [:]
+                    kit["\(race)_\(sex)"] = ["hair": o.hair, "skin": o.skin, "mouth": o.mouth, "flame": o.flame, "standard": std]
+                }
+            }
+            if let out = env["GUILD_KIT_OUT"], let data = try? JSONSerialization.data(withJSONObject: kit, options: [.sortedKeys]) { try? data.write(to: URL(fileURLWithPath: out)) }
+            after(0.5) { NSApp.terminate(nil) }
+        }
+        if let json = env["GUILD_SHOW"], let data = try? Data(contentsOf: URL(fileURLWithPath: json)) { // the guild page with made-up data, in a window to play with (no server)
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 760), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            w.title = "公會頁預覽（假資料，不會連到伺服器）"
+            self.guildPane.paneView.frame = NSRect(x: 0, y: 0, width: 1200, height: 760)
+            self.guildPane.paneView.autoresizingMask = [.width, .height]
+            w.contentView = self.guildPane.paneView
+            w.center()
+            NSApp.setActivationPolicy(.regular)
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            self.guildPreviewWindow = w
+            self.guildPane.debugShow(data, me: "me", panel: env["GUILD_SHOW_PANEL"] ?? "decor")
+            if env["GUILD_SHOW_POP"] != nil, let prefix = env["CAMP_SNAPSHOT"] { // popped out, on top, captured, and back
+                func shot(_ name: String) {
+                    guard let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(self.guildWindow.window.windowNumber), [.boundsIgnoreFraming, .bestResolution]),
+                          let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return log("guild pop: capture \(name) failed") }
+                    try? png.write(to: URL(fileURLWithPath: "\(prefix)-pop-\(name).png"))
+                }
+                after(1.5) { self.setGuildPopped(true); log("guild pop: out, window visible \(self.guildWindow.isVisible), pane in window \(self.guildPane.paneView.window === self.guildWindow.window)") }
+                after(3) { shot("out") }
+                after(3.5) { self.toggleGuildOnTop(); log("guild pop: on top \(self.settings.guildOnTop), level \(self.guildWindow.window.level.rawValue)") }
+                after(4.5) { shot("top") }
+                after(5) { self.toggleGuildOnTop(); self.setGuildPopped(false); log("guild pop: back, pane in main window \(self.guildPane.paneView.window === self.mainWindow.window), popped \(self.settings.guildPopped), pane window visible \(self.guildWindow.isVisible)") }
+                after(6.5) { NSApp.terminate(nil) }
+            }
+        }
+        if let json = env["GUILD_TEST"], let prefix = env["CAMP_SNAPSHOT"], let data = try? Data(contentsOf: URL(fileURLWithPath: json)) { // the guild page's panels, drawn into PNGs (no server)
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720), styleMask: [.titled], backing: .buffered, defer: false)
+            self.guildPane.paneView.frame = NSRect(x: 0, y: 0, width: 1100, height: 720)
+            w.contentView = self.guildPane.paneView
+            var at = 0.5
+            for name in (env["GUILD_TEST_PANELS"] ?? "decor,avatar,donate,members,settings").split(separator: ",").map(String.init) {
+                after(at) { self.guildPane.debugShow(data, me: "me", panel: name) }
+                after(at + 1.5) {
+                    let view = self.guildPane.paneView
+                    view.layoutSubtreeIfNeeded()
+                    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(prefix)-guild-\(name).png"))
+                    log("guild panel \(name) captured")
+                }
+                at += 2.5
+            }
+            after(at + 1) { NSApp.terminate(nil) }
+        }
         if let s = env["CAMP_TEST_MAIN"], let t = Double(s), let prefix = env["CAMP_SNAPSHOT"] { // the main window, every page in turn, captured
             after(t) { // (the pages offered are known once signed in)
                 var at = 0.0
@@ -3871,7 +3950,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The web app's pages in the main window, made when first opened.
     private var webPanes: [MainWindow.Page: WebPane] = [:]
     /// The 公會 page, native like the camp (GuildPane.swift).
-    private lazy var guildPane = GuildPane(api: sync.api, myId: sync.user?.id) { [weak self] message in self?.sync.sendLive(message) }
+    private var guildPreviewWindow: NSWindow?
+    private lazy var guildPane: GuildPane = {
+        let pane = GuildPane(api: sync.api, myId: sync.user?.id) { [weak self] message in self?.sync.sendLive(message) }
+        pane.onPop = { [weak self] in self?.setGuildPopped(self?.settings.guildPopped != true) }
+        pane.onTop = { [weak self] in self?.toggleGuildOnTop() }
+        pane.setPopped(settings.guildPopped, onTop: settings.guildOnTop)
+        return pane
+    }()
+    /// The guild page when it is popped out (GuildWindow.swift).
+    private lazy var guildWindow = GuildWindow(pane: guildPane)
+
+    /// The guild page into a window of its own (to sit in a corner of the desktop) or back into the main window.
+    private func setGuildPopped(_ popped: Bool) {
+        settings.guildPopped = popped
+        guildPane.setPopped(popped, onTop: settings.guildOnTop)
+        if popped {
+            mainWindow.pageMoved(.guild)
+            guildPane.signedIn(as: sync.user?.id)
+            guildWindow.open()
+        } else {
+            guildWindow.dockBack()
+            mainWindow.show(.guild)
+        }
+    }
+
+    private func toggleGuildOnTop() {
+        settings.guildOnTop.toggle()
+        guildPane.setPopped(settings.guildPopped, onTop: settings.guildOnTop)
+        guildWindow.applyLevel()
+    }
     private var worldWindow: WebPane? { webPanes[.world] }
     private lazy var accountPane: AccountPane = {
         let pane = AccountPane()
@@ -3889,6 +3997,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return camp + online + [.workshop, .roster, .notes, .account, .manual]
         }
         main.pane = { [weak self] page in self?.pane(for: page) }
+        main.popped = { [weak self] page in page == .guild && self?.settings.guildPopped == true }
+        main.openPopped = { [weak self] _ in
+            guard let self else { return }
+            self.guildPane.signedIn(as: self.sync.user?.id)
+            self.guildWindow.open()
+        }
         return main
     }()
 

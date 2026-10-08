@@ -1,8 +1,9 @@
 import AppKit
 
 /// The main window's 公會 page (GUILD.md), native like the camp: the hall fills the page (GuildHallView); the guild's name,
-/// a few buttons and the chat float over it. Decorating, the avatar maker, the members and the settings are the web pages
-/// (the same as the phone's), opened in a window of their own. Without a guild: a line and a button to found or join one.
+/// a few buttons and the chat float over it. Decorating, the avatar maker, donating, the members and the settings are panels
+/// on the page itself (GuildDecorEditor, GuildPanels, GuildAvatarPanel), no windows of their own. Without a guild: a line and
+/// a button to found or join one.
 final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     let paneView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
     private let hall = GuildHallView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
@@ -19,8 +20,18 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     private let sayField = NSTextField()
     private let empty = NSStackView()
     private let emptyText = NSTextField(wrappingLabelWithString: "")
-    private var webWindows: [String: NSWindow] = [:]
-    private var webPanes: [String: WebPane] = [:]
+    /// The page goes to a window of its own and back (AppDelegate), and stays above the others when it is out.
+    var onPop: (() -> Void)?
+    var onTop: (() -> Void)?
+    private var popButton: ClosureButton!
+    private var topButton: ClosureButton!
+    private let notice = NSTextField(labelWithString: "")
+    private let noticeBox = NSVisualEffectView()
+    private var noticeTimer: Timer?
+    /// The side panel that is open (decorating, and the others), one at a time.
+    private var panel: NSView?
+    private var editor: GuildDecorEditor?
+    private var controller: GuildPanelController?
 
     private var info: GuildInfo?
     private var chat: [GuildChatLine] = []
@@ -66,8 +77,25 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         paneView.addSubview(card)
 
         // the buttons, top right
-        for (label, path, tip) in [("🪑 擺裝飾", "/guild", "擺裝飾、鋪地板、換牆壁"), ("🧑‍🎨 角色", "/avatar", "捏自己的角色"), ("🎁 捐獻", "/guild/donate", "營地的材料捐給公會，讓公會升級"), ("👥 成員", "/guild/members", "成員、邀請、職位"), ("⚙️ 設定", "/guild/settings", "名字、徽章、擺放紀錄（會長、幹部）")] {
-            let b = ClosureButton(title: label) { [weak self] in self?.openWeb(path, title: label) }
+        let items: [(String, String, () -> Void)] = [
+            ("🪑 擺裝飾", "擺裝飾、鋪地板、換牆壁", { [weak self] in self?.toggleDecor() }),
+            ("🧑‍🎨 角色", "捏自己的角色", { [weak self] in self?.toggle(GuildAvatarPanel.self) }),
+            ("🎁 捐獻", "營地的材料捐給公會，讓公會升級", { [weak self] in self?.toggle(GuildDonatePanel.self) }),
+            ("👥 成員", "成員、邀請、職位", { [weak self] in self?.toggle(GuildMembersPanel.self) }),
+            ("⚙️ 設定", "名字、徽章、擺放紀錄（會長、幹部）", { [weak self] in self?.toggle(GuildSettingsPanel.self) }),
+        ]
+        popButton = ClosureButton(title: "⧉ 彈出") { [weak self] in self?.onPop?() }
+        topButton = ClosureButton(title: "📌 置頂") { [weak self] in self?.onTop?() }
+        for b in [popButton!, topButton!] {
+            b.bezelStyle = .rounded
+            b.controlSize = .small
+            buttons.addArrangedSubview(b)
+        }
+        topButton.isHidden = true
+        popButton.toolTip = "把公會頁彈出成獨立的小視窗，可以放在桌面角落"
+        topButton.toolTip = "小視窗永遠在其他視窗上面"
+        for (label, tip, action) in items {
+            let b = ClosureButton(title: label, action: action)
             b.bezelStyle = .rounded
             b.controlSize = .small
             b.toolTip = tip
@@ -75,6 +103,22 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         }
         buttons.spacing = 6
         paneView.addSubview(buttons)
+
+        // a line that says what just happened, under the name
+        noticeBox.material = .hudWindow
+        noticeBox.blendingMode = .withinWindow
+        noticeBox.state = .active
+        noticeBox.wantsLayer = true
+        noticeBox.layer?.cornerRadius = 8
+        noticeBox.isHidden = true
+        notice.font = .systemFont(ofSize: 12, weight: .semibold)
+        notice.textColor = NSColor(calibratedRed: 1, green: 0.95, blue: 0.77, alpha: 1)
+        notice.lineBreakMode = .byTruncatingTail
+        noticeBox.addSubview(notice)
+        notice.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([notice.leadingAnchor.constraint(equalTo: noticeBox.leadingAnchor, constant: 10), notice.trailingAnchor.constraint(equalTo: noticeBox.trailingAnchor, constant: -10),
+                                     notice.topAnchor.constraint(equalTo: noticeBox.topAnchor, constant: 5), notice.bottomAnchor.constraint(equalTo: noticeBox.bottomAnchor, constant: -5)])
+        paneView.addSubview(noticeBox)
 
         // the chat, bottom left
         chatBox.material = .hudWindow
@@ -102,8 +146,9 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
 
         // no guild yet
         emptyText.alignment = .center
+        emptyText.preferredMaxLayoutWidth = 320
         emptyText.textColor = .white
-        let found = ClosureButton(title: "建立或加入公會") { [weak self] in self?.openWeb("/guild", title: "公會") }
+        let found = ClosureButton(title: "建立或加入公會") { [weak self] in self?.toggle(GuildFoundPanel.self) }
         found.bezelStyle = .rounded
         empty.orientation = .vertical
         empty.spacing = 12
@@ -111,9 +156,11 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         empty.addArrangedSubview(found)
         paneView.addSubview(empty)
 
-        for v in [card, buttons, chatBox, empty] { v.translatesAutoresizingMaskIntoConstraints = false }
+        for v in [card, buttons, chatBox, empty, noticeBox] { v.translatesAutoresizingMaskIntoConstraints = false }
         NSLayoutConstraint.activate([
             card.leadingAnchor.constraint(equalTo: paneView.leadingAnchor, constant: 10), card.topAnchor.constraint(equalTo: paneView.topAnchor, constant: 10),
+            noticeBox.leadingAnchor.constraint(equalTo: paneView.leadingAnchor, constant: 10), noticeBox.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 6),
+            noticeBox.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
             buttons.trailingAnchor.constraint(equalTo: paneView.trailingAnchor, constant: -10), buttons.topAnchor.constraint(equalTo: paneView.topAnchor, constant: 10),
             chatBox.leadingAnchor.constraint(equalTo: paneView.leadingAnchor, constant: 10), chatBox.bottomAnchor.constraint(equalTo: paneView.bottomAnchor, constant: -10),
             chatBox.widthAnchor.constraint(equalToConstant: 360),
@@ -164,10 +211,17 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
 
     private func show(_ got: GuildInfo?) {
         info = got
+        defer {
+            // (the open panel looks at the news; one that is for a guild closes when there is none, and the other way round)
+            if got != nil {
+                if (controller is GuildFoundPanel) != (got?.guild == nil) { closePanel() } else { controller?.guildChanged() }
+            }
+        }
         let g = got?.guild
         for v in [card, buttons, chatBox] as [NSView] { v.isHidden = g == nil }
         empty.isHidden = g != nil || got == nil
-        emptyText.stringValue = "你還沒有加入公會。\n建立一個，或請會長、幹部用你的好友代碼邀請你。"
+        let waiting = got?.invites.count ?? 0
+        emptyText.stringValue = "你還沒有加入公會。\n" + (waiting > 0 ? "有 \(waiting) 個公會邀請你。" : "建立一個，或請會長、幹部用你的好友代碼邀請你。")
         guard let g else {
             hall.members = []
             hall.decor = []
@@ -182,9 +236,12 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         hall.members = g.members.sorted { $0.joinedAt < $1.joinedAt }.enumerated().map { i, m in
             GuildHallView.Member(id: m.id, name: m.name, avatar: m.avatar, presence: presence(m, now), seat: i)
         }
-        hall.decor = g.decor
-        hall.floorBase = g.floor.base
-        hall.floorTiles = g.floor.tiles
+        if editor == nil {
+            // (not while decorating: the draft is what the hall shows then)
+            hall.decor = g.decor
+            hall.floorBase = g.floor.base
+            hall.floorTiles = g.floor.tiles
+        }
         hall.wall = g.wall
         // (the settings button is the leader's and officers')
         let mine = g.members.first { $0.id == myId }
@@ -267,27 +324,116 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         return false
     }
 
-    // MARK: The web pages
+    /// What the two window buttons say: out in a window of its own or not, and whether that window stays on top.
+    func setPopped(_ popped: Bool, onTop: Bool) {
+        popButton.title = popped ? "⧉ 收回主視窗" : "⧉ 彈出"
+        popButton.toolTip = popped ? "把公會頁收回主視窗" : "把公會頁彈出成獨立的小視窗，可以放在桌面角落"
+        topButton.isHidden = !popped
+        topButton.title = onTop ? "📌 置頂中" : "📌 置頂"
+        if onTop { topButton.bezelColor = GuildUI.gold } else { topButton.bezelColor = nil }
+    }
 
-    /// Opens one of the guild's web pages in a window of its own (one per page, kept).
-    private func openWeb(_ path: String, title: String) {
-        if let w = webWindows[path] {
-            webPanes[path]?.paneWillShow()
-            w.makeKeyAndOrderFront(nil)
+    // MARK: Test hooks (`GUILD_TEST`, AppDelegate)
+
+    /// Shows this guild (a JSON as the server sends it) and opens one of the panels, so they can be looked at without a server.
+    func debugShow(_ data: Data, me: String, panel name: String) {
+        myId = me
+        hall.me = me
+        guard let got = try? JSONDecoder().decode(GuildInfo.self, from: data) else { return }
+        show(got)
+        switch name {
+        case "decor": toggleDecor()
+        case "avatar": toggle(GuildAvatarPanel.self)
+        case "donate": toggle(GuildDonatePanel.self)
+        case "members": toggle(GuildMembersPanel.self)
+        case "settings": toggle(GuildSettingsPanel.self)
+        case "found": toggle(GuildFoundPanel.self)
+        default: break
+        }
+    }
+
+    // MARK: Panels on the page
+
+    /// Says what just happened for a few seconds.
+    func notify(_ text: String) {
+        notice.stringValue = text
+        noticeBox.isHidden = text.isEmpty
+        noticeTimer?.invalidate()
+        noticeTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in self?.noticeBox.isHidden = true }
+    }
+
+    private var context: GuildContext {
+        GuildContext(api: api, info: { [weak self] in self?.info }, me: { [weak self] in self?.myId },
+                     apply: { [weak self] got in self?.show(got) }, reload: { [weak self] in self?.load() },
+                     notify: { [weak self] text in self?.notify(text) }, close: { [weak self] in self?.closePanel() })
+    }
+
+    /// Puts a panel on the right of the page (closing the one that was there).
+    private func open(panel view: NSView, width: CGFloat = 380) {
+        closePanel()
+        panel = view
+        hall.rightInset = width + 20
+        paneView.addSubview(view)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            view.trailingAnchor.constraint(equalTo: paneView.trailingAnchor, constant: -10), view.topAnchor.constraint(equalTo: buttons.bottomAnchor, constant: 8),
+            view.bottomAnchor.constraint(equalTo: paneView.bottomAnchor, constant: -10), view.widthAnchor.constraint(equalToConstant: width),
+        ])
+    }
+
+    private func closePanel() {
+        if let editor {
+            editor.release()
+            self.editor = nil
+            showSaved() // (what was changed and not saved goes away)
+        }
+        controller = nil
+        hall.rightInset = 0
+        panel?.removeFromSuperview()
+        panel = nil
+        paneView.window?.makeFirstResponder(hall)
+    }
+
+    /// The hall as the server has it (the decorating draft is put down).
+    private func showSaved() {
+        guard let g = info?.guild else { return }
+        hall.decor = g.decor
+        hall.floorBase = g.floor.base
+        hall.floorTiles = g.floor.tiles
+    }
+
+    /// Opens one of the panels, or closes it when it is the one open.
+    private func toggle<T: GuildPanelController>(_ kind: T.Type) where T: GuildPanelInit {
+        if controller is T {
+            closePanel()
             return
         }
-        let pane = WebPane(api: api, path: path)
-        let size = path == "/guild" ? NSSize(width: 1100, height: 720) : NSSize(width: 440, height: 720) // (decorating needs the hall beside the catalog)
-        let w = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
-        w.title = title.replacingOccurrences(of: #"^\S+ "#, with: "", options: .regularExpression)
-        w.isReleasedWhenClosed = false
-        pane.paneView.frame = w.contentLayoutRect
-        pane.paneView.autoresizingMask = [.width, .height]
-        w.contentView = pane.paneView
-        w.center()
-        webWindows[path] = w
-        webPanes[path] = pane
-        pane.paneWillShow()
-        w.makeKeyAndOrderFront(nil)
+        guard info != nil else { return }
+        closePanel()
+        let c = T(context)
+        controller = c
+        open(panel: c.view, width: c.view.width)
+    }
+
+    private func toggleDecor() {
+        if editor != nil {
+            closePanel()
+            return
+        }
+        guard let g = info?.guild, let role = g.members.first(where: { $0.id == myId })?.role else { return }
+        closePanel()
+        let e = GuildDecorEditor(hall: hall, api: api, guild: g, role: role)
+        e.onGuild = { [weak self] got in self?.show(got) }
+        e.onFinish = { [weak self] got, note in
+            guard let self else { return }
+            self.editor = nil
+            if got == nil { self.showSaved() }
+            self.closePanel()
+            if let got { self.show(got) } else { self.load() }
+            if let note { self.notify(note) }
+        }
+        editor = e
+        open(panel: e.view, width: 372)
+        paneView.window?.makeFirstResponder(hall)
     }
 }

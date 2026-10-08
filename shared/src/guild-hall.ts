@@ -5,7 +5,7 @@
  * elemental, a sit on a bench or a sofa, a chat at a friend's desk, a stretch), someone offline is not there.
  *
  * Everything in the hall is a decoration the members put down (a new guild gets a starter set: shared/src/guild-decor.ts
- * STARTER_DECOR), so the desks, the water and the seats are wherever the members put them: `hallFurnishing` works out from
+ * starterDecor), so the desks, the water and the seats are wherever the members put them: `hallFurnishing` works out from
  * the pieces where one works, drinks and sits, and what is in the way. Nobody walks through anything: every way is found
  * round it (`hallRoute`).
  *
