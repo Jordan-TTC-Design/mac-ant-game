@@ -41,7 +41,8 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
         var minWidth: CGFloat {
             switch self {
             case .camp: return 300
-            case .world, .guild, .quests, .feed: return 360
+            case .guild: return 640 // (the panels beside the hall need their room)
+            case .world, .quests, .feed: return 360
             case .account, .manual: return 420
             case .workshop: return 600
             case .notes: return 620
@@ -73,6 +74,9 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
     var pages: () -> [Page] = { Page.allCases }
     /// Makes (or hands back) a page's pane.
     var pane: (Page) -> MainPane? = { _ in nil }
+    /// Pages popped out into windows of their own: picking one brings that window forward instead of showing it here.
+    var popped: (Page) -> Bool = { _ in false }
+    var openPopped: (Page) -> Void = { _ in }
     private var shown: [Page] = []
     private(set) var current: Page?
     private var currentPane: MainPane?
@@ -127,8 +131,10 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
     /// Opens the window on `page` (or on the page it was last on) and brings it in front (`activate`: the app too; not when
     /// it opens by itself at launch).
     func show(_ page: Page? = nil, activate: Bool = true) {
+        if let page, popped(page) { return openPopped(page) }
         reloadSidebar()
-        let wanted = page ?? current ?? Page(rawValue: Settings.shared.mainPage ?? "") ?? shown.first ?? .workshop
+        var wanted = page ?? current ?? Page(rawValue: Settings.shared.mainPage ?? "") ?? shown.first ?? .workshop
+        if popped(wanted) { wanted = shown.first { !popped($0) } ?? .manual }
         select(shown.contains(wanted) ? wanted : (shown.first ?? .manual))
         if window.isMiniaturized { window.deminiaturize(nil) }
         if activate {
@@ -152,7 +158,21 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
 
     func close() { window.orderOut(nil); hideCurrent() }
 
+    /// A page went to a window of its own: this window shows another one.
+    func pageMoved(_ page: Page) {
+        guard current == page else { return }
+        hideCurrent()
+        current = nil
+        reloadSidebar()
+        select(shown.first { !popped($0) } ?? .manual)
+    }
+
     private func select(_ page: Page) {
+        if popped(page) {
+            openPopped(page)
+            if let current, let row = shown.firstIndex(of: current), sidebar.selectedRow != row { sidebar.selectRowIndexes([row], byExtendingSelection: false) }
+            return
+        }
         if let row = shown.firstIndex(of: page), sidebar.selectedRow != row {
             sidebar.selectRowIndexes([row], byExtendingSelection: false) // (comes back through the delegate)
         }

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { GUILD_DECOR, type GuildDecorKind } from "./guild-decor-catalog.ts";
 import { guildLevel, type GuildRole } from "./guild.ts";
 import { DEFAULT_HALL_AREA, HALL_AREA_MAX_HEIGHT, HALL_AREA_MAX_WIDTH, hallAreaHas, hallAreaSize, hallFurnishing, WALL_ROWS, type HallArea, type HallFurnishing } from "./guild-hall.ts";
+import { guildSeason, seasonOpen, taipeiDay } from "./guild-seasons.ts";
 
 export { GUILD_DECOR, type GuildDecorKind };
 
@@ -117,9 +118,12 @@ export function guildDecorRoomUsed(items: readonly GuildDecorPlaced[]): number {
   return items.reduce((sum, d) => sum + (BY_ID.get(d.kind)?.size ?? 0), 0);
 }
 
-/** Whether the guild may use this kind: its level is reached, and a race's piece needs a member of that race. */
-export function guildDecorUnlocked(kind: GuildDecorKind, level: number, races: ReadonlySet<string>): boolean {
-  return kind.level <= level && (!kind.race || races.has(kind.race));
+/** Whether the guild may put this kind down (`today`: "yyyy-mm-dd" in Taiwan): its level is reached, a race's piece needs a member
+ *  of that race, and a holiday piece needs its season to be on. */
+export function guildDecorUnlocked(kind: Pick<GuildDecorKind, "level" | "race" | "season">, level: number, races: ReadonlySet<string>, today: string = taipeiDay(new Date())): boolean {
+  if (kind.level > level || (kind.race && !races.has(kind.race))) return false;
+  const season = kind.season ? guildSeason(kind.season) : undefined;
+  return !season || seasonOpen(season, today);
 }
 
 /** Rounds a position to the art's pixels. */
@@ -145,8 +149,8 @@ export function guildDecorFits(area: HallArea, kind: { w: number; wall: boolean 
   return every((c) => hallAreaHas(area, c, r));
 }
 
-/** Why this list cannot be the hall's (null: it can). A piece already there stays even if its race left (it just can't be added again). */
-export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: number, area: HallArea, races: ReadonlySet<string>, before: readonly GuildDecorPlaced[] = []): string | null {
+/** Why this list cannot be the hall's (null: it can). A piece already there stays even if its race left or its season is over (it just can't be added again). */
+export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: number, area: HallArea, races: ReadonlySet<string>, before: readonly GuildDecorPlaced[] = [], today: string = taipeiDay(new Date())): string | null {
   if (items.length > GUILD_DECOR_MAX_ITEMS) return `最多放 ${GUILD_DECOR_MAX_ITEMS} 件。`;
   const { room } = guildLevel(level);
   const had = new Map(before.map((d) => [d.uid, d.kind]));
@@ -156,8 +160,10 @@ export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: num
     uids.add(d.uid);
     const kind = BY_ID.get(d.kind);
     if (!kind) return "沒有這種裝飾。";
-    if (had.get(d.uid) !== d.kind && !guildDecorUnlocked(kind, level, races)) {
-      return kind.level > level ? `${kind.name}要公會 ${kind.level} 級才能用。` : `${kind.name}要公會裡有這個種族的成員才能用。`;
+    if (had.get(d.uid) !== d.kind && !guildDecorUnlocked(kind, level, races, today)) {
+      if (kind.level > level) return `${kind.name}要公會 ${kind.level} 級才能用。`;
+      if (kind.race && !races.has(kind.race)) return `${kind.name}要公會裡有這個種族的成員才能用。`;
+      return `${kind.name}是${guildSeason(kind.season ?? "")?.name ?? "節日"}限定，節日期間才能擺新的。`;
     }
     if (!guildDecorFits(area, kind, d.x, d.y)) return kind.wall ? `${kind.name}要掛在牆上。` : `${kind.name}要整個放在據點的地板上。`;
   }

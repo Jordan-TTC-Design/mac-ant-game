@@ -13,7 +13,7 @@ export default defineNuxtConfig({
       title: "哥布林營地",
       htmlAttrs: { lang: "zh-Hant-TW" },
       meta: [
-        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+        { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" },
         { name: "theme-color", content: "#2f4a2a" },
         { name: "mobile-web-app-capable", content: "yes" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
@@ -55,7 +55,10 @@ export default defineNuxtConfig({
         { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
       ],
     },
-    injectManifest: { globPatterns: ["**/*.{js,css,html,png,svg,ico,woff2}"] },
+    // Only the app itself is kept up front. The pictures (over 1,600 sprites, avatar layers, decorations) are kept as they are first
+    // seen (service-worker/sw.ts): a new version of the app has to fetch everything listed here before it can take over, and with
+    // all the pictures listed that failed on phones, so they stayed on the old version for good.
+    injectManifest: { globPatterns: ["**/*.{js,css,html,svg,ico,woff2}", "icons/*.png"] },
     devOptions: { enabled: true, type: "module" },
   },
 });

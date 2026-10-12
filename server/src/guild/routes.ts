@@ -24,6 +24,8 @@ import {
   hallAreaSize,
   keepInside,
   type HallArea,
+  taipeiDay,
+  guildSeasonViews,
   GUILD_SAY_PER_MINUTE,
   guildDonateInput,
   guildPointsToNext,
@@ -257,6 +259,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         wall: guild!.wall,
         points: guild!.points,
         toNext: guildPointsToNext(guild!.points),
+        seasons: guildSeasonViews(taipeiDay(at)),
         races: [...new Set(members.map((r) => r.race ?? "goblin"))].sort(),
       },
       invites: [],
@@ -492,7 +495,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       if (areaChanged && mine.role === "member") return { error: 403 as const, message: "只有會長和幹部可以改據點的範圍。" };
       const problem =
         (areaChanged ? hallAreaProblem(area, guild!.level) : null) ??
-        guildDecorProblem(body.data.items, guild!.level, area, races, guild!.decor) ??
+        guildDecorProblem(body.data.items, guild!.level, area, races, guild!.decor, taipeiDay(at)) ??
         hallFloorProblem(floor, area, races, guild!.floor);
       if (problem) return { error: 400 as const, message: problem };
       const change = guildDecorChange(guild!.decor, body.data.items, mine.role);

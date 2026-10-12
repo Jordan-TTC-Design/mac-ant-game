@@ -80,6 +80,7 @@ function place(kind: string, x: number, y: number) {
   return guildDecorFits(draftArea.value, k, at.x, at.y) ? at : null;
 }
 function addDecor(kind: string) {
+  if (phone.value) sheetOpen.value = false;
   const k = guildDecorKind(kind)!;
   // (the middle of the hall if it fits there, else the first floor tile, or wall over a top edge, where it does)
   const { width } = hallAreaSize(draftArea.value);
@@ -224,7 +225,8 @@ async function say() {
   }
 }
 function talk() {
-  sayBox.value?.focus();
+  chatOpen.value = true;
+  void nextTick(() => sayBox.value?.focus());
 }
 // Enter to talk, Esc to stop typing (on the Mac)
 function keys(e: KeyboardEvent) {
@@ -232,7 +234,10 @@ function keys(e: KeyboardEvent) {
   if (e.key === "Enter" && !inBox && guild.value && !editing.value) {
     e.preventDefault();
     talk();
-  } else if (e.key === "Escape" && e.target === sayBox.value) sayBox.value?.blur();
+  } else if (e.key === "Escape" && e.target === sayBox.value) {
+    sayBox.value?.blur();
+    chatOpen.value = false;
+  }
 }
 onMounted(() => window.addEventListener("keydown", keys));
 onUnmounted(() => window.removeEventListener("keydown", keys));
@@ -242,6 +247,23 @@ const recentChat = computed(() => live.state.guildChat.slice(-6));
 // from the right; a phone keeps the page.
 const wide = ref(false);
 const immersive = computed(() => !!guild.value && (inMacApp() || wide.value));
+// A phone (or any narrow window outside the Mac app): the hall fills the screen above the tab bar, the name floats over its
+// corner, the pad floats over the bottom, the chat folds to one line, and decorating opens a sheet from the bottom.
+const phone = computed(() => !!guild.value && !immersive.value);
+const menuOpen = ref(false);
+const chatOpen = ref(false);
+// (decorating on a phone: the catalog sheet folds away after a pick, so the hall is in full view; the bar below it brings it back)
+const sheetOpen = ref(true);
+// (the tab bar is left out here: the screen is small; "‹" and the menu go back to the main screen)
+watchEffect(() => document.documentElement.classList.toggle("guild-full", phone.value));
+onUnmounted(() => document.documentElement.classList.remove("guild-full"));
+watch(editing, (on) => {
+  if (on) {
+    sheetOpen.value = true;
+    menuOpen.value = false;
+    chatOpen.value = false;
+  }
+});
 function measure() {
   wide.value = window.innerWidth >= 1000;
 }
@@ -254,8 +276,8 @@ onUnmounted(() => window.removeEventListener("resize", measure));
 </script>
 
 <template>
-  <main v-if="ok" class="page" :class="{ immersive }">
-    <header v-if="!immersive" class="topbar">
+  <main v-if="ok" class="page" :class="{ immersive, phone, sheet: phone && editing && sheetOpen, bar: phone && editing && !sheetOpen }">
+    <header v-if="!guild" class="topbar">
       <NuxtLink to="/" class="back" aria-label="回首頁">‹</NuxtLink>
       <div style="flex: 1">
         <h1>公會</h1>
@@ -294,6 +316,17 @@ onUnmounted(() => window.removeEventListener("resize", measure));
     </template>
 
     <template v-if="guild">
+      <div v-if="phone" class="menu">
+        <button type="button" class="menu-btn" :class="{ on: menuOpen || editing }" aria-label="選單" @click="menuOpen = !menuOpen">{{ editing ? "🪑" : "☰" }}</button>
+        <div v-if="menuOpen" class="menu-list">
+          <button type="button" @click="startDecor(); menuOpen = false">🪑 擺裝飾</button>
+          <NuxtLink to="/avatar">🧑‍🎨 角色{{ g?.avatarChosen ? "" : "（還沒捏過）" }}</NuxtLink>
+          <NuxtLink to="/guild/donate">🎁 捐獻</NuxtLink>
+          <NuxtLink to="/guild/members">👥 成員</NuxtLink>
+          <NuxtLink v-if="role !== 'member'" to="/guild/settings">⚙️ 設定</NuxtLink>
+          <NuxtLink to="/" class="leave-link">🏠 回主畫面</NuxtLink>
+        </div>
+      </div>
       <div v-if="immersive" class="hud-top">
         <button type="button" class="hud-btn" :class="{ on: editing }" @click="editing ? (editing = false) : startDecor()">🪑 {{ editing ? "擺裝飾中" : "擺裝飾" }}</button>
         <NuxtLink to="/avatar" class="hud-btn">🧑‍🎨 角色</NuxtLink>
@@ -302,6 +335,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="hud-btn">⚙️ 設定</NuxtLink>
       </div>
       <section class="panel head">
+        <NuxtLink v-if="phone" to="/" class="home" aria-label="回主畫面">‹</NuxtLink>
         <GuildBadge :badge="guild.badge" :size="64" />
         <div class="grow">
           <b class="gname">{{ guild.name }}</b>
@@ -324,7 +358,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :hand="hand"
         :bubbles="bubbles"
         :follow="follow"
-        :fill="immersive"
+        :fill="immersive || phone"
         class="hall"
         @select="selected = $event"
         @move="moveDecor"
@@ -332,9 +366,19 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         @walk-to="control.walkTo"
       />
       <template v-if="!editing">
-        <GuildPad v-if="!immersive" class="phone-only" @pad="control.press" @a="control.pressA" @b="control.pressB" @talk="talk" />
-        <p class="hint desk-only">點地板走過去・方向鍵／WASD 走路・空白鍵坐下／喝水／揮手・Q 歡呼・Enter 說話</p>
-        <section class="panel chat">
+        <GuildPad v-if="phone" @pad="control.press" @a="control.pressA" @b="control.pressB" @talk="talk" />
+        <template v-if="phone">
+          <section v-if="chatOpen" class="chat-sheet">
+            <div v-for="line in recentChat" :key="line.id" class="line"><b>{{ line.name }}</b>：{{ line.text }} <small>{{ noteTime(line.at) }}</small></div>
+            <p v-if="!recentChat.length" class="dim">還沒有人說話，打個招呼吧。</p>
+            <form class="say" @submit.prevent="say">
+              <input ref="sayBox" v-model="saying" class="field" :maxlength="GUILD_SAY_MAX" placeholder="說點什麼…" enterkeyhint="send" />
+              <button class="btn primary" :disabled="!saying.trim()">說</button>
+              <button type="button" class="btn" aria-label="收起" @click="chatOpen = false">✕</button>
+            </form>
+          </section>
+        </template>
+        <section v-else class="panel chat">
           <div v-for="line in recentChat" :key="line.id" class="line">
             <b>{{ line.name }}</b>：{{ line.text }} <small>{{ noteTime(line.at) }}</small>
           </div>
@@ -345,13 +389,25 @@ onUnmounted(() => window.removeEventListener("resize", measure));
           </form>
         </section>
       </template>
-      <div class="side" :class="{ open: !immersive || editing }">
+      <div v-if="phone && editing && !sheetOpen" class="edit-bar">
+        <button type="button" class="eb add" @click="sheetOpen = true">＋ 裝飾</button>
+        <template v-if="selected">
+          <button type="button" class="eb" @click="flipDecor">翻面</button>
+          <button type="button" class="eb" @click="removeDecor">移除</button>
+        </template>
+        <span class="grow" />
+        <button type="button" class="eb primary" :disabled="busy" @click="saveDecor">儲存</button>
+        <button type="button" class="eb" :disabled="busy" @click="editing = false">取消</button>
+      </div>
+      <div class="side" :class="{ open: editing && sheetOpen }">
+      <button v-if="phone && editing" type="button" class="fold" aria-label="收起" @click="sheetOpen = false">⌄ 收起看畫面</button>
       <GuildDecorPanel
         v-if="editing && role"
         :items="draft"
         :level="guild.level"
         :room="guild.rules.room"
         :races="guild.races"
+        :seasons="guild.seasons"
         :role="role"
         :selected="selected"
         :busy="busy"
@@ -374,13 +430,6 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         @save="saveDecor"
         @cancel="editing = false"
       />
-      <div v-else-if="!immersive" class="links">
-        <button type="button" class="wide-link" @click="startDecor">🪑 擺裝飾</button>
-        <NuxtLink to="/avatar" class="wide-link">🧑‍🎨 我的角色{{ g?.avatarChosen ? "" : "（還沒捏過）" }}</NuxtLink>
-        <NuxtLink to="/guild/members" class="wide-link">👥 成員</NuxtLink>
-        <NuxtLink to="/guild/donate" class="wide-link">🎁 捐獻</NuxtLink>
-        <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="wide-link">⚙️ 設定</NuxtLink>
-      </div>
       </div>
     </template>
   </main>
@@ -433,6 +482,53 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 /* a wide browser window (not the Mac's): the tab bar is along the bottom (60 points high), so what floats there sits above it */
 :global(html:not(.in-mac)) .immersive .chat { bottom: calc(70px + env(safe-area-inset-bottom)); }
 :global(html:not(.in-mac)) .immersive .side.open { bottom: calc(70px + env(safe-area-inset-bottom)); }
+
+/* a phone: the hall fills the screen above the tab bar; everything else floats over it (the same dark glass as the Mac's) */
+.phone, .phone * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.phone input { -webkit-user-select: text; user-select: text; }
+.phone { padding: 0 !important; max-width: none !important; --glass: rgba(18, 26, 16, 0.74); --glass-line: rgba(255, 255, 255, 0.22); --top: calc(env(safe-area-inset-top) + 10px); }
+.phone .hall { position: fixed; top: 0; left: 0; right: 0; bottom: var(--pad-h); height: auto !important; margin: 0; z-index: 0; } /* (not the hall's own 100% high: that would go under the pad) */
+.phone.sheet .hall { bottom: 46dvh; }
+.phone.bar .hall { bottom: calc(env(safe-area-inset-bottom) + 58px); }
+.edit-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px); background: var(--bg-deep); border-top: 2px solid var(--glass-line); }
+.edit-bar .grow { flex: 1; }
+.eb { height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 15px; font-weight: 700; }
+.eb.primary { background: var(--accent, #6aa84f); border-color: transparent; }
+.eb:disabled { opacity: 0.5; }
+.fold { position: sticky; top: -8px; z-index: 2; display: block; width: 100%; margin: -8px 0 6px; padding: 8px; border: 0; background: var(--bg-deep); color: #c9d6c0; font-size: 14px; font-weight: 700; }
+.phone .head { position: fixed; top: var(--top); left: 10px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; max-width: calc(100vw - 76px); border-radius: 12px; background: var(--glass); border: 2px solid var(--glass-line); box-shadow: none; color: #fff; }
+.phone .head :deep(svg) { width: 34px; height: 34px; flex: none; }
+.phone .head .gname { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phone .head small { color: #d6e0cf; font-size: 11px; }
+.phone .head .btn { display: none; }
+.phone .head .home { flex: none; display: grid; place-items: center; width: 34px; height: 34px; margin-right: -2px; border-radius: 10px; background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 26px; line-height: 1; text-decoration: none; padding-bottom: 3px; }
+.phone > .note { position: fixed; top: calc(var(--top) + 60px); left: 10px; right: 10px; z-index: 6; margin: 0; padding: 6px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.72); font-size: 13px; }
+/* the menu: one round button at the top right, a short list under it */
+.menu { position: fixed; top: var(--top); right: 10px; z-index: 5; display: grid; justify-items: end; gap: 6px; }
+.menu-btn { width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--glass-line); background: var(--glass); color: #fff; font-size: 20px; line-height: 1; }
+.menu-btn.on { background: #e8c547; color: #2b1d00; border-color: #1f1f1f; }
+.menu-list { display: grid; min-width: 176px; border-radius: 12px; border: 2px solid var(--glass-line); background: rgba(18, 26, 16, 0.92); overflow: hidden; }
+.menu-list > * { padding: 13px 16px; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); background: none; color: #fff; text-align: left; font-size: 15px; font-weight: 700; text-decoration: none; }
+.menu-list > *:first-child { border-top: 0; }
+.menu-list .leave-link { border-top: 2px solid rgba(255, 255, 255, 0.22); color: #ffe9a8; }
+.menu-list > *:active { background: rgba(255, 255, 255, 0.14); }
+/* the chat opens from the pad's 💬: the lines and the box at the top (out of the keyboard's way) */
+.chat-sheet .dim { color: #b9c7b1; }
+.chat-sheet { position: fixed; top: calc(var(--top) + 60px); left: 10px; right: 10px; z-index: 6; display: grid; gap: 4px; max-width: 520px; margin: 0 auto; padding: 10px 12px; border: 2px solid var(--glass-line); border-radius: 14px; background: rgba(18, 26, 16, 0.94); color: #fff; }
+.chat-sheet .line { font-size: 14px; line-height: 1.4; word-break: break-word; }
+.chat-sheet .line small { color: #9fb096; font-size: 11px; }
+.chat-sheet .dim { margin: 0; font-size: 13px; }
+.chat-sheet .say { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+/* the box and its two buttons are the same height */
+.chat-sheet .field, .chat-sheet .btn { height: 42px; min-height: 42px; margin: 0; padding-top: 0; padding-bottom: 0; border-radius: 10px; }
+.chat-sheet .field { flex: 1; min-width: 0; padding-left: 12px; padding-right: 12px; color: #1f1f1f; background: #fffdf6; }
+.chat-sheet .field::placeholder { color: #8a8a80; }
+.chat-sheet .btn { flex: none; min-width: 44px; padding-left: 12px; padding-right: 12px; }
+.chat-sheet .btn:not(.primary) { background: rgba(255, 255, 255, 0.14); color: #fff; border-color: rgba(255, 255, 255, 0.25); }
+/* decorating: the catalog is a sheet from the bottom, the hall stays in sight above it */
+.phone .side { display: none; }
+.phone .side.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 46dvh; overflow-y: auto; padding: 8px 8px calc(env(safe-area-inset-bottom) + 8px); border-radius: 16px 16px 0 0; background: var(--bg-deep); border-top: 2px solid var(--glass-line); overscroll-behavior: contain; }
+.phone .side.open :deep(.grid) { max-height: none; }
 </style>
 
 <style scoped>
@@ -443,10 +539,5 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .chat .line small { color: #999; font-size: 11px; }
 .say { display: flex; gap: 6px; margin-top: 4px; }
 .say .field { flex: 1; }
-.phone-only { display: none; }
-@media (hover: none) and (pointer: coarse) {
-  .phone-only { display: flex; }
-  .desk-only { display: none; }
-}
 .log-link { display: block; margin: -4px auto 12px; background: none; border: 0; color: #c9d6c0; font-size: 13px; }
 </style>

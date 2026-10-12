@@ -263,6 +263,16 @@ final class Settings {
         get { defaults.object(forKey: "campDocked") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "campDocked") }
     }
+    /// The guild page is popped out into a window of its own (GuildWindow.swift) rather than a page of the main window.
+    var guildPopped: Bool {
+        get { defaults.object(forKey: "guildPopped") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "guildPopped") }
+    }
+    /// The popped-out guild window stays above other windows.
+    var guildOnTop: Bool {
+        get { defaults.object(forKey: "guildOnTop") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "guildOnTop") }
+    }
     var mapFrame: String? {
         get { defaults.string(forKey: "mapFrame") }
         set { defaults.set(newValue, forKey: "mapFrame") }

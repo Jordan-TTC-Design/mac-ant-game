@@ -77,9 +77,25 @@ public struct HallLayout {
     public let solids: [HallRect]
     /// The floor, `width` × `height`, row by row.
     fileprivate let cells: [Bool]
+    /// For each tile of the hall, the solids that reach into it: a point is only checked against those (a hall can have hundreds
+    /// of pieces, and the routes ask about thousands of points). The answers are the same as checking every solid.
+    fileprivate let solidsAt: [[Int]]
 
     /// Whether tile (x, y) is floor.
     public func floorAt(_ x: Int, _ y: Int) -> Bool { x >= 0 && y >= 0 && x < width && y < height && cells[y * width + x] }
+
+    fileprivate init(width: Int, height: Int, area: [String], floorTiles: [HallPoint], desks: [HallPoint], seats: [HallPoint], drinks: [HallPoint], solids: [HallRect], cells: [Bool]) {
+        self.width = width; self.height = height; self.area = area; self.floorTiles = floorTiles; self.cells = cells
+        self.desks = desks; self.seats = seats; self.drinks = drinks; self.solids = solids
+        var at = [[Int]](repeating: [], count: max(0, width * height))
+        for (i, r) in solids.enumerated() {
+            let x0 = max(0, Int(floor(r.x0))), x1 = min(width - 1, Int(floor(r.x1)))
+            let y0 = max(0, Int(floor(r.y0))), y1 = min(height - 1, Int(floor(r.y1)))
+            if x0 > x1 || y0 > y1 { continue }
+            for ty in y0...y1 { for tx in x0...x1 { at[ty * width + tx].append(i) } }
+        }
+        solidsAt = at
+    }
 }
 
 public func hallLayout(area: [String]? = nil, furnishing: HallFurnishing = .empty) -> HallLayout {
@@ -97,6 +113,31 @@ public func hallLayout(area: [String]? = nil, furnishing: HallFurnishing = .empt
     }
     return HallLayout(width: width, height: height, area: shape, floorTiles: floorTiles, desks: furnishing.desks, seats: furnishing.seats,
                       drinks: furnishing.drinks, solids: furnishing.solids, cells: cells)
+}
+
+extension HallLayout {
+    /// Whether a piece `w` pixels wide may stand with its feet at (x, y): one on the floor stands on floor all along its
+    /// bottom; one for the wall hangs on the wall over a top edge of the floor (shared/src/guild-decor.ts guildDecorFits).
+    public func fits(w: Double, wall: Bool, x: Double, y: Double) -> Bool {
+        guard x.isFinite, y.isFinite, abs(x) < 1e6, abs(y) < 1e6 else { return false }
+        let eps = 1e-6
+        let half = w / 32
+        let c0 = Int((x - half + eps).rounded(.down)), c1 = Int((x + half - eps).rounded(.down))
+        func every(_ ok: (Int) -> Bool) -> Bool {
+            var c = c0
+            while c <= c1 {
+                if !ok(c) { return false }
+                c += 1
+            }
+            return true
+        }
+        if wall {
+            let top = Int(y.rounded(.up))
+            return [top, top + 1].contains { r in y >= Double(r - 1) && y <= Double(r) && every { floorAt($0, r) && !floorAt($0, r - 1) } }
+        }
+        let r = Int((y - eps).rounded(.down))
+        return every { floorAt($0, r) }
+    }
 }
 
 /// What a piece is, as far as the hall's life goes (its art's size in pixels, and what it is for).
@@ -223,7 +264,13 @@ public func hallWalkable(_ L: HallLayout, _ p: HallPoint) -> Bool {
     }
     let left = p.x - 0.4, right = p.x + 0.4, top = p.y - 0.5, bottom = p.y + 0.099
     if !on(left, top) || !on(right, top) || !on(left, bottom) || !on(right, bottom) { return false }
-    return !L.solids.contains { r in p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1 }
+    // (on the floor, so inside the hall)
+    let tx = min(L.width - 1, max(0, Int(floor(p.x)))), ty = min(L.height - 1, max(0, Int(floor(p.y))))
+    for i in L.solidsAt[ty * L.width + tx] {
+        let r = L.solids[i]
+        if p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1 { return false }
+    }
+    return true
 }
 
 /// A step from `p` by (dx, dy), sliding along whatever is in the way.

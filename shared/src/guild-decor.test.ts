@@ -4,6 +4,7 @@ import { guildLevel } from "./guild.ts";
 import { DEFAULT_HALL_AREA } from "./guild-hall.ts";
 
 const A = DEFAULT_HALL_AREA;
+import { guildSeason } from "./guild-seasons.ts";
 
 const floorKind = GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race && k.size === 1)!;
 const wallKind = GUILD_DECOR.find((k) => k.level === 1 && k.wall && !k.race)!;
@@ -20,8 +21,17 @@ describe("guild decorations", () => {
       expect(k.level).toBeGreaterThanOrEqual(1);
       expect(k.level).toBeLessThanOrEqual(7);
     }
-    // the first sets are all open from level 1 (later ones say their level)
-    expect(GUILD_DECOR.filter((k) => !k.race).every((k) => k.level === 1)).toBe(true);
+    // the first sets (and the race sets) are open from level 1; every guild level from 2 to 7 then unlocks its own 50 shared pieces
+    expect(GUILD_DECOR.filter((k) => !k.race && k.level === 1 && !k.season).length).toBeGreaterThanOrEqual(160);
+    expect(GUILD_DECOR.filter((k) => k.race).every((k) => k.level === 1)).toBe(true);
+    for (let level = 2; level <= 7; level++) {
+      const mine = GUILD_DECOR.filter((k) => k.level === level);
+      expect(mine.length, `level ${level}`).toBe(50);
+      expect(mine.every((k) => !k.race && !k.season)).toBe(true);
+      expect(new Set(mine.map((k) => k.category)).size, `level ${level} categories`).toBeGreaterThanOrEqual(12);
+    }
+    // holiday pieces can be put down by any guild
+    expect(GUILD_DECOR.filter((k) => k.season).every((k) => k.level === 1 && !k.race)).toBe(true);
   });
 
   it("checks unlocks, where things stand, and the room", () => {
@@ -41,6 +51,26 @@ describe("guild decorations", () => {
     const raceKind = { ...floorKind, race: "elf" };
     expect(guildDecorUnlocked(raceKind, 7, none)).toBe(false);
     expect(guildDecorUnlocked(raceKind, 1, new Set(["elf"]))).toBe(true);
+  });
+
+  it("a holiday piece is put down only while its season is on, and what is already there stays", () => {
+    const lantern = { level: 1, race: null, season: "mid_autumn" };
+    expect(guildDecorUnlocked(lantern, 1, none, "2026-09-20")).toBe(true);
+    expect(guildDecorUnlocked(lantern, 1, none, "2026-10-20")).toBe(false);
+    expect(guildDecorUnlocked({ ...lantern, level: 3 }, 1, none, "2026-09-20")).toBe(false); // (the level still counts)
+    expect(guildDecorUnlocked({ level: 1, race: null, season: null }, 1, none, "2026-10-20")).toBe(true);
+    // every piece in the catalog names a season that exists, or none
+    for (const k of GUILD_DECOR) expect(k.season === null || guildSeason(k.season) !== undefined, k.id).toBe(true);
+    // the check of a whole list: a seasonal piece that was there before is fine after its season, a new one is not
+    const seasonal = GUILD_DECOR.find((k) => k.season !== null);
+    if (seasonal) {
+      const piece = put("s", seasonal.id);
+      const off = "2026-01-01"; // (no season of ours is on, whichever it is: pick a day when it is not)
+      const day = ["2026-03-20", "2026-05-01", "2026-07-20", "2026-08-10", "2026-11-05"].find((d) => !guildDecorUnlocked(seasonal, 7, new Set(["goblin", "elf", "undead"]), d)) ?? off;
+      const races = new Set(["goblin", "elf", "undead"]);
+      expect(guildDecorProblem([piece], 7, A, races, [], day)).toMatch(/限定/);
+      expect(guildDecorProblem([piece], 7, A, races, [piece], day)).toBeNull();
+    }
   });
 
   it("only the leader and officers lock, and a locked piece is theirs to move", () => {

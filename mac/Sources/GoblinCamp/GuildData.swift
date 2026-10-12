@@ -3,16 +3,16 @@ import Foundation
 /// The guild as the server sends it (`GET /api/guild`, shared/src/guild.ts `GuildResponse`), only what the Mac's hall uses.
 struct GuildInfo: Decodable {
     struct Avatar: Codable, Hashable {
-        let race: String
-        let sex: String
-        let face: String
-        let eyes: String
-        let brows: String
-        let mouth: String
-        let hair: String
-        let hairColor: String
-        let skin: String
-        let flame: String?
+        var race: String
+        var sex: String
+        var face: String
+        var eyes: String
+        var brows: String
+        var mouth: String
+        var hair: String
+        var hairColor: String
+        var skin: String
+        var flame: String?
     }
 
     struct Member: Decodable {
@@ -27,18 +27,18 @@ struct GuildInfo: Decodable {
         let focusToday: Int
     }
 
-    struct Decor: Decodable {
+    struct Decor: Codable, Equatable {
         let uid: String
-        let kind: String
-        let x: Double
-        let y: Double
-        let flip: Bool?
-        let locked: Bool?
+        var kind: String
+        var x: Double
+        var y: Double
+        var flip: Bool?
+        var locked: Bool?
     }
 
-    struct Floor: Decodable {
-        let base: String
-        let tiles: [String: String]
+    struct Floor: Codable, Equatable {
+        var base: String
+        var tiles: [String: String]
     }
 
     struct Rules: Decodable {
@@ -47,6 +47,10 @@ struct GuildInfo: Decodable {
     }
 
     struct Guild: Decodable {
+        private enum CodingKeys: String, CodingKey {
+            case id, name, badge, level, rules, members, decor, decorVersion, floor, area, wall, races, points, toNext, invited
+            case seasonList = "seasons"
+        }
         let id: String
         let name: String
         let badge: String
@@ -60,9 +64,54 @@ struct GuildInfo: Decodable {
         let area: [String]?
         let wall: String
         let races: [String]
+        let points: Int
+        let toNext: Int?
+        /// The holiday seasons as the server says they are today (shared/src/guild-seasons.ts guildSeasonViews).
+        /// (An older server does not send it.)
+        let seasonList: [Season]?
+        var seasons: [Season] { seasonList ?? [] }
+        /// Asked and not answered yet (only the leader and officers are sent this).
+        let invited: [Invited]
+    }
+
+    struct Season: Decodable {
+        let id: String
+        let name: String
+        /// When it is on (or next on), "yyyy-mm-dd".
+        let from: String
+        let to: String
+        let on: Bool
+
+        /// "2/7～2/22".
+        var range: String {
+            func md(_ d: String) -> String {
+                let p = d.split(separator: "-").compactMap { Int($0) }
+                return p.count == 3 ? "\(p[1])/\(p[2])" : d
+            }
+            return "\(md(from))～\(md(to))"
+        }
+    }
+
+    struct Invited: Decodable {
+        let id: String
+        let name: String
+        let race: String
+        let at: String
+    }
+
+    /// An invitation this account has (when it is in no guild).
+    struct Invite: Decodable {
+        let guildId: String
+        let name: String
+        let badge: String
+        let members: Int
+        let by: String
+        let at: String
     }
 
     let guild: Guild?
+    let invites: [Invite]
+    let waitUntil: String?
     let avatar: Avatar
     let avatarChosen: Bool
 }

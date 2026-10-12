@@ -14,6 +14,18 @@ try {
 } catch {
   // (in development there is no index.html in the cache)
 }
+// the pictures: fetched once, then kept (not listed in the precache: see nuxt.config.ts)
+registerRoute(
+  ({ request, url }) => request.destination === "image" && url.origin === self.location.origin,
+  async ({ request }) => {
+    const cache = await caches.open("pictures-v1");
+    const kept = await cache.match(request);
+    if (kept) return kept;
+    const response = await fetch(request);
+    if (response.ok) void cache.put(request, response.clone());
+    return response;
+  },
+);
 self.skipWaiting();
 clientsClaim();
 

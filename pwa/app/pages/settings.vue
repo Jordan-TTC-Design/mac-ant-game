@@ -28,6 +28,17 @@ const pushText: Record<PushState, string> = {
 const sizes = ref<ViewportSizes | null>(null);
 const measure = () => (sizes.value = measureViewport());
 
+const update = useAppUpdate();
+const updating = ref(false);
+const reloadLatest = async () => {
+  updating.value = true;
+  await update.reload();
+};
+const resetApp = async () => {
+  updating.value = true;
+  await update.reset();
+};
+
 const showAllSessions = ref(false);
 /** Every other device of this account is signed out (this phone stays). */
 async function endOthers() {
@@ -127,6 +138,13 @@ async function signOut() {
       <button v-if="sessions.length > 1" class="btn wide-soft" @click="endOthers">登出其他所有裝置</button>
     </section>
 
+    <section class="panel">
+      <h2>App 版本</h2>
+      <p class="muted small">有新版本時，上面會跳出提示。想自己更新，按這裡，不用登出。</p>
+      <button class="btn primary" :disabled="updating" @click="reloadLatest">{{ updating ? "更新中…" : "重新載入最新版" }}</button>
+      <p class="muted small reset">還是舊的？<button class="more" :disabled="updating" @click="resetApp">清除快取再載入</button>（不會登出）</p>
+    </section>
+
     <button class="btn danger wide" @click="signOut">登出這支手機</button>
 
     <details class="sizes" @toggle="measure">
@@ -152,6 +170,8 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .name { font-weight: 600; }
 code { background: #f0efe8; padding: 2px 6px; border-radius: 6px; }
 .wide { width: 100%; }
+.reset { margin: 10px 0 0; }
+.reset .more { padding: 0; }
 .sizes { margin-top: 18px; color: rgba(255, 255, 255, 0.7); font-size: 13px; }
 .sizes .muted { color: rgba(255, 255, 255, 0.7); }
 </style>
