@@ -43,8 +43,6 @@ struct GuildInfo: Decodable {
 
     struct Rules: Decodable {
         let members: Int
-        let width: Int
-        let height: Int
         let room: Int
     }
 
@@ -58,6 +56,8 @@ struct GuildInfo: Decodable {
         let decor: [Decor]
         let decorVersion: Int
         let floor: Floor
+        /// Which tiles are floor (GuildRules `HallLayout.area`); nil from a server from before the shape could be drawn.
+        let area: [String]?
         let wall: String
         let races: [String]
     }

@@ -11,6 +11,7 @@ import { GUILD_LEVELS } from "./guild.ts";
 import { guildDecorKind, guildFurnishing, starterDecor, type GuildDecorPlaced } from "./guild-decor.ts";
 import {
   ACTIVITY_SECONDS,
+  DEFAULT_HALL_AREA,
   hallFurnishing,
   hallHash,
   hallInteract,
@@ -21,6 +22,7 @@ import {
   hallWalkable,
   WALK_SPEED,
   WALL_ROWS,
+  type HallArea,
   type HallLayout,
   type HallMember,
   type HallPieceSpec,
@@ -50,10 +52,9 @@ const placed = (kind: string, x: number, y: number, flip?: boolean): GuildDecorP
 
 /** A starter hall with more in it, some of it in the way: a wall of shelves across the middle, sofas, desks turned round, a pen
  * closed all round (nobody gets in), and little living things (which are not in the way). */
-function busyDecor(level: number): GuildDecorPlaced[] {
-  const { width, height } = GUILD_LEVELS[level - 1]!;
+function busyDecor(width: number, height: number): GuildDecorPlaced[] {
   const mid = Math.floor(width / 2);
-  const out = [...starterDecor(level)];
+  const out = [...starterDecor()];
   for (let x = 4; x < width - 6; x += 2) out.push(placed("bookshelf_low", x, 12));
   out.push(
     placed("sofa", 8, height - 4),
@@ -74,18 +75,32 @@ function busyDecor(level: number): GuildDecorPlaced[] {
   return out;
 }
 
-/** The halls the examples are worked out in: the starter hall at every level, an empty one, and a busy one. */
-const HALLS: { name: string; level: number; decor: GuildDecorPlaced[] }[] = [
-  ...GUILD_LEVELS.map((l) => ({ name: `starter ${l.level}`, level: l.level, decor: starterDecor(l.level) })),
-  { name: "empty", level: 2, decor: [] },
-  { name: "busy", level: 4, decor: busyDecor(4) },
+const rect = (w: number, h: number): HallArea => Array.from({ length: h }, () => "#".repeat(w));
+/** An L: a long room along the top, and a wing down from its left end. */
+const L_SHAPE: HallArea = [...rect(40, 8), ...rect(14, 16)];
+/** Two rooms side by side, a wall between them (two rows high over the lower one's top) and a corridor joining them. */
+const ROOMS: HallArea = [
+  ...rect(20, 10),
+  ...rect(20, 2).map((r) => `${r}${"#".repeat(4)}`),
+  ...Array.from({ length: 2 }, () => `${".".repeat(20)}${"#".repeat(4)}`),
+  ...rect(30, 10).map((r) => `${".".repeat(14)}${r}`),
+];
+
+/** The halls the examples are worked out in: the starter hall, a bigger one, an L and two rooms, an empty one, and a busy one. */
+const HALLS: { name: string; area: HallArea; decor: GuildDecorPlaced[] }[] = [
+  { name: "starter", area: DEFAULT_HALL_AREA, decor: starterDecor() },
+  { name: "big", area: rect(48, 26), decor: starterDecor() },
+  { name: "L", area: L_SHAPE, decor: starterDecor().filter((d) => d.x < 40 && d.y < 10 + WALL_ROWS) },
+  { name: "rooms", area: ROOMS, decor: [placed("guild_desk", 5, 5), placed("guild_desk", 40, 18), placed("water_cooler", 30, 20), placed("sofa", 10, 8)] },
+  { name: "empty", area: rect(40, 22), decor: [] },
+  { name: "busy", area: rect(56, 30), decor: busyDecor(56, 32) },
 ];
 const hallIndex = (name: string) => HALLS.findIndex((h) => h.name === name);
 
 /** Who is in each hall the poses are worked out for: online ones (wandering, visiting each other), focusing, away, offline. */
 const SCENES: { hall: string; members: HallMember[] }[] = [
   {
-    hall: "starter 3",
+    hall: "big",
     members: [
       { id: "幽幽", presence: "online", seat: 0 },
       { id: "u_7f3a9c", presence: "online", seat: 4 },
@@ -98,8 +113,8 @@ const SCENES: { hall: string; members: HallMember[] }[] = [
     ],
   },
   // alone in the hall: nobody's desk to chat at
-  { hall: "starter 1", members: [{ id: "lonely", presence: "online", seat: 2 }] },
-  { hall: "starter 7", members: [{ id: "x1", presence: "online", seat: 29 }, { id: "x2", presence: "online", seat: 0 }, { id: "x3", presence: "focus", seat: 4 }] },
+  { hall: "starter", members: [{ id: "lonely", presence: "online", seat: 2 }] },
+  { hall: "rooms", members: [{ id: "x1", presence: "online", seat: 29 }, { id: "x2", presence: "online", seat: 0 }, { id: "x3", presence: "focus", seat: 4 }] },
   // nothing in the hall at all: no desk, no water, no seat
   {
     hall: "empty",
@@ -158,10 +173,10 @@ export function buildGuildHallFixtures() {
   const hashes = hashInputs.map((parts) => ({ parts: parts.map(String), hash: hallHash(...parts) }));
 
   // the halls: their pieces, and what the rules make of them (the starter halls by way of guildFurnishing, as the apps do)
-  const layouts: HallLayout[] = HALLS.map(({ level, decor }) => hallLayout(level, guildFurnishing(decor)));
-  const halls = HALLS.map(({ name, level, decor }, i) => {
-    const { width, height, desks, seats, drinks, solids } = layouts[i]!;
-    return { name, level, pieces: piecesOf(decor), layout: { width, height, desks, seats, drinks, solids } };
+  const layouts: HallLayout[] = HALLS.map(({ area, decor }) => hallLayout(area, guildFurnishing(decor)));
+  const halls = HALLS.map(({ name, area, decor }, i) => {
+    const { width, height, desks, seats, drinks, solids, floorTiles } = layouts[i]!;
+    return { name, area, pieces: piecesOf(decor), layout: { width, height, desks, seats, drinks, solids, floorTiles } };
   });
 
   // pieces of every sort, turned and not (seats, desks, water, living things, flat, on the wall, on the ceiling, tiny, tall)
@@ -212,7 +227,7 @@ export function buildGuildHallFixtures() {
 
   // the ways round things: between desks (from inside one: one starts sitting), seats, water, into a piece, into the pen
   // nobody can get into, from outside the hall, and nowhere at all
-  const routes = ["starter 2", "busy"].map((name) => {
+  const routes = ["L", "rooms", "busy"].map((name) => {
     const hall = hallIndex(name);
     const l = layouts[hall]!;
     const spots: Point[] = [
@@ -233,7 +248,7 @@ export function buildGuildHallFixtures() {
     return { hall, cases };
   });
 
-  const walkable = ["starter 1", "starter 4", "busy"].map((name) => {
+  const walkable = ["starter", "L", "rooms", "busy"].map((name) => {
     const hall = hallIndex(name);
     const l = layouts[hall]!;
     const fine = name === "busy" ? 1 : 1.5;
@@ -242,7 +257,7 @@ export function buildGuildHallFixtures() {
     return { hall, cases };
   });
 
-  const steps = ["starter 1", "busy"].map((name) => {
+  const steps = ["starter", "rooms", "busy"].map((name) => {
     const hall = hallIndex(name);
     const l = layouts[hall]!;
     const moves = [
@@ -265,7 +280,7 @@ export function buildGuildHallFixtures() {
     return { hall, cases };
   });
 
-  const interacts = ["starter 1", "empty", "busy"].map((name) => {
+  const interacts = ["starter", "empty", "busy"].map((name) => {
     const hall = hallIndex(name);
     const l = layouts[hall]!;
     const cases = [];

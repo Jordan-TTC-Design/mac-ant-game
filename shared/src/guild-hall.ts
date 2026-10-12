@@ -10,7 +10,7 @@
  * round it (`hallRoute`).
  *
  * Positions are in tiles from the hall's top left; an avatar's or a piece's position is where its feet (bottom middle) are.
- * The top WALL_ROWS rows are the wall.
+ * The floor is the tiles the leader and officers drew (HallArea); a wall WALL_ROWS high stands over every top edge of it.
  */
 import { guildLevel, type Presence } from "./guild.ts";
 
@@ -44,14 +44,111 @@ export interface HallFurnishing {
   solids: Rect[];
 }
 
+// ── The hall's shape (GUILD.md §4.1) ─────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Which tiles are floor: a line for each row from y = WALL_ROWS down, "#" floor and "." not. It is kept tight (its first and
+ * last lines and its first column have floor, no line ends in "."), and its floor is all one piece. The guild's level says
+ * how many tiles it may have (guildLevel().tiles); where they go is the leader's and officers' to draw.
+ */
+export type HallArea = string[];
+/** However many tiles a level allows, the hall fits in this (floor tiles are keyed "x,y" with two digits at most). */
+export const HALL_AREA_MAX_WIDTH = 96;
+export const HALL_AREA_MAX_HEIGHT = 64;
+/** A new guild's hall (and every hall from before the shape could be drawn): 32 × 18 tiles of floor under the wall. */
+export const DEFAULT_HALL_AREA: HallArea = Array.from({ length: 18 }, () => "#".repeat(32));
+
+/** Whether tile (x, y) (whole numbers) is floor. */
+export function hallAreaHas(area: HallArea, x: number, y: number): boolean {
+  return x >= 0 && area[y - WALL_ROWS]?.[x] === "#";
+}
+
+/** How many floor tiles. */
+export function hallAreaTiles(area: HallArea): number {
+  let n = 0;
+  for (const row of area) for (const ch of row) if (ch === "#") n++;
+  return n;
+}
+
+/** The size the area spans, the wall over its top row included. */
+export function hallAreaSize(area: HallArea): { width: number; height: number } {
+  return { width: Math.max(0, ...area.map((r) => r.length)), height: WALL_ROWS + area.length };
+}
+
+/**
+ * The area with tile (x, y) made floor (`on`) or not, kept tight: when that grows it up or to the left, or takes away its
+ * top row or first column, everything moves by (dx, dy) tiles to stay where it was (the caller moves the pieces and the
+ * floor tiles by it, shared/src/guild-decor.ts shiftHall). Null: nothing would be left.
+ */
+export function hallAreaPaint(area: HallArea, x: number, y: number, on: boolean): { area: HallArea; dx: number; dy: number } | null {
+  const tiles = new Set<string>();
+  area.forEach((row, i) => [...row].forEach((ch, c) => ch === "#" && tiles.add(`${c},${i + WALL_ROWS}`)));
+  if (on) tiles.add(`${x},${y}`);
+  else tiles.delete(`${x},${y}`);
+  if (!tiles.size) return null;
+  const points = [...tiles].map((k) => k.split(",").map(Number) as [number, number]);
+  const minX = Math.min(...points.map((p) => p[0]));
+  const minY = Math.min(...points.map((p) => p[1]));
+  const maxY = Math.max(...points.map((p) => p[1]));
+  const dx = minX ? -minX : 0;
+  const dy = WALL_ROWS - minY;
+  const rows = Array.from({ length: maxY - minY + 1 }, () => [] as string[]);
+  for (const [px, py] of points) rows[py - minY]![px + dx] = "#";
+  return { area: rows.map((r) => Array.from(r, (ch) => ch ?? ".").join("")), dx, dy };
+}
+
+/** Why this cannot be the hall's floor at this level (null: it can). */
+export function hallAreaProblem(area: unknown, level: number): string | null {
+  if (!Array.isArray(area) || !area.length || area.some((r) => typeof r !== "string" || !/^([#.]*#)?$/.test(r))) return "據點範圍的格式不對。";
+  const rows = area as HallArea;
+  if (!rows[0] || !rows.at(-1)) return "據點範圍的格式不對。";
+  const { width, height } = hallAreaSize(rows);
+  if (width > HALL_AREA_MAX_WIDTH || height > HALL_AREA_MAX_HEIGHT) return `據點最寬 ${HALL_AREA_MAX_WIDTH} 格、最高 ${HALL_AREA_MAX_HEIGHT - WALL_ROWS} 格。`;
+  if (!rows.some((r) => r[0] === "#")) return "據點範圍的格式不對。";
+  const n = hallAreaTiles(rows);
+  const most = guildLevel(level).tiles;
+  if (n > most) return `據點最多 ${most} 格（現在 ${n} 格），公會升級後可以更大。`;
+  // all one piece: everyone can walk everywhere
+  const first = rows.findIndex((r) => r.includes("#"));
+  const seen = new Set<string>([`${rows[first]!.indexOf("#")},${first + WALL_ROWS}`]);
+  const queue = [...seen];
+  while (queue.length) {
+    const [x, y] = queue.pop()!.split(",").map(Number) as [number, number];
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]] as const) {
+      const key = `${nx},${ny}`;
+      if (!seen.has(key) && hallAreaHas(rows, nx, ny)) {
+        seen.add(key);
+        queue.push(key);
+      }
+    }
+  }
+  if (seen.size !== n) return "據點的地板要連在一起，大家才走得過去。";
+  return null;
+}
+
 export interface HallLayout extends HallFurnishing {
   width: number;
   height: number;
+  area: HallArea;
+  /** Every floor tile's top left, row by row (where someone with nothing to do may stand). */
+  floorTiles: Point[];
+  /** The floor, `width` × `height`, row by row: 1 floor (looked up for every step of every way, so not from `area`). */
+  cells: Uint8Array;
 }
 
-export function hallLayout(level: number, furnishing: HallFurnishing = { desks: [], seats: [], drinks: [], solids: [] }): HallLayout {
-  const { width, height } = guildLevel(level);
-  return { width, height, ...furnishing };
+export function hallLayout(area: HallArea | null = DEFAULT_HALL_AREA, furnishing: HallFurnishing = { desks: [], seats: [], drinks: [], solids: [] }): HallLayout {
+  const shape = area ?? DEFAULT_HALL_AREA;
+  const { width, height } = hallAreaSize(shape);
+  const floorTiles: Point[] = [];
+  const cells = new Uint8Array(width * height);
+  shape.forEach((row, i) =>
+    [...row].forEach((ch, x) => {
+      if (ch !== "#") return;
+      floorTiles.push({ x, y: i + WALL_ROWS });
+      cells[(i + WALL_ROWS) * width + x] = 1;
+    }),
+  );
+  return { width, height, area: shape, floorTiles, cells, ...furnishing };
 }
 
 /** What a piece is, as far as the hall's life goes (its art's size in pixels, and what it is for). */
@@ -125,9 +222,12 @@ export function hallHash(...parts: (string | number)[]): number {
 
 // ── Where feet may go ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Whether feet may stand at `p`. */
+/** Whether feet may stand at `p`: on the floor (0.4 of a tile from its sides, half a tile from a wall), and in nothing. */
 export function hallWalkable(L: HallLayout, p: Point): boolean {
-  if (p.x < 0.4 || p.x > L.width - 0.4 || p.y < WALL_ROWS + 0.5 || p.y > L.height - 0.1) return false;
+  // (outside the hall, or not a number: no floor)
+  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < L.width && y < L.height && L.cells[Math.floor(y) * L.width + Math.floor(x)] === 1;
+  const [left, right, top, bottom] = [p.x - 0.4, p.x + 0.4, p.y - 0.5, p.y + 0.099];
+  if (!on(left, top) || !on(right, top) || !on(left, bottom) || !on(right, bottom)) return false;
   return !L.solids.some((r) => p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1);
 }
 
@@ -232,13 +332,16 @@ interface Doing extends Point {
   dir: HallDir;
 }
 
-/** Somewhere free to stand, picked by these words (a few tries; else the middle of the hall). */
-function freeSpot(L: HallLayout, ...parts: (string | number)[]): Point {
-  for (let i = 0; i < 8; i++) {
-    const p = { x: 1 + hallHash(...parts, "x", i) * (L.width - 2), y: WALL_ROWS + 1 + hallHash(...parts, "y", i) * (L.height - WALL_ROWS - 1.5) };
+/** Somewhere free to stand on the floor, picked by these words (a few tries; else the middle of the first floor tile). */
+export function hallFreeSpot(L: HallLayout, ...parts: (string | number)[]): Point {
+  const n = L.floorTiles.length;
+  for (let i = 0; i < 8 && n; i++) {
+    const t = L.floorTiles[Math.floor(hallHash(...parts, "t", i) * n)]!;
+    const p = { x: t.x + 0.1 + hallHash(...parts, "x", i) * 0.8, y: t.y + 0.5 + hallHash(...parts, "y", i) * 0.4 };
     if (hallWalkable(L, p)) return p;
   }
-  return { x: L.width / 2, y: L.height - 1 };
+  const t = L.floorTiles[0] ?? { x: 0, y: WALL_ROWS };
+  return { x: t.x + 0.5, y: t.y + 0.5 };
 }
 
 /** What someone who is there chooses to do in their `k`th activity. */
@@ -246,7 +349,7 @@ function activity(L: HallLayout, m: HallMember, k: number, present: HallMember[]
   const desk = L.desks[m.seat];
   const roll = hallHash(m.id, k);
   const others = present.filter((o) => o.id !== m.id);
-  const idle = (): Doing => ({ ...freeSpot(L, m.id, k), anim: "idle", dir: "front" });
+  const idle = (): Doing => ({ ...hallFreeSpot(L, m.id, k), anim: "idle", dir: "front" });
   if (roll < 0.3) return desk ? { ...desk, anim: "sit", dir: "front" } : idle();
   if (roll < 0.45) return L.drinks.length ? { ...L.drinks[Math.floor(hallHash(m.id, k, "drink") * L.drinks.length)]!, anim: "drink", dir: "front" } : idle();
   if (roll < 0.6) return L.seats.length ? { ...L.seats[Math.floor(hallHash(m.id, k, "bench") * L.seats.length)]!, anim: "sit", dir: "front" } : idle();
@@ -293,7 +396,7 @@ export function hallPose(L: HallLayout, m: HallMember, present: HallMember[], no
   const desk = L.desks[m.seat];
   if (m.presence === "focus" || m.presence === "away") {
     // (no desk for them: they stand by the wall)
-    if (!desk) return { ...freeSpot(L, m.id, "wall"), anim: "idle", dir: "front", flip: false, t: secs };
+    if (!desk) return { ...hallFreeSpot(L, m.id, "wall"), anim: "idle", dir: "front", flip: false, t: secs };
     return { ...desk, anim: m.presence === "focus" ? "type" : "doze", dir: "front", flip: false, t: secs };
   }
   const shifted = secs + hallHash(m.id, "offset") * ACTIVITY_SECONDS;

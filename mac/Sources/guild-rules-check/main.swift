@@ -77,7 +77,7 @@ same("activitySeconds", rules["activitySeconds"], guildActivitySeconds)
 let levels = rules["levels"] as? [[String: Any]] ?? []
 expect("levels count", levels.count == guildLevels.count, "\(levels.count) vs \(guildLevels.count)")
 for (j, l) in zip(levels, guildLevels) {
-    let pairs: [(String, Int)] = [("level", l.level), ("members", l.members), ("width", l.width), ("height", l.height), ("room", l.room)]
+    let pairs: [(String, Int)] = [("level", l.level), ("members", l.members), ("tiles", l.tiles), ("room", l.room)]
     for (key, value) in pairs { expect("level \(l.level).\(key)", number(j[key]) == Double(value), "\(j[key] ?? "nil") vs \(value)") }
 }
 
@@ -91,18 +91,18 @@ for item in root["hashes"] as? [[String: Any]] ?? [] {
 // the halls: each one's furnishing worked out from its pieces
 var layouts: [HallLayout] = []
 for (i, j) in (root["halls"] as? [[String: Any]] ?? []).enumerated() {
-    let level = Int(number(j["level"]) ?? 0)
-    let l = hallLayout(level: level, furnishing: hallFurnishing(pieces(j["pieces"])))
+    let l = hallLayout(area: j["area"] as? [String] ?? [], furnishing: hallFurnishing(pieces(j["pieces"])))
     layouts.append(l)
     let tag = "hall \(i) (\(j["name"] ?? "?"))"
     let want = j["layout"] as? [String: Any] ?? [:]
     same("\(tag).width", want["width"], Double(l.width))
     same("\(tag).height", want["height"], Double(l.height))
     sameFurnishing(tag, want, HallFurnishing(desks: l.desks, seats: l.seats, drinks: l.drinks, solids: l.solids))
+    samePoints("\(tag).floorTiles", want["floorTiles"], l.floorTiles)
 }
 func layoutOf(_ group: [String: Any]) -> HallLayout {
     let i = Int(number(group["hall"]) ?? -1)
-    return layouts.indices.contains(i) ? layouts[i] : hallLayout(level: 1)
+    return layouts.indices.contains(i) ? layouts[i] : hallLayout()
 }
 for (i, j) in (root["furnishings"] as? [[String: Any]] ?? []).enumerated() {
     sameFurnishing("furnishing \(i)", j["furnishing"] as? [String: Any] ?? [:], hallFurnishing(pieces(j["pieces"])))

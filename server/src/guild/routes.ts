@@ -19,6 +19,11 @@ import {
   hallStyleOpen,
   hallWallInput,
   starterDecor,
+  DEFAULT_HALL_AREA,
+  hallAreaProblem,
+  hallAreaSize,
+  keepInside,
+  type HallArea,
   GUILD_SAY_PER_MINUTE,
   guildDonateInput,
   guildPointsToNext,
@@ -38,6 +43,13 @@ import {
   type GuildRole,
   type SocialPush,
 } from "@goblincamp/shared";
+
+
+/** The hall a guild of this level had before its shape could be drawn: a rectangle that grew 8 × 4 tiles a level (GUILD.md §4.1). */
+function levelHall(level: number): HallArea {
+  const n = guildLevel(level).level;
+  return Array.from({ length: 14 + 4 * n }, () => "#".repeat(24 + 8 * n));
+}
 import { focusToday } from "@goblincamp/shared/camp";
 import type { AppDeps, AppEnv } from "../app.ts";
 import type { guildLive } from "./live.ts";
@@ -164,10 +176,41 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     if (guild && !guild.furnished) {
       // (a guild from before the starter furniture was decoration: it gets the set once, behind what it put down)
       const had = new Set(guild.decor.map((d) => d.uid));
-      const decor = [...starterDecor(guild.level).filter((d) => !had.has(d.uid)), ...guild.decor];
+      const decor = [...starterDecor().filter((d) => !had.has(d.uid)), ...guild.decor];
       [guild] = await db.update(guilds).set({ decor, decorVersion: guild.decorVersion + 1, furnished: true }).where(and(eq(guilds.id, guild.id), eq(guilds.furnished, false))).returning();
       guild ??= (await db.select().from(guilds).where(eq(guilds.id, me.guildId)))[0];
     }
+    if (guild && !guild.area) {
+      // (a hall from before its shape could be drawn grew to the right and down with every level; it goes back to the
+      // starting hall, and the leader or an officer draws it bigger where they like (2026-10-12). What no longer fits is
+      // taken away, logged as it was, so the leader can put it all back)
+      const was = guild;
+      const kept = keepInside(DEFAULT_HALL_AREA, was.decor, was.floor);
+      guild = await db.transaction(async (tx) => {
+        const [g] = await tx
+          .update(guilds)
+          .set({ area: DEFAULT_HALL_AREA, decor: kept.decor, floor: kept.floor, decorVersion: was.decorVersion + 1 })
+          .where(and(eq(guilds.id, was.id), isNull(guilds.area)))
+          .returning();
+        if (g && was.level > 1) {
+          await tx.insert(guildDecorLog).values({
+            guildId: was.id,
+            userId: null,
+            at,
+            added: 0,
+            moved: 0,
+            removed: kept.dropped,
+            floorChanged: hallFloorChanged(was.floor, kept.floor, levelHall(was.level)),
+            before: was.decor,
+            floorBefore: was.floor,
+            areaChanged: true,
+            areaBefore: levelHall(was.level),
+          });
+        }
+        return g ?? (await tx.select().from(guilds).where(eq(guilds.id, was.id)))[0];
+      });
+    }
+    const area = guild!.area ?? DEFAULT_HALL_AREA;
     const members = await db
       .select({ m: guildMembers, name: users.displayName, race: camps.race, focus: camps.focus, avatar: avatars.avatar })
       .from(guildMembers)
@@ -190,7 +233,8 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         name: guild!.name,
         badge: guild!.badge,
         level: guild!.level,
-        rules: guildLevel(guild!.level),
+        // (the hall's size too, for the Macs from before its shape could be drawn)
+        rules: { ...guildLevel(guild!.level), ...hallAreaSize(area) },
         createdAt: guild!.createdAt.toISOString(),
         members: members
           .map((r) => ({
@@ -209,6 +253,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         decor: guild!.decor,
         decorVersion: guild!.decorVersion,
         floor: guild!.floor,
+        area,
         wall: guild!.wall,
         points: guild!.points,
         toNext: guildPointsToNext(guild!.points),
@@ -235,7 +280,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     const [taken] = await db.select({ id: guilds.id }).from(guilds).where(sql`${guilds.name} = ${body.data.name}`);
     if (taken) return apiError(c, 409, "conflict", "這個公會名字已經有人用了。", { fields: { name: "這個公會名字已經有人用了。" } });
     const guildId = await db.transaction(async (tx) => {
-      const [g] = await tx.insert(guilds).values({ name: body.data.name, badge: body.data.badge ?? DEFAULT_BADGE, createdAt: at, decor: starterDecor(1), furnished: true }).returning();
+      const [g] = await tx.insert(guilds).values({ name: body.data.name, badge: body.data.badge ?? DEFAULT_BADGE, createdAt: at, decor: starterDecor(), area: DEFAULT_HALL_AREA, furnished: true }).returning();
       await tx.insert(guildMembers).values({ userId: me.id, guildId: g!.id, role: "leader", joinedAt: at });
       await tx.delete(guildInvites).where(eq(guildInvites.userId, me.id));
       return g!.id;
@@ -441,14 +486,23 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         (await tx.select({ race: camps.race }).from(guildMembers).leftJoin(camps, eq(camps.userId, guildMembers.userId)).where(eq(guildMembers.guildId, mine.guildId))).map((r) => r.race ?? "goblin"),
       );
       const floor = body.data.floor ?? guild!.floor;
-      const problem = guildDecorProblem(body.data.items, guild!.level, races, guild!.decor) ?? hallFloorProblem(floor, guild!.level, races, guild!.floor);
+      const areaWas = guild!.area ?? DEFAULT_HALL_AREA;
+      const area = body.data.area ?? areaWas;
+      const areaChanged = JSON.stringify(area) !== JSON.stringify(areaWas);
+      if (areaChanged && mine.role === "member") return { error: 403 as const, message: "只有會長和幹部可以改據點的範圍。" };
+      const problem =
+        (areaChanged ? hallAreaProblem(area, guild!.level) : null) ??
+        guildDecorProblem(body.data.items, guild!.level, area, races, guild!.decor) ??
+        hallFloorProblem(floor, area, races, guild!.floor);
       if (problem) return { error: 400 as const, message: problem };
       const change = guildDecorChange(guild!.decor, body.data.items, mine.role);
       if (typeof change === "string") return { error: 403 as const, message: change };
-      const floorChanged = hallFloorChanged(guild!.floor, floor, guild!.level);
-      if (!change.added && !change.moved && !change.removed && !floorChanged) return { ok: true };
-      await tx.update(guilds).set({ decor: body.data.items, floor, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
-      await tx.insert(guildDecorLog).values({ guildId: mine.guildId, userId: me.id, at, ...change, floorChanged, before: guild!.decor, floorBefore: guild!.floor });
+      const floorChanged = hallFloorChanged(guild!.floor, floor, area);
+      if (!change.added && !change.moved && !change.removed && !floorChanged && !areaChanged) return { ok: true };
+      await tx.update(guilds).set({ decor: body.data.items, floor, area, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
+      await tx
+        .insert(guildDecorLog)
+        .values({ guildId: mine.guildId, userId: me.id, at, ...change, floorChanged, before: guild!.decor, floorBefore: guild!.floor, areaChanged, areaBefore: areaWas });
       await tx.delete(guildDecorLog).where(and(eq(guildDecorLog.guildId, mine.guildId), lt(guildDecorLog.at, new Date(at.getTime() - GUILD_DECOR_LOG_DAYS * DAY))));
       return { ok: true };
     });
@@ -469,7 +523,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       .where(eq(guildDecorLog.guildId, mine.guildId))
       .orderBy(desc(guildDecorLog.at))
       .limit(100);
-    const entries: GuildDecorLogEntry[] = rows.map((r) => ({ id: r.l.id, by: r.name ?? "", at: r.l.at.toISOString(), added: r.l.added, moved: r.l.moved, removed: r.l.removed, restored: r.l.restored, floor: r.l.floorChanged }));
+    const entries: GuildDecorLogEntry[] = rows.map((r) => ({ id: r.l.id, by: r.name ?? "", at: r.l.at.toISOString(), added: r.l.added, moved: r.l.moved, removed: r.l.removed, restored: r.l.restored, floor: r.l.floorChanged, area: r.l.areaChanged }));
     return c.json({ entries });
   });
 
@@ -489,7 +543,10 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       const was = new Set(guild!.decor.map((d) => d.uid));
       const back = new Set(entry.before.map((d) => d.uid));
       const floor = entry.floorBefore ?? guild!.floor;
-      await tx.update(guilds).set({ decor: entry.before, floor, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
+      // (a change from before the shape could be drawn: the hall was the level's rectangle then)
+      const areaWas = guild!.area ?? DEFAULT_HALL_AREA;
+      const area = entry.areaBefore ?? levelHall(guild!.level);
+      await tx.update(guilds).set({ decor: entry.before, floor, area, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
       await tx.insert(guildDecorLog).values({
         guildId: mine.guildId,
         userId: me.id,
@@ -498,9 +555,11 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         moved: 0,
         removed: guild!.decor.filter((d) => !back.has(d.uid)).length,
         restored: true,
-        floorChanged: hallFloorChanged(guild!.floor, floor, guild!.level),
+        floorChanged: hallFloorChanged(guild!.floor, floor, area),
         before: guild!.decor,
         floorBefore: guild!.floor,
+        areaChanged: JSON.stringify(area) !== JSON.stringify(areaWas),
+        areaBefore: areaWas,
       });
       return true;
     });

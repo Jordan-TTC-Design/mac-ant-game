@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { GUILD_DECOR, type GuildDecorKind } from "./guild-decor-catalog.ts";
 import { guildLevel, type GuildRole } from "./guild.ts";
-import { hallFurnishing, WALL_ROWS, type HallFurnishing } from "./guild-hall.ts";
+import { DEFAULT_HALL_AREA, HALL_AREA_MAX_HEIGHT, HALL_AREA_MAX_WIDTH, hallAreaHas, hallAreaSize, hallFurnishing, WALL_ROWS, type HallArea, type HallFurnishing } from "./guild-hall.ts";
 
 export { GUILD_DECOR, type GuildDecorKind };
 
@@ -75,8 +75,7 @@ export type HallFloor = z.infer<typeof hallFloorSchema>;
 export const DEFAULT_HALL_FLOOR: HallFloor = { base: "oak", tiles: {} };
 
 /** Why this floor cannot be the hall's (null: it can). A style already down stays even if its race left. */
-export function hallFloorProblem(floor: HallFloor, level: number, races: ReadonlySet<string>, before: HallFloor = DEFAULT_HALL_FLOOR): string | null {
-  const { width, height } = guildLevel(level);
+export function hallFloorProblem(floor: HallFloor, area: HallArea, races: ReadonlySet<string>, before: HallFloor = DEFAULT_HALL_FLOOR): string | null {
   const had = new Set([before.base, ...Object.values(before.tiles)]);
   for (const id of new Set([floor.base, ...Object.values(floor.tiles)])) {
     const style = HALL_FLOORS.find((f) => f.id === id);
@@ -85,18 +84,21 @@ export function hallFloorProblem(floor: HallFloor, level: number, races: Readonl
   }
   for (const key of Object.keys(floor.tiles)) {
     const [x, y] = key.split(",").map(Number) as [number, number];
-    if (x >= width || y < WALL_ROWS || y >= height) return "地板鋪到據點外面了。";
+    if (!hallAreaHas(area, x, y)) return "地板鋪到據點外面了。";
   }
   return null;
 }
 
 /** How many of the hall's tiles differ between two floors (for the log). */
-export function hallFloorChanged(a: HallFloor, b: HallFloor, level: number): number {
-  const { width, height } = guildLevel(level);
+export function hallFloorChanged(a: HallFloor, b: HallFloor, area: HallArea): number {
+  const { width, height } = hallAreaSize(area);
   let n = 0;
   for (let y = WALL_ROWS; y < height; y++) for (let x = 0; x < width; x++) if ((a.tiles[`${x},${y}`] ?? a.base) !== (b.tiles[`${x},${y}`] ?? b.base)) n++;
   return n;
 }
+
+const HALL_AREA_LINE_MAX = HALL_AREA_MAX_WIDTH;
+const HALL_AREA_LINES_MAX = HALL_AREA_MAX_HEIGHT - WALL_ROWS;
 
 export const hallWallInput = z.object({ wall: z.string().max(30) });
 
@@ -106,6 +108,8 @@ export const guildDecorInput = z.object({
   items: z.array(guildDecorPlacedSchema).max(GUILD_DECOR_MAX_ITEMS),
   /** The floor too, when it was changed. */
   floor: hallFloorSchema.optional(),
+  /** The hall's shape too, when it was drawn anew (the leader and officers; shared/src/guild-hall.ts HallArea). */
+  area: z.array(z.string().max(HALL_AREA_LINE_MAX)).max(HALL_AREA_LINES_MAX).optional(),
 });
 export const guildDecorRestoreInput = z.object({ logId: z.uuid() });
 
@@ -121,10 +125,30 @@ export function guildDecorUnlocked(kind: GuildDecorKind, level: number, races: R
 /** Rounds a position to the art's pixels. */
 export const snapDecor = (v: number) => Math.round(v / GUILD_DECOR_STEP) * GUILD_DECOR_STEP;
 
+/**
+ * Whether a piece of this kind may stand with its feet at (x, y) in this hall: one on the floor stands on floor all along
+ * its bottom; one for the wall hangs on the wall over a top edge of the floor (its bottom no higher than the wall's top and
+ * no lower than the floor).
+ */
+export function guildDecorFits(area: HallArea, kind: { w: number; wall: boolean }, x: number, y: number): boolean {
+  const eps = 1e-6;
+  const half = kind.w / 32;
+  const [c0, c1] = [Math.floor(x - half + eps), Math.floor(x + half - eps)];
+  const every = (ok: (c: number) => boolean) => {
+    for (let c = c0; c <= c1; c++) if (!ok(c)) return false;
+    return true;
+  };
+  if (kind.wall) {
+    return [Math.ceil(y), Math.ceil(y) + 1].some((r) => y >= r - 1 && y <= r && every((c) => hallAreaHas(area, c, r) && !hallAreaHas(area, c, r - 1)));
+  }
+  const r = Math.floor(y - eps);
+  return every((c) => hallAreaHas(area, c, r));
+}
+
 /** Why this list cannot be the hall's (null: it can). A piece already there stays even if its race left (it just can't be added again). */
-export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: number, races: ReadonlySet<string>, before: readonly GuildDecorPlaced[] = []): string | null {
+export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: number, area: HallArea, races: ReadonlySet<string>, before: readonly GuildDecorPlaced[] = []): string | null {
   if (items.length > GUILD_DECOR_MAX_ITEMS) return `最多放 ${GUILD_DECOR_MAX_ITEMS} 件。`;
-  const { width, height, room } = guildLevel(level);
+  const { room } = guildLevel(level);
   const had = new Map(before.map((d) => [d.uid, d.kind]));
   const uids = new Set<string>();
   for (const d of items) {
@@ -135,9 +159,7 @@ export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: num
     if (had.get(d.uid) !== d.kind && !guildDecorUnlocked(kind, level, races)) {
       return kind.level > level ? `${kind.name}要公會 ${kind.level} 級才能用。` : `${kind.name}要公會裡有這個種族的成員才能用。`;
     }
-    const half = kind.w / 32;
-    if (d.x - half < 0 || d.x + half > width) return `${kind.name}超出據點了。`;
-    if (kind.wall ? d.y < 1 || d.y > WALL_ROWS + 0.01 : d.y <= WALL_ROWS || d.y > height) return kind.wall ? `${kind.name}要掛在牆上。` : `${kind.name}要放在地板上。`;
+    if (!guildDecorFits(area, kind, d.x, d.y)) return kind.wall ? `${kind.name}要掛在牆上。` : `${kind.name}要整個放在據點的地板上。`;
   }
   const used = guildDecorRoomUsed(items);
   if (used > room) return `裝飾點數不夠（${used}／${room}），公會升級後會有更多。`;
@@ -159,8 +181,8 @@ export function guildFurnishing(items: readonly GuildDecorPlaced[]): HallFurnish
  * the wall, the fireplace, two banners, a bookshelf, the water, a bench, two plants and a rug. All of it is ordinary
  * decoration, to move or take away (2026-10-08).
  */
-export function starterDecor(level = 1): GuildDecorPlaced[] {
-  const { width, height } = guildLevel(level);
+export function starterDecor(): GuildDecorPlaced[] {
+  const { width, height } = hallAreaSize(DEFAULT_HALL_AREA);
   const bottom = height - 0.9;
   const desks = [-6, -3, 0, 3, 6].map((dx, i) => ({ uid: `start_desk${i}`, kind: "guild_desk", x: Math.floor(width / 2) + dx, y: WALL_ROWS + 2.5 }));
   return [
@@ -175,6 +197,30 @@ export function starterDecor(level = 1): GuildDecorPlaced[] {
     { uid: "start_plant2", kind: "potted_fern", x: width - 0.8, y: bottom },
     { uid: "start_rug", kind: "red_rug", x: width / 2, y: height - 1.2 },
   ];
+}
+
+/** Everything in the hall moved by (dx, dy) tiles (its shape grew up or to the left, or lost its top or left: hallAreaPaint). */
+export function shiftHall(decor: readonly GuildDecorPlaced[], floor: HallFloor, dx: number, dy: number): { decor: GuildDecorPlaced[]; floor: HallFloor } {
+  if (!dx && !dy) return { decor: [...decor], floor };
+  const tiles: Record<string, string> = {};
+  for (const [key, id] of Object.entries(floor.tiles)) {
+    const [x, y] = key.split(",").map(Number) as [number, number];
+    if (x + dx >= 0 && y + dy >= 0) tiles[`${x + dx},${y + dy}`] = id;
+  }
+  return { decor: decor.map((d) => ({ ...d, x: d.x + dx, y: d.y + dy })), floor: { base: floor.base, tiles } };
+}
+
+/** What still fits after the hall's shape changed: the pieces and floor tiles left outside it are taken away. */
+export function keepInside(area: HallArea, decor: readonly GuildDecorPlaced[], floor: HallFloor): { decor: GuildDecorPlaced[]; floor: HallFloor; dropped: number } {
+  const kept = decor.filter((d) => {
+    const k = BY_ID.get(d.kind);
+    return !k || guildDecorFits(area, k, d.x, d.y);
+  });
+  const tiles = Object.fromEntries(Object.entries(floor.tiles).filter(([key]) => {
+    const [x, y] = key.split(",").map(Number) as [number, number];
+    return hallAreaHas(area, x, y);
+  }));
+  return { decor: kept, floor: { base: floor.base, tiles }, dropped: decor.length - kept.length };
 }
 
 export interface GuildDecorChange {
@@ -229,4 +275,6 @@ export interface GuildDecorLogEntry {
   restored: boolean;
   /** Floor tiles changed. */
   floor: number;
+  /** The hall's shape was drawn anew. */
+  area: boolean;
 }

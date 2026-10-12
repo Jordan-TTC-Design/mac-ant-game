@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { guildDecorKind, guildFurnishing, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
+import { guildDecorKind, guildFurnishing, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type HallArea, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
 import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
 
 /**
@@ -8,7 +8,8 @@ import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
  * piece is picked by tapping it and moved by dragging it.
  */
 const props = defineProps<{
-  level: number;
+  /** Which tiles are floor (shared/src/guild-hall.ts HallArea). */
+  area: HallArea;
   members: GuildMemberView[];
   me?: string;
   decor: GuildDecorPlaced[];
@@ -17,6 +18,8 @@ const props = defineProps<{
   editing?: boolean;
   /** Laying floor tiles: a tap or a drag paints the tiles under it. */
   painting?: boolean;
+  /** Drawing the hall's shape: like painting, but anywhere round the hall too (a margin to grow into shows round it). */
+  shaping?: boolean;
   selected?: string | null;
   /** Avatars walked by hand (GUILD.md §3.1), this one's and others': where they are and what they are doing. */
   hand?: Record<string, GuildMove & { since?: number }>;
@@ -71,12 +74,26 @@ const view = reactive({ cols: 16, rows: 10 });
 const cam = { x: 0, y: 0 };
 let lookingUntil = 0;
 let lookedFrom: { x: number; y: number } | null = null;
+/** Drawing the hall's shape, this many tiles round it to grow into. */
+const MARGIN = 6;
 function clampCam() {
   // (a view bigger than the hall keeps the hall in its middle)
   const L = layout.value;
-  cam.x = view.cols >= L.width ? (L.width - view.cols) / 2 : Math.min(Math.max(0, cam.x), L.width - view.cols);
-  cam.y = view.rows >= L.height ? (L.height - view.rows) / 2 : Math.min(Math.max(0, cam.y), L.height - view.rows);
+  const m = props.shaping ? MARGIN : 0;
+  const [w, h] = [L.width + 2 * m, L.height + 2 * m];
+  cam.x = view.cols >= w ? (L.width - view.cols) / 2 : Math.min(Math.max(-m, cam.x), L.width + m - view.cols);
+  cam.y = view.rows >= h ? (L.height - view.rows) / 2 : Math.min(Math.max(-m, cam.y), L.height + m - view.rows);
 }
+/** Everything in the hall moved by (dx, dy) tiles (its shape grew up or to the left): the view moves with it, so nothing jumps. */
+function nudge(dx: number, dy: number) {
+  cam.x += dx;
+  cam.y += dy;
+  if (press) {
+    press.camX += dx;
+    press.camY += dy;
+  }
+}
+defineExpose({ nudge });
 
 // pointer: a tap walks there (or picks a piece while decorating), a drag on a piece moves it, a drag elsewhere looks round
 let dragging: { uid: string; dx: number; dy: number } | null = null;
@@ -103,15 +120,20 @@ function pieceAt(p: { x: number; y: number }): GuildDecorPlaced | null {
   );
 }
 let painting = false;
+let lastPainted = "";
 function paintAt(e: PointerEvent) {
   const p = tilesAt(e);
   const x = Math.floor(p.x);
   const y = Math.floor(p.y);
-  if (x >= 0 && x < layout.value.width && y >= WALL_ROWS && y < layout.value.height) emit("paint", x, y);
+  // (one tile once a stroke: drawing the shape may move everything under the pointer)
+  if (`${x},${y}` === lastPainted) return;
+  lastPainted = `${x},${y}`;
+  if (props.shaping || layout.value.area[y - WALL_ROWS]?.[x] === "#") emit("paint", x, y);
 }
 function down(e: PointerEvent) {
   canvas.value!.setPointerCapture(e.pointerId);
-  if (props.editing && props.painting) {
+  if (props.editing && (props.painting || props.shaping)) {
+    lastPainted = "";
     painting = true;
     paintAt(e);
     return;
@@ -158,7 +180,7 @@ function up(e: PointerEvent) {
 }
 
 /** The hall as the pieces put down make it: where one works, sits, drinks and cannot go. */
-const layout = computed(() => hallLayout(props.level, guildFurnishing(props.decor)));
+const layout = computed(() => hallLayout(props.area, guildFurnishing(props.decor)));
 /** The ways the wanderers walk, kept while the hall and who is in it stay the same. */
 let ways = new Map<string, import("@goblincamp/shared").Point[]>();
 watch([layout, () => props.members.map((m) => `${m.id}:${m.presence}`).join()], () => (ways = new Map()));
@@ -241,36 +263,39 @@ function draw() {
   const viewTop = cam.y * T;
   g.save();
   g.translate(-Math.round(viewLeft), -Math.round(viewTop));
-  // round the hall (a view bigger than it): the floor goes on, darkened, so there is no black frame
+  // off the floor (round the hall, and in its corners if it is not a rectangle): the floor goes on, darkened, so there is no
+  // black frame
   const [x0, x1, y0, y1] = [Math.floor(cam.x), Math.ceil(cam.x + view.cols), Math.floor(cam.y), Math.ceil(cam.y + view.rows)];
+  const isFloor = (x: number, y: number) => L.area[y - WALL_ROWS]?.[x] === "#";
   const around = loaded.get(`/guild-hall/${hall.floors[props.floor.base] ?? Object.values(hall.floors)[0]}`);
-  if (around && (x0 < 0 || y0 < 0 || x1 > L.width || y1 > L.height)) {
-    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (x < 0 || x >= L.width || y < 0 || y >= L.height) g.drawImage(around, x * T, y * T, T, T);
+  if (around) {
     g.beginPath();
-    g.rect(x0 * T, y0 * T, (x1 - x0) * T, (y1 - y0) * T);
-    g.rect(0, 0, L.width * T, L.height * T);
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++)
+        if (!isFloor(x, y)) {
+          g.drawImage(around, x * T, y * T, T, T);
+          g.rect(x * T, y * T, T, T);
+        }
     g.fillStyle = "rgba(20,15,10,0.72)";
-    g.fill("evenodd");
+    g.fill();
   }
 
-  // floor (its tiles), then the wall along the top
-  const fallback = Object.values(hall.floors)[0];
-  for (let y = WALL_ROWS; y < L.height; y++) {
-    for (let x = 0; x < L.width; x++) {
-      const id = props.floor.tiles[`${x},${y}`] ?? props.floor.base;
-      const tile = loaded.get(`/guild-hall/${hall.floors[id] ?? fallback}`);
-      if (tile) g.drawImage(tile, x * T, y * T, T, T);
-    }
-  }
-  if (props.painting) {
-    g.strokeStyle = "rgba(255,255,255,0.18)";
-    g.lineWidth = 1;
-    for (let x = 0; x <= L.width; x++) g.strokeRect(x * T, WALL_ROWS * T, 0, (L.height - WALL_ROWS) * T);
-    for (let y = WALL_ROWS; y <= L.height; y++) g.strokeRect(0, y * T, L.width * T, 0);
-  }
+  // a wall over every top edge of the floor, then the floor's tiles (over the top of a wall with floor right behind it)
   const wallInfo = hall.walls[props.wall] ?? Object.values(hall.walls)[0];
   const wall = wallInfo && loaded.get(`/guild-hall/${wallInfo.file}`);
-  if (wall) for (let x = 0; x < L.width; x += wall.width / hall.tile) g.drawImage(wall, x * T, 0, wall.width * scale, wall.height * scale);
+  if (wall) for (const t of L.floorTiles) if (!isFloor(t.x, t.y - 1)) g.drawImage(wall, 0, 0, hall.tile, wall.height, t.x * T, t.y * T - wall.height * scale, T, wall.height * scale);
+  const fallback = Object.values(hall.floors)[0];
+  for (const { x, y } of L.floorTiles) {
+    const id = props.floor.tiles[`${x},${y}`] ?? props.floor.base;
+    const tile = loaded.get(`/guild-hall/${hall.floors[id] ?? fallback}`);
+    if (tile) g.drawImage(tile, x * T, y * T, T, T);
+  }
+  if (props.painting || props.shaping) {
+    // (the floor's tiles; drawing the shape, every tile in view)
+    g.strokeStyle = props.shaping ? "rgba(255,224,102,0.4)" : "rgba(255,255,255,0.18)";
+    g.lineWidth = props.shaping ? Math.max(1, scale / 2) : 1;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (props.shaping || isFloor(x, y)) g.strokeRect(x * T + 0.5, y * T + 0.5, T - 1, T - 1);
+  }
 
   // decorations and avatars, back to front by where their feet are
   const items: { y: number; paint: () => void }[] = [];
@@ -426,7 +451,7 @@ onMounted(async () => {
   if (box.value) resize.observe(box.value);
   draw();
 });
-watch(() => props.level, fit);
+watch([() => props.area, () => props.shaping], fit);
 onUnmounted(() => {
   cancelAnimationFrame(raf);
   resize?.disconnect();

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { BADGE_SIZE, DEFAULT_BADGE, defaultAvatar, GUILD_DECOR, starterDecor, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
+import { BADGE_SIZE, DEFAULT_BADGE, DEFAULT_HALL_AREA, defaultAvatar, GUILD_DECOR, starterDecor, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
 import { eq } from "drizzle-orm";
 import type { Database } from "../src/db/client.ts";
 import { camps, guilds } from "../src/db/schema.ts";
@@ -198,7 +198,7 @@ describe("公會", () => {
     await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
     await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
     // a new hall comes furnished, and all of it is decoration anyone may take away
-    expect((await guildOf(b)).guild).toMatchObject({ decor: starterDecor(1), decorVersion: 0, races: ["elf", "goblin"] });
+    expect((await guildOf(b)).guild).toMatchObject({ decor: starterDecor(), decorVersion: 0, races: ["elf", "goblin"] });
 
     const kind = GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race)!.id;
     const lamp = { uid: "lamp0001", kind, x: 4, y: 6 };
@@ -225,7 +225,7 @@ describe("公會", () => {
     expect(log.map((e) => [e.by, e.added, e.moved, e.removed])).toEqual([
       ["咕嚕", 0, 0, 1],
       ["咕嚕", 0, 1, 0], // (the lock)
-      ["咕嚕", 2, 0, starterDecor(1).length], // (the starter furniture went, the lamp and plant came)
+      ["咕嚕", 2, 0, starterDecor().length], // (the starter furniture went, the lamp and plant came)
     ]);
     // the leader goes back to before the plant was taken away; only the leader may
     expect((await t.call("POST", "/guild/decor/restore", { logId: log[0]!.id }, b.auth)).status).toBe(403);
@@ -345,10 +345,61 @@ describe("公會", () => {
     const mine = { uid: "mine0001", kind: GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race)!.id, x: 4, y: 6 };
     await database.db.update(guilds).set({ decor: [mine], furnished: false, decorVersion: 3 }).where(eq(guilds.id, g.id));
     const first = (await guildOf(a)).guild!;
-    expect(first.decor.map((d) => d.uid)).toEqual([...starterDecor(1).map((d) => d.uid), "mine0001"]);
+    expect(first.decor.map((d) => d.uid)).toEqual([...starterDecor().map((d) => d.uid), "mine0001"]);
     expect(first.decorVersion).toBe(4);
     // only once: taken away, it stays away
     await t.call("PUT", "/guild/decor", { version: 4, items: [mine] }, a.auth);
     expect((await guildOf(a)).guild!.decor.map((d) => d.uid)).toEqual(["mine0001"]);
+  });
+
+  it("the hall's shape is drawn by the leader and officers, within the level's tiles, all one piece, with what is in it", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "畫地圖" }, a.auth)).body as GuildResponse).guild!;
+    await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
+    await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
+    const start = (await guildOf(a)).guild!;
+    expect(start).toMatchObject({ area: DEFAULT_HALL_AREA, rules: { tiles: 576, width: 32, height: 20 } });
+    // a room off to the right, through a corridor, and less at the bottom (534 tiles)
+    const area = [...DEFAULT_HALL_AREA.slice(0, 4).map((r) => `${r}..${"#".repeat(6)}`), ...DEFAULT_HALL_AREA.slice(4, 6).map((r) => `${r}${"#".repeat(8)}`), ...DEFAULT_HALL_AREA.slice(6, 16)];
+    area[15] = "#".repeat(14);
+    const items = start.decor.filter((d) => d.y < 16);
+    // a member may not; outside the tiles or in two pieces may not be
+    expect((await t.call("PUT", "/guild/decor", { version: start.decorVersion, items, area }, b.auth)).status).toBe(403);
+    const over = await t.call("PUT", "/guild/decor", { version: start.decorVersion, items, area: [...area, "#".repeat(32), "#".repeat(32)] }, a.auth);
+    expect([over.status, JSON.stringify(over.body)]).toEqual([400, expect.stringMatching(/最多 576 格（現在 598 格）/)]);
+    expect((await t.call("PUT", "/guild/decor", { version: start.decorVersion, items, area: ["#".repeat(40), "", "#"] }, a.auth)).body.message).toMatch(/連在一起/);
+    // what would be left off the floor is refused
+    expect((await t.call("PUT", "/guild/decor", { version: start.decorVersion, items: start.decor, area }, a.auth)).status).toBe(400);
+    let res = await t.call("PUT", "/guild/decor", { version: start.decorVersion, items: [...items, { uid: "inroom01", kind: items[0]!.kind, x: 37, y: 4.5 }], area }, a.auth);
+    expect(res.status).toBe(200);
+    expect((res.body as GuildResponse).guild).toMatchObject({ area, rules: { width: 40, height: 18 } });
+    const log = (await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[];
+    expect(log[0]).toMatchObject({ area: true });
+    // the leader puts it back as it was
+    res = await t.call("POST", "/guild/decor/restore", { logId: log[0]!.id }, a.auth);
+    expect((res.body as GuildResponse).guild).toMatchObject({ area: DEFAULT_HALL_AREA, decor: start.decor });
+  });
+
+  it("a hall from before shapes, grown with its level, goes back to the starting one; what is left out can be put back", async () => {
+    const a = await person("a@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "長大了" }, a.auth)).body as GuildResponse).guild!;
+    const kind = GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race)!.id;
+    const far = { uid: "far00001", kind, x: 36, y: 20 };
+    const near = { uid: "near0001", kind, x: 4, y: 6 };
+    await database.db
+      .update(guilds)
+      .set({ level: 2, area: null, decor: [near, far], floor: { base: "oak", tiles: { "3,4": "stone", "35,20": "stone" } } })
+      .where(eq(guilds.id, g.id));
+    const now = (await guildOf(a)).guild!;
+    expect(now).toMatchObject({ area: DEFAULT_HALL_AREA, decor: [near], floor: { base: "oak", tiles: { "3,4": "stone" } } });
+    const log = (await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[];
+    expect(log[0]).toMatchObject({ by: "", removed: 1, area: true });
+    // only once
+    expect((await guildOf(a)).guild!.decorVersion).toBe(now.decorVersion);
+    // the leader can put the old hall back, everything in it
+    const res = await t.call("POST", "/guild/decor/restore", { logId: log[0]!.id }, a.auth);
+    expect((res.body as GuildResponse).guild).toMatchObject({ decor: [near, far], rules: { width: 40, height: 24 } });
+    expect((res.body as GuildResponse).guild!.area).toHaveLength(22);
   });
 });

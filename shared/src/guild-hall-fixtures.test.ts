@@ -6,5 +6,5 @@ describe("guild-hall-fixtures.json (what the Mac's Swift copy must match)", () =
   it("matches the rules as they are now", () => {
     const saved = JSON.parse(readFileSync(new URL("./guild-hall-fixtures.json", import.meta.url), "utf8"));
     expect(saved).toEqual(JSON.parse(JSON.stringify(buildGuildHallFixtures())));
-  });
+  }, 30_000); // (a few seconds' worth of ways worked out, and a 4 MB comparison)
 });

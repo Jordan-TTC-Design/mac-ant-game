@@ -15,7 +15,8 @@ import {
 
 // The catalog while decorating the hall (GUILD.md §4.2–4.3): decorations (the room used, the categories, every piece — the
 // ones not unlocked yet greyed, saying what they need — and what can be done to the piece picked in the hall), the floor
-// (a style to lay tile by tile, or over all of it) and the wall (the leader and officers).
+// (a style to lay tile by tile, or over all of it), the wall, and the hall's shape (the leader and officers: tiles drawn on
+// or rubbed out, up to the level's number, wherever they like).
 const props = defineProps<{
   items: GuildDecorPlaced[];
   level: number;
@@ -24,10 +25,16 @@ const props = defineProps<{
   role: GuildRole;
   selected: string | null;
   busy: boolean;
-  mode: "decor" | "floor" | "wall";
+  mode: Mode;
   brush: string;
   wall: string;
+  /** Drawing the shape: floor tiles used and allowed, drawing or rubbing out, and what is wrong with the shape (null: nothing). */
+  tiles: number;
+  tilesMax: number;
+  shapeBrush: "add" | "erase";
+  shapeProblem: string | null;
 }>();
+type Mode = "decor" | "floor" | "wall" | "area";
 const emit = defineEmits<{
   add: [kind: string];
   flip: [];
@@ -35,7 +42,8 @@ const emit = defineEmits<{
   lock: [];
   save: [];
   cancel: [];
-  mode: [mode: "decor" | "floor" | "wall"];
+  mode: [mode: Mode];
+  shapeBrush: [brush: "add" | "erase"];
   brush: [id: string];
   fillAll: [];
   wall: [id: string];
@@ -81,9 +89,21 @@ function why(k: GuildDecorKind) {
       <button type="button" class="tab" :class="{ on: mode === 'decor' }" @click="emit('mode', 'decor')">🪑 裝飾</button>
       <button type="button" class="tab" :class="{ on: mode === 'floor' }" @click="emit('mode', 'floor')">🟫 地板</button>
       <button v-if="role !== 'member'" type="button" class="tab" :class="{ on: mode === 'wall' }" @click="emit('mode', 'wall')">🧱 牆壁</button>
+      <button v-if="role !== 'member'" type="button" class="tab" :class="{ on: mode === 'area' }" @click="emit('mode', 'area')">📐 範圍</button>
     </div>
 
-    <template v-if="mode === 'floor'">
+    <template v-if="mode === 'area'">
+      <p class="hint">在據點裡點一下或拖過去，畫出地板要到哪裡；外面一圈可以畫，往哪個方向長都行，也可以畫一條走廊接到另一個房間。地板最上面那排會自動長出牆。</p>
+      <div class="styles two">
+        <button type="button" class="style" :class="{ on: shapeBrush === 'add' }" @click="emit('shapeBrush', 'add')">✏️ <small>畫地板</small></button>
+        <button type="button" class="style" :class="{ on: shapeBrush === 'erase' }" @click="emit('shapeBrush', 'erase')">🧽 <small>擦掉</small></button>
+      </div>
+      <span class="room" :class="{ over: tiles > tilesMax }">地板 {{ tiles }}／{{ tilesMax }} 格<template v-if="tilesMax > tiles">（還可以畫 {{ tilesMax - tiles }} 格）</template></span>
+      <p v-if="shapeProblem" class="hint warn">{{ shapeProblem }}</p>
+      <p class="hint">公會升級會多給格數，要不要用、畫在哪裡，都由會長和幹部決定。上面有裝飾的格子要先把裝飾移開才能擦。</p>
+    </template>
+
+    <template v-else-if="mode === 'floor'">
       <p class="hint">選一種地板，在據點裡點一下或拖過去，一格一格鋪；或整片換掉。</p>
       <div class="styles">
         <button
@@ -153,7 +173,7 @@ function why(k: GuildDecorKind) {
     </template>
 
     <div class="actions">
-      <button type="button" class="btn primary" :disabled="busy || used > room" @click="emit('save')">儲存</button>
+      <button type="button" class="btn primary" :disabled="busy || used > room || !!shapeProblem" @click="emit('save')">儲存</button>
       <button type="button" class="btn" :disabled="busy" @click="emit('cancel')">取消</button>
     </div>
   </section>
@@ -186,4 +206,6 @@ function why(k: GuildDecorKind) {
 .swatch { width: 48px; height: 48px; background-size: 24px 24px; image-rendering: pixelated; border: 1px solid rgba(0, 0, 0, 0.3); }
 .swatch.tall { width: 48px; height: 48px; background-size: 24px 48px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
+.styles.two { grid-template-columns: 1fr 1fr; }
+.hint.warn { color: #c0392b; font-weight: 700; }
 </style>

@@ -7,7 +7,7 @@
 /// Nobody walks through anything: every way is found round it (`hallRoute`).
 ///
 /// Positions are in tiles from the hall's top left; an avatar's or a piece's position is where its feet (bottom middle) are.
-/// The top `guildWallRows` rows are the wall. `swift run guild-rules-check` checks this against
+/// The floor is the tiles the leader and officers drew (`area`); a wall `guildWallRows` high stands over every top edge of it. `swift run guild-rules-check` checks this against
 /// shared/src/guild-hall-fixtures.json.
 import Foundation
 
@@ -20,17 +20,18 @@ public let guildActivitySeconds: Double = 24
 // ── Levels (GUILD.md §4.1) ───────────────────────────────────────────────────────────────────────────────────────────
 
 public struct GuildLevel {
-    public let level, members, width, height, room: Int
+    /// `tiles`: floor tiles the hall may have at most.
+    public let level, members, tiles, room: Int
 }
 
 public let guildLevels: [GuildLevel] = [
-    GuildLevel(level: 1, members: 5, width: 32, height: 20, room: 160),
-    GuildLevel(level: 2, members: 8, width: 40, height: 24, room: 240),
-    GuildLevel(level: 3, members: 12, width: 48, height: 28, room: 340),
-    GuildLevel(level: 4, members: 16, width: 56, height: 32, room: 440),
-    GuildLevel(level: 5, members: 20, width: 64, height: 36, room: 560),
-    GuildLevel(level: 6, members: 25, width: 72, height: 40, room: 700),
-    GuildLevel(level: 7, members: 30, width: 80, height: 44, room: 880),
+    GuildLevel(level: 1, members: 5, tiles: 576, room: 160),
+    GuildLevel(level: 2, members: 8, tiles: 880, room: 240),
+    GuildLevel(level: 3, members: 12, tiles: 1248, room: 340),
+    GuildLevel(level: 4, members: 16, tiles: 1680, room: 440),
+    GuildLevel(level: 5, members: 20, tiles: 2176, room: 560),
+    GuildLevel(level: 6, members: 25, tiles: 2736, room: 700),
+    GuildLevel(level: 7, members: 30, tiles: 3360, room: 880),
 ]
 
 public func guildLevel(_ level: Int) -> GuildLevel {
@@ -63,15 +64,39 @@ public struct HallFurnishing {
     public static let empty = HallFurnishing(desks: [], seats: [], drinks: [], solids: [])
 }
 
+/// A new guild's hall (and every hall from before its shape could be drawn): 32 × 18 tiles of floor under the wall.
+public let defaultHallArea = [String](repeating: String(repeating: "#", count: 32), count: 18)
+
 public struct HallLayout {
     public let width, height: Int
+    /// Which tiles are floor: a line for each row from y = guildWallRows down, "#" floor and "." not.
+    public let area: [String]
+    /// Every floor tile's top left, row by row.
+    public let floorTiles: [HallPoint]
     public let desks, seats, drinks: [HallPoint]
     public let solids: [HallRect]
+    /// The floor, `width` × `height`, row by row.
+    fileprivate let cells: [Bool]
+
+    /// Whether tile (x, y) is floor.
+    public func floorAt(_ x: Int, _ y: Int) -> Bool { x >= 0 && y >= 0 && x < width && y < height && cells[y * width + x] }
 }
 
-public func hallLayout(level: Int, furnishing: HallFurnishing = .empty) -> HallLayout {
-    let rules = guildLevel(level)
-    return HallLayout(width: rules.width, height: rules.height, desks: furnishing.desks, seats: furnishing.seats, drinks: furnishing.drinks, solids: furnishing.solids)
+public func hallLayout(area: [String]? = nil, furnishing: HallFurnishing = .empty) -> HallLayout {
+    let shape = area ?? defaultHallArea
+    let rows = Int(guildWallRows)
+    let width = shape.map(\.count).max() ?? 0
+    let height = rows + shape.count
+    var cells = [Bool](repeating: false, count: width * height)
+    var floorTiles: [HallPoint] = []
+    for (i, line) in shape.enumerated() {
+        for (x, ch) in line.enumerated() where ch == "#" {
+            cells[(i + rows) * width + x] = true
+            floorTiles.append(HallPoint(x: Double(x), y: Double(i + rows)))
+        }
+    }
+    return HallLayout(width: width, height: height, area: shape, floorTiles: floorTiles, desks: furnishing.desks, seats: furnishing.seats,
+                      drinks: furnishing.drinks, solids: furnishing.solids, cells: cells)
 }
 
 /// What a piece is, as far as the hall's life goes (its art's size in pixels, and what it is for).
@@ -189,9 +214,15 @@ private func item<T>(_ list: [T], _ i: Int) -> T? { list.indices.contains(i) ? l
 
 // ── Where feet may go ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/// Whether feet may stand at `p`.
+/// Whether feet may stand at `p`: on the floor (0.4 of a tile from its sides, half a tile from a wall), and in nothing.
 public func hallWalkable(_ L: HallLayout, _ p: HallPoint) -> Bool {
-    if p.x < 0.4 || p.x > Double(L.width) - 0.4 || p.y < guildWallRows + 0.5 || p.y > Double(L.height) - 0.1 { return false }
+    func on(_ x: Double, _ y: Double) -> Bool {
+        // (outside the hall, or not a number: no floor, as JavaScript's lookup of a missing row gives)
+        guard x >= 0, y >= 0, x < Double(L.width), y < Double(L.height) else { return false }
+        return L.floorAt(Int(x.rounded(.down)), Int(y.rounded(.down)))
+    }
+    let left = p.x - 0.4, right = p.x + 0.4, top = p.y - 0.5, bottom = p.y + 0.099
+    if !on(left, top) || !on(right, top) || !on(left, bottom) || !on(right, bottom) { return false }
     return !L.solids.contains { r in p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1 }
 }
 
@@ -314,16 +345,19 @@ private struct Doing {
     init(_ p: HallPoint, anim: String, dir: String) { x = p.x; y = p.y; self.anim = anim; self.dir = dir }
 }
 
-/// Somewhere free to stand, picked by these words (a few tries; else the middle of the hall).
-private func freeSpot(_ L: HallLayout, _ parts: [String]) -> HallPoint {
-    for i in 0..<8 {
-        let n = jsNumber(Double(i))
-        let p = HallPoint(
-            x: 1 + hallHash(parts + ["x", n]) * Double(L.width - 2),
-            y: guildWallRows + 1 + hallHash(parts + ["y", n]) * (Double(L.height) - guildWallRows - 1.5))
+/// Somewhere free to stand on the floor, picked by these words (a few tries; else the middle of the first floor tile).
+public func hallFreeSpot(_ L: HallLayout, _ parts: [String]) -> HallPoint {
+    let n = L.floorTiles.count
+    var i = 0
+    while i < 8 && n > 0 {
+        let k = jsNumber(Double(i))
+        let t = pick(L.floorTiles, hallHash(parts + ["t", k]))
+        let p = HallPoint(x: t.x + 0.1 + hallHash(parts + ["x", k]) * 0.8, y: t.y + 0.5 + hallHash(parts + ["y", k]) * 0.4)
         if hallWalkable(L, p) { return p }
+        i += 1
     }
-    return HallPoint(x: Double(L.width) / 2, y: Double(L.height) - 1)
+    let t = L.floorTiles.first ?? HallPoint(x: 0, y: guildWallRows)
+    return HallPoint(x: t.x + 0.5, y: t.y + 0.5)
 }
 
 /// One of `list`, picked by `roll` (0 to 1) as `list[Math.floor(roll * list.length)]`.
@@ -335,7 +369,7 @@ private func activity(_ L: HallLayout, _ m: HallMember, _ k: Double, _ present: 
     let kk = jsNumber(k)
     let roll = hallHash([m.id, kk])
     let others = present.filter { $0.id != m.id }
-    func idle() -> Doing { Doing(freeSpot(L, [m.id, kk]), anim: "idle", dir: "front") }
+    func idle() -> Doing { Doing(hallFreeSpot(L, [m.id, kk]), anim: "idle", dir: "front") }
     if roll < 0.3 { return desk.map { Doing($0, anim: "sit", dir: "front") } ?? idle() }
     if roll < 0.45 { return L.drinks.isEmpty ? idle() : Doing(pick(L.drinks, hallHash([m.id, kk, "drink"])), anim: "drink", dir: "front") }
     if roll < 0.6 { return L.seats.isEmpty ? idle() : Doing(pick(L.seats, hallHash([m.id, kk, "bench"])), anim: "sit", dir: "front") }
@@ -388,7 +422,7 @@ public func hallPose(_ L: HallLayout, _ m: HallMember, present: [HallMember], no
     if m.presence == "focus" || m.presence == "away" {
         // (no desk for them: they stand by the wall)
         guard let desk else {
-            let p = freeSpot(L, [m.id, "wall"])
+            let p = hallFreeSpot(L, [m.id, "wall"])
             return HallPose(x: p.x, y: p.y, anim: "idle", dir: "front", flip: false, t: secs)
         }
         return HallPose(x: desk.x, y: desk.y, anim: m.presence == "focus" ? "type" : "doze", dir: "front", flip: false, t: secs)

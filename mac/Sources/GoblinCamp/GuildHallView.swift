@@ -16,7 +16,15 @@ final class GuildHallView: NSView {
     }
 
     // what to draw (GuildPane keeps these up to date)
-    var level = 1 { didSet { if level != oldValue { furnish() } } }
+    /// The hall's shape (which tiles are floor). Drawn anew, everything may have moved: one's own avatar goes back to wandering.
+    var area = defaultHallArea {
+        didSet {
+            guard area != oldValue else { return }
+            mine = nil
+            path = []
+            furnish()
+        }
+    }
     var members: [Member] = [] { didSet { ways = HallWays() } }
     var me: String?
     /// Everything in the hall (the desks too: all of it is decoration, GUILD.md §4.2).
@@ -33,7 +41,7 @@ final class GuildHallView: NSView {
     /// Return was pressed (GuildPane focuses the chat box).
     var onTalk: (() -> Void)?
 
-    private(set) var layout = hallLayout(level: 1)
+    private(set) var layout = hallLayout()
     /// The ways the wanderers walk, kept while the hall and who is in it stay the same.
     private var ways = HallWays()
     private let art = GuildArt.shared
@@ -100,7 +108,7 @@ final class GuildHallView: NSView {
                                      seat: k.seat.map { HallPoint(x: $0.x, y: $0.y) }, desk: k.desk, drink: k.drink)
             return HallPlacedPiece(x: d.x, y: d.y, flip: d.flip ?? false, spec: spec)
         }
-        layout = hallLayout(level: level, furnishing: hallFurnishing(pieces))
+        layout = hallLayout(area: area, furnishing: hallFurnishing(pieces))
         ways = HallWays()
     }
 
@@ -159,34 +167,31 @@ final class GuildHallView: NSView {
             g.restoreGState()
         }
 
-        // round the hall (a view bigger than it): the floor goes on, darkened, so there is no black frame
+        // off the floor (round the hall, and in its corners if it is not a rectangle): the floor goes on, darkened, so
+        // there is no black frame
         let v = viewTiles
-        let x0 = Int(floor(cam.x)), x1 = Int(ceil(cam.x + v.width)), y0 = Int(floor(cam.y)), y1 = Int(ceil(cam.y + v.height))
-        if x0 < 0 || y0 < 0 || x1 > layout.width || y1 > layout.height, let tile = art.floorTile(floorBase) {
-            for y in y0..<max(y0, y1) {
-                for x in x0..<max(x0, x1) where x < 0 || x >= layout.width || y < 0 || y >= layout.height { put(tile, CGFloat(x) * T, CGFloat(y) * T, art.tile, art.tile) }
+        let x0 = Int(floor(cam.x)), x1 = max(x0, Int(ceil(cam.x + v.width))), y0 = Int(floor(cam.y)), y1 = max(y0, Int(ceil(cam.y + v.height)))
+        if let tile = art.floorTile(floorBase) {
+            let off = CGMutablePath()
+            for y in y0..<y1 {
+                for x in x0..<x1 where !layout.floorAt(x, y) {
+                    put(tile, CGFloat(x) * T, CGFloat(y) * T, art.tile, art.tile)
+                    off.addRect(CGRect(x: CGFloat(x) * T, y: CGFloat(y) * T, width: T, height: T))
+                }
             }
-            let outside = CGMutablePath()
-            outside.addRect(CGRect(x: CGFloat(x0) * T, y: CGFloat(y0) * T, width: CGFloat(x1 - x0) * T, height: CGFloat(y1 - y0) * T))
-            outside.addRect(CGRect(x: 0, y: 0, width: CGFloat(layout.width) * T, height: CGFloat(layout.height) * T))
-            g.addPath(outside)
+            g.addPath(off)
             g.setFillColor(NSColor(calibratedRed: 0.08, green: 0.06, blue: 0.04, alpha: 0.72).cgColor)
-            g.fillPath(using: .evenOdd)
+            g.fillPath()
         }
 
-        // floor and wall
-        for y in Int(guildWallRows)..<layout.height {
-            for x in 0..<layout.width {
-                if let tile = art.floorTile(floorTiles["\(x),\(y)"] ?? floorBase) { put(tile, CGFloat(x) * T, CGFloat(y) * T, art.tile, art.tile) }
+        // a wall over every top edge of the floor, then the floor (over the top of a wall that has floor right behind it)
+        if let w = art.wallPiece(wall) {
+            for t in layout.floorTiles where !layout.floorAt(Int(t.x), Int(t.y) - 1) {
+                put(w, CGFloat(t.x) * T, (CGFloat(t.y) - CGFloat(w.height) / CGFloat(art.tile)) * T, w.width, w.height)
             }
         }
-        if let w = art.wallPiece(wall) {
-            let step = CGFloat(w.width) / CGFloat(art.tile)
-            var x: CGFloat = 0
-            while x < CGFloat(layout.width) {
-                put(w, x * T, 0, w.width, w.height)
-                x += step
-            }
+        for t in layout.floorTiles {
+            if let tile = art.floorTile(floorTiles["\(Int(t.x)),\(Int(t.y))"] ?? floorBase) { put(tile, CGFloat(t.x) * T, CGFloat(t.y) * T, art.tile, art.tile) }
         }
 
         // decorations and avatars, back to front by where their feet are
@@ -320,7 +325,7 @@ final class GuildHallView: NSView {
         lookingUntil = .distantPast
         if mine != nil { return true }
         guard let me, let m = members.first(where: { $0.id == me }) else { return false }
-        let from = autoPose(m, Date()).map { HallPoint(x: $0.x, y: $0.y) } ?? HallPoint(x: Double(layout.width) / 2, y: Double(layout.height) - 2)
+        let from = autoPose(m, Date()).map { HallPoint(x: $0.x, y: $0.y) } ?? hallFreeSpot(layout, [me, "start"])
         let at = hallWalkable(layout, from) ? from : standUp(from)
         mine = Mine(move: GuildMove(x: at.x, y: at.y, dir: "front", flip: false, anim: "idle"), since: Date())
         return true

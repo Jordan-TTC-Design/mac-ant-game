@@ -11,21 +11,20 @@ export interface GuildLevel {
   level: number;
   /** Members at most. */
   members: number;
-  /** The hall's size in tiles. */
-  width: number;
-  height: number;
+  /** Floor tiles the hall may have at most: the leader or an officer draws where they go (shared/src/guild-hall.ts HallArea). */
+  tiles: number;
   /** Decoration room in the shared part of the hall (small 1, middle 2, big 4). */
   room: number;
 }
 
 export const GUILD_LEVELS: readonly GuildLevel[] = [
-  { level: 1, members: 5, width: 32, height: 20, room: 160 },
-  { level: 2, members: 8, width: 40, height: 24, room: 240 },
-  { level: 3, members: 12, width: 48, height: 28, room: 340 },
-  { level: 4, members: 16, width: 56, height: 32, room: 440 },
-  { level: 5, members: 20, width: 64, height: 36, room: 560 },
-  { level: 6, members: 25, width: 72, height: 40, room: 700 },
-  { level: 7, members: 30, width: 80, height: 44, room: 880 },
+  { level: 1, members: 5, tiles: 576, room: 160 },
+  { level: 2, members: 8, tiles: 880, room: 240 },
+  { level: 3, members: 12, tiles: 1248, room: 340 },
+  { level: 4, members: 16, tiles: 1680, room: 440 },
+  { level: 5, members: 20, tiles: 2176, room: 560 },
+  { level: 6, members: 25, tiles: 2736, room: 700 },
+  { level: 7, members: 30, tiles: 3360, room: 880 },
 ];
 
 export function guildLevel(level: number): GuildLevel {
@@ -287,6 +286,8 @@ export interface GuildView {
   decor: import("./guild-decor.ts").GuildDecorPlaced[];
   decorVersion: number;
   floor: import("./guild-decor.ts").HallFloor;
+  /** Which tiles are the hall's floor (drawn by the leader and officers, up to rules.tiles). */
+  area: import("./guild-hall.ts").HallArea;
   wall: string;
   /** The races among the members (each unlocks its decoration set). */
   races: string[];

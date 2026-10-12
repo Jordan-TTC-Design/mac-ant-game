@@ -464,6 +464,9 @@ export const guilds = pgTable("guilds", {
   /** The floor (one style and tiles laid with others) and the wall style (GUILD.md §4.3). */
   floor: jsonb("floor").$type<import("@goblincamp/shared").HallFloor>().notNull().default({ base: "oak", tiles: {} }),
   wall: text("wall").notNull().default("stone"),
+  /** Which tiles are the hall's floor (shared/src/guild-hall.ts HallArea), drawn by the leader and officers; null: from before
+   * the shape could be drawn (it is set once, to the starting hall, the first time the guild is looked at). */
+  area: jsonb("area").$type<import("@goblincamp/shared").HallArea>(),
   /** Contribution the members gave (camp materials, GUILD.md §4.1); the level follows it. */
   points: integer("points").notNull().default(0),
   /** Whether the hall got its starter furniture (shared/src/guild-decor.ts starterDecor); guilds from before that get it once. */
@@ -486,6 +489,9 @@ export const guildDecorLog = pgTable(
     floorChanged: integer("floor_changed").notNull().default(0),
     before: jsonb("before").$type<import("@goblincamp/shared").GuildDecorPlaced[]>().notNull(),
     floorBefore: jsonb("floor_before").$type<import("@goblincamp/shared").HallFloor>(),
+    /** The hall's shape was drawn anew in this change, and what it was before (null: from before shapes, the level's rectangle). */
+    areaChanged: boolean("area_changed").notNull().default(false),
+    areaBefore: jsonb("area_before").$type<import("@goblincamp/shared").HallArea>(),
   },
   (t) => [index("guild_decor_log_guild_idx").on(t.guildId, t.at)],
 );

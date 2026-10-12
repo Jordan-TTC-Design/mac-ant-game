@@ -1,4 +1,5 @@
 import AppKit
+import GuildRules
 
 /// The main window's 公會 page (GUILD.md), native like the camp: the hall fills the page (GuildHallView); the guild's name,
 /// a few buttons and the chat float over it. Decorating, the avatar maker, the members and the settings are the web pages
@@ -177,7 +178,7 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         let online = g.members.filter { presence($0, now) != "offline" }.count
         title.stringValue = g.name
         subtitle.stringValue = "Lv \(g.level)・\(g.members.count)／\(g.rules.members) 人・\(online) 人在線"
-        hall.level = g.level
+        hall.area = g.area ?? defaultHallArea
         hall.me = myId
         hall.members = g.members.sorted { $0.joinedAt < $1.joinedAt }.enumerated().map { i, m in
             GuildHallView.Member(id: m.id, name: m.name, avatar: m.avatar, presence: presence(m, now), seat: i)

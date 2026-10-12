@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { GUILD_DECOR, GUILD_DECOR_CATEGORIES, guildDecorChange, guildDecorProblem, guildDecorRoomUsed, guildDecorUnlocked, type GuildDecorPlaced } from "./guild-decor.ts";
 import { guildLevel } from "./guild.ts";
+import { DEFAULT_HALL_AREA } from "./guild-hall.ts";
+
+const A = DEFAULT_HALL_AREA;
 
 const floorKind = GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race && k.size === 1)!;
 const wallKind = GUILD_DECOR.find((k) => k.level === 1 && k.wall && !k.race)!;
@@ -22,16 +25,16 @@ describe("guild decorations", () => {
   });
 
   it("checks unlocks, where things stand, and the room", () => {
-    expect(guildDecorProblem([put("a"), put("b"), put("w", wallKind.id, 8, 1.8)], 1, none)).toBeNull();
-    expect(guildDecorProblem([put("a", "no_such_thing")], 1, none)).toMatch(/沒有/);
-    expect(guildDecorProblem([put("a", floorKind.id, 5, 1.5)], 1, none)).toMatch(/地板/);
-    expect(guildDecorProblem([put("w", wallKind.id, 8, 6)], 1, none)).toMatch(/牆/);
-    expect(guildDecorProblem([put("a", floorKind.id, 99, 6)], 1, none)).toMatch(/超出/);
-    expect(guildDecorProblem([put("a"), put("a")], 1, none)).toMatch(/兩次/);
+    expect(guildDecorProblem([put("a"), put("b"), put("w", wallKind.id, 8, 1.8)], 1, A, none)).toBeNull();
+    expect(guildDecorProblem([put("a", "no_such_thing")], 1, A, none)).toMatch(/沒有/);
+    expect(guildDecorProblem([put("a", floorKind.id, 5, 1.5)], 1, A, none)).toMatch(/地板/);
+    expect(guildDecorProblem([put("w", wallKind.id, 8, 6)], 1, A, none)).toMatch(/牆/);
+    expect(guildDecorProblem([put("a", floorKind.id, 99, 6)], 1, A, none)).toMatch(/地板/);
+    expect(guildDecorProblem([put("a"), put("a")], 1, A, none)).toMatch(/兩次/);
     const many = Array.from({ length: guildLevel(1).room + 1 }, (_, i) => put(`p${i}`));
     expect(guildDecorRoomUsed(many)).toBe(guildLevel(1).room + 1);
-    expect(guildDecorProblem(many, 1, none)).toMatch(/點數/);
-    expect(guildDecorProblem(many, 2, none)).toBeNull();
+    expect(guildDecorProblem(many, 1, A, none)).toMatch(/點數/);
+    expect(guildDecorProblem(many, 2, A, none)).toBeNull();
     // a later piece needs its level; a race's set needs a member of that race
     expect(guildDecorUnlocked({ ...floorKind, level: 3 }, 2, none)).toBe(false);
     expect(guildDecorUnlocked({ ...floorKind, level: 3 }, 3, none)).toBe(true);

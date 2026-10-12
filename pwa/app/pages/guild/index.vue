@@ -5,15 +5,28 @@ import {
   GUILD_BUBBLE_MS,
   GUILD_MOVE_STALE_MS,
   GUILD_SAY_MAX,
+  DEFAULT_HALL_AREA,
+  guildDecorFits,
   guildDecorKind,
   guildFurnishing,
+  HALL_AREA_MAX_HEIGHT,
+  HALL_AREA_MAX_WIDTH,
+  hallAreaHas,
+  hallAreaPaint,
+  hallAreaProblem,
+  hallAreaSize,
+  hallAreaTiles,
+  hallFreeSpot,
   hallLayout,
+  keepInside,
+  shiftHall,
   hallPose,
   newDecorUid,
   snapDecor,
   WALL_ROWS,
   type GuildMove,
   type GuildDecorPlaced,
+  type HallArea,
   type HallFloor,
   type GuildResponse,
   type GuildRole,
@@ -38,33 +51,45 @@ const editing = ref(false);
 const draft = ref<GuildDecorPlaced[]>([]);
 const draftVersion = ref(0);
 const selected = ref<string | null>(null);
-const mode = ref<"decor" | "floor" | "wall">("decor");
+const mode = ref<"decor" | "floor" | "wall" | "area">("decor");
 const brush = ref("oak");
 const draftFloor = ref<HallFloor>({ base: "oak", tiles: {} });
+// the hall's shape (the leader and officers, GUILD.md §4.1): drawn tile by tile, saved with the rest
+const draftArea = ref<HallArea>(DEFAULT_HALL_AREA);
+const shapeBrush = ref<"add" | "erase">("add");
+const hallView = ref<{ nudge: (dx: number, dy: number) => void }>();
 const shownDecor = computed(() => (editing.value ? draft.value : (guild.value?.decor ?? [])));
 const shownFloor = computed(() => (editing.value ? draftFloor.value : (guild.value?.floor ?? { base: "oak", tiles: {} })));
+const shownArea = computed(() => (editing.value ? draftArea.value : (guild.value?.area ?? DEFAULT_HALL_AREA)));
+const draftTiles = computed(() => hallAreaTiles(draftArea.value));
+const shapeProblem = computed(() => (editing.value && guild.value ? hallAreaProblem(draftArea.value, guild.value.level) : null));
 function startDecor() {
   draft.value = structuredClone(toRaw(guild.value?.decor ?? []));
   draftFloor.value = structuredClone(toRaw(guild.value?.floor ?? { base: "oak", tiles: {} }));
+  draftArea.value = [...(guild.value?.area ?? DEFAULT_HALL_AREA)];
   mode.value = "decor";
   draftVersion.value = guild.value?.decorVersion ?? 0;
   selected.value = null;
   editing.value = true;
   message.value = "";
 }
-/** Keeps a piece inside the hall, on the wall or on the floor as it belongs, on the art's pixels. */
+/** Where a piece dragged to (x, y) goes, on the art's pixels: there if it fits (on the floor, or on a wall); null: it does not. */
 function place(kind: string, x: number, y: number) {
   const k = guildDecorKind(kind)!;
-  const { width, height } = guild.value!.rules;
-  const half = k.w / 32;
-  const cx = Math.min(width - half, Math.max(half, x));
-  const cy = k.wall ? Math.min(WALL_ROWS, Math.max(1 + k.h / 32, y)) : Math.min(height, Math.max(WALL_ROWS + 1 / 16, y));
-  return { x: snapDecor(cx), y: snapDecor(cy) };
+  const at = { x: snapDecor(x), y: snapDecor(y) };
+  return guildDecorFits(draftArea.value, k, at.x, at.y) ? at : null;
 }
 function addDecor(kind: string) {
   const k = guildDecorKind(kind)!;
-  const { width } = guild.value!.rules;
-  const at = place(kind, width / 2, k.wall ? WALL_ROWS : WALL_ROWS + 3);
+  // (the middle of the hall if it fits there, else the first floor tile, or wall over a top edge, where it does)
+  const { width } = hallAreaSize(draftArea.value);
+  const tries = [{ x: width / 2, y: k.wall ? WALL_ROWS : WALL_ROWS + 3 }];
+  for (const t of hallLayout(draftArea.value).floorTiles) tries.push(k.wall ? { x: t.x + 0.5, y: t.y } : { x: t.x + 0.5, y: t.y + 1 });
+  const at = tries.map((p) => place(kind, p.x, p.y)).find((p) => p);
+  if (!at) {
+    message.value = `據點裡沒有放得下${k.name}的地方。`;
+    return;
+  }
   const d: GuildDecorPlaced = { uid: newDecorUid(), kind, ...at };
   draft.value.push(d);
   selected.value = d.uid;
@@ -72,8 +97,38 @@ function addDecor(kind: string) {
 function moveDecor(uid: string, x: number, y: number) {
   const d = draft.value.find((p) => p.uid === uid);
   if (!d || (d.locked && role.value === "member")) return;
-  Object.assign(d, place(d.kind, x, y));
+  // (dragged off the floor: it stays where it last fitted)
+  const at = place(d.kind, x, y);
+  if (at) Object.assign(d, at);
 }
+/** Draws one tile of the hall's shape on, or rubs it out; everything moves with it when it grows up or to the left. */
+function paintShape(x: number, y: number) {
+  const on = shapeBrush.value === "add";
+  if (hallAreaHas(draftArea.value, x, y) === on) return;
+  if (on && draftTiles.value >= guild.value!.rules.tiles) {
+    message.value = `地板最多 ${guild.value!.rules.tiles} 格，先擦掉別的地方，或等公會升級。`;
+    return;
+  }
+  const next = hallAreaPaint(draftArea.value, x, y, on);
+  if (!next) return;
+  const size = hallAreaSize(next.area);
+  if (size.width > HALL_AREA_MAX_WIDTH || size.height > HALL_AREA_MAX_HEIGHT) {
+    message.value = `據點最寬 ${HALL_AREA_MAX_WIDTH} 格、最高 ${HALL_AREA_MAX_HEIGHT - WALL_ROWS} 格。`;
+    return;
+  }
+  const moved = shiftHall(draft.value, draftFloor.value, next.dx, next.dy);
+  const kept = keepInside(next.area, moved.decor, moved.floor);
+  if (kept.dropped) {
+    message.value = "這格上面有裝飾，先把它移開才能擦掉。";
+    return;
+  }
+  message.value = "";
+  draftArea.value = next.area;
+  draft.value = kept.decor;
+  draftFloor.value = kept.floor;
+  if (next.dx || next.dy) hallView.value?.nudge(next.dx, next.dy);
+}
+const paint = (x: number, y: number) => (mode.value === "area" ? paintShape(x, y) : paintTile(x, y));
 function flipDecor() {
   const d = draft.value.find((p) => p.uid === selected.value);
   if (d) d.flip = !d.flip;
@@ -100,7 +155,8 @@ const setWall = (id: string) => act(async () => (live.state.guild = await api<Gu
 const saveDecor = () =>
   act(async () => {
     try {
-      live.state.guild = await api<GuildResponse>("PUT", "guild/decor", { version: draftVersion.value, items: draft.value, floor: draftFloor.value });
+      const area = JSON.stringify(draftArea.value) === JSON.stringify(guild.value?.area) ? undefined : draftArea.value;
+      live.state.guild = await api<GuildResponse>("PUT", "guild/decor", { version: draftVersion.value, items: draft.value, floor: draftFloor.value, area });
       editing.value = false;
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) editing.value = false; // (someone else saved: start again from theirs)
@@ -108,7 +164,7 @@ const saveDecor = () =>
     }
   }, "裝飾存好了。");
 // walking one's own avatar and talking (GUILD.md §3.1)
-const layout = computed(() => (guild.value ? hallLayout(guild.value.level, guildFurnishing(guild.value.decor)) : null));
+const layout = computed(() => (guild.value ? hallLayout(guild.value.area, guildFurnishing(guild.value.decor)) : null));
 const control = useHallControl(layout, () => {
   // (where this one's avatar is wandering right now, so taking it over does not make it jump)
   const L = layout.value;
@@ -117,7 +173,7 @@ const control = useHallControl(layout, () => {
   const mine = order.find((m) => m.id === user.value!.id);
   const present = order.filter((m) => m.presence !== "offline");
   const at = mine && hallPose(L, mine, present, Date.now());
-  return at ? { x: at.x, y: at.y } : { x: L.width / 2, y: L.height - 2 };
+  return at ? { x: at.x, y: at.y } : hallFreeSpot(L, user.value.id, "start");
 });
 const tick = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | undefined;
@@ -254,7 +310,8 @@ onUnmounted(() => window.removeEventListener("resize", measure));
       </section>
 
       <GuildHall
-        :level="guild.level"
+        ref="hallView"
+        :area="shownArea"
         :members="inHall"
         :me="user?.id"
         :decor="shownDecor"
@@ -262,6 +319,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :wall="guild.wall"
         :editing="editing"
         :painting="editing && mode === 'floor'"
+        :shaping="editing && mode === 'area'"
         :selected="selected"
         :hand="hand"
         :bubbles="bubbles"
@@ -270,7 +328,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         class="hall"
         @select="selected = $event"
         @move="moveDecor"
-        @paint="paintTile"
+        @paint="paint"
         @walk-to="control.walkTo"
       />
       <template v-if="!editing">
@@ -300,7 +358,12 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :mode="mode"
         :brush="brush"
         :wall="guild.wall"
+        :tiles="draftTiles"
+        :tiles-max="guild.rules.tiles"
+        :shape-brush="shapeBrush"
+        :shape-problem="shapeProblem"
         @mode="mode = $event"
+        @shape-brush="shapeBrush = $event"
         @brush="brush = $event"
         @fill-all="fillFloor"
         @wall="setWall"
@@ -367,6 +430,9 @@ h2 { margin: 0 0 6px; font-size: 17px; }
 .immersive > .note { position: fixed; top: 64px; left: 10px; z-index: 3; background: rgba(0, 0, 0, 0.6); padding: 4px 10px; border-radius: 8px; }
 .immersive .side { display: none; }
 .immersive .side.open { display: block; position: fixed; top: 54px; right: 10px; bottom: 10px; z-index: 3; width: 380px; overflow-y: auto; padding-right: 2px; }
+/* a wide browser window (not the Mac's): the tab bar is along the bottom (60 points high), so what floats there sits above it */
+:global(html:not(.in-mac)) .immersive .chat { bottom: calc(70px + env(safe-area-inset-bottom)); }
+:global(html:not(.in-mac)) .immersive .side.open { bottom: calc(70px + env(safe-area-inset-bottom)); }
 </style>
 
 <style scoped>

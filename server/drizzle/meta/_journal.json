@@ -225,6 +225,13 @@
       "when": 1791457453697,
       "tag": "0031_guild_furnished",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791780849116,
+      "tag": "0032_guild_area",
+      "breakpoints": true
     }
   ]
 }

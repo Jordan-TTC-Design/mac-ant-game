@@ -7,7 +7,7 @@ describe("guild rules", () => {
     expect(GUILD_LEVELS.at(-1)!.members).toBe(30);
     for (let i = 1; i < GUILD_LEVELS.length; i++) {
       const [a, b] = [GUILD_LEVELS[i - 1]!, GUILD_LEVELS[i]!];
-      expect(b.members > a.members && b.width > a.width && b.height > a.height && b.room > a.room).toBe(true);
+      expect(b.members > a.members && b.tiles > a.tiles && b.room > a.room).toBe(true);
     }
     expect(guildLevel(0).level).toBe(1);
     expect(guildLevel(99).level).toBe(7);

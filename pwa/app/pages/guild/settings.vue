@@ -37,7 +37,9 @@ function restore(entry: GuildDecorLogEntry) {
 const logLine = (e: GuildDecorLogEntry) =>
   e.restored
     ? "還原了裝飾"
-    : [e.added && `放了 ${e.added} 件`, e.moved && `動了 ${e.moved} 件`, e.removed && `收了 ${e.removed} 件`, e.floor && `鋪了 ${e.floor} 格地板`].filter(Boolean).join("、");
+    : e.area && !e.by
+      ? `據點回到一開始的大小，之後的範圍由會長、幹部自己畫${e.removed ? `；放不下的 ${e.removed} 件收起來了，還原這筆可以拿回來` : ""}`
+      : [e.area && "改了據點範圍", e.added && `放了 ${e.added} 件`, e.moved && `動了 ${e.moved} 件`, e.removed && `收了 ${e.removed} 件`, e.floor && `鋪了 ${e.floor} 格地板`].filter(Boolean).join("、");
 </script>
 
 <template>
