@@ -341,7 +341,7 @@ final class GuildDecorEditor: NSObject {
         case .area:
             let left = tilesMax - hallAreaTiles(area)
             hint.stringValue = "在據點裡點一下或拖過去，畫出地板要到哪裡：外面一圈都可以畫，往哪個方向長都行，也可以畫一條走廊接到另一個房間。地板最上面那排會自動長出牆。\n"
-                + (left > 0 ? "還可以畫 \(left) 格；" : "格數用完了；") + "公會升級會多給格數。上面有裝飾的格子要先把裝飾移開才能擦。"
+                + (left > 0 ? "還可以畫 \(left) 格；" : "格數用完了；") + "公會升級會多給格數。上面有裝飾的格子要先把裝飾移開才能擦。\n要看別的地方：兩指滑動（或滾輪）、方向鍵；畫到畫面邊緣會自己跟著捲。"
             hint.isHidden = false
         }
         categories.isHidden = mode != .decor

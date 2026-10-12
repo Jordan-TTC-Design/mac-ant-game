@@ -115,7 +115,7 @@ function cost(k: GuildDecorKind) {
       </div>
       <span class="room" :class="{ over: tiles > tilesMax }">地板 {{ tiles }}／{{ tilesMax }} 格<template v-if="tilesMax > tiles">（還可以畫 {{ tilesMax - tiles }} 格）</template></span>
       <p v-if="shapeProblem" class="hint warn">{{ shapeProblem }}</p>
-      <p class="hint">公會升級會多給格數，要不要用、畫在哪裡，都由會長和幹部決定。上面有裝飾的格子要先把裝飾移開才能擦。</p>
+      <p class="hint">公會升級會多給格數，要不要用、畫在哪裡，都由會長和幹部決定。上面有裝飾的格子要先把裝飾移開才能擦。畫到畫面邊緣會自己跟著捲；電腦上也可以用滾輪或兩指滑動看別的地方。</p>
     </template>
 
     <template v-else-if="mode === 'floor'">

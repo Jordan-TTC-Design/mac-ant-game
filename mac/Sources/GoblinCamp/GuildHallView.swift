@@ -393,6 +393,7 @@ final class GuildHallView: NSView {
             painting = true
             lastShaped = nil
             shape(at)
+            followEdge(p)
         } else if brush != nil {
             painting = true
             paint(at)
@@ -423,6 +424,25 @@ final class GuildHallView: NSView {
         onShape?(tile[0], tile[1])
     }
 
+    /// Drawing the shape at the edge of what is seen: the view moves a tile that way, so the drawing can go on.
+    private func followEdge(_ p: CGPoint) {
+        let edge = tilePoints * 1.5
+        let seen = CGSize(width: max(1, bounds.width - rightInset), height: bounds.height)
+        if p.x < edge { cam.x -= 1 } else if p.x > seen.width - edge { cam.x += 1 }
+        if p.y < edge { cam.y -= 1 } else if p.y > seen.height - edge { cam.y += 1 }
+        clampCam()
+    }
+
+    /// Two fingers on the trackpad, or the wheel: looks round the hall (while decorating a drag is taken, so this is the way).
+    override func scrollWheel(with event: NSEvent) {
+        let k: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 8
+        cam.x -= event.scrollingDeltaX * k / tilePoints
+        cam.y -= event.scrollingDeltaY * k / tilePoints
+        clampCam()
+        lookingUntil = Date().addingTimeInterval(10)
+        needsDisplay = true
+    }
+
     private func paint(_ p: HallPoint) {
         let x = Int(floor(p.x)), y = Int(floor(p.y))
         guard layout.floorAt(x, y) else { return }
@@ -431,8 +451,15 @@ final class GuildHallView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         if editing, painting {
-            let at = tiles(at: convert(event.locationInWindow, from: nil))
-            if shaping { shape(at) } else { paint(at) }
+            let p = convert(event.locationInWindow, from: nil)
+            let at = tiles(at: p)
+            if shaping {
+                let was = lastShaped
+                shape(at)
+                if lastShaped != was { followEdge(p) }
+            } else {
+                paint(at)
+            }
             return
         }
         if editing, let c = carrying {
@@ -471,7 +498,12 @@ final class GuildHallView: NSView {
         if editing {
             if event.keyCode == 51 || event.keyCode == 117, let uid = selected { onRemove?(uid) } // delete
             else if event.keyCode == 53 { onEscape?() }
-            else { super.keyDown(with: event) }
+            else if let pad = GuildHallView.pads[event.keyCode] { // (the arrows and W A S D look round)
+                cam.x += pad == "left" ? -2 : pad == "right" ? 2 : 0
+                cam.y += pad == "up" ? -2 : pad == "down" ? 2 : 0
+                clampCam()
+                needsDisplay = true
+            } else { super.keyDown(with: event) }
             return
         }
         if let pad = GuildHallView.pads[event.keyCode] {

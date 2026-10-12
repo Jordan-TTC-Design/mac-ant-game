@@ -129,6 +129,25 @@ function paintAt(e: PointerEvent) {
   if (`${x},${y}` === lastPainted) return;
   lastPainted = `${x},${y}`;
   if (props.shaping || layout.value.area[y - WALL_ROWS]?.[x] === "#") emit("paint", x, y);
+  if (props.shaping) {
+    // (drawing at the edge of what is seen: the view moves a tile that way, so the drawing can go on)
+    const r = canvas.value!.getBoundingClientRect();
+    const edge = (r.width / view.cols) * 1.5;
+    if (e.clientX - r.left < edge) cam.x -= 1;
+    else if (r.right - e.clientX < edge) cam.x += 1;
+    if (e.clientY - r.top < edge) cam.y -= 1;
+    else if (r.bottom - e.clientY < edge) cam.y += 1;
+    clampCam();
+  }
+}
+/** The wheel, or two fingers on a trackpad, looks round while decorating (a drag is taken then). */
+function wheel(e: WheelEvent) {
+  if (!props.editing) return;
+  e.preventDefault();
+  const perTile = canvas.value!.getBoundingClientRect().width / view.cols;
+  cam.x += e.deltaX / perTile;
+  cam.y += e.deltaY / perTile;
+  clampCam();
 }
 function down(e: PointerEvent) {
   canvas.value!.setPointerCapture(e.pointerId);
@@ -460,7 +479,7 @@ onUnmounted(() => {
 
 <template>
   <div ref="box" class="hall" :class="{ fill }">
-    <canvas ref="canvas" class="pixel" :class="{ editing, fill }" role="img" @pointerdown="down" @pointermove="moveTo" @pointerup="up" @pointercancel="up" :aria-label="`公會據點：${members.filter((m) => m.presence !== 'offline').length} 人在裡面`" />
+    <canvas ref="canvas" class="pixel" :class="{ editing, fill }" role="img" @pointerdown="down" @pointermove="moveTo" @pointerup="up" @pointercancel="up" @wheel="wheel" :aria-label="`公會據點：${members.filter((m) => m.presence !== 'offline').length} 人在裡面`" />
     <p v-if="problem" class="problem">{{ problem }}</p>
   </div>
 </template>
