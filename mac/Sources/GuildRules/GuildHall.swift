@@ -115,6 +115,56 @@ public func hallLayout(area: [String]? = nil, furnishing: HallFurnishing = .empt
                       drinks: furnishing.drinks, solids: furnishing.solids, cells: cells)
 }
 
+// ── Drawing the hall's shape (shared/src/guild-hall.ts hallAreaPaint, hallAreaProblem) ───────────────────────────────
+
+/// However many tiles a level allows, the hall fits in this.
+public let hallAreaMaxWidth = 96
+public let hallAreaMaxHeight = 64
+
+/// How many floor tiles.
+public func hallAreaTiles(_ area: [String]) -> Int { area.reduce(0) { $0 + $1.filter { $0 == "#" }.count } }
+
+/// The floor tiles of an area, as (x, y) with y from `guildWallRows` down.
+private func hallAreaPoints(_ area: [String]) -> Set<[Int]> {
+    var out = Set<[Int]>()
+    for (i, line) in area.enumerated() { for (x, ch) in line.enumerated() where ch == "#" { out.insert([x, i + Int(guildWallRows)]) } }
+    return out
+}
+
+/// The area with tile (x, y) made floor (`on`) or not, kept tight: when that grows it up or to the left, or takes away its
+/// top row or first column, everything moves by (dx, dy) tiles to stay where it was (the caller moves the pieces and the
+/// floor tiles by it). Nil: nothing would be left.
+public func hallAreaPaint(_ area: [String], x: Int, y: Int, on: Bool) -> (area: [String], dx: Int, dy: Int)? {
+    var tiles = hallAreaPoints(area)
+    if on { tiles.insert([x, y]) } else { tiles.remove([x, y]) }
+    guard let minX = tiles.map({ $0[0] }).min(), let minY = tiles.map({ $0[1] }).min(), let maxY = tiles.map({ $0[1] }).max() else { return nil }
+    var rows = [[Character]](repeating: [], count: maxY - minY + 1)
+    for t in tiles {
+        let r = t[1] - minY, c = t[0] - minX
+        if rows[r].count <= c { rows[r] += [Character](repeating: ".", count: c + 1 - rows[r].count) }
+        rows[r][c] = "#"
+    }
+    return (rows.map { String($0) }, -minX, Int(guildWallRows) - minY)
+}
+
+/// Why this cannot be the hall's floor with at most `most` tiles (nil: it can): too big, or not all one piece.
+public func hallAreaProblem(_ area: [String], most: Int) -> String? {
+    let tiles = hallAreaPoints(area)
+    guard let first = tiles.min(by: { $0[1] != $1[1] ? $0[1] < $1[1] : $0[0] < $1[0] }) else { return "據點至少要有一格地板。" }
+    let width = area.map(\.count).max() ?? 0
+    if width > hallAreaMaxWidth || area.count + Int(guildWallRows) > hallAreaMaxHeight { return "據點最寬 \(hallAreaMaxWidth) 格、最高 \(hallAreaMaxHeight - Int(guildWallRows)) 格。" }
+    if tiles.count > most { return "據點最多 \(most) 格（現在 \(tiles.count) 格），公會升級後可以更大。" }
+    var seen: Set<[Int]> = [first]
+    var queue = [first]
+    while let t = queue.popLast() {
+        for n in [[t[0] + 1, t[1]], [t[0] - 1, t[1]], [t[0], t[1] + 1], [t[0], t[1] - 1]] where tiles.contains(n) && !seen.contains(n) {
+            seen.insert(n)
+            queue.append(n)
+        }
+    }
+    return seen.count == tiles.count ? nil : "據點的地板要連在一起，大家才走得過去。"
+}
+
 extension HallLayout {
     /// Whether a piece `w` pixels wide may stand with its feet at (x, y): one on the floor stands on floor all along its
     /// bottom; one for the wall hangs on the wall over a top edge of the floor (shared/src/guild-decor.ts guildDecorFits).

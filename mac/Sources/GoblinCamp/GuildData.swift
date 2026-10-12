@@ -1,4 +1,5 @@
 import Foundation
+import GuildRules
 
 /// The guild as the server sends it (`GET /api/guild`, shared/src/guild.ts `GuildResponse`), only what the Mac's hall uses.
 struct GuildInfo: Decodable {
@@ -44,6 +45,11 @@ struct GuildInfo: Decodable {
     struct Rules: Decodable {
         let members: Int
         let room: Int
+        /// Floor tiles the hall may have at most (nil from a server from before its shape could be drawn).
+        let tiles: Int?
+        /// The hall's size (the wall's rows included).
+        let width: Int?
+        let height: Int?
     }
 
     struct Guild: Decodable {
@@ -70,6 +76,12 @@ struct GuildInfo: Decodable {
         /// (An older server does not send it.)
         let seasonList: [Season]?
         var seasons: [Season] { seasonList ?? [] }
+        /// The hall's floor: as drawn, or (a server from before shapes) the rectangle of its size.
+        var hallArea: [String] {
+            if let area { return area }
+            guard let w = rules.width, let h = rules.height, w > 0, h > 2 else { return defaultHallArea }
+            return [String](repeating: String(repeating: "#", count: w), count: h - 2)
+        }
         /// Asked and not answered yet (only the leader and officers are sent this).
         let invited: [Invited]
     }

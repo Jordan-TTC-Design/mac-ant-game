@@ -512,6 +512,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             self.guildPreviewWindow = w
             self.guildPane.debugShow(data, me: "me", panel: env["GUILD_SHOW_PANEL"] ?? "decor")
+            if env["GUILD_SHOW_SHAPE"] != nil { // the 範圍 tab: a corridor out to the left, an alcove up, then rubbing out under a piece and off the end
+                func shot(_ name: String) {
+                    guard let prefix = env["CAMP_SNAPSHOT"] else { return }
+                    let v = self.guildPane.paneView
+                    guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return }
+                    v.cacheDisplay(in: v.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(prefix)-shape-\(name).png"))
+                }
+                // (each tile drawn to the left or above moves everything by one: the next is asked for where it is by then)
+                after(3) { log("guild shape, left: \(self.guildPane.debugShape([[-1, 10], [-1, 10], [-1, 10], [0, 11], [1, 11], [2, 11]], add: true))") }
+                after(4) { log("guild shape, up: \(self.guildPane.debugShape([[15, 1], [15, 1], [16, 3], [16, 2]], add: true))") }
+                after(5.5) { shot("drawn") }
+                after(6) { log("guild shape, rub under a desk: \(self.guildPane.debugShape([[13, 6]], add: false))") }
+                after(7) { log("guild shape, rub the corner: \(self.guildPane.debugShape([[34, 21], [33, 21]], add: false))") }
+                after(8) { log("guild shape, cut in two: \(self.guildPane.debugShape((4..<22).map { [23, $0] }, add: false))") }
+                after(9.5) { shot("cut") }
+                after(10.5) { NSApp.terminate(nil) }
+            }
             if let n = env["GUILD_SHOW_LIVE"].flatMap({ Double($0) }) {
                 after(3.0) { self.guildPane.debugLiveDrag(seconds: n) }
                 after(3.0 + n + 1) { NSApp.terminate(nil) }

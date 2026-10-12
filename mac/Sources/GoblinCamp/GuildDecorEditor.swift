@@ -106,14 +106,21 @@ final class GuildDecorEditor: NSObject {
     private var floor: GuildInfo.Floor
     private let version: Int
     private var wall: String
-    private enum Mode: Int { case decor, floor, wall }
+    private enum Mode: Int { case decor, floor, wall, area }
+    /// The hall's shape (the leader and officers, GUILD.md §4.1): drawn tile by tile, saved with the rest.
+    private var area: [String]
+    private var shapeAdd = true
+    /// Whether the shape can be drawn here: by the leader or an officer, with a server that knows of shapes.
+    private var canShape: Bool { boss && guild.area != nil && guild.rules.tiles != nil }
+    private var tilesMax: Int { guild.rules.tiles ?? 0 }
+    private var shapeProblem: String? { canShape ? hallAreaProblem(area, most: tilesMax) : nil }
     private var mode = Mode.decor
     private var brush: String
     private var category = GuildStyles.categories[0]
     private var busy = false
 
     private let room = NSTextField(labelWithString: "")
-    private let modes = NSSegmentedControl(labels: ["🪑 裝飾", "🟫 地板", "🧱 牆壁"], trackingMode: .selectOne, target: nil, action: nil)
+    private let modes = NSSegmentedControl(labels: ["🪑 裝飾", "🟫 地板", "🧱 牆壁", "📐 範圍"], trackingMode: .selectOne, target: nil, action: nil)
     private let hint = NSTextField(wrappingLabelWithString: "")
     private let picked = NSStackView()
     private let pickedName = NSTextField(labelWithString: "")
@@ -136,6 +143,7 @@ final class GuildDecorEditor: NSObject {
         self.races = Set(guild.races)
         self.draft = guild.decor
         self.floor = guild.floor
+        self.area = guild.hallArea
         self.version = guild.decorVersion
         self.wall = guild.wall
         self.brush = guild.floor.base
@@ -148,6 +156,7 @@ final class GuildDecorEditor: NSObject {
         hall.onSelect = { [weak self] _ in self?.refresh() }
         hall.onMove = { [weak self] uid, x, y in self?.move(uid, x, y) }
         hall.onPaint = { [weak self] x, y in self?.paintTile(x, y) }
+        hall.onShape = { [weak self] x, y in self?.paintShape(x, y) }
         hall.onRemove = { [weak self] uid in self?.remove(uid) }
         hall.onEscape = { [weak self] in
             self?.hall.selected = nil
@@ -162,12 +171,23 @@ final class GuildDecorEditor: NSObject {
         categoryChanged()
     }
 
+    /// A test: the 範圍 tab, with these tiles drawn on (or rubbed out); what the panel then says, and the shape.
+    func debugShape(_ tiles: [[Int]], add: Bool) -> String {
+        modes.selectedSegment = Mode.area.rawValue
+        modeChanged()
+        shapeAdd = add
+        for t in tiles where t.count == 2 { paintShape(t[0], t[1]) }
+        refresh()
+        return "tiles \(hallAreaTiles(area))/\(tilesMax), problem \(shapeProblem ?? "none"), status '\(status.stringValue)', first piece \(draft.first.map { "\($0.x),\($0.y)" } ?? "-"), floor \(floor.tiles.keys.sorted()), area \(area.prefix(3)) … \(area.count) rows"
+    }
+
     /// Takes the hall back from the editor.
     func release() {
         hall.editing = false
         hall.onSelect = nil
         hall.onMove = nil
         hall.onPaint = nil
+        hall.onShape = nil
         hall.onRemove = nil
         hall.onEscape = nil
     }
@@ -190,7 +210,7 @@ final class GuildDecorEditor: NSObject {
         modes.target = self
         modes.action = #selector(modeChanged)
         modes.selectedSegment = 0
-        modes.segmentCount = boss ? 3 : 2
+        modes.segmentCount = canShape ? 4 : boss ? 3 : 2
 
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
@@ -253,6 +273,7 @@ final class GuildDecorEditor: NSObject {
     @objc private func modeChanged() {
         mode = Mode(rawValue: modes.selectedSegment) ?? .decor
         hall.brush = mode == .floor ? brush : nil
+        hall.shaping = mode == .area
         if mode != .decor { hall.selected = nil }
         status.stringValue = ""
         refresh()
@@ -284,9 +305,17 @@ final class GuildDecorEditor: NSObject {
     /// The room used, the picked piece and the buttons: what a placed or dragged piece changes (not the catalog's cards).
     private func refreshHeader() {
         let u = used
-        room.stringValue = "裝飾點數 \(u)／\(guild.rules.room)"
-        room.textColor = u > guild.rules.room ? NSColor(calibratedRed: 1, green: 0.5, blue: 0.45, alpha: 1) : .secondaryLabelColor
-        save.isEnabled = !busy && u <= guild.rules.room
+        let problem = shapeProblem
+        if mode == .area {
+            let n = hallAreaTiles(area)
+            room.stringValue = "地板 \(n)／\(tilesMax) 格"
+            room.textColor = n > tilesMax ? NSColor(calibratedRed: 1, green: 0.5, blue: 0.45, alpha: 1) : .secondaryLabelColor
+        } else {
+            room.stringValue = "裝飾點數 \(u)／\(guild.rules.room)"
+            room.textColor = u > guild.rules.room ? NSColor(calibratedRed: 1, green: 0.5, blue: 0.45, alpha: 1) : .secondaryLabelColor
+        }
+        save.isEnabled = !busy && u <= guild.rules.room && problem == nil
+        if let problem, mode == .area { status.stringValue = problem }
         cancel.isEnabled = !busy
 
         let d = hall.selected.flatMap { uid in draft.first { $0.uid == uid } }
@@ -308,6 +337,11 @@ final class GuildDecorEditor: NSObject {
             hint.isHidden = false
         case .wall:
             hint.stringValue = "整個據點的牆一起換，馬上生效。"
+            hint.isHidden = false
+        case .area:
+            let left = tilesMax - hallAreaTiles(area)
+            hint.stringValue = "在據點裡點一下或拖過去，畫出地板要到哪裡：外面一圈都可以畫，往哪個方向長都行，也可以畫一條走廊接到另一個房間。地板最上面那排會自動長出牆。\n"
+                + (left > 0 ? "還可以畫 \(left) 格；" : "格數用完了；") + "公會升級會多給格數。上面有裝飾的格子要先把裝飾移開才能擦。"
             hint.isHidden = false
         }
         categories.isHidden = mode != .decor
@@ -345,6 +379,15 @@ final class GuildDecorEditor: NSObject {
                     self?.refresh()
                 })
             }
+        case .area:
+            cells.append(CatalogCell(image: art.floorTile(floor.base), pixels: NSSize(width: 16, height: 16), fit: 40, maxScale: 3, name: "✏️ 畫地板", sub: "", on: shapeAdd) { [weak self] in
+                self?.shapeAdd = true
+                self?.refresh()
+            })
+            cells.append(CatalogCell(image: nil, pixels: NSSize(width: 16, height: 16), fit: 40, maxScale: 3, name: "🧽 擦掉", sub: "", on: !shapeAdd) { [weak self] in
+                self?.shapeAdd = false
+                self?.refresh()
+            })
         case .wall:
             for w in GuildStyles.walls {
                 let shut = w.race.map { !races.contains($0) } ?? false
@@ -435,6 +478,49 @@ final class GuildDecorEditor: NSObject {
         hall.floorTiles = floor.tiles
     }
 
+    /// Draws one tile of the hall's shape on, or rubs it out; everything moves with it when it grows up or to the left
+    /// (pwa/app/pages/guild/index.vue paintShape).
+    private func paintShape(_ x: Int, _ y: Int) {
+        let on = shapeAdd
+        guard hall.layout.floorAt(x, y) != on else { return }
+        if on, hallAreaTiles(area) >= tilesMax {
+            status.stringValue = "地板最多 \(tilesMax) 格，先擦掉別的地方，或等公會升級。"
+            return
+        }
+        guard let next = hallAreaPaint(area, x: x, y: y, on: on) else { return }
+        if (next.area.map(\.count).max() ?? 0) > hallAreaMaxWidth || next.area.count + Int(guildWallRows) > hallAreaMaxHeight {
+            status.stringValue = "據點最寬 \(hallAreaMaxWidth) 格、最高 \(hallAreaMaxHeight - Int(guildWallRows)) 格。"
+            return
+        }
+        let (dx, dy) = (Double(next.dx), Double(next.dy))
+        let shape = hallLayout(area: next.area)
+        var moved = draft
+        for i in moved.indices {
+            moved[i].x += dx
+            moved[i].y += dy
+            let k = art.decorPiece(moved[i].kind)
+            if !shape.fits(w: Double(k?.w ?? 16), wall: k?.wall ?? false, x: moved[i].x, y: moved[i].y) {
+                status.stringValue = "這格上面有裝飾，先把它移開才能擦掉。"
+                return
+            }
+        }
+        // (the floor's own styles move with it; one on a tile rubbed out goes)
+        var tiles: [String: String] = [:]
+        for (key, id) in floor.tiles {
+            let at = key.split(separator: ",").compactMap { Int($0) }
+            if at.count == 2, shape.floorAt(at[0] + next.dx, at[1] + next.dy) { tiles["\(at[0] + next.dx),\(at[1] + next.dy)"] = id }
+        }
+        status.stringValue = ""
+        area = next.area
+        draft = moved
+        floor.tiles = tiles
+        hall.area = area
+        hall.floorTiles = tiles
+        hall.decor = draft
+        if next.dx != 0 || next.dy != 0 { hall.nudge(dx: next.dx, dy: next.dy) }
+        refreshHeader()
+    }
+
     // MARK: Going to the server
 
     private func setWall(_ id: String) {
@@ -464,10 +550,12 @@ final class GuildDecorEditor: NSObject {
         busy = true
         status.stringValue = ""
         refresh()
-        struct Body: Encodable { let version: Int; let items: [GuildInfo.Decor]; let floor: GuildInfo.Floor }
+        struct Body: Encodable { let version: Int; let items: [GuildInfo.Decor]; let floor: GuildInfo.Floor; let area: [String]? }
+        // (the shape goes only when it was drawn anew)
+        let shape = canShape && area != guild.hallArea ? area : nil
         Task { @MainActor in
             do {
-                let got = try await self.api.request("PUT", "guild/decor", body: Body(version: self.version, items: self.draft, floor: self.floor), as: GuildInfo.self)
+                let got = try await self.api.request("PUT", "guild/decor", body: Body(version: self.version, items: self.draft, floor: self.floor, area: shape), as: GuildInfo.self)
                 self.busy = false
                 self.finish(got, "裝飾存好了。")
             } catch let e as APIError where e.status == 409 {

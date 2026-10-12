@@ -54,6 +54,7 @@ final class GuildHallView: NSView {
             } else {
                 selected = nil
                 brush = nil
+                shaping = false
                 if furnishDirty { furnish() } // (the pieces moved meanwhile: the ways are worked out once, now)
             }
         }
@@ -66,6 +67,12 @@ final class GuildHallView: NSView {
     var onSelect: ((String?) -> Void)?
     var onMove: ((String, Double, Double) -> Void)?
     var onPaint: ((Int, Int) -> Void)?
+    /// Drawing the hall's shape (the leader and officers): a click or a drag gives every tile under it, off the floor too,
+    /// once a stroke; a margin shows round the hall to grow into.
+    var shaping = false { didSet { if shaping != oldValue { clampCam(); needsDisplay = true } } }
+    var onShape: ((Int, Int) -> Void)?
+    private var lastShaped: [Int]?
+    private static let shapeMargin: CGFloat = 6
     var onRemove: ((String) -> Void)?
     var onEscape: (() -> Void)?
     private var carrying: (uid: String, dx: Double, dy: Double)?
@@ -132,8 +139,19 @@ final class GuildHallView: NSView {
     private func clampCam() {
         let v = seenTiles
         let w = CGFloat(layout.width), h = CGFloat(layout.height)
-        cam.x = v.width >= w ? (w - v.width) / 2 : min(max(0, cam.x), w - v.width)
-        cam.y = v.height >= h ? (h - v.height) / 2 : min(max(0, cam.y), h - v.height)
+        let m = editing && shaping ? GuildHallView.shapeMargin : 0
+        cam.x = v.width >= w + 2 * m ? (w - v.width) / 2 : min(max(-m, cam.x), w + m - v.width)
+        cam.y = v.height >= h + 2 * m ? (h - v.height) / 2 : min(max(-m, cam.y), h + m - v.height)
+    }
+    /// Everything in the hall moved by (dx, dy) tiles (its shape grew up or to the left): the view moves with it, so nothing jumps.
+    func nudge(dx: Int, dy: Int) {
+        cam.x += CGFloat(dx)
+        cam.y += CGFloat(dy)
+        if var d = drag {
+            d.cam.x += CGFloat(dx)
+            d.cam.y += CGFloat(dy)
+            drag = d
+        }
     }
     private func tiles(at p: CGPoint) -> HallPoint { HallPoint(x: Double(cam.x + p.x / tilePoints), y: Double(cam.y + p.y / tilePoints)) }
 
@@ -243,6 +261,12 @@ final class GuildHallView: NSView {
         }
         if let ground {
             put(ground.image, 0, 0, Int(CGFloat(layout.width) * T / px), Int(CGFloat(layout.height) * T / px))
+        }
+        if editing, shaping { // (every tile in view, to see where the floor can go)
+            g.setStrokeColor(NSColor(calibratedRed: 1, green: 0.88, blue: 0.4, alpha: 0.38).cgColor)
+            g.setLineWidth(1)
+            for x in x0...x1 { g.stroke(CGRect(x: CGFloat(x) * T, y: CGFloat(y0) * T, width: 0, height: CGFloat(y1 - y0) * T)) }
+            for y in y0...y1 { g.stroke(CGRect(x: CGFloat(x0) * T, y: CGFloat(y) * T, width: CGFloat(x1 - x0) * T, height: 0)) }
         }
 
         // decorations and avatars, back to front by where their feet are
@@ -365,7 +389,11 @@ final class GuildHallView: NSView {
         painting = false
         guard editing else { return }
         let at = tiles(at: p)
-        if brush != nil {
+        if shaping {
+            painting = true
+            lastShaped = nil
+            shape(at)
+        } else if brush != nil {
             painting = true
             paint(at)
         } else if let d = pieceAt(at) {
@@ -388,6 +416,13 @@ final class GuildHallView: NSView {
         return best?.d
     }
 
+    private func shape(_ p: HallPoint) {
+        let tile = [Int(floor(p.x)), Int(floor(p.y))]
+        guard tile != lastShaped else { return }
+        lastShaped = tile
+        onShape?(tile[0], tile[1])
+    }
+
     private func paint(_ p: HallPoint) {
         let x = Int(floor(p.x)), y = Int(floor(p.y))
         guard layout.floorAt(x, y) else { return }
@@ -396,7 +431,8 @@ final class GuildHallView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         if editing, painting {
-            paint(tiles(at: convert(event.locationInWindow, from: nil)))
+            let at = tiles(at: convert(event.locationInWindow, from: nil))
+            if shaping { shape(at) } else { paint(at) }
             return
         }
         if editing, let c = carrying {
@@ -423,7 +459,7 @@ final class GuildHallView: NSView {
         guard let d = drag, !d.panning else { return }
         if editing {
             // (a click on nothing puts the selection down)
-            if brush == nil, carrying == nil, selected != nil { selected = nil; onSelect?(nil) }
+            if brush == nil, !shaping, carrying == nil, selected != nil { selected = nil; onSelect?(nil) }
             return
         }
         walk(to: tiles(at: convert(event.locationInWindow, from: nil)))

@@ -232,7 +232,7 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         let online = g.members.filter { presence($0, now) != "offline" }.count
         title.stringValue = g.name
         subtitle.stringValue = "Lv \(g.level)・\(g.members.count)／\(g.rules.members) 人・\(online) 人在線"
-        hall.area = g.area ?? defaultHallArea
+        hall.area = g.hallArea
         hall.me = myId
         hall.members = g.members.sorted { $0.joinedAt < $1.joinedAt }.enumerated().map { i, m in
             GuildHallView.Member(id: m.id, name: m.name, avatar: m.avatar, presence: presence(m, now), seat: i)
@@ -340,7 +340,8 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     func debugShow(_ data: Data, me: String, panel name: String) {
         myId = me
         hall.me = me
-        guard let got = try? JSONDecoder().decode(GuildInfo.self, from: data) else { return }
+        let got: GuildInfo
+        do { got = try JSONDecoder().decode(GuildInfo.self, from: data) } catch { return NSLog("GoblinCamp test: the made-up guild cannot be read: \(error)") }
         show(got)
         switch name {
         case "decor": toggleDecor()
@@ -356,6 +357,8 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     func debugTypeDonation(_ text: String) { (controller as? GuildDonatePanel)?.debugType(text) }
 
     func debugCategory(_ title: String) { editor?.debugSelect(title) }
+
+    func debugShape(_ tiles: [[Int]], add: Bool) -> String { editor?.debugShape(tiles, add: add) ?? "no editor" }
 
     private var liveTimer: Timer?
 
@@ -480,6 +483,7 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
     /// The hall as the server has it (the decorating draft is put down).
     private func showSaved() {
         guard let g = info?.guild else { return }
+        hall.area = g.hallArea
         hall.decor = g.decor
         hall.floorBase = g.floor.base
         hall.floorTiles = g.floor.tiles
