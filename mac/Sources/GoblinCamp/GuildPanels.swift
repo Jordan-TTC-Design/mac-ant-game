@@ -26,8 +26,9 @@ protocol GuildPanelInit {
 private func roleName(_ role: String) -> String { role == "leader" ? "會長" : role == "officer" ? "幹部" : "成員" }
 
 extension GuildContext {
-    /// Does something with the server, says what it said if it failed, and looks at the guild again.
-    func run(_ work: @escaping () async throws -> Void, done: String? = nil, then: (() -> Void)? = nil) {
+    /// Does something with the server, says what it said if it failed, and looks at the guild again. The work is on the main
+    /// thread all through (it changes views after the server answers: off it, AppKit throws and the app closes).
+    func run(_ work: @escaping @MainActor () async throws -> Void, done: String? = nil, then: (() -> Void)? = nil) {
         Task { @MainActor in
             do {
                 try await work()

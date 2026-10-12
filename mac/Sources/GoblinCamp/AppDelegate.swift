@@ -466,6 +466,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let out = env["GUILD_KIT_OUT"], let data = try? JSONSerialization.data(withJSONObject: kit, options: [.sortedKeys]) { try? data.write(to: URL(fileURLWithPath: out)) }
             after(0.5) { NSApp.terminate(nil) }
         }
+        if let which = env["FEEDBACK_SHOW"] { // the 回報 page with made-up reports (no server), in a window; captured if CAMP_SNAPSHOT says where
+            let pane = FeedbackPane(api: self.sync.api)
+            self.feedbackPane = pane
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 760), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            w.title = "回報頁預覽（假資料，不會連到伺服器）"
+            if env["CAMP_SNAPSHOT"] != nil { w.appearance = NSAppearance(named: .aqua) } // (captured over white)
+            pane.paneView.frame = NSRect(x: 0, y: 0, width: 720, height: 760)
+            pane.paneView.autoresizingMask = [.width, .height]
+            w.contentView = pane.paneView
+            w.center()
+            NSApp.setActivationPolicy(.regular)
+            w.makeKeyAndOrderFront(nil)
+            self.guildPreviewWindow = w
+            pane.debugShow(which)
+            if let prefix = env["CAMP_SNAPSHOT"] {
+                after(1.5) {
+                    let v = pane.paneView
+                    if let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                        v.cacheDisplay(in: v.bounds, to: rep)
+                        // (over white: the view itself has no background)
+                        let whole = NSImage(size: v.bounds.size)
+                        whole.lockFocus()
+                        NSColor.white.setFill()
+                        NSRect(origin: .zero, size: v.bounds.size).fill()
+                        rep.draw(in: NSRect(origin: .zero, size: v.bounds.size))
+                        whole.unlockFocus()
+                        if let tiff = whole.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: "\(prefix)-feedback-\(which).png"))
+                        }
+                    }
+                    NSApp.terminate(nil)
+                }
+            }
+        }
         if let json = env["GUILD_SHOW"], let data = try? Data(contentsOf: URL(fileURLWithPath: json)) { // the guild page with made-up data, in a window to play with (no server)
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 760), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             w.title = "公會頁預覽（假資料，不會連到伺服器）"
@@ -4045,7 +4079,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return [] }
             let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .guild, .quests, .feed] : []
             let camp: [MainWindow.Page] = self.isWindowMode ? [.camp] : [] // (on the desktop, the camp is not in a window)
-            return camp + online + [.workshop, .roster, .notes, .account, .manual]
+            // (回報: bugs and ideas, FeedbackPane; it needs only the account)
+            let report: [MainWindow.Page] = self.sync.user != nil ? [.feedback] : []
+            return camp + online + [.workshop, .roster, .notes] + report + [.account, .manual]
         }
         main.pane = { [weak self] page in self?.pane(for: page) }
         main.popped = { [weak self] page in page == .guild && self?.settings.guildPopped == true }
@@ -4057,12 +4093,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return main
     }()
 
+    private var feedbackPane: FeedbackPane?
+
     private func pane(for page: MainWindow.Page) -> MainPane? {
         switch page {
         case .camp: return ensureMapWindow()
         case .guild:
             guildPane.signedIn(as: sync.user?.id)
             return guildPane
+        case .feedback:
+            if feedbackPane == nil { feedbackPane = FeedbackPane(api: sync.api) }
+            return feedbackPane
         case .world, .quests, .feed:
             if let pane = webPanes[page] { return pane }
             let pane = WebPane(api: sync.api, path: "/\(page.rawValue)")

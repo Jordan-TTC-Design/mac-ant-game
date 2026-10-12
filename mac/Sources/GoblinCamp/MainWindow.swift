@@ -15,11 +15,11 @@ extension MainPane {
 }
 
 /// The app's one big window: a sidebar of pages on the left (the big world, quests, what happened, the workshop, the roster,
-/// the notes, the account, the manual) and the page picked on the right, like any Mac app. The camp itself keeps its own
+/// the notes, reporting a problem or an idea, the account, the manual) and the page picked on the right, like any Mac app. The camp itself keeps its own
 /// small window (or the desktop): this one is for looking things up and doing things.
 final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSToolbarDelegate {
     enum Page: String, CaseIterable {
-        case camp, world, guild, quests, feed, workshop, roster, notes, account, manual
+        case camp, world, guild, quests, feed, workshop, roster, notes, feedback, account, manual
 
         var title: String {
             switch self {
@@ -31,6 +31,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             case .workshop: return "工坊"
             case .roster: return "\(Characters.current.noun)名冊"
             case .notes: return "便利貼"
+            case .feedback: return "回報"
             case .account: return "帳號"
             case .manual: return "說明手冊"
             }
@@ -43,6 +44,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             case .camp: return 300
             case .guild: return 640 // (the panels beside the hall need their room)
             case .world, .quests, .feed: return 360
+            case .feedback: return 460
             case .account, .manual: return 420
             case .workshop: return 600
             case .notes: return 620
@@ -60,6 +62,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             case .workshop: return "hammer"
             case .roster: return "person.3"
             case .notes: return "note.text"
+            case .feedback: return "megaphone"
             case .account: return "person.crop.circle"
             case .manual: return "book"
             }
