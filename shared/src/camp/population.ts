@@ -147,6 +147,22 @@ export function aliveAt(population: Population): Resident[] {
  */
 export const TURNOVER_SLOWER = 4;
 export const TURNOVER_MOST = 50;
+/**
+ * How much of those at home each breed may come to by turning over (about 1.5× what births give it; the rarer, the lower):
+ * a breed already there is not born in a common's place. Together under a third, so commons stay most of a camp (the undead,
+ * who never die of age, would otherwise end up all rare breeds).
+ */
+export const TURNOVER_MAX_SHARE: Record<string, number> = { scout: 0.12, brute: 0.1, sage: 0.07, golden: 0.02 };
+/**
+ * …times this by race (2026-10-17, the user: 不同種族要不同): goblins are many and short-lived, so a rare one matters less
+ * and they may have more; the undead never die of age, so what turns over stays for good and they get the least.
+ */
+export const TURNOVER_RACE_SHARE: Record<string, number> = { goblin: 1.2, elf: 1, undead: 0.6 };
+
+/** How much of those at home a breed may come to by turning over, for this race. */
+export function turnoverShare(race: string, breed: string): number {
+  return (TURNOVER_MAX_SHARE[breed] ?? 0) * (TURNOVER_RACE_SHARE[race] ?? 1);
+}
 
 export function turnover(place: Place, population: Population, campSeed: number, from: number, to: number, allowed: (at: number) => boolean = () => true): { born: Resident[]; left: Resident[] } {
   const born: Resident[] = [];
@@ -161,6 +177,7 @@ export function turnover(place: Place, population: Population, campSeed: number,
     if (alive.length < place.cap) continue;
     const baby = residentFor({ ...place, key: `${place.key}-turnover` }, campSeed, k, population.nextId, at);
     if (baby.breed === "common") continue;
+    if (alive.filter((r) => r.breed === baby.breed).length + 1 > alive.length * turnoverShare(place.race, baby.breed)) continue; // (that breed has its share)
     const oldest = alive.filter((r) => r.breed === "common").sort((a, b) => a.bornAt - b.bornAt || a.id - b.id)[0];
     if (!oldest) continue;
     oldest.diedAt = at;
