@@ -178,8 +178,12 @@ final class CampLedger {
         /// Where the beaten garrison fell back to (when `defended` and lost): to the nearest held cell, a free cell beside it, or home.
         struct Fled: Decodable { let count: Int; let how: String; let label: String? }
         let fled: Fled?
-        /// Which of our cells was attacked (when `defended`): 營地, 城鎮 2, 領地 3.
+        /// Which of our cells was attacked (when `defended`) or is about to be (when `incoming`): 營地, 城鎮 2, 領地 3.
         let `where`: String?
+        /// Another camp's party just set out to attack us (`by`, `party` strong, there at `arriveAt`).
+        let incoming: Bool?
+        let party: Int?
+        let arriveAt: String?
     }
 
     /// A lair came back for one of the camp's cells in the big world.

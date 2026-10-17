@@ -637,6 +637,20 @@ describe("a garrison overrun falls back", () => {
     expect(wa.recent.find((r) => r.id === going.id)?.outcome?.cell).toBe("settled");
   });
 
+  it("is warned the moment a party sets out against it", async () => {
+    const { a, b, cells } = await setUp([25]);
+    const res = await t.call("POST", "/world/expeditions", { to: cells[0], count: 6 }, b);
+    expect(res.status).toBe(201);
+    const coming = (await me(a)).incoming!;
+    expect(coming).toHaveLength(1);
+    expect(coming[0]).toMatchObject({ id: res.body.id, to: cells[0], party: 6, where: { kind: "cell", label: "領地 1" }, arriveAt: res.body.arriveAt });
+    expect(coming[0]!.by.name).toBeTruthy();
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, a)).body.events as { kind: string; data: { incoming?: boolean; where?: string } }[];
+    expect(events.some((e) => e.kind === "expedition" && e.data.incoming && e.data.where === "領地 1")).toBe(true);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    expect((await me(a)).incoming).toHaveLength(0); // (it got there)
+  });
+
   it("too few to hold a cell, walks home", async () => {
     const { a, b, cells } = await setUp([12]);
     const atHome = (await me(a)).atHome;

@@ -126,6 +126,7 @@ function happening(h: CellHappening): string {
       const help = `${h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : ""}${h.guests ? `，好友 ${h.guests} 隻一起守` : ""}`;
       return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}${help}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}${help}）`;
     }
+    case "incoming": return `⚔️ ${h.by}派了 ${h.residents} 隻要來打`;
     case "attacked": return h.held ? `${h.by}來打，守住了（倒下 ${h.fallen}）` : `${h.by}來打，被搶走了（倒下 ${h.fallen}）`;
     case "settled": return h.killed ? `打下這一格，住了進來（倒下 ${h.fallen}）` : "有居民搬進來了";
     case "nest": return "開始蓋繁殖巢";

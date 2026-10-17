@@ -120,6 +120,7 @@ import {
   type PlayerWorldState,
   type Terrain,
   type WorldMe,
+  type IncomingParty,
   type WorldOwner,
 } from "@goblincamp/shared/world";
 import type { AppDeps } from "../app.ts";
@@ -898,7 +899,31 @@ export async function sendExpedition(
   if (place !== "home" && input.from !== player.homeCell && available.length === party.length) await releaseCell(tx, input.from);
   await addEvent(tx, userId, now, "expedition", { id: row!.id, setOut: true, to: input.to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
   await bumpVersion(tx, camp);
+  // the camp attacked hears of it at once (warnDefender pushes it to its phones): it has till they get there to do something
+  // (its books changed: bumped without locking its camp, which another party of its own may hold)
+  if (row!.kind === "attack" && row!.defender) {
+    const where = await cellLabel(tx, row!.defender, input.to, await homeCellOf(tx, row!.defender));
+    const by = await ownerOf(tx, userId);
+    await addEvent(tx, row!.defender, now, "expedition", { id: row!.id, incoming: true, to: input.to, where: where.label, by: by.name, party: party.length, arriveAt: row!.arriveAt.toISOString() });
+    await tx.update(camps).set({ version: sql`${camps.version} + 1` }).where(eq(camps.userId, row!.defender));
+  }
   return summary(row!);
+}
+
+/** After a party set out to attack: the camp attacked is told now (its devices refresh, its phones get a push). */
+export async function warnDefender(deps: Pick<AppDeps, "database" | "hub" | "push">, id: string, now: Date) {
+  const { db } = deps.database;
+  const [row] = await db.select().from(expeditions).where(eq(expeditions.id, id));
+  if (!row || row.kind !== "attack" || !row.defender) return;
+  const [by, where] = await db.transaction(async (tx) => [await ownerOf(tx, row.userId), await cellLabel(tx, row.defender!, row.toCell, await homeCellOf(tx, row.defender!))] as const);
+  const minutes = Math.max(1, Math.round((row.arriveAt.getTime() - now.getTime()) / MINUTE));
+  await notifyCamp(deps, row.defender);
+  await pushNews(deps, {
+    user: row.defender,
+    title: "敵軍來襲！",
+    body: `${by.name}派了 ${row.party.length} 隻來打你的${where.label}，約 ${minutes} 分鐘後到。`,
+    url: `/world?cell=${row.toCell}`,
+  });
 }
 
 // --- the way there ---------------------------------------------------------------------------------------------------
@@ -1683,6 +1708,25 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
     .from(campResidents)
     .where(and(eq(campResidents.userId, userId), eq(campResidents.place, "home"), isNull(campResidents.diedAt)))) as [{ atHome: number }];
   const walking = await tx.select().from(expeditions).where(and(eq(expeditions.userId, userId), eq(expeditions.status, "walking"))).orderBy(expeditions.arriveAt);
+  const coming = await tx
+    .select()
+    .from(expeditions)
+    .where(and(eq(expeditions.defender, userId), eq(expeditions.kind, "attack"), eq(expeditions.status, "walking")))
+    .orderBy(expeditions.arriveAt);
+  const incoming: IncomingParty[] = [];
+  for (const w of coming) {
+    incoming.push({
+      id: w.id,
+      by: await ownerOf(tx, w.userId),
+      from: w.fromPlace === "home" ? ((await homeCellOf(tx, w.userId)) ?? w.toCell) : w.fromPlace,
+      to: w.toCell,
+      where: await cellLabel(tx, userId, w.toCell, player?.homeCell ?? null),
+      party: w.party.length,
+      setOutAt: w.setOutAt.toISOString(),
+      arriveAt: w.arriveAt.toISOString(),
+      ...(w.route ? { route: w.route } : {}),
+    });
+  }
   const recent = await tx
     .select()
     .from(expeditions)
@@ -1724,6 +1768,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
     partyCap: partyCap(camp.race, level),
     food: Object.fromEntries(Object.entries(camp.materials).filter(([id, n]) => isFood(id) && n > 0)),
     walking: walking.map((w) => summary(w, userId)),
+    incoming,
     recent: recent.map((w) => summary(w, userId)),
     bosses: player ? await bossesNear(tx, player.homeCell, now) : [],
     happenings: (
@@ -1832,7 +1877,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
         sql`(${campEvents.data} -> 'cells' ? ${cell} or ${campEvents.data} -> 'lairBack' ->> 'cell' = ${cell} or ${campEvents.data} ->> 'cell' = ${cell}
           or ${campEvents.data} ->> 'nest' = ${cell} or ${campEvents.data} ->> 'town' = ${cell} or ${campEvents.data} ->> 'recalled' = ${cell}
           or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'guests' ->> 'cell' = ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell}
-          or (${campEvents.data} ->> 'to' = ${cell} and ${campEvents.data} ? 'arrived'))`,
+          or (${campEvents.data} ->> 'to' = ${cell} and (${campEvents.data} ? 'arrived' or ${campEvents.data} ? 'incoming')))`,
       ),
     )
     .orderBy(desc(campEvents.seq))
@@ -1844,6 +1889,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     if (d.cells?.[cell] || d.hungry?.includes(cell)) history.push({ at, kind: "yield", loot: d.cells?.[cell] ?? {}, hungry: d.hungry?.includes(cell) || undefined });
     else if (d.lairBack) history.push({ at, kind: "lairBack", name: d.lairBack.name, held: d.lairBack.held, fallen: d.lairBack.fallen, killed: d.lairBack.killed, loot: d.lairBack.loot, helped: d.lairBack.helped, guests: d.lairBack.guests });
     else if (d.guests) history.push({ at, kind: "guests", by: d.guests.from, residents: d.guests.count });
+    else if (d.incoming) history.push({ at, kind: "incoming", by: d.by, residents: d.party, expedition: d.id });
     else if (d.defended) history.push({ at, kind: "attacked", by: d.by, held: d.won, fallen: d.fallen, expedition: d.id });
     else if (d.arrived && (d.cell === "settled" || d.cell === "taken")) history.push({ at, kind: "settled", fallen: d.fallen, killed: d.killed, expedition: d.id });
     else if (d.nest) history.push({ at, kind: "nest" });

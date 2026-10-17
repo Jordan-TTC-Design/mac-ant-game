@@ -24,6 +24,7 @@ import {
   openWorldFor,
   recall,
   sendExpedition,
+  warnDefender,
   notifyCamp,
   settleDue,
   worldMe,
@@ -135,7 +136,9 @@ export function worldRoutes(deps: AppDeps) {
     const body = await readJson(c, expeditionInput);
     if ("response" in body) return body.response;
     const userId = c.get("session").user.id;
-    return respond(c, await run(c, () => db.transaction((tx) => sendExpedition(tx, userId, body.data, now())), [userId]), 201);
+    const out = await run(c, () => db.transaction((tx) => sendExpedition(tx, userId, body.data, now())), [userId]);
+    if (!(out instanceof Response)) await warnDefender(deps, out.id, now());
+    return respond(c, out, 201);
   });
 
   app.get("/expeditions", async (c) => {

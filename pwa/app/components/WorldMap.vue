@@ -17,7 +17,9 @@ const props = defineProps<{
   selected: string | null;
   walkingTo: string[];
   /** Parties on the road (the cell centres it walks between, round other camps' land, and when): a dashed line with the party moving along it. */
-  parties?: { id: string; path: { lat: number; lng: number }[]; setOutAt: string; arriveAt: string; race: string }[];
+  parties?: { id: string; path: { lat: number; lng: number }[]; setOutAt: string; arriveAt: string; race: string; hostile?: boolean }[];
+  /** Cells to mark ⚔️: attacked lately, or about to be. */
+  alerts?: string[];
   /** The race whose face is on the "back to my camp" button (none: no camp yet, no button). */
   home?: string | null;
   /** The way a party would walk to the cell picked (before it is sent): a yellow dotted line. */
@@ -74,7 +76,7 @@ function partiesGeoJson(): FeatureCollection {
     type: "FeatureCollection",
     features: (props.parties ?? []).map((p) => ({
       type: "Feature",
-      properties: { id: p.id },
+      properties: { id: p.id, hostile: !!p.hostile },
       geometry: { type: "LineString", coordinates: p.path.map((q) => [q.lng, q.lat]) },
     })),
   };
@@ -151,6 +153,7 @@ function markerKey(c: CellView): string {
     c.lair && [c.lair.kind, c.lair.level, c.lair.boss, leaderOf(c.lair.foes)],
     c.landmark?.kind,
     !!foeSheet.value,
+    props.alerts?.includes(c.cell),
   ]);
 }
 
@@ -176,8 +179,15 @@ function cellMarker(c: CellView): HTMLElement | null {
   } else if (c.lair) {
     const icon = c.lair.kind === "enemy_town" ? "enemy_town" : leaderOf(c.lair.foes);
     el.append(foeElement(icon, c.lair.boss ? 30 : 22), label(`${c.lair.boss ? "👑 " : ""}Lv${c.lair.level}`, c.lair.boss ? "boss" : ""));
-  } else if (!c.landmark) {
+  } else if (!c.landmark && !props.alerts?.includes(c.cell)) {
     return null;
+  }
+  // attacked lately, or a party on its way to attack it
+  if (props.alerts?.includes(c.cell)) {
+    const alert = document.createElement("span");
+    alert.className = el.childElementCount ? "map-alert corner" : "map-alert";
+    alert.textContent = "⚔️";
+    el.append(alert);
   }
   // a real place standing in it (a station, a temple…): a small mark in the corner
   if (c.landmark) {
@@ -271,7 +281,7 @@ function moveParties() {
     }
     const face = document.createElement("img");
     face.src = `/sprites/${p.race}/icon.png`;
-    face.className = "map-face party";
+    face.className = p.hostile ? "map-face party hostile" : "map-face party";
     partyMarkers.set(p.id, new Marker({ element: face }).setLngLat(at).addTo(map));
   }
   for (const [id, m] of partyMarkers) {
@@ -393,7 +403,13 @@ onMounted(() => {
       source: "cells",
       paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.5], "line-opacity": ["case", ["boolean", ["feature-state", "target"], false], 1, 0] },
     });
-    m.addLayer({ id: "party-road", type: "line", source: "parties", paint: { "line-color": "#ffffff", "line-width": 3, "line-dasharray": [2, 1.5], "line-opacity": 0.9 } });
+    // (parties coming to attack this camp in red)
+    m.addLayer({
+      id: "party-road",
+      type: "line",
+      source: "parties",
+      paint: { "line-color": ["case", ["get", "hostile"], "#ff3a2a", "#ffffff"], "line-width": ["case", ["get", "hostile"], 4, 3], "line-dasharray": [2, 1.5], "line-opacity": 0.9 },
+    });
     m.addLayer({ id: "plan-road", type: "line", source: "plan", layout: { "line-cap": "round" }, paint: { "line-color": "#f3d36b", "line-width": 4, "line-dasharray": [0.1, 2] } });
     ready = true;
     refreshCells();
@@ -415,7 +431,7 @@ onUnmounted(() => {
 });
 
 // each kind of change redraws only its own part (a tap on a cell changes only which one is outlined)
-watch(() => [props.cells, props.mine, foeSheet.value], refreshCells);
+watch(() => [props.cells, props.mine, foeSheet.value, props.alerts], refreshCells);
 watch(() => [props.selected, props.walkingTo], markCells);
 watch(() => [props.parties, props.plan], refreshRoads);
 // the page moves the map (to the camp, to a great monster): fly there if it is not where we are looking already
@@ -455,6 +471,11 @@ watch(
 @media (prefers-reduced-motion: reduce) { .map :deep(.map-flag) { animation: none; } }
 .map :deep(.map-face) { width: 22px; height: 22px; image-rendering: pixelated; pointer-events: none; }
 .map :deep(.map-face.party) { width: 22px; height: 22px; filter: drop-shadow(0 0 2px #fff); }
+.map :deep(.map-face.party.hostile) { filter: drop-shadow(0 0 2px #ff3a2a) drop-shadow(0 0 2px #ff3a2a); }
+.map :deep(.map-alert) { font-size: 15px; line-height: 1; filter: drop-shadow(0 0 2px #fff); animation: map-alert 1s ease-in-out infinite alternate; }
+.map :deep(.map-alert.corner) { position: absolute; top: -10px; left: -12px; font-size: 13px; }
+@keyframes map-alert { from { transform: scale(1); } to { transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .map :deep(.map-alert) { animation: none; } }
 .map :deep(.map-label) { margin-top: -2px; font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; line-height: 1; }
 .map :deep(.map-label.mine) { color: #ffe27a; }
 .map :deep(.map-label.theirs) { color: #ff9a8a; }

@@ -219,8 +219,22 @@ const parties = computed(() =>
     const from = w.from === "home" ? s.me?.homeCell : w.from;
     if (!from) return [];
     return [{ id: w.id, path: (w.route ?? [from, w.to]).map(cellCenter), setOutAt: w.setOutAt, arriveAt: w.arriveAt, race: race.value }];
-  }),
+  }).concat(
+    // other camps' parties coming to attack, in red
+    (s.me?.incoming ?? []).map((w) => ({ id: w.id, path: (w.route ?? [w.from, w.to]).map(cellCenter), setOutAt: w.setOutAt, arriveAt: w.arriveAt, race: w.by.race, hostile: true })),
+  ),
 );
+/** The reports of this camp being attacked in the last day, newest first. */
+const attackedLately = computed(() => (s.me?.recent ?? []).filter((r) => r.defending && now.value - Date.parse(r.arriveAt) < 24 * 3_600_000));
+/** Cells to mark ⚔️ on the map: attacked in the last day, or with a party on its way to attack. */
+const alerts = computed(() => [...new Set([...attackedLately.value.map((r) => r.to), ...(s.me?.incoming ?? []).map((w) => w.to)])]);
+/** The cell picked was attacked lately (its report), or is about to be (the party coming). */
+const attackedHere = computed(() => attackedLately.value.find((r) => r.to === selected.value) ?? null);
+const comingHere = computed(() => (s.me?.incoming ?? []).filter((w) => w.to === selected.value));
+async function goToCell(cell: string) {
+  await world.moveTo(cellCenter(cell));
+  pick(cell);
+}
 const goHome = () => s.me?.home && world.moveTo(s.me.home);
 
 async function goToBoss(b: { cell: string; lat: number; lng: number }) {
@@ -468,6 +482,7 @@ async function goToPlace(p: PlaceFound) {
         :selected="selected"
         :walking-to="s.me.walking.map((w) => w.to)"
         :parties="parties"
+        :alerts="alerts"
         :plan="plan"
         :home="s.me.homeCell ? race : null"
         @select="pick"
@@ -478,6 +493,14 @@ async function goToPlace(p: PlaceFound) {
       </div>
 
       <div class="w-rest">
+
+      <section v-if="s.me.incoming?.length" class="panel incoming">
+        <h2>⚠️ 敵軍來襲</h2>
+        <button v-for="w in s.me.incoming" :key="w.id" class="line incoming-line" @click="goToCell(w.to)">
+          <b>{{ w.by.name }}</b> 派了 {{ w.party }} 隻 → 你的{{ w.where.kind === "home" ? "營地" : w.where.label }}{{ w.where.landmark ? `・${w.where.landmark}` : "" }}<br />
+          <small>{{ left(w.arriveAt) }}・點一下看那一格（可以派人增援，或撤回）</small>
+        </button>
+      </section>
 
       <section v-if="s.me.walking.length" class="panel">
         <h2>在路上</h2>
@@ -529,6 +552,11 @@ async function goToPlace(p: PlaceFound) {
           <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && (!mine || launchFrom) ? `・從${launchFrom ? launchName : "營地"}走約 ${minutesTo} 分鐘${detourTo ? `（繞路 +${detourTo}）` : ""}` : "" }}</p>
           <p v-if="way && !way.waypoints.length" class="wall">🧱 {{ way.blockedBy?.name ?? "別人" }}的領地擋在路上，從{{ launchFrom ? launchName : "營地" }}過不去</p>
           <p v-if="cell.blocks" class="wall">🧱 有蓋東西的領地：你的隊伍不能穿過去，要繞路（打下來就通了）</p>
+          <p v-for="w in comingHere" :key="w.id" class="alert">⚔️ {{ w.by.name }}派了 {{ w.party }} 隻正在路上，{{ left(w.arriveAt) }}</p>
+          <p v-if="attackedHere" class="alert">
+            ⚔️ {{ attackedHere.by ?? "有人" }}{{ noteTime(attackedHere.arriveAt) }}來打過：{{ outcomeText(attackedHere) }}
+            <NuxtLink :to="`/expedition/${attackedHere.id}`">看戰報</NuxtLink>
+          </p>
           <p v-if="cell.landmark" class="landmark">{{ landmarkRule(cell.landmark.kind)?.icon }} {{ cell.landmark.name }}（{{ landmarkRule(cell.landmark.kind)?.name }}）<small>{{ landmarkRule(cell.landmark.kind)?.blurb }}</small></p>
         </div>
       </div>
@@ -617,6 +645,11 @@ async function goToPlace(p: PlaceFound) {
 </template>
 
 <style scoped>
+.incoming { border: 2px solid #e04a3a; background: #fff3f0; }
+.incoming h2 { color: #c0392b; }
+.incoming-line { display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; color: inherit; padding: 6px 0; cursor: pointer; border-top: 1px solid #f3cfc8; }
+.incoming-line:first-of-type { border-top: 0; }
+.alert { color: #c0392b; font-weight: 600; margin: 4px 0; }
 section { margin-top: 14px; }
 h2 { font-size: 16px; margin: 0 0 8px; }
 p { margin: 6px 0; line-height: 1.55; }

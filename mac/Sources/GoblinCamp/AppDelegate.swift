@@ -2324,7 +2324,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func tellExpeditions(_ parties: [CampLedger.Expedition]) {
         for e in parties {
             let loot = (e.loot ?? [:]).sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
-            if e.defended == true {
+            if e.incoming == true {
+                let minutes = e.arriveAt.flatMap(ServerTime.parse).map { max(1, Int(($0.timeIntervalSinceNow / 60).rounded())) }
+                say("敵軍來襲！\(e.by ?? "有人")派了 \(e.party ?? 0) 隻來打我們的\(e.where ?? "領地")" + (minutes.map { "，大約 \($0) 分鐘後到。" } ?? "。"))
+            } else if e.defended == true {
                 let fled = e.fled.map { f in "\(f.count) 隻撤退" + (f.how == "cell" ? "到\(f.label ?? "最近的領地")。" : f.how == "free" ? "到旁邊的空地。" : "回營地。") } ?? ""
                 let place = e.where ?? "領地"
                 let lost = place == "營地" ? "營地被打敗了……" : "\(place)被搶走了……"

@@ -182,6 +182,19 @@ export interface ExpeditionSummary {
   by?: string;
 }
 
+/** Another camp's party on its way to attack: who, how many, to which of this camp's cells (named as its workshop names them), and when. */
+export interface IncomingParty {
+  id: string;
+  by: WorldOwner;
+  from: string;
+  to: string;
+  where: { kind: "home" | "town" | "cell"; label: string; landmark?: string };
+  party: number;
+  setOutAt: string;
+  arriveAt: string;
+  route?: string[];
+}
+
 /** `GET /api/world/expeditions/:id`: everything, with the blow-by-blow for playing it back. */
 export interface ExpeditionReport extends ExpeditionSummary {
   attacker: WorldOwner;
@@ -241,6 +254,8 @@ export interface WorldMe {
   /** The food in the store for expeditions (supplies.ts), by id. */
   food: Record<string, number>;
   walking: ExpeditionSummary[];
+  /** Other camps' parties on their way to attack one of this camp's cells (older servers leave it out). */
+  incoming?: IncomingParty[];
   recent: ExpeditionSummary[];
   /** What happened in the big world lately (a lair coming back for a cell, a great monster's spoils, what the cells gave), newest first. */
   happenings: {
@@ -257,8 +272,11 @@ export interface WorldMe {
 /** One thing that happened on a held cell (newest first in `CellDetail.history`). */
 export interface CellHappening {
   at: string;
-  /** yield: the ground gave; lairBack: the lair came back for it; attacked: another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home. */
-  kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests";
+  /**
+   * yield: the ground gave; lairBack: the lair came back for it; incoming: another camp's party set out for it; attacked:
+   * another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home.
+   */
+  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests";
   loot?: Record<string, number>;
   held?: boolean;
   /** A yield eaten short: there were not rations enough to keep it. */
