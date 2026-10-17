@@ -494,6 +494,7 @@ describe("公會", () => {
     let res = await t.call("PUT", "/guild/decor", { version: 0, items: start, walls }, a.auth);
     expect((res.body as GuildResponse).guild!.walls).toEqual(walls);
     // a member's save that leaves the walls out keeps them
+    t.advance(1000); // (the log is newest first: one second apart, so the order is sure)
     expect(((await t.call("PUT", "/guild/decor", { version: 1, items: [] }, b.auth)).body as GuildResponse).guild!.walls).toEqual(walls);
     const log = (await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[];
     expect(log[1]).toMatchObject({ walls: 2 });
