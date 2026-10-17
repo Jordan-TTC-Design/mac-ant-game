@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
-import { CAMP_MONSTERS, MIDDLE_GEAR, QUESTS, questShown, raceRules, type QuestMetrics, type QuestView } from "@goblincamp/shared/camp";
+import { CAMP_BUILDING_MAX, CAMP_MONSTERS, ENHANCE_MAX, gearRule, MIDDLE_GEAR, QUESTS, questShown, raceRules, specialResident, type GearItem, type QuestMetrics, type QuestView } from "@goblincamp/shared/camp";
 import { CELL_BUILDING_MAX, connectedCells, detailBuilding, hasAbility, ITEMS, LAIRS, raceLevel, talentBonus } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campResidents, expeditions, friendships, worldBosses, worldCells, worldPlayers } from "../db/schema.ts";
@@ -14,8 +14,9 @@ const TOP_ABILITIES = ["plunder", "tunnels", "refine", "ambush", "sacredTree", "
 /** Everything the quests look at (camp/quests.ts), from the camp as it is now. */
 export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics> {
   const userId = camp.userId;
-  const home = await tx.select({ gear: campResidents.gear }).from(campResidents).where(and(eq(campResidents.userId, userId), eq(campResidents.place, "home"), isNull(campResidents.diedAt)));
+  const home = await tx.select({ gear: campResidents.gear, breed: campResidents.breed }).from(campResidents).where(and(eq(campResidents.userId, userId), eq(campResidents.place, "home"), isNull(campResidents.diedAt)));
   const worn = home.map((r) => Object.values(r.gear ?? {}).filter(Boolean));
+  const pieces = [...worn.flat(), ...camp.armory].filter((g): g is GearItem => !!g);
   const owned = [...worn.flat().map((g) => g!.id), ...camp.armory.map((g) => g.id)];
   const sites = camp.sites.filter((s) => s.kind !== "farm");
   const siteLevels: Record<string, number> = {};
@@ -118,6 +119,16 @@ export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics>
     terrainBreedKinds: new Set(breeds.map((b) => b.breed)).size,
     plunders,
     refined: [...worn.flat(), ...camp.armory].filter((g) => !!g && "refined" in g && g.refined).length,
+    // (the fourth batch: the camp's new things)
+    campBuildingLevels: Object.values(camp.buildings ?? {}).reduce((k, b) => k + (b?.level ?? 0), 0),
+    campBuildingsTop: Object.values(camp.buildings ?? {}).filter((b) => (b?.level ?? 0) >= CAMP_BUILDING_MAX).length,
+    enhanced: pieces.filter((g) => (g.plus ?? 0) >= 1).length,
+    enhancedMax: pieces.filter((g) => (g.plus ?? 0) >= ENHANCE_MAX).length,
+    gearTier: Math.max(0, ...pieces.map((g) => gearRule(g.id)?.tier ?? 1)),
+    legendary: pieces.filter((g) => gearRule(g.id)?.tier === 5).length,
+    levelBosses: camp.bossesBeaten?.length ?? 0,
+    visitorsTaken: Object.values(camp.visitors ?? {}).filter((a) => a === "yes").length,
+    specials: new Set(home.map((r) => r.breed).filter((b) => specialResident(b))).size,
   };
 }
 

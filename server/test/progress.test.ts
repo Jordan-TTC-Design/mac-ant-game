@@ -74,7 +74,7 @@ describe("任務", () => {
     expect(ids).toContain("pop_60");
     expect(ids).not.toContain("lumber_2");
     expect(ids).not.toContain("pop_120");
-    expect(QUESTS).toHaveLength(113);
+    expect(QUESTS).toHaveLength(130);
     expect(list.find((q) => q.id === "pop_60")).toEqual(expect.objectContaining({ have: 6, need: 60, done: false, claimed: false }));
   });
 

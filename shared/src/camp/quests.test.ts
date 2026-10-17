@@ -6,8 +6,8 @@ import { QUESTS, questRule, questShown } from "./quests.ts";
 
 describe("任務", () => {
   it("are a hundred and thirteen (thirty early ones, fifty harder, six of focus and the ranch, twenty-seven of the big world's new things), each with a reward that exists and a chain that holds together", () => {
-    expect(QUESTS).toHaveLength(113);
-    expect(new Set(QUESTS.map((q) => q.id)).size).toBe(113);
+    expect(QUESTS).toHaveLength(130);
+    expect(new Set(QUESTS.map((q) => q.id)).size).toBe(130);
     for (const q of QUESTS) {
       const r = q.reward;
       expect(Object.keys(r.materials ?? {}).length + (r.gear?.length ?? 0) + (r.residents ?? 0) + Object.keys(r.decor ?? {}).length, q.id).toBeGreaterThan(0);

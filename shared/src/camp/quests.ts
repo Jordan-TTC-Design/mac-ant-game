@@ -75,6 +75,19 @@ export interface QuestMetrics {
   /** Raids won with 劫掠; ★ refined pieces owned (worn at home or in the store). */
   plunders?: number;
   refined?: number;
+  // (2026-10-17, the fourth batch: the camp's new things — 營地建設, 強化, gear tiers, level bosses, visitors; optional)
+  /** 營地建設: their levels added up, and how many at the top (3). */
+  campBuildingLevels?: number;
+  campBuildingsTop?: number;
+  /** Pieces owned (worn at home or in the store) at +1 or more, and at +5; the highest gear tier owned (gear.ts `tier`, 5 legendary), legendary pieces. */
+  enhanced?: number;
+  enhancedMax?: number;
+  gearTier?: number;
+  legendary?: number;
+  /** Level bosses beaten (raids.ts); visitors taken in; special residents at home now. */
+  levelBosses?: number;
+  visitorsTaken?: number;
+  specials?: number;
 }
 
 export interface QuestReward {
@@ -232,6 +245,24 @@ export const QUESTS: readonly Quest[] = [
   // 營地：★ 精良裝備
   { id: "refined_1", chapter: "營地", title: "拼裝大師", text: "擁有一件 ★ 精良裝備（哥布林工匠樹頂端「拼裝改造」，在工坊「★ 改造」）。", goal: (m) => n(m.refined ?? 0, 1), reward: { materials: { scrap_iron: 30, leather_strap: 4 } }, after: "gear_20" },
   { id: "refined_10", chapter: "營地", title: "精工軍團", text: "擁有十件 ★ 精良裝備。", goal: (m) => n(m.refined ?? 0, 10), reward: { residents: 8, materials: { crystal_shard: 8 } }, after: "refined_1" },
+  // 營地：建設、強化、高階裝備、等級王、來訪者 (2026-10-17)
+  { id: "cbuild_1", chapter: "營地", title: "大興土木", text: "在營地的「🏰 建設」蓋好一座建設（城牆、大倉庫、醫館…）。", goal: (m) => n(m.campBuildingLevels ?? 0, 1), reward: { materials: { log: 150, stone: 100 } }, after: "sites_4" },
+  { id: "cbuild_6", chapter: "營地", title: "六大工程", text: "營地建設的等級加起來到 6。", goal: (m) => n(m.campBuildingLevels ?? 0, 6), reward: { residents: 8, materials: { crystal_shard: 4 } }, after: "cbuild_1" },
+  { id: "cbuild_top", chapter: "營地", title: "固若金湯", text: "一座營地建設升到 3 級。", goal: (m) => n(m.campBuildingsTop ?? 0, 1), reward: { residents: 10, materials: { amber: 3 } }, after: "cbuild_6" },
+  { id: "cbuild_all", chapter: "營地", title: "千秋大業", text: "六座營地建設全部升到 3 級。", goal: (m) => n(m.campBuildingsTop ?? 0, 6), reward: { residents: 25, materials: { amber: 10, crystal_shard: 15 } }, after: "cbuild_top" },
+  { id: "enhance_1", chapter: "營地", title: "千錘百鍊", text: "在工坊把一件裝備強化到 +1。", goal: (m) => n(m.enhanced ?? 0, 1), reward: { materials: { log: 60, stone: 40 } }, after: "gear_20" },
+  { id: "enhance_10", chapter: "營地", title: "精益求精", text: "擁有十件強化過的裝備。", goal: (m) => n(m.enhanced ?? 0, 10), reward: { residents: 5, materials: { crystal_shard: 4 } }, after: "enhance_1" },
+  { id: "enhance_max", chapter: "營地", title: "登峰造極", text: "把一件裝備強化到 +5。", goal: (m) => n(m.enhancedMax ?? 0, 1), reward: { residents: 10, materials: { amber: 4, crystal_shard: 6 } }, after: "enhance_10" },
+  { id: "tier_2", chapter: "營地", title: "更好的裝備", text: "做一件第 2 階的裝備（用狼皮、蛇牙這些第 2 階魔獸的材料）。", goal: (m) => n((m.gearTier ?? 0) >= 2 ? 1 : 0, 1), reward: { materials: { wolf_pelt: 4, leather_strap: 3 } }, after: "gear_20" },
+  { id: "tier_3", chapter: "營地", title: "精良裝備", text: "做一件第 3 階的裝備。", goal: (m) => n((m.gearTier ?? 0) >= 3 ? 1 : 0, 1), reward: { residents: 5, materials: { crystal_shard: 3 } }, after: "tier_2" },
+  { id: "tier_4", chapter: "營地", title: "大師之作", text: "做一件第 4 階的裝備。", goal: (m) => n((m.gearTier ?? 0) >= 4 ? 1 : 0, 1), reward: { residents: 8, materials: { amber: 3 } }, after: "tier_3" },
+  { id: "legend_1", chapter: "營地", title: "傳說誕生", text: "做一件傳說裝備（要用等級王、中期魔王或世界王的戰利品）。", goal: (m) => n(m.legendary ?? 0, 1), reward: { residents: 15, materials: { amber: 6, crystal_shard: 10 } }, after: "tier_4" },
+  { id: "lboss_1", chapter: "營地", title: "王者來襲", text: "在營地打倒一隻等級王（種族每 10 級來一隻）。", goal: (m) => n(m.levelBosses ?? 0, 1), reward: { residents: 8, materials: { crystal_shard: 4 } }, after: "raids_100" },
+  { id: "lboss_3", chapter: "營地", title: "弒王者", text: "在營地打倒三隻等級王。", goal: (m) => n(m.levelBosses ?? 0, 3), reward: { residents: 15, materials: { amber: 5 } }, after: "lboss_1" },
+  { id: "visitor_1", chapter: "營地", title: "有朋自遠方來", text: "讓一位來營地門口的訪客住進來。", goal: (m) => n(m.visitorsTaken ?? 0, 1), reward: { materials: { food_honey: 5, ration_bread: 10 } }, after: "pop_60" },
+  { id: "visitor_10", chapter: "營地", title: "好客之家", text: "一共讓十位訪客住進來。", goal: (m) => n(m.visitorsTaken ?? 0, 10), reward: { residents: 5, materials: { crystal_shard: 3 } }, after: "visitor_1" },
+  { id: "special_1", chapter: "營地", title: "奇人異士", text: "家裡住著一位特殊居民（巫醫、勇者、工匠…，種族 8 級起會來訪）。", goal: (m) => n(m.specials ?? 0, 1), reward: { residents: 5, materials: { amber: 2 } }, after: "visitor_1" },
+  { id: "special_6", chapter: "營地", title: "群英會", text: "六種特殊居民都住在家裡。", goal: (m) => n(m.specials ?? 0, 6), reward: { residents: 20, materials: { amber: 10, crystal_shard: 12 } }, after: "special_1" },
 ];
 
 const BY_ID = new Map(QUESTS.map((q) => [q.id, q]));
