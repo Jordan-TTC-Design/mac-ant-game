@@ -97,6 +97,11 @@ export interface FightBoosts {
   hidden?: number;
   /** 劫掠 (talents.ts plunder): the party raids, takes from the store and leaves. */
   plunder?: number;
+  /** Its healers patch up this share more (a 細分地形 such as a hospital, a 溫泉旅館, a sanctuary's region: holdings.ts groundFight). */
+  healing?: number;
+  /** Set out from a cell whose building or 細分地形 gives fights more experience / wears gear less (holdings.ts CellBonus). */
+  xpBoost?: number;
+  wearLess?: number;
 }
 
 /** The foes a party with 黏黏彈 meets: a quarter slower. */
@@ -138,7 +143,7 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
     attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.power ?? 0)),
     range,
     speed: r.speed * (1 + 0.15 * (boosts.carrot ?? 0)),
-    heal: healer ? Math.round(r.might * 5) : 0,
+    heal: healer ? Math.round(r.might * 5 * (1 + (boosts.healing ?? 0))) : 0,
     guard: Math.min(0.6, (r.gearGuard ?? 0) + 0.2 * (boosts.cheese ?? 0) + 0.1 * (boosts.bandage ?? 0)),
     lead: leader ? LEAD_PER_LEADER : 0,
     night: 1,

@@ -158,3 +158,24 @@ describe("monsters raiding held cells (CELL_RAIDS)", () => {
     expect(cellRaidLosses(30, 10, 40, 0, 56, seeded(3)).raids).toBeLessThanOrEqual(CELL_RAIDS.lookback);
   });
 });
+
+describe("what the ground does to a fight (groundFight)", () => {
+  it("follows the 細分地形, the race at home, the night and the region's hubs", async () => {
+    const { groundFight, hubRise } = await import("./holdings.ts");
+    expect(groundFight(null, {})).toEqual({ attack: { power: 0, vigor: 0 }, defend: { power: 0, vigor: 0, healing: 0 }, loot: 0 });
+    expect(groundFight("mountain", {}).defend.vigor).toBeCloseTo(0.1);
+    expect(groundFight("river", { attackerRace: "goblin" }).attack.power).toBeCloseTo(-0.1);
+    expect(groundFight("mountain", { defenderRace: "goblin" }).defend.power).toBeCloseTo(0.1); // (goblins at home on a mountain)
+    expect(groundFight("mountain", { defenderRace: "elf" }).defend.power).toBe(0);
+    expect(groundFight("cemetery", { attackerRace: "undead", night: true }).attack.power).toBeCloseTo(0.15);
+    expect(groundFight("cemetery", { attackerRace: "undead", night: false }).attack.power).toBe(0);
+    expect(groundFight("temple", { attackerRace: "undead", defenderRace: "elf" }).defend.power).toBeCloseTo(0.15 + 0.1); // (against the undead; elves at home)
+    expect(groundFight("hospital", { defenderRace: "elf" }).defend.healing).toBeCloseTo(1);
+    // a sanctuary in the region: healers twice as good, stronger against the undead; the undead's 墓城 the other way round
+    expect(groundFight(null, { attackerRace: "undead", defenderRace: "elf", regionHubs: ["sanctuary"] }).defend).toMatchObject({ healing: 1, power: 0.2 });
+    expect(groundFight(null, { attackerRace: "goblin", defenderRace: "undead", regionHubs: ["sanctuary"] }).defend.power).toBeCloseTo(0.2);
+    expect(groundFight(null, { regionHubs: ["sanctuary"] }).defend.healing).toBe(0); // (a lair's beasts: no hubs)
+    expect(hubRise(["sanctuary", "fortress"])).toBeCloseTo(0.2);
+    expect(hubRise([])).toBe(0);
+  });
+});

@@ -10,7 +10,7 @@ import { MATERIALS } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 import { neighbors } from "./grid.ts";
 import { hashString, type Random } from "./random.ts";
-import { detailBuilding, detailBuildingsFor, hubRule, type DetailBuildingRule, type HubKind, type TerrainDetail } from "./details.ts";
+import { DETAIL_HOME_ATTACK, detailBuilding, detailBuildingsFor, detailEffects, detailHome, hubForRace, hubRule, type DetailBuildingRule, type HubKind, type TerrainDetail } from "./details.ts";
 import { RATIONS } from "./supplies.ts";
 
 export type CellBuildingKind =
@@ -544,4 +544,48 @@ export function cellRaidLosses(raceLevel: number, cellsHeld: number, garrison: n
     left -= Math.max(0, lost);
   }
   return { raids, fallen: garrison - left };
+}
+
+// --- what the ground does to a fight (細分地形 and hubs, WORLD.md §29.2, §29.4) ---------------------------------------------
+
+export interface GroundFight {
+  /** Attack (`power`) and hit points (`vigor`) +shares, for those attacking the cell and those defending it. */
+  attack: { power: number; vigor: number };
+  defend: { power: number; vigor: number; healing: number };
+  /** What beating its defenders gives, +share. */
+  loot: number;
+}
+
+/**
+ * What a cell's 細分地形 and the hubs of its holder's region do to a fight there: a mountain's defenders are sturdier, a river
+ * or a wetland slows attackers, the undead are stronger at night in a cemetery, a temple stands against them; a garrison of a
+ * race at home on its ground hits harder (DETAIL_HOME_ATTACK); a sanctuary (or the undead's 墓城) in the region; healers
+ * there patch up more (hot spring, hospital, a 溫泉旅館 or 野戰醫院 on it: `heal`, and a sanctuary's region).
+ * `defenderRace` is null for a lair's beasts (no race at home anywhere).
+ */
+export function groundFight(
+  detail: TerrainDetail | null | undefined,
+  options: { attackerRace?: string | null; defenderRace?: string | null; night?: boolean; regionHubs?: readonly HubKind[]; heal?: number },
+): GroundFight {
+  const e = detailEffects(detail);
+  const out: GroundFight = { attack: { power: 0 - e.attackAttack, vigor: 0 }, defend: { power: e.defendAttack, vigor: e.defendHp, healing: e.heal + (options.heal ?? 0) }, loot: e.loot };
+  const { attackerRace, defenderRace, night } = options;
+  if (attackerRace === "undead" && night) out.attack.power += e.undeadNight;
+  if (defenderRace === "undead" && night) out.defend.power += e.undeadNight;
+  if (attackerRace === "undead") out.defend.power += e.vsUndead;
+  if (defenderRace === "undead") out.defend.power += e.undeadDefend;
+  if (defenderRace && detailHome(detail, defenderRace)) out.defend.power += DETAIL_HOME_ATTACK;
+  for (const kind of new Set(options.regionHubs ?? [])) {
+    if (!defenderRace) break; // (a lair's beasts have no hubs)
+    const h = hubForRace(kind, defenderRace);
+    if (h.regionHeal) out.defend.healing += h.regionHeal;
+    if (attackerRace === "undead" && h.vsUndead) out.defend.power += h.vsUndead;
+    if (defenderRace === "undead" && h.undeadDefend) out.defend.power += h.undeadDefend;
+  }
+  return out;
+}
+
+/** A sanctuary's (or 墓城's) share of a region's fallen who get up after a fight held there (details.ts HubRule.rise). */
+export function hubRise(regionHubs: readonly HubKind[] | undefined): number {
+  return Math.max(0, ...[...new Set(regionHubs ?? [])].map((k) => hubRule(k)?.rise ?? 0));
 }

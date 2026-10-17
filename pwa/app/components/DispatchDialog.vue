@@ -9,6 +9,8 @@ import {
   boostCost,
   combatPower,
   estimateBattle,
+  groundFight,
+  talentFight,
   lairAt,
   lairFighters,
   planSupplies,
@@ -192,7 +194,14 @@ watch(
 
 /** What the food does (and what it costs) for this party. */
 const plan = computed(() => planSupplies(props.race, levelOf(props.me.xp), party.value.length, supplies, store.value, fromCell.value?.party ?? 0));
-const armed = computed(() => party.value.map((a) => residentFighter(residentAsFighter(props.race, { id: a.r.id, breed: a.r.breed, gear: a.r.gear as never }), "attack", traits.value, plan.value.boosts)));
+/** The ground there against a lair (its 細分地形: holdings.ts groundFight), and the talents, as the server counts them. */
+const ground = computed(() => groundFight(props.target.detail, { attackerRace: props.race, night: nightAt(props.target.cell, new Date()) }));
+const fightBoosts = computed(() => {
+  const tf = talentFight(talentBonus(props.me.talents?.picks), props.target.owner ? "player" : "lair");
+  const g = props.target.lair ? ground.value.attack : { power: 0, vigor: 0 };
+  return { ...plan.value.boosts, power: tf.power + g.power, vigor: tf.vigor + g.vigor };
+});
+const armed = computed(() => party.value.map((a) => residentFighter(residentAsFighter(props.race, { id: a.r.id, breed: a.r.breed, gear: a.r.gear as never }), "attack", traits.value, fightBoosts.value)));
 const ourPower = computed(() => Math.round(combatPower(armed.value)));
 /** What waits there as the rules have it (a lair as it stands now: its wounds are shared by the map). */
 const foes = computed<Fighter[] | null>(() => {
@@ -204,7 +213,8 @@ const foes = computed<Fighter[] | null>(() => {
   if (!t.lair) return null;
   const lair = lairAt(WORLD_SEED, t.cell, t.terrain, t.detail ?? null); // (the same as the server's: its 細分地形 too)
   if (!lair) return null;
-  let list = lairFighters(lair);
+  const d = ground.value.defend;
+  let list = lairFighters(lair).map((f) => ({ ...f, hp: Math.round(f.hp * (1 + d.vigor)), maxHp: Math.round(f.maxHp * (1 + d.vigor)), attack: f.attack * (1 + d.power) }));
   if (t.lairWounds) {
     const share = t.lairWounds.hpShare / Math.max(0.01, t.lairWounds.standing / t.lairWounds.total);
     list = list.slice(0, t.lairWounds.standing).map((f) => ({ ...f, hp: Math.max(1, Math.round(f.maxHp * Math.min(1, share))) }));
