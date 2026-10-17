@@ -11,7 +11,8 @@ final class CampLedger {
         let left: Double
         var pinned: Bool?
         var held: Bool?
-        var item: GearItem { GearItem(id: id, left: left, pinned: pinned == true, held: held == true) }
+        var refined: Bool?
+        var item: GearItem { GearItem(id: id, left: left, pinned: pinned == true, held: held == true, refined: refined == true) }
     }
 
     struct Resident: Codable {
@@ -107,6 +108,8 @@ final class CampLedger {
         let decorEarned: [String]?
         /// 任務 whose reward was taken: some open a 道具's recipe (Items.all `unlock`); older servers leave it out.
         let questsDone: [String]?
+        /// The camp may refine gear into ★ pieces (the 拼裝改造 talent); older servers leave it out.
+        let canRefine: Bool?
         /// Who waits at the gate wanting to move in (shared/src/camp/visitors.ts; Visitors.swift), the level bosses beaten, and
         /// the 營地 talents' bonuses (0.03 is +3%); older servers leave them out.
         struct Visitor: Codable { let id: String; let breed: String; let special: Bool; let arrives: String; let leaves: String; let fee: [String: Int] }
@@ -118,7 +121,7 @@ final class CampLedger {
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, autoGearFar, places, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, canRefine, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -153,6 +156,7 @@ final class CampLedger {
             focus = try? c.decodeIfPresent(FocusInfo.self, forKey: .focus)
             decorEarned = try? c.decodeIfPresent([String].self, forKey: .decorEarned)
             questsDone = try? c.decodeIfPresent([String].self, forKey: .questsDone)
+            canRefine = try? c.decodeIfPresent(Bool.self, forKey: .canRefine)
             visitor = try? c.decodeIfPresent(Visitor.self, forKey: .visitor)
             bossesBeaten = try? c.decodeIfPresent([Int].self, forKey: .bossesBeaten)
             campBonus = try? c.decodeIfPresent(CampBonus.self, forKey: .campBonus)

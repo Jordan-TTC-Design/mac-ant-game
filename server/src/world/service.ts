@@ -9,6 +9,8 @@ import { advance, fightBoosts, gearRule, RACE_RANGE, raceRules, residentAsFighte
 import {
   afterDefeat,
   shieldLapsed,
+  specialBuildingsFor,
+  type TalentEffect,
   BOSS_MIN_RACE_LEVEL,
   cellsAlong,
   hasAbility,
@@ -341,7 +343,9 @@ const ARMOUR: GearSlot[] = ["head", "chest", "legs", "feet", "hands"];
  * back what is left of theirs.
  */
 async function wearDown(tx: Tx, camp: CampRow, rows: ResidentRow[], events: BattleEvent[], prefix: string, seed: string) {
-  const rate = EXPEDITION_WEAR * (1 - Math.min(1, (await talentBonusOf(tx, camp.userId)).wear ?? 0)); // (talents: less)
+  const wt = await talentBonusOf(tx, camp.userId);
+  const rate = EXPEDITION_WEAR * (1 - Math.min(1, wt.wear ?? 0)); // (talents: less)
+  const keepAll = hasAbility(wt, "refine"); // (拼裝改造: a broken piece gives all its materials back)
   const byId = new Map(rows.map((r) => [`${prefix}${r.id}`, r]));
   const wear = new Map<ResidentRow, Partial<Record<GearSlot, number>>>();
   const roll = randomFrom(hashString(`${seed}|wear`));
@@ -370,7 +374,7 @@ async function wearDown(tx: Tx, camp: CampRow, rows: ResidentRow[], events: Batt
       if (item.left > 0) continue;
       delete gear[slot];
       for (const [mat, count] of Object.entries(gearRule(item.id)?.cost ?? {})) {
-        for (let k = 0; k < count; k++) if (salvage() < 0.3) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + 1 };
+        for (let k = 0; k < count; k++) if (keepAll || salvage() < 0.3) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + 1 };
       }
     }
     r.gear = Object.keys(gear).length ? (gear as ResidentRow["gear"]) : null;
@@ -1723,7 +1727,14 @@ export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: st
   if ((await homeCellOf(tx, userId)) === cell) throw new WorldError(409, "camp_cell", "營地那一格蓋場地就好（營地頁）；建築蓋在其他領地上。");
   const rule = cellBuildingRule(kind);
   const terrain = await terrainOf(tx, cell);
-  if (!rule || rule.terrain !== terrain) throw new WorldError(400, "invalid_input", "這種地形不能蓋這個。");
+  if (!rule || (rule.terrain !== terrain && !rule.alsoOn?.includes(terrain))) throw new WorldError(400, "invalid_input", "這種地形不能蓋這個。");
+  if (rule.only) {
+    // (聖樹: an elf's, with the talent, one in a region)
+    if (rule.only.race !== camp.race || !hasAbility(await talentBonusOf(tx, userId), rule.only.ability as TalentEffect)) throw new WorldError(403, "not_allowed", `${rule.name}要先點天賦才能蓋。`);
+    const region = connectedCells(cell, new Set(await heldCells(tx, userId))).filter((c) => c !== cell);
+    const others = region.length ? await tx.select({ building: worldCells.building }).from(worldCells).where(inArray(worldCells.cell, region)) : [];
+    if (others.some((o) => o.building?.kind === rule.kind)) throw new WorldError(409, "exists", `這一區已經有${rule.name}了（一區一棵）。`);
+  }
   const b = row.building;
   if (b && b.kind !== kind) throw new WorldError(409, "exists", `這一格已經有${cellBuildingName(b.kind, camp.race)}了；要換先拆掉。`);
   if (b && workingLevel(b, now.getTime()) < b.level) throw new WorldError(409, "busy", "還在蓋，蓋好才能再升級。");
@@ -2357,7 +2368,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
           busyUntil: b.busyUntil && Date.parse(b.busyUntil) > now.getTime() ? b.busyUntil : null,
         }
       : null,
-    canBuild: isHome ? [] : buildingsFor(terrain).map((r) => ({ kind: r.kind, name: cellBuildingName(r.kind, camp.race), blurb: cellBuildingBlurb(r.kind, camp.race) })),
+    canBuild: isHome ? [] : [...buildingsFor(terrain), ...specialBuildingsFor(terrain, camp.race, await talentBonusOf(tx, userId))].map((r) => ({ kind: r.kind, name: cellBuildingName(r.kind, camp.race), blurb: cellBuildingBlurb(r.kind, camp.race) })),
     nextCost: isHome || top ? null : CELL_BUILDING_COSTS[b?.level ?? 0]!,
     nextHours: isHome || top ? null : CELL_BUILDING_HOURS[b?.level ?? 0]!,
     bonus: cellBonus(camp.race, b, now.getTime(), around),

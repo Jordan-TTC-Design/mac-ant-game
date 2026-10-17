@@ -77,14 +77,23 @@ struct GearItem {
     var pinned = false
     /// In the stock: taken off by hand (the handing out leaves it there).
     var held = false
+    /// ★ 精良: refined in the workshop (the 拼裝改造 talent; shared/src/camp/gear.ts REFINE_BONUS).
+    var refined = false
+
+    /// What a ★ refined piece's numbers are multiplied by (the same as the server's).
+    static let refineBonus = 1.3
 
     init(_ gear: Gear) { id = gear.id; left = gear.durability }
-    init(id: String, left: Double?, pinned: Bool = false, held: Bool = false) {
+    init(id: String, left: Double?, pinned: Bool = false, held: Bool = false, refined: Bool = false) {
         self.id = id
         self.left = left ?? Gears.by(id: id)?.durability ?? 1
         self.pinned = pinned
         self.held = held
+        self.refined = refined
     }
+
+    /// Its name, with ★ when refined.
+    var name: String { (refined ? "★ " : "") + (gear?.name ?? id) }
 
     var gear: Gear? { Gears.by(id: id) }
     /// 1 = new, 0 = about to break.
@@ -92,7 +101,7 @@ struct GearItem {
     /// Worn out: it works at half strength until it breaks.
     var isWorn: Bool { fraction < 0.25 }
     /// What it is worth as gear now (a worn piece counts half).
-    var power: Double { (gear?.power ?? 0) * (isWorn ? 0.5 : 1) }
+    var power: Double { (gear?.power ?? 0) * (isWorn ? 0.5 : 1) * (refined ? GearItem.refineBonus : 1) }
 }
 
 private func rgb(_ r: Int, _ g: Int, _ b: Int) -> NSColor { NSColor(calibratedRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1) }

@@ -2376,6 +2376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
         colony.applyBooksAway(ledger.awayGearResidents(), far: ledger.view?.autoGearFar ?? false)
         colony.booksQuestsDone = Set(ledger.view?.questsDone ?? [])
+        colony.booksCanRefine = ledger.view?.canRefine ?? false
         colony.booksMerchant = ledger.view?.merchant
         colony.booksFocus = ledger.view?.focus
         colony.decorEarned = Set(ledger.view?.decorEarned ?? [])
@@ -2638,6 +2639,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch command {
         case .craft(let gear, let to, let count): q = .init(kind: "craft"); q.gear = gear; q.to = to; q.count = count
         case .repairAll: q = .init(kind: "repair-all")
+        case .refine(let resident, let slot, let stock): q = .init(kind: "refine"); q.resident = resident; q.slot = slot; q.stock = stock
         case .equip(let resident, let stock, let gear): q = .init(kind: "equip"); q.resident = resident; q.stock = stock; q.gear = gear
         case .unequip(let resident, let slot): q = .init(kind: "unequip"); q.resident = resident; q.slot = slot
         case .gearHold(let stock, let gear, let held): q = .init(kind: "gear-hold"); q.stock = stock; q.gear = gear; q.held = held
@@ -2653,7 +2655,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Commands the workshop and the roster send (their answers show in the workshop).
-    private static let gearCommands: Set<String> = ["craft", "repair", "repair-all", "equip", "unequip", "gear-hold", "auto-gear", "auto-gear-far"]
+    private static let gearCommands: Set<String> = ["craft", "repair", "repair-all", "refine", "equip", "unequip", "gear-hold", "auto-gear", "auto-gear-far"]
 
     private func flushCommands() async {
         await ledger.sendPending { [weak self] command, result in

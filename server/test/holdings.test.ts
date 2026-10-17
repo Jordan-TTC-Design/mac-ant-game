@@ -695,3 +695,55 @@ describe("buildings' level 4", () => {
     expect((await detail(a, cell)).body.building!.level).toBe(4);
   });
 });
+
+describe("聖樹 (精靈森林's top talent)", () => {
+  it("an elf with the talent plants one on park or forest: the cell holds harder, its region more so and yields more", async () => {
+    const e = await account("e@example.com", "elf");
+    t.advance(40 * HOUR);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, e);
+    await database.sql`update world_players set xp = 18050 where user_id = (select id from users where email = 'e@example.com')`;
+    const grove = { "e_grove.bloom": 3, "e_grove.bark": 2, "e_grove.cradle": 3, "e_grove.canopy": 3, "e_grove.harvest": 2, "e_grove.roots": 3, "e_grove.sacred": 1 };
+    expect((await t.call("POST", "/world/talents", { picks: grove }, e)).body.message ?? "").toBe("");
+    const green = (c: CellView) => c.terrain === "park" || c.terrain === "forest";
+    const cell = await settle(e, 15, [], green);
+    await give("e@example.com", { scrap_wood: 500, log: 500 });
+    const before = (await detail(e, cell)).body;
+    expect(before.canBuild.map((k) => k.kind)).toContain("sacred");
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: "sacred" }, e)).status).toBe(200);
+    t.advance(2 * HOUR); // (built)
+    const after = (await detail(e, cell)).body;
+    expect(after.building!.kind).toBe("sacred");
+    expect(after.bonus.fort).toBeCloseTo(before.bonus.fort + 0.2 + 0.1);
+    expect(after.bonus.yieldBoost).toBeCloseTo(before.bonus.yieldBoost + 0.15);
+  });
+
+  it("is an elf's only, with the talent", async () => {
+    const a = await ready();
+    const cell = await settle(a, 15, [], (c) => c.terrain === "park" || c.terrain === "forest");
+    expect((await detail(a, cell)).body.canBuild.map((k) => k.kind)).not.toContain("sacred");
+    await give("a@example.com", { scrap_wood: 500, log: 500 });
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: "sacred" }, a)).status).toBe(403);
+  });
+});
+
+describe("拼裝改造 (哥布林工匠's top talent)", () => {
+  it("refines a piece into a ★ one for all it was made from; it stays ★ wherever it goes", async () => {
+    const a = await ready();
+    const [r] = await database.sql`select id from camp_residents where place = 'home' and user_id = (select id from users where email = 'a@example.com') limit 1`;
+    await database.sql`update camp_residents set gear = '{"weapon": {"id": "bone_knife", "left": 50}}'::jsonb where id = ${r!.id} and user_id = (select id from users where email = 'a@example.com')`;
+    await give("a@example.com", { rat_fang: 10, rat_tail: 5 });
+    const cmd = (c: Record<string, unknown>) => t.call("POST", "/camp/commands", c, a);
+    expect((await cmd({ kind: "refine", resident: r!.id, slot: "weapon" })).body.error).toBe("not_allowed");
+    await database.sql`update world_players set talents = '{"g_tinker.refine": 1}'::jsonb`;
+    expect((await camp(a)).canRefine).toBe(true);
+    let res = await cmd({ kind: "refine", resident: r!.id, slot: "weapon" });
+    expect(res.status).toBe(200);
+    let c = res.body.camp as CampView;
+    expect(c.residents.find((x) => x.id === r!.id)!.gear!.weapon).toMatchObject({ id: "bone_knife", left: 120, refined: true });
+    expect(c.materials).toMatchObject({ rat_fang: 6, rat_tail: 4 }); // (a bone knife: 4 fangs, 1 tail)
+    expect((await cmd({ kind: "refine", resident: r!.id, slot: "weapon" })).body.error).toBe("not_allowed"); // (once)
+    res = await cmd({ kind: "unequip", resident: r!.id, slot: "weapon" });
+    c = res.body.camp as CampView;
+    expect(c.armory.find((x) => x.id === "bone_knife")).toMatchObject({ refined: true, held: true });
+  });
+});

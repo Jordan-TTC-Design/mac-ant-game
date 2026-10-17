@@ -1590,6 +1590,17 @@ final class Colony {
 
     /// 任務 done as the books have them (some open a 道具's recipe).
     var booksQuestsDone: Set<String> = []
+    /// The books say the camp may refine gear (the 拼裝改造 talent): only signed in.
+    var booksCanRefine = false
+
+    /// ★ Refines a piece (signed in, with the talent): for all it was made from. Returns whether it was asked.
+    func refine(antID: Int?, slot: GearSlot?, stock: Int?) -> Bool {
+        guard followsBooks, booksCanRefine else { return false }
+        let item = stock.flatMap { armory.indices.contains($0) ? armory[$0] : nil } ?? antID.flatMap { id in slot.flatMap { gearHolder(id)?.item(in: $0) } }
+        guard let item, !item.refined, let gear = item.gear, canAfford(gear) else { return false }
+        onBookCommand?(.refine(resident: antID, slot: slot?.rawValue, stock: stock))
+        return true
+    }
 
     func isOpen(_ item: ItemRecipe) -> Bool { item.unlock.map { booksQuestsDone.contains($0) } ?? true }
 
@@ -2413,6 +2424,7 @@ struct BookResident {
 enum BookCommand {
     case craft(String, to: Int?, count: Int?)
     case repairAll
+    case refine(resident: Int?, slot: String?, stock: Int?)
     case equip(resident: Int, stock: Int, gear: String)
     case unequip(resident: Int, slot: String)
     case gearHold(stock: Int, gear: String, held: Bool)
@@ -2495,7 +2507,7 @@ extension Colony {
             for slot in GearSlot.allCases {
                 let want = r.gear[slot.rawValue]
                 let now = ants[i].item(in: slot)
-                if want?.id == now?.id, want?.left == now?.left, want?.pinned == now?.pinned { continue }
+                if want?.id == now?.id, want?.left == now?.left, want?.pinned == now?.pinned, want?.refined == now?.refined { continue }
                 _ = ants[i].takeOff(slot)
                 if let want, want.gear != nil { _ = ants[i].equip(want) }
                 changed = true

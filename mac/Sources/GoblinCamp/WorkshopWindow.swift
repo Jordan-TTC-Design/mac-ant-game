@@ -394,7 +394,8 @@ final class WorkshopWindow: NSObject, MainPane {
                 y += 32
                 guard isOpen else { continue }
                 for (index, item) in mineStock {
-                    label("倉庫 \(Int(item.fraction * 100))%" + (item.held ? "　保留" : ""), color: item.held ? .systemOrange : .labelColor, in: holder, x: margin + 30, y: y + 6, width: inner - 250)
+                    label((item.refined ? "★ " : "") + "倉庫 \(Int(item.fraction * 100))%" + (item.held ? "　保留" : ""), color: item.held ? .systemOrange : .labelColor, in: holder, x: margin + 30, y: y + 6, width: inner - 350)
+                    refineButton(item, antID: nil, slot: nil, stock: index, in: holder, x: margin + inner - 314, y: y)
                     _ = button("給…", in: holder, x: margin + inner - 212, y: y, width: 96) { [weak self] sender in
                         guard let self, let gear = item.gear else { return }
                         let menu = GearMenus.residents(colony: self.colony, slot: gear.slot, first: nil) { ant in
@@ -412,7 +413,8 @@ final class WorkshopWindow: NSObject, MainPane {
                 for (ant, item) in mineWorn {
                     let breed = breeds[min(ant.breedIndex, breeds.count - 1)].name
                     let place = colony.placeLabel(of: ant.id).map { "・\($0)" } ?? ""
-                    label("\(item.pinned ? "📌 " : "")\(Int(item.fraction * 100))% — \(ant.name)（\(breed)\(place)）", in: holder, x: margin + 30, y: y + 6, width: inner - 150)
+                    label("\(item.pinned ? "📌 " : "")\(item.refined ? "★ " : "")\(Int(item.fraction * 100))% — \(ant.name)（\(breed)\(place)）", in: holder, x: margin + 30, y: y + 6, width: inner - 250)
+                    refineButton(item, antID: ant.id, slot: slot, stock: nil, in: holder, x: margin + inner - 212, y: y)
                     _ = button("收回倉庫", in: holder, x: margin + inner - 110, y: y, width: 110) { [weak self] _ in
                         self?.colony.unequip(antID: ant.id, slot: slot)
                         self?.lastMessage = "\(name)收回倉庫了（保留）。"
@@ -426,6 +428,17 @@ final class WorkshopWindow: NSObject, MainPane {
         }
         if !any { y += label("還沒有任何裝備，去「製作」做一件吧。", color: .secondaryLabelColor, in: holder, y: y).frame.height }
         return y
+    }
+
+    /// ★ 改造 (signed in, with the 拼裝改造 talent): for all the piece was made from; nothing for a refined one.
+    private func refineButton(_ item: GearItem, antID: Int?, slot: GearSlot?, stock: Int?, in holder: NSView, x: CGFloat, y: CGFloat) {
+        guard colony.booksCanRefine, !item.refined, let gear = item.gear else { return }
+        let b = button("★ 改造", enabled: colony.canAfford(gear), in: holder, x: x, y: y, width: 96) { [weak self] _ in
+            guard let self else { return }
+            self.lastMessage = self.colony.refine(antID: antID, slot: slot, stock: stock) ? "改造\(gear.name)中…" : "改造不了\(gear.name)。"
+            self.refresh()
+        }
+        b.toolTip = "改造成 ★ 精良（強 30%），要花做這件的全部材料"
     }
 
     // MARK: 修理

@@ -24,7 +24,8 @@ export type CellBuildingKind =
   | "field"
   | "barracks"
   | "inn"
-  | "tollgate";
+  | "tollgate"
+  | "sacred";
 
 /** A building as `world_cells.building` keeps it. `level` is what it is being raised to while `busyUntil` (ISO) is ahead. */
 export interface CellBuilding {
@@ -38,6 +39,10 @@ type ByLevel = readonly [number, number, number, number];
 export interface CellBuildingRule {
   kind: CellBuildingKind;
   terrain: Terrain;
+  /** Grounds it may stand on besides `terrain`. */
+  alsoOn?: readonly Terrain[];
+  /** Only for this race, with this talent (talents.ts TALENT_ABILITIES): not among the two every ground offers. */
+  only?: { race: string; ability: string };
   name: string;
   /** One line for the phone: what it does. */
   blurb: string;
@@ -87,6 +92,16 @@ export const CELL_BUILDINGS: readonly CellBuildingRule[] = [
   { kind: "barracks", terrain: "open", name: "營舍", blurb: "從這一格出發的隊伍可以多帶幾隻", party: lv(2, 3, 4) },
   { kind: "inn", terrain: "road", name: "驛站", blurb: "從這一格出發的隊伍走得比較快", travel: lv(0.85, 0.75, 0.65) },
   { kind: "tollgate", terrain: "road", name: "關卡", blurb: "每次產出多給銅幣和肉乾", makes: { stolen_coin: lv(1, 1, 2), ration_jerky: lv(1, 1, 2) } },
+  {
+    kind: "sacred",
+    terrain: "forest",
+    alsoOn: ["park"],
+    only: { race: "elf", ability: "sacredTree" },
+    name: "聖樹",
+    blurb: "同一區的領地產出 +15%、守軍血量 +10%；這一格守得更牢、住得更多（一區一棵）",
+    fort: lv(0.2, 0.3, 0.4),
+    room: lv(5, 10, 15),
+  },
 ];
 const RULES = new Map(CELL_BUILDINGS.map((r) => [r.kind, r]));
 
@@ -96,8 +111,17 @@ export function cellBuildingRule(kind: string): CellBuildingRule | undefined {
 
 /** The two a cell of this ground may have. */
 export function buildingsFor(terrain: Terrain): CellBuildingRule[] {
-  return CELL_BUILDINGS.filter((r) => r.terrain === terrain);
+  return CELL_BUILDINGS.filter((r) => r.terrain === terrain && !r.only);
 }
+
+/** The buildings only some may put on this ground (聖樹: elves with the talent, on park or forest). */
+export function specialBuildingsFor(terrain: Terrain, race: string, abilities: Partial<Record<string, number>>): CellBuildingRule[] {
+  return CELL_BUILDINGS.filter((r) => r.only && r.only.race === race && (abilities[r.only.ability] ?? 0) > 0 && (r.terrain === terrain || r.alsoOn?.includes(terrain)));
+}
+
+/** 聖樹: every held cell of its region yields this share more, and its defenders have this share more hit points. */
+export const SACRED_YIELD = 0.15;
+export const SACRED_FORT = 0.1;
 
 /** The building's name and what it does for this race. */
 export function cellBuildingName(kind: string, race: string): string {
@@ -388,6 +412,11 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
   if (around.town) {
     out.travel *= TOWN_TRAVEL;
     out.fort += TOWN_FORT;
+  }
+  // a 聖樹 standing in its region
+  if (around.regionKinds?.includes("sacred")) {
+    out.yieldBoost += SACRED_YIELD;
+    out.fort += SACRED_FORT;
   }
   const level = workingLevel(building, now);
   const rule = building ? RULES.get(building.kind) : undefined;

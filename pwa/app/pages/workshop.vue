@@ -220,7 +220,7 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
       </section>
 
       <section v-if="tab === 'have'" class="panel">
-        <p class="muted small">📌 是你手動給的（自動分配不會動）；「保留」的留在倉庫，不會自動發出去。</p>
+        <p class="muted small">📌 是你手動給的（自動分配不會動）；「保留」的留在倉庫，不會自動發出去。<template v-if="view.canRefine">★ 是改造過的精良裝備（強 30%）；「★ 改造」要花做這件的全部材料。</template></p>
         <template v-for="slot in GEAR_SLOTS" :key="slot">
           <template v-if="pieces[slot]?.length">
             <h3>{{ SLOT_LABELS[slot] }} <small>{{ pieces[slot]!.length }} 件</small></h3>
@@ -234,10 +234,12 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
             <article v-for="p in list" :key="`${p.who?.id ?? 'store'}-${p.stock ?? slot}-${p.item.id}`" class="piece sub">
               <GearIcon :id="p.item.id" />
               <div class="grow">
-                <b>{{ gearName(p.item.id) }}</b> <small>{{ durabilityText(p.item) }}</small>
+                <b>{{ p.item.refined ? "★ " : "" }}{{ gearName(p.item.id) }}</b> <small>{{ durabilityText(p.item) }}</small>
                 <small v-if="p.item.pinned"> 📌</small>
                 <div class="muted small">{{ p.who ? `${nameOf(p.who)}（${breedNames[p.who.breed] ?? p.who.breed}${whereText(p.who)}）` : p.item.held ? "倉庫・保留" : "倉庫" }}</div>
               </div>
+              <button v-if="view.canRefine && !p.item.refined" class="btn" :disabled="busy || !affordable(gearRule(p.item.id)!.cost)" :title="`改造成 ★ 精良（${costText(gearRule(p.item.id)!.cost)}）`"
+                @click="run(p.who ? { kind: 'refine', resident: p.who.id, slot } : { kind: 'refine', stock: p.stock })">★ 改造</button>
               <template v-if="p.who">
                 <button class="btn" :disabled="busy" @click="run({ kind: 'unequip', resident: p.who.id, slot: slot })">收回倉庫</button>
               </template>

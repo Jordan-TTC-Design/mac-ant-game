@@ -55,6 +55,7 @@ import {
   type CampCommand,
   type GearItem,
   type Wearer,
+  plainPiece,
 } from "@goblincamp/shared/camp";
 import { itemRule, materialName, MATERIALS } from "@goblincamp/shared/world";
 import { donationPoints, guildLevelFor } from "@goblincamp/shared";
@@ -209,7 +210,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       const name = gearRule(store[at]!.id)?.name ?? store[at]!.id;
       if (command.held) store[at] = { ...store[at]!, held: true };
       else {
-        store[at] = { id: store[at]!.id, left: store[at]!.left };
+        store[at] = plainPiece(store[at]!);
         await loadWearers();
         redistribute(camp.race, pool, store, camp.autoGear);
       }
@@ -246,6 +247,22 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       spend(materials, price);
       item.left = rule.durability;
       message = `修好了${rule.name}。`;
+      break;
+    }
+    case "refine": {
+      // ★ 拼裝改造: for all it was made from, a piece becomes a refined one (and is as good as new)
+      if (!((await talentBonusOf(tx, camp.userId)).refine ?? 0)) return { ok: false, code: "not_allowed", message: "要先點天賦「拼裝改造」。" };
+      let item: GearItem | undefined;
+      if (command.stock !== undefined) item = store[command.stock];
+      else if (command.resident !== undefined && command.slot) item = (await loadWearers()).find((w) => w.id === command.resident)?.gear[command.slot];
+      const rule = item && gearRule(item.id);
+      if (!item || !rule) return { ok: false, code: "not_found", message: "找不到要改造的東西。" };
+      if (item.refined) return { ok: false, code: "not_allowed", message: `這件${rule.name}已經是 ★ 精良的了。` };
+      if (!canAfford(materials, rule.cost)) return { ok: false, code: "not_enough", message: `素材不夠：改造${rule.name}要 ${cost(rule.cost)}。` };
+      spend(materials, rule.cost);
+      item.refined = true;
+      item.left = rule.durability;
+      message = `${rule.name}改造成 ★ 精良的了。`;
       break;
     }
     case "repair-all": {
@@ -342,7 +359,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       spend(materials, visitor.fee);
       if (leaving) {
         await tx.update(campResidents).set({ diedAt: now, gear: null }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, leaving.id)));
-        changes.armory = [...camp.armory, ...Object.values(leaving.gear ?? {}).map((g) => ({ id: g.id, left: g.left }))];
+        changes.armory = [...camp.armory, ...Object.values(leaving.gear ?? {}).map(plainPiece)];
       }
       const special = specialResident(visitor.breed);
       const lifespan = special ? SPECIAL_LIFESPAN * (rules.breeds.find((b) => b.id === "common")?.lifespan ?? 1) : (rules.breeds.find((b) => b.id === visitor.breed)?.lifespan ?? 1);
@@ -369,7 +386,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
         .where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, command.resident), eq(campResidents.place, "home"), isNull(campResidents.diedAt)));
       if (!leaving) return { ok: false, code: "not_found", message: "營地裡沒有這位居民。" };
       await tx.update(campResidents).set({ diedAt: now, gear: null }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, leaving.id)));
-      changes.armory = [...camp.armory, ...Object.values(leaving.gear ?? {}).map((g) => ({ id: g.id, left: g.left }))];
+      changes.armory = [...camp.armory, ...Object.values(leaving.gear ?? {}).map(plainPiece)];
       extra = { dismissed: leaving.id, breed: leaving.breed };
       message = `${breedName(camp.race, leaving.breed)}離開營地了，裝備收回倉庫。`;
       break;

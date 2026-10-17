@@ -76,6 +76,8 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
   /** Mends every piece under three quarters (REPAIR_BELOW) the camp can afford, the most worn first. */
   z.object({ requestId, kind: z.literal("repair-all") }),
+  /** ★ Refines a piece (the 拼裝改造 talent): a resident's (`resident` + `slot`) or the store's (`stock`), for all it was made from. */
+  z.object({ requestId, kind: z.literal("refine"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
   /** Puts a food (or, for the undead, a soul) down. */
   z.object({ requestId, kind: z.literal("food"), food: z.enum([...FOODS, ...SOULS]) }),
   z.object({ requestId, kind: z.literal("princess-name"), name: z.string().trim().min(1).max(8) }),
@@ -183,6 +185,8 @@ export interface CampView {
   /** Who waits at the gate wanting to move in (visitors.ts; null: nobody), and the level bosses beaten (raids.ts). Older servers leave them out. */
   visitor?: import("./visitors.ts").CampVisitor | null;
   bossesBeaten?: number[];
+  /** The camp may refine gear into ★ pieces (the 拼裝改造 talent, talents.ts refine). Older servers leave it out. */
+  canRefine?: boolean;
   /** The 營地 talents' bonuses (shared/src/world/talents.ts: 0.03 is +3%; trade is a count). Older servers leave it out. */
   campBonus?: { yield: number; births: number; guard: number; ranch: number; build: number; life: number; host: number; trade: number; heart: number };
   /** The ranch's animals (ranch.ts). Older servers leave it out. */

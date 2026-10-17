@@ -146,13 +146,21 @@ export interface GearItem {
   pinned?: boolean;
   /** In the store: taken off by hand (the handing out leaves it be). */
   held?: boolean;
+  /** ★ 精良: refined in the workshop (the 拼裝改造 talent): its numbers ×REFINE_BONUS. */
+  refined?: boolean;
 }
+
+/** What a ★ refined piece's numbers are multiplied by (2026-10-17, talents.ts refine). */
+export const REFINE_BONUS = 1.3;
+
+/** A piece as it moves from one place to another: which, its wear, and whether it is refined (not pinned or held). */
+export const plainPiece = (piece: GearItem): GearItem => ({ id: piece.id, left: piece.left, ...(piece.refined ? { refined: true } : {}) });
 
 /** One number to tell which of two pieces for the same slot is better (a worn-out one, under a quarter, counts half). */
 export function gearPower(item: GearItem | undefined): number {
   const rule = item && gearRule(item.id);
   if (!rule || !item) return 0;
-  const power = (rule.might ?? 0) + (rule.health ?? 0) + (rule.block ?? 0) * 5 + (rule.speed ?? 0) * 6 + (rule.reach ?? 0) / 40;
+  const power = ((rule.might ?? 0) + (rule.health ?? 0) + (rule.block ?? 0) * 5 + (rule.speed ?? 0) * 6 + (rule.reach ?? 0) / 40) * (item.refined ? REFINE_BONUS : 1);
   return item.left / rule.durability < 0.25 ? power / 2 : power;
 }
 
@@ -215,10 +223,10 @@ export function neediest(race: string, wearers: readonly Wearer[], item: GearIte
  */
 export function give(wearer: Wearer, item: GearItem, store: GearItem[], byHand = false): void {
   const rule = gearRule(item.id)!;
-  const back = (piece: GearItem) => store.push(byHand ? { id: piece.id, left: piece.left, held: true } : { id: piece.id, left: piece.left });
+  const back = (piece: GearItem) => store.push(byHand ? { ...plainPiece(piece), held: true } : plainPiece(piece));
   const old = wearer.gear[rule.slot];
   if (old) back(old);
-  wearer.gear[rule.slot] = byHand ? { id: item.id, left: item.left, pinned: true } : { id: item.id, left: item.left };
+  wearer.gear[rule.slot] = byHand ? { ...plainPiece(item), pinned: true } : plainPiece(item);
   if (rule.twoHanded && wearer.gear.shield) {
     back(wearer.gear.shield);
     delete wearer.gear.shield;
@@ -230,7 +238,7 @@ export function takeOff(wearer: Wearer, slot: GearSlot, store: GearItem[]): Gear
   const piece = wearer.gear[slot];
   if (!piece) return null;
   delete wearer.gear[slot];
-  const held = { id: piece.id, left: piece.left, held: true };
+  const held = { ...plainPiece(piece), held: true };
   store.push(held);
   return held;
 }

@@ -44,6 +44,7 @@ import { focusView, decorEarned,
   type RaidReport,
   type Resident,
   decorKind,
+  plainPiece,
 } from "@goblincamp/shared/camp";
 import { hashString, raceLevel, randomFrom, seeded } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
@@ -132,7 +133,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
       if (r.diedAt === null && !wearers.has(r.id)) wearers.set(r.id, { id: r.id, breed: r.breed, gear: {} });
       const w = wearers.get(r.id);
       if (r.diedAt !== null && w) {
-        store.push(...(Object.values(w.gear) as GearItem[]).map((g) => ({ id: g.id, left: g.left }))); // (to be handed out again)
+        store.push(...(Object.values(w.gear) as GearItem[]).map(plainPiece)); // (to be handed out again)
         wearers.delete(r.id);
       }
     }
@@ -189,7 +190,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
           broken.push({ resident: w.id, gear: item.id });
           const roll = randomFrom(hashString(`${camp.seed}|broken|${nextRaid}|${w.id}|${slot}`));
           for (const [mat, count] of Object.entries(gearRule(item.id)?.cost ?? {})) {
-            for (let k = 0; k < count; k++) if (roll() < 0.3) materials[mat] = (materials[mat] ?? 0) + 1;
+            for (let k = 0; k < count; k++) if ((bonus.refine ?? 0) > 0 || roll() < 0.3) materials[mat] = (materials[mat] ?? 0) + 1; // (拼裝改造: all of it)
           }
         }
       }
@@ -329,6 +330,7 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       return v && !camp.visitors[v.id] ? v : null;
     })(),
     bossesBeaten: camp.bossesBeaten,
+    canRefine: ((await talentBonusOf(tx, camp.userId)).refine ?? 0) > 0,
     campBonus: await (async () => {
       const b = await talentBonusOf(tx, camp.userId);
       return { yield: talentEffect(b, "campYield"), births: talentEffect(b, "campBirths"), guard: talentEffect(b, "campGuard"), ranch: talentEffect(b, "campRanch"), build: talentEffect(b, "campBuild"), life: talentEffect(b, "campLife"), host: talentEffect(b, "campHost"), trade: talentEffect(b, "campTrade"), heart: talentEffect(b, "campHeart") };

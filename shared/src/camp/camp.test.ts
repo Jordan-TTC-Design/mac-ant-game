@@ -130,3 +130,13 @@ describe("fixtures.json (what the Mac's Swift copy must match)", () => {
     expect(saved.seed).toBe(FIXTURE_SEED);
   });
 });
+
+describe("★ refined gear (拼裝改造)", () => {
+  it("is worth REFINE_BONUS more, and keeps its ★ as it moves", async () => {
+    const { gearPower, plainPiece, REFINE_BONUS } = await import("./gear.ts");
+    const plain = gearPower({ id: "bone_knife", left: 120 });
+    expect(gearPower({ id: "bone_knife", left: 120, refined: true })).toBeCloseTo(plain * REFINE_BONUS);
+    expect(plainPiece({ id: "bone_knife", left: 60, refined: true, pinned: true, held: true })).toEqual({ id: "bone_knife", left: 60, refined: true });
+    expect(plainPiece({ id: "bone_knife", left: 60 })).toEqual({ id: "bone_knife", left: 60 });
+  });
+});
