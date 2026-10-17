@@ -309,10 +309,12 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     );
   }
   // everyone who died in this stretch, of age or in a raid (a resident born and dead within it is inserted above first)
-  const byTime = new Map<number, number[]>();
-  for (const r of population.residents) if (r.diedAt !== null) byTime.set(r.diedAt, [...(byTime.get(r.diedAt) ?? []), r.id]);
-  for (const [at, ids] of byTime) {
-    await tx.update(campResidents).set({ diedAt: new Date(at), gear: null }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, ids)));
+  // (one statement for all of them, each with its own time: a camp away for a day has hundreds)
+  const dead = population.residents.filter((r) => r.diedAt !== null);
+  for (let i = 0; i < dead.length; i += 500) {
+    const part = dead.slice(i, i + 500);
+    const rows = sql.join(part.map((r) => sql`(${r.id}::int, ${new Date(r.diedAt!).toISOString()}::timestamptz)`), sql`, `);
+    await tx.execute(sql`update camp_residents set died_at = d.at, gear = null from (values ${rows}) as d(id, at) where camp_residents.user_id = ${camp.userId} and camp_residents.id = d.id`);
   }
   // what the living wear now, where it changed (at home, and away)
   for (const w of [...wearers.values(), ...((away ?? []) as Wearer[])]) {

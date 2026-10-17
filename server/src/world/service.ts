@@ -339,6 +339,23 @@ const traitsOf = (race: string) => ({ id: race, ranged: RACE_RANGE[race] ?? 0 })
 const hpOf = (race: string, r: ResidentRow) => residentFighter(fighterOf(race, r), "attack", traitsOf(race)).maxHp;
 
 /** Residents who died away from home: their gear goes back to the camp's store. */
+/** Those living away from home whose time is up: dead when their time was, all in one go (their gear back to the store). */
+async function buryAged(tx: Tx, camp: CampRow, now: Date): Promise<boolean> {
+  const old = await tx
+    .select({ id: campResidents.id, gear: campResidents.gear })
+    .from(campResidents)
+    .where(and(eq(campResidents.userId, camp.userId), ne(campResidents.place, "home"), isNull(campResidents.diedAt), lte(campResidents.diesAt, now)));
+  if (!old.length) return false;
+  const store = [...camp.armory];
+  for (const r of old) for (const item of Object.values(r.gear ?? {})) if (item) store.push(item);
+  await tx.update(campResidents).set({ diedAt: sql`${campResidents.diesAt}`, gear: null }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, old.map((r) => r.id))));
+  if (store.length !== camp.armory.length) {
+    await tx.update(camps).set({ armory: store }).where(eq(camps.userId, camp.userId));
+    camp.armory = store;
+  }
+  return true;
+}
+
 async function bury(tx: Tx, camp: CampRow, rows: ResidentRow[], at: Date) {
   if (rows.length === 0) return;
   const store = [...camp.armory];
@@ -618,12 +635,15 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     changed = true;
   }
   // of age, away from home (the nests below work their own cells out with the birth rules)
-  const old = await tx
-    .select()
-    .from(campResidents)
-    .where(and(eq(campResidents.userId, camp.userId), ne(campResidents.place, "home"), isNull(campResidents.diedAt), lte(campResidents.diesAt, now)));
-  for (const r of old) await bury(tx, camp, [r], r.diesAt!);
-  if (old.length) changed = true;
+  if (await buryAged(tx, camp, now)) changed = true;
+  // everybody living away from home, by place, looked at once (2026-10-17: one look instead of several for every cell);
+  // kept up to date below as residents are born, move in and fall
+  const away = new Map<string, ResidentRow[]>();
+  for (const r of await tx.select().from(campResidents).where(and(eq(campResidents.userId, camp.userId), ne(campResidents.place, "home"), isNull(campResidents.diedAt))).orderBy(campResidents.id)) {
+    away.set(r.place, [...(away.get(r.place) ?? []), r]);
+  }
+  const livingAt = (place: string) => away.get(place) ?? [];
+  let atHome: number | null = null;
 
   const held = await tx.select().from(worldCells).where(eq(worldCells.owner, camp.userId)).orderBy(worldCells.heldSince, worldCells.cell).for("update");
   const yields: Record<string, number> = {};
@@ -654,14 +674,18 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     // a lair beaten here comes back when its time is up and tries to take its ground back
     const detail = details.get(cell.cell) ?? null;
     const back = await lairReturns(tx, camp, cell, now, home?.cell ?? null, terrain, around(cell.cell), detail);
-    if (back.fought) changed = true;
+    if (back.fought) {
+      changed = true;
+      // (some fell, or got up: look again at those of this cell)
+      for (const place of [cellPlace(cell.cell), campingPlace(cell.cell)]) away.set(place, await aliveAt(tx, camp.userId, place));
+    }
     if (back.lost) continue;
     landmarkXp += bonus.xp;
     const room = cellCapacity(camp.race, cell.town) + bonus.room + (tb.room ?? 0);
     // (the camp's own cell raises no one of its own: the camp standing there does, at home)
     const readyAt = cell.nestStartedAt && !isHome ? new Date(cell.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
     if (readyAt && readyAt <= now) {
-      const rows = await aliveAt(tx, camp.userId, cellPlace(cell.cell));
+      const rows = livingAt(cellPlace(cell.cell));
       const place: Place = {
         race: camp.race,
         key: cellPlace(cell.cell),
@@ -675,31 +699,38 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       const population: Population = { residents: rows.map(toResident), nextId: camp.nextId, nextSlot: cell.nextSlot, peak: rows.length };
       const step = advance(place, population, camp.seed, now.getTime());
       if (step.born.length) {
-        await tx.insert(campResidents).values(
-          step.born.map((b) => ({ userId: camp.userId, id: b.id, breed: b.breed, seed: b.seed, bornAt: new Date(b.bornAt), diesAt: b.diesAt === null ? null : new Date(b.diesAt), place: cellPlace(cell.cell) })),
-        );
+        const born = await tx
+          .insert(campResidents)
+          .values(step.born.map((b) => ({ userId: camp.userId, id: b.id, breed: b.breed, seed: b.seed, bornAt: new Date(b.bornAt), diesAt: b.diesAt === null ? null : new Date(b.diesAt), place: cellPlace(cell.cell) })))
+          .returning();
+        away.set(cellPlace(cell.cell), [...rows, ...born]);
         camp.nextId = population.nextId;
         changed = true;
       }
-      await tx.update(worldCells).set({ nextSlot: population.nextSlot, advancedTo: now }).where(eq(worldCells.cell, cell.cell));
+      // (only when it moved on: most looks raise nobody)
+      if (population.nextSlot !== cell.nextSlot) await tx.update(worldCells).set({ nextSlot: population.nextSlot, advancedTo: now }).where(eq(worldCells.cell, cell.cell));
     }
     // those camping beside it move in as room frees up (on the camp's own cell they are simply home)
-    const campers = await aliveAt(tx, camp.userId, campingPlace(cell.cell));
+    const campers = livingAt(campingPlace(cell.cell));
     if (campers.length) {
-      const free = isHome ? campers.length : room - (await countAt(tx, camp.userId, cellPlace(cell.cell)));
+      const free = isHome ? campers.length : room - livingAt(cellPlace(cell.cell)).length;
       const moving = campers.slice(0, Math.max(0, free));
       if (moving.length) {
         await tx.update(campResidents).set({ place: isHome ? "home" : cellPlace(cell.cell) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, moving.map((r) => r.id))));
+        away.set(campingPlace(cell.cell), campers.slice(moving.length));
+        if (isHome) atHome = null;
+        else away.set(cellPlace(cell.cell), [...livingAt(cellPlace(cell.cell)), ...moving.map((r) => ({ ...r, place: cellPlace(cell.cell) }))]);
         changed = true;
       }
     }
-    const n = (await countAt(tx, camp.userId, cellPlace(cell.cell))) + (isHome ? await countAt(tx, camp.userId, "home") : 0);
+    if (isHome && atHome === null) atHome = await countAt(tx, camp.userId, "home");
+    const n = livingAt(cellPlace(cell.cell)).length + (isHome ? atHome! : 0);
     if (n === 0 && !isHome) {
       await releaseCell(tx, cell.cell);
       changed = true;
       continue;
     }
-    if (cell.target !== null && !isHome) staffed.push({ cell: cell.cell, target: Math.min(cell.target, room), there: await countAt(tx, camp.userId, cellPlace(cell.cell)) });
+    if (cell.target !== null && !isHome) staffed.push({ cell: cell.cell, target: Math.min(cell.target, room), there: livingAt(cellPlace(cell.cell)).length });
     // what the ground gave meanwhile (every YIELD_HOURS, by its terrain and how many work it, up to a cell's room)
     const since = cell.yieldedTo ?? cell.heldSince ?? now;
     const times = Math.floor((now.getTime() - since.getTime()) / (YIELD_HOURS * HOUR));
@@ -734,9 +765,10 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
         const random = seeded(WORLD_SEED, cell.cell, since.getTime(), "cell-raid");
         const { fallen } = cellRaidLosses(raceLevel(home?.xp ?? 0), held.length, n, bonus.fort + (tb.fort ?? 0), times, random, bonus.wild ?? 0);
         if (fallen > 0) {
-          const there = await aliveAt(tx, camp.userId, cellPlace(cell.cell));
+          const there = livingAt(cellPlace(cell.cell));
           const dead = there.map((r) => ({ r, k: random() })).sort((a, b) => a.k - b.k).slice(0, fallen).map((x) => x.r);
           await bury(tx, camp, dead, now);
+          away.set(cellPlace(cell.cell), there.filter((r) => !dead.includes(r)));
           raided[cell.cell] = dead.length;
           changed = true;
         }
@@ -749,6 +781,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   }
 
   if (staffed.length && (await staff(tx, camp, staffed, home?.cell ?? null, now))) changed = true;
+  // (those born on the cells meanwhile who would be dead of age by now)
+  if (await buryAged(tx, camp, now)) changed = true;
   await recordFlow(tx, camp.userId, now, "world-yield", yields);
   await recordFlow(tx, camp.userId, now, "world-upkeep", taken(upkeep));
   if (Object.keys(yields).length || Object.keys(upkeep).length || hungry.length || Object.keys(raided).length) {
