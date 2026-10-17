@@ -451,6 +451,15 @@ async function roomOf(tx: Tx, camp: { userId: string; race: string }, row: { cel
 }
 
 /** Whether two accounts are friends (an ask answered yes). */
+/** Those `userId` is friends with. */
+async function friendsOf(tx: Tx, userId: string): Promise<Set<string>> {
+  const pairs = await tx
+    .select({ a: friendships.userA, b: friendships.userB })
+    .from(friendships)
+    .where(and(or(eq(friendships.userA, userId), eq(friendships.userB, userId)), isNotNull(friendships.acceptedAt)));
+  return new Set(pairs.map((p) => (p.a === userId ? p.b : p.a)));
+}
+
 async function areFriends(tx: Tx, a: string, b: string): Promise<boolean> {
   const [userA, userB] = a < b ? [a, b] : [b, a];
   const [row] = await tx.select({ at: friendships.acceptedAt }).from(friendships).where(and(eq(friendships.userA, userA), eq(friendships.userB, userB)));
@@ -586,7 +595,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   const [home] = await tx.select({ cell: worldPlayers.homeCell, xp: worldPlayers.xp, talents: worldPlayers.talents }).from(worldPlayers).where(eq(worldPlayers.userId, camp.userId));
   const tb = talentBonus(home?.talents);
   const paying = payingCells(held, home?.cell ?? null, freeCellsOf(home));
-  const blighted = await blightedOf(tx, camp.userId, held.map((c) => c.cell));
+  const blighted = await blightedOf(tx, camp.userId, held.map((c) => c.cell), now);
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
   const around = await surroundings(tx, held.map((c) => c.cell), now);
   let landmarkXp = 0;
@@ -1025,7 +1034,8 @@ export async function sendExpedition(
   // 月光傳送: between one's own towns, once a day, at once
   const gate = target?.owner === userId && !guarding && target.town && (fromCell === player.homeCell ? false : (await lockCell(tx, fromCell!))?.town) && hasAbility(mt, "moonGate") && (await moonGatesLeft(tx, userId, now)) > 0;
   // 夜襲: setting out to attack at night, quicker and unseen
-  const night = !moving && hasAbility(mt, "nightRaid") && nightAt(fromCell!, now);
+  // (反制: a 瞭望塔 in the region attacked sees them coming all the same)
+  const night = !moving && hasAbility(mt, "nightRaid") && nightAt(fromCell!, now) && !(target?.owner && (await watchedOver(tx, target.owner, input.to, now)));
   if (night) carried = { ...(carried ?? {}), hidden: 1 };
   // 劫掠: only against another camp's cell, with the talent; it takes and leaves
   if (input.plunder) {
@@ -1091,18 +1101,15 @@ export async function warnDefender(deps: Pick<AppDeps, "database" | "hub" | "pus
  * with a nest, a building or a town on them, and their camps' own cells; never a friend's.
  */
 async function blockedFor(tx: Tx, userId: string): Promise<Map<string, string>> {
-  if (hasAbility(await talentBonusOf(tx, userId), "tunnels")) return new Map(); // (地道: under everybody's walls)
-  const pairs = await tx
-    .select({ a: friendships.userA, b: friendships.userB })
-    .from(friendships)
-    .where(and(or(eq(friendships.userA, userId), eq(friendships.userB, userId)), isNotNull(friendships.acceptedAt)));
-  const friends = new Set(pairs.map((p) => (p.a === userId ? p.b : p.a)));
+  const tunnels = hasAbility(await talentBonusOf(tx, userId), "tunnels"); // (地道: under everybody's walls, but a town's)
+  const friends = await friendsOf(tx, userId);
   const out = new Map<string, string>();
   const built = await tx
     .select({ cell: worldCells.cell, owner: worldCells.owner })
     .from(worldCells)
-    .where(and(isNotNull(worldCells.owner), ne(worldCells.owner, userId), or(isNotNull(worldCells.nestStartedAt), isNotNull(worldCells.building), eq(worldCells.town, true))));
+    .where(and(isNotNull(worldCells.owner), ne(worldCells.owner, userId), tunnels ? eq(worldCells.town, true) : or(isNotNull(worldCells.nestStartedAt), isNotNull(worldCells.building), eq(worldCells.town, true))));
   for (const c of built) if (c.owner && !friends.has(c.owner)) out.set(c.cell, c.owner);
+  if (tunnels) return out;
   const homes = await tx.select({ cell: worldPlayers.homeCell, owner: worldPlayers.userId }).from(worldPlayers).where(and(isNotNull(worldPlayers.homeCell), ne(worldPlayers.userId, userId)));
   for (const h of homes) if (h.cell && !friends.has(h.owner)) out.set(h.cell, h.owner);
   return out;
@@ -1472,8 +1479,10 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       const survivors = party.filter((r) => !fallenA.has(String(r.id)));
       if (result.won && exp.boosts?.plunder) {
         // 劫掠: take from the store and leave (nothing changes hands, nobody turtles)
+        // (反制: a town or a cell with a 瞭望塔 gives up half as much)
+        const guarded = cell!.town || (cell!.building?.kind === "watchtower" && workingLevel(cell!.building, at.getTime()) >= 1) ? TALENT_ABILITIES.raidGuarded : 1;
         for (const [id, n] of Object.entries(defenderCamp.materials)) {
-          const take = Math.min(TALENT_ABILITIES.raidCap, Math.floor(n * TALENT_ABILITIES.raidShare));
+          const take = Math.min(Math.floor(TALENT_ABILITIES.raidCap * guarded), Math.floor(n * TALENT_ABILITIES.raidShare * guarded));
           if (take <= 0) continue;
           defenderCamp.materials = { ...defenderCamp.materials, [id]: n - take };
           camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + take };
@@ -1502,9 +1511,10 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         await shield(tx, camp.userId, now);
         if (defenderPlayer) await tx.update(worldPlayers).set({ xp: defenderPlayer.xp + Math.round(result.xp.defender * (1 + (talentBonus(defenderPlayer.talents).xp ?? 0))) }).where(eq(worldPlayers.userId, defenderCamp.userId));
       }
-      // 戰場復甦: whoever won raises some of the fallen
-      if (result.won && hasAbility(tb, "raiseDead")) outcome.raised = await raiseDead(tx, camp, fallenA.size + fallenD.size, exp.id, at);
-      const defenderRaised = !result.won && hasAbility(talentBonus(defenderPlayer?.talents), "raiseDead") ? await raiseDead(tx, defenderCamp, fallenA.size + fallenD.size, `${exp.id}|d`, at) : 0;
+      // 戰場復甦: whoever won raises some of the fallen (反制: a 營火廣場 there burns them)
+      const burnt = cell!.building?.kind === "campfire" && workingLevel(cell!.building, at.getTime()) >= 1;
+      if (result.won && !burnt && hasAbility(tb, "raiseDead")) outcome.raised = await raiseDead(tx, camp, fallenA.size + fallenD.size, exp.id, at);
+      const defenderRaised = !result.won && !burnt && hasAbility(talentBonus(defenderPlayer?.talents), "raiseDead") ? await raiseDead(tx, defenderCamp, fallenA.size + fallenD.size, `${exp.id}|d`, at) : 0;
       await addEvent(tx, defenderCamp.userId, at, "expedition", { id: exp.id, cell: exp.toCell, defended: true, by: attacker.name, won: !result.won, fallen: fallenD.size, ...(outcome.where ? { where: outcome.where.label } : {}), ...(fledTo ? { fled: fledTo } : {}), ...(outcome.cell === "plundered" ? { plundered: outcome.loot } : {}), ...(defenderRaised ? { raised: defenderRaised } : {}) });
       await bumpVersion(tx, defenderCamp);
     }
@@ -1797,10 +1807,12 @@ async function ambushOn(tx: Tx, camp: CampRow, exp: ExpeditionRow, party: Reside
   for (const [owner, cells] of byOwner) {
     if (await areFriends(tx, camp.userId, owner)) continue;
     const mine = Math.min(TALENT_ABILITIES.ambushMax - share, TALENT_ABILITIES.ambushPerCell * cells);
-    const n = Math.min(left.length - 1, Math.round(party.length * mine)); // (somebody always gets there)
+    // (somebody always gets there; 反制: those with a shield are not shot)
+    const open = left.filter((r) => !r.gear?.shield);
+    const n = Math.min(left.length - 1, open.length, Math.round(party.length * mine));
     if (mine <= 0 || n <= 0) continue;
     share += mine;
-    const shot = pickParty(camp.race, left, undefined, n, false);
+    const shot = pickParty(camp.race, open, undefined, n, false);
     left = left.filter((r) => !shot.includes(r));
     out.fallen.push(...shot);
     const who = await ownerOf(tx, owner);
@@ -1827,8 +1839,18 @@ async function raiseDead(tx: Tx, camp: CampRow, fallen: number, key: string, at:
   return n;
 }
 
-/** 腐化大地: those of `cells` next to a cell of another camp with the talent (they yield less). */
-async function blightedOf(tx: Tx, userId: string, cells: string[]): Promise<Set<string>> {
+/**
+ * 腐化大地: those of `cells` next to a cell of another camp with the talent (they yield less). 反制: a town is not, nor is any
+ * cell of a region with a working 聖樹.
+ */
+async function blightedOf(tx: Tx, userId: string, cells: string[], at: Date): Promise<Set<string>> {
+  if (!cells.length) return new Set();
+  const held = await tx.select({ cell: worldCells.cell, town: worldCells.town, building: worldCells.building }).from(worldCells).where(eq(worldCells.owner, userId));
+  const mine = new Set(held.map((c) => c.cell));
+  const towns = new Set(held.filter((c) => c.town).map((c) => c.cell));
+  const trees = held.filter((c) => c.building?.kind === "sacred" && workingLevel(c.building, at.getTime()) >= 1).map((c) => c.cell);
+  const sheltered = new Set(trees.flatMap((c) => connectedCells(c, mine)));
+  cells = cells.filter((c) => !towns.has(c) && !sheltered.has(c));
   if (!cells.length) return new Set();
   const near = [...new Set(cells.flatMap((c) => neighbors(c)))];
   const rows = await tx
@@ -1847,6 +1869,15 @@ async function blightFoes(tx: Tx, userId: string, cell: string, foes: Fighter[])
   if (!neighbors(cell).some((n) => mine.has(n))) return foes;
   const k = 1 - TALENT_ABILITIES.blightLair;
   return foes.map((f) => ({ ...f, hp: Math.max(1, Math.round(f.hp * k)), maxHp: Math.max(1, Math.round(f.maxHp * k)) }));
+}
+
+/** 夜襲's 反制: `owner` has a working 瞭望塔 in the region of its cells that `cell` is in. */
+async function watchedOver(tx: Tx, owner: string, cell: string, at: Date): Promise<boolean> {
+  const held = await tx.select({ cell: worldCells.cell, building: worldCells.building }).from(worldCells).where(eq(worldCells.owner, owner));
+  const mine = new Set(held.map((c) => c.cell));
+  if (!mine.has(cell)) return false;
+  const region = new Set(connectedCells(cell, mine));
+  return held.some((c) => region.has(c.cell) && c.building?.kind === "watchtower" && workingLevel(c.building, at.getTime()) >= 1);
 }
 
 /** 月光傳送 moves left today (Taipei's day) for a camp with the talent. */
@@ -2303,7 +2334,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   if (row?.owner !== userId) throw new WorldError(403, "not_yours", "這不是你的格子。");
   const homeCell = await homeCellOf(tx, userId);
   const isHome = cell === homeCell;
-  const blighted = (await blightedOf(tx, userId, [cell])).has(cell);
+  const blighted = (await blightedOf(tx, userId, [cell], now)).has(cell);
   const terrain = await terrainOf(tx, cell);
   const garrison = (await dwellers(tx, userId, cell, homeCell)).length;
   const capacity = await roomOf(tx, camp, row, now, isHome);
@@ -2531,6 +2562,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
   );
   // the great monsters standing in view (their wounds, if anybody has fought them)
   // (one look at the books for all of them)
+  const threats = viewer ? await threatsIn(tx, viewer, rows) : new Map<string, ("ambush" | "blight")[]>();
   const bosses = new Map<string, BossView>();
   const sightings = ids.flatMap((cell) => {
     const sighting = bossAt(WORLD_SEED, cell, now.getTime(), bossesOn());
@@ -2567,8 +2599,31 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       lairBackAt: backAt?.toISOString() ?? null,
       boss,
       ...(blocked.has(cell) ? { blocks: true } : {}),
+      ...(threats.has(cell) ? { threats: threats.get(cell) } : {}),
     };
   });
+}
+
+/** The cells about `rows` that others' 伏擊 and 腐化大地 reach, for `viewer`'s map (CellView.threats). */
+async function threatsIn(tx: Tx, viewer: string, rows: { cell: string; owner: string | null }[]): Promise<Map<string, ("ambush" | "blight")[]>> {
+  const out = new Map<string, ("ambush" | "blight")[]>();
+  const others = [...new Set(rows.flatMap((r) => (r.owner && r.owner !== viewer ? [r.owner] : [])))];
+  if (!others.length) return out;
+  const friends = await friendsOf(tx, viewer);
+  const players = await tx.select({ userId: worldPlayers.userId, talents: worldPlayers.talents }).from(worldPlayers).where(inArray(worldPlayers.userId, others));
+  const can = new Map(players.filter((p) => !friends.has(p.userId)).map((p) => [p.userId, talentBonus(p.talents)]));
+  const ownerAt = new Map(rows.map((r) => [r.cell, r.owner]));
+  const mark = (cell: string, what: "ambush" | "blight") => {
+    const has = out.get(cell) ?? [];
+    if (!has.includes(what)) out.set(cell, [...has, what]);
+  };
+  for (const r of rows) {
+    const bonus = r.owner ? can.get(r.owner) : undefined;
+    if (!bonus) continue;
+    if (hasAbility(bonus, "ambush")) for (const c of [r.cell, ...neighbors(r.cell)]) mark(c, "ambush");
+    if (hasAbility(bonus, "blight")) for (const c of neighbors(r.cell)) if (ownerAt.get(c) !== r.owner) mark(c, "blight");
+  }
+  return out;
 }
 
 export async function expeditionReport(tx: Tx, userId: string, id: string): Promise<ExpeditionReport | ExpeditionSummary | null> {

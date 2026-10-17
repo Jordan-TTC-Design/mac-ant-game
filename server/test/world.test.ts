@@ -840,16 +840,19 @@ describe("天賦樹頂端的新能力", () => {
   const DREAD = { "u_dread.terror": 3, "u_dread.shroud": 3, "u_dread.siege": 3, "u_dread.haunt": 3, "u_dread.despair": 2, "u_dread.crypts": 1, "u_dread.whispers": 1, "u_dread.nightraid": 1 };
   const CRYPT = { "u_crypt.fasting": 3, "u_crypt.salvage": 2, "u_crypt.ossuary": 3, "u_crypt.embalm": 3, "u_crypt.necropolis": 2, "u_crypt.tomes": 3, "u_crypt.blight": 1 };
 
-  it("地道: others' walls are none to it", async () => {
+  it("地道: others' walls are none to it, but a town's", async () => {
     const b = await account("b@example.com");
     await grow(b);
     await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, b);
     const a = await withTalents("a@example.com", "goblin", DAAN, {});
     const wall = neighbors(neighbors(cellAt(DAAN))[0]!)[0]!;
-    await database.sql`insert into world_cells (cell, owner, town) values (${wall}, ${await id("b@example.com")}, true) on conflict (cell) do update set owner = excluded.owner, town = true`;
+    const town = neighbors(neighbors(cellAt(DAAN))[3]!)[3]!;
+    await database.sql`insert into world_cells (cell, owner, nest_started_at) values (${wall}, ${await id("b@example.com")}, now()) on conflict (cell) do update set owner = excluded.owner, nest_started_at = now()`;
+    await database.sql`insert into world_cells (cell, owner, town) values (${town}, ${await id("b@example.com")}, true) on conflict (cell) do update set owner = excluded.owner, town = true`;
     expect((await map(a, cellCenter(wall), 300)).find((c) => c.cell === wall)!.blocks).toBe(true);
     expect((await t.call("POST", "/world/talents", { picks: HORDE }, a)).status).toBe(200);
     expect((await map(a, cellCenter(wall), 300)).find((c) => c.cell === wall)!.blocks).toBeFalsy();
+    expect((await map(a, cellCenter(town), 300)).find((c) => c.cell === town)!.blocks).toBe(true); // (反制)
   });
 
   it("月光傳送: once a day, a party moves between its towns at once", async () => {
@@ -882,6 +885,12 @@ describe("天賦樹頂端的新能力", () => {
     expect((await me(g)).incoming).toHaveLength(0);
     const events = (await t.call("GET", "/camp/events?since=0", undefined, g)).body.events as { data: { incoming?: boolean } }[];
     expect(events.some((e) => e.data.incoming)).toBe(false);
+    // 反制: a 瞭望塔 in the region attacked sees the next one coming
+    const tower = neighbors(cellAt(DAAN))[0]!;
+    await database.sql`insert into world_cells (cell, owner, held_since, building) values (${tower}, ${await id("g@example.com")}, now(), '{"kind": "watchtower", "level": 1}'::jsonb) on conflict (cell) do update set owner = excluded.owner, building = excluded.building`;
+    await database.sql`update camp_residents set place = ${`cell:${tower}`} where id in (select id from camp_residents where user_id = ${await id("g@example.com")} and place = 'home' limit 3)`;
+    expect((await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, u)).status).toBe(201);
+    expect((await me(g)).incoming).toHaveLength(1);
   });
 
   const RANGER = { "e_ranger.swift": 3, "e_ranger.aim": 1, "e_ranger.paths": 3, "e_ranger.hunter": 3, "e_ranger.wind": 2, "e_ranger.trophy": 1, "e_ranger.volley": 3, "e_ranger.ambush": 1 };
@@ -901,6 +910,21 @@ describe("天賦樹頂端的新能力", () => {
     const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, g)).body as ExpeditionReport;
     expect(report.outcome!.ambushed![0]!.fallen).toBeGreaterThan(0);
     expect(report.party - report.outcome!.ambushed![0]!.fallen).toBeGreaterThan(0); // (somebody always gets there)
+  });
+
+  it("伏擊 shows on the map, and those with a shield are not shot (反制)", async () => {
+    await withTalents("e@example.com", "elf", DAAN, RANGER);
+    const g = await account("g@example.com");
+    await grow(g);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, g);
+    await veteran("g@example.com");
+    const around = await map(g, DAAN, 300);
+    expect(around.find((c) => c.cell === neighbors(cellAt(DAAN))[0])!.threats).toContain("ambush");
+    await database.sql`update camp_residents set gear = '{"shield": {"id": "wood_shield", "left": 18}}'::jsonb where user_id = ${await id("g@example.com")}`;
+    const res = await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 20 }, g);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, g)).body as ExpeditionReport;
+    expect(report.outcome!.ambushed ?? []).toHaveLength(0);
   });
 
   it("戰場復甦: some of the fallen of a won fight rise and join", async () => {
@@ -940,6 +964,32 @@ describe("天賦樹頂端的新能力", () => {
     expect((await me(b)).shielded).toBe(false); // (a raid is no defeat)
   });
 
+  it("劫掠 a town takes half as much; 戰場復甦 does not raise the fallen of a cell with a 營火廣場 (反制)", async () => {
+    const b = await account("b@example.com");
+    await grow(b);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, b);
+    const bId = await id("b@example.com");
+    const g = await withTalents("g@example.com", "goblin", DAAN, RAID);
+    const u = await withTalents("u@example.com", "undead", { lat: DAAN.lat + 0.004, lng: DAAN.lng }, LEGION);
+    const town = neighbors(neighbors(cellAt(XINYI))[3]!)[3]!;
+    const fire = (await map(b, XINYI, 400)).find((c) => !c.owner && !c.lair && !c.boss && c.cell !== town && !neighbors(cellAt(XINYI)).includes(c.cell) && c.cell !== cellAt(XINYI))!.cell; // (no lair under it)
+    await database.sql`insert into world_cells (cell, owner, held_since, town) values (${town}, ${bId}, now(), true) on conflict (cell) do update set owner = excluded.owner, town = true`;
+    await database.sql`insert into world_cells (cell, owner, held_since, building) values (${fire}, ${bId}, now(), '{"kind": "campfire", "level": 1}'::jsonb) on conflict (cell) do update set owner = excluded.owner, building = excluded.building`;
+    for (const c of [town, fire]) await database.sql`update camp_residents set place = ${`cell:${c}`} where id in (select id from camp_residents where user_id = ${bId} and place = 'home' limit 4)`;
+    await database.sql`update camps set materials = '{"log": 1000}'::jsonb where user_id = ${bId}`;
+    const home = (await camp(g)).residents.filter((r) => r.place === "home").length;
+    const raid = await t.call("POST", "/world/expeditions", { to: town, count: Math.min(25, home - 2), plunder: true }, g);
+    const take = await t.call("POST", "/world/expeditions", { to: fire, count: 25 }, u);
+    expect([raid.status, raid.body.message, take.status]).toEqual([201, undefined, 201]);
+    t.advance(Math.max(Date.parse(raid.body.arriveAt), Date.parse(take.body.arriveAt)) - t.now().getTime() + 1000);
+    const raided = (await t.call("GET", `/world/expeditions/${raid.body.id}`, undefined, g)).body as ExpeditionReport;
+    expect(raided.outcome!.cell).toBe("plundered");
+    expect(raided.outcome!.loot.log).toBe(15);
+    const taken = (await t.call("GET", `/world/expeditions/${take.body.id}`, undefined, u)).body as ExpeditionReport;
+    expect(taken.outcome!.won).toBe(true);
+    expect(taken.outcome!.raised ?? 0).toBe(0);
+  });
+
   it("腐化大地: others' cells next to its own yield less", async () => {
     const u = await withTalents("u@example.com", "undead", DAAN, CRYPT);
     expect(u).toBeTruthy();
@@ -953,5 +1003,11 @@ describe("天賦樹頂端的新能力", () => {
     for (const c of [next, far]) await database.sql`update camp_residents set place = ${`cell:${c}`} where id in (select id from camp_residents where user_id = ${await id("b@example.com")} and place = 'home' limit 6)`;
     expect((await t.call("GET", `/world/cells/${next}`, undefined, b)).body.blighted).toBe(true);
     expect((await t.call("GET", `/world/cells/${far}`, undefined, b)).body.blighted).toBeFalsy();
+    expect((await map(b, DAAN, 300)).find((c) => c.cell === neighbors(cellAt(DAAN))[2])!.threats).toContain("blight");
+    // 反制: a 聖樹 in the region, or a town, is not blighted
+    await database.sql`update world_cells set building = '{"kind": "sacred", "level": 1}'::jsonb where cell = ${next}`;
+    expect((await t.call("GET", `/world/cells/${next}`, undefined, b)).body.blighted).toBeFalsy();
+    await database.sql`update world_cells set building = null, town = true where cell = ${next}`;
+    expect((await t.call("GET", `/world/cells/${next}`, undefined, b)).body.blighted).toBeFalsy();
   });
 });

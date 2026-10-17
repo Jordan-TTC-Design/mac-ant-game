@@ -65,6 +65,8 @@ function cellsGeoJson(): FeatureCollection {
         cell: c.cell,
         state: c.owner ? (c.owner.id === props.mine ? "mine" : "theirs") : c.boss ? "boss" : "free",
         blocks: !!c.blocks,
+        ambush: !!c.threats?.includes("ambush"),
+        blight: !!c.threats?.includes("blight"),
       },
       geometry: { type: "Polygon", coordinates: [hexRing(c.lat, c.lng)] },
     })),
@@ -407,6 +409,9 @@ onMounted(() => {
     // someone else's built-up land: parties must walk round it (shared/src/world/route.ts), so it reads as a wall
     m.addLayer({ id: "cell-wall", type: "fill", source: "cells", filter: ["get", "blocks"], paint: { "fill-color": "#7a1a10", "fill-opacity": 0.32 } });
     m.addLayer({ id: "cell-wall-line", type: "line", source: "cells", filter: ["get", "blocks"], paint: { "line-color": "#5a0f08", "line-width": 4 } });
+    // others' talents reaching here: 腐化大地 tints the ground purple, 伏擊 rings it in orange dashes (CellView.threats)
+    m.addLayer({ id: "cell-blight", type: "fill", source: "cells", filter: ["get", "blight"], paint: { "fill-color": "#5b2a86", "fill-opacity": 0.22 } });
+    m.addLayer({ id: "cell-ambush", type: "line", source: "cells", filter: ["get", "ambush"], paint: { "line-color": "#ff8a1e", "line-width": 2, "line-dasharray": [1, 1.2], "line-opacity": 0.85 } });
     m.addLayer({
       id: "cell-target",
       type: "line",

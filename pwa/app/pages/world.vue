@@ -568,6 +568,8 @@ async function goToPlace(p: PlaceFound) {
           <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && (!mine || launchFrom) ? `・從${launchFrom ? launchName : "營地"}走約 ${minutesTo} 分鐘${detourTo ? `（繞路 +${detourTo}）` : ""}` : "" }}</p>
           <p v-if="way && !way.waypoints.length" class="wall">🧱 {{ way.blockedBy?.name ?? "別人" }}的領地擋在路上，從{{ launchFrom ? launchName : "營地" }}過不去</p>
           <p v-if="cell.blocks" class="wall">🧱 有蓋東西的領地：你的隊伍不能穿過去，要繞路（打下來就通了）</p>
+          <p v-if="cell.threats?.includes('ambush')" class="threat">🎯 精靈的伏擊範圍：隊伍經過這裡會先被射倒一些（拿盾牌的不會）</p>
+          <p v-if="cell.threats?.includes('blight')" class="threat">☠️ 死靈的腐化大地：你在這裡的領地產出會變少（城鎮、有聖樹的那一區不會）</p>
           <p v-for="w in comingHere" :key="w.id" class="alert">⚔️ {{ w.by.name }}派了 {{ w.party }} 隻正在路上，{{ left(w.arriveAt) }}</p>
           <p v-if="attackedHere" class="alert">
             ⚔️ {{ attackedHere.by ?? "有人" }}{{ noteTime(attackedHere.arriveAt) }}來打過：{{ outcomeText(attackedHere) }}
@@ -752,6 +754,7 @@ p { margin: 6px 0; line-height: 1.55; }
 .launch span { flex: 1; }
 .launch .btn { min-height: 36px; }
 .wall { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a2a1a; }
+.threat { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #6a3a96; }
 .boss-tag { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a5a00; }
 
 /* A wide window (the Mac app, a computer's browser): the map fills the left and stays put; the rest is a column on the right,

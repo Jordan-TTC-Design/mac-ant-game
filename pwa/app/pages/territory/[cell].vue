@@ -220,7 +220,7 @@ function happening(h: CellHappening): string {
 
       <section class="panel">
         <h2>怎麼長大</h2>
-        <p v-if="d.blighted" class="warn">☠️ 旁邊有死靈的腐化大地：這一格的產出 −{{ Math.round(TALENT_ABILITIES.blightYield * 100) }}%</p>
+        <p v-if="d.blighted" class="warn">☠️ 旁邊有死靈的腐化大地：這一格的產出 −{{ Math.round(TALENT_ABILITIES.blightYield * 100) }}%（變成城鎮，或在這一區種聖樹就不會）</p>
         <p v-if="d.nest === 'none'" class="muted">還沒有繁殖巢，這一格不會自己生居民；到地圖上點這一格可以蓋。</p>
         <p v-else-if="d.nest === 'building'">繁殖巢 {{ until(d.nestReadyAt) }}蓋好，之後每 {{ d.birthMinutes }} 分鐘生一隻。</p>
         <p v-else-if="d.nextBirthAt">每 {{ d.birthMinutes }} 分鐘生一隻・下一隻 <b>{{ until(d.nextBirthAt) }}</b></p>

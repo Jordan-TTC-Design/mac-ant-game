@@ -145,6 +145,11 @@ export interface CellView {
   boss: BossView | null;
   /** Someone else's built-up land the viewer's parties must walk round (route.ts); not sent when it does not. */
   blocks?: boolean;
+  /**
+   * Others' talents reaching here (not the viewer's own or friends'; not sent when none): ambush, the viewer's parties walking
+   * past are shot at (伏擊); blight, a cell of the viewer's here would yield less (腐化大地).
+   */
+  threats?: ("ambush" | "blight")[];
 }
 
 export interface ExpeditionSummary {

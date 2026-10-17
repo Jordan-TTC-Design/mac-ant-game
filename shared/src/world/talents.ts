@@ -225,6 +225,8 @@ export const TALENT_ABILITIES = {
   /** 劫掠: a won raid takes this share of each material the camp raided has (up to RAID_CAP of each), and leaves. */
   raidShare: 0.08,
   raidCap: 30,
+  /** …a town or a cell with a 瞭望塔 gives up only this share of that (反制). */
+  raidGuarded: 0.5,
   /** 伏擊: each of one's cells next to a party's way shoots this share of it down (at most AMBUSH_MAX in all). */
   ambushPerCell: 0.04,
   ambushMax: 0.25,
@@ -331,15 +333,15 @@ export function talentText(rule: Talent, ranks = 1): string {
     case "loot": return `打贏巢穴的掉落 +${pct}`;
     case "xp": return `種族經驗 +${pct}`;
     case "intel": return "看得到來襲敵軍的隊伍組成";
-    case "plunder": return `新出征方式「劫掠」：打其他玩家的領地，贏了搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}）就走，不佔地`;
-    case "tunnels": return "地道：自己所有的領地都算相連（調人只要四分之一時間），隊伍可以從別人的城牆底下鑽過去";
+    case "plunder": return `新出征方式「劫掠」：打其他玩家的領地，贏了搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}）就走，不佔地（反制：城鎮、有瞭望塔的格子只搶得到一半）`;
+    case "tunnels": return "地道：自己所有的領地都算相連（調人只要四分之一時間），隊伍可以從別人的城牆底下鑽過去（反制：城鎮擋得住）";
     case "refine": return "工坊多「改造」：把裝備改成 ★ 精良版（更強、更耐用）；壞掉的裝備完整拆回材料";
-    case "ambush": return `伏擊：敵人的隊伍經過你領地旁邊，每塊相鄰的領地先射倒 ${Math.round(TALENT_ABILITIES.ambushPerCell * 100)}%（最多 ${Math.round(TALENT_ABILITIES.ambushMax * 100)}%）`;
+    case "ambush": return `伏擊：敵人的隊伍經過你領地旁邊，每塊相鄰的領地先射倒 ${Math.round(TALENT_ABILITIES.ambushPerCell * 100)}%（最多 ${Math.round(TALENT_ABILITIES.ambushMax * 100)}%；反制：拿盾牌的不會被射倒）`;
     case "sacredTree": return "可以在公園、森林的領地種「聖樹」：同一區的領地產出、守軍血量增加，聖樹那格生得快";
     case "moonGate": return `月光傳送：每天 ${TALENT_ABILITIES.moonGatesPerDay} 次，在自己的城鎮之間搬人瞬間到`;
-    case "raiseDead": return `戰場復甦：打贏之後，倒下的（雙方）有 ${Math.round(TALENT_ABILITIES.raiseShare * 100)}% 爬起來加入營地（最多 ${TALENT_ABILITIES.raiseMax} 隻）`;
-    case "nightRaid": return "夜襲：晚上出發的隊伍走路時間 −25%，而且對方不會收到敵軍來襲預警";
-    case "blight": return `腐化大地：你領地旁邊別人的領地產出 −${Math.round(TALENT_ABILITIES.blightYield * 100)}%；打你領地旁邊的巢穴，牠們血量 −${Math.round(TALENT_ABILITIES.blightLair * 100)}%`;
+    case "raiseDead": return `戰場復甦：打贏之後，倒下的（雙方）有 ${Math.round(TALENT_ABILITIES.raiseShare * 100)}% 爬起來加入營地（最多 ${TALENT_ABILITIES.raiseMax} 隻；反制：在有營火廣場的格子打，屍體被燒掉）`;
+    case "nightRaid": return "夜襲：晚上出發的隊伍走路時間 −25%，而且對方不會收到敵軍來襲預警（反制：目標那一區有瞭望塔就看得到）";
+    case "blight": return `腐化大地：你領地旁邊別人的領地產出 −${Math.round(TALENT_ABILITIES.blightYield * 100)}%；打你領地旁邊的巢穴，牠們血量 −${Math.round(TALENT_ABILITIES.blightLair * 100)}%（反制：城鎮、有聖樹的那一區不會被腐化）`;
     case "campYield": return `營地場地產出 +${pct}`;
     case "campBirths": return `營地生得快 ${pct}`;
     case "campGuard": return `魔獸來襲時居民攻擊 +${pct}`;
