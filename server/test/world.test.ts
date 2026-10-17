@@ -860,8 +860,8 @@ describe("天賦樹頂端的新能力", () => {
     const me_ = await id("e@example.com");
     const [x, y] = [neighbors(neighbors(cellAt(DAAN))[2]!)[2]!, neighbors(neighbors(cellAt(DAAN))[5]!)[5]!];
     for (const c of [x, y]) await database.sql`insert into world_cells (cell, owner, town, held_since) values (${c}, ${me_}, true, now()) on conflict (cell) do update set owner = excluded.owner, town = true`;
-    await database.sql`update camp_residents set place = ${`cell:${x}`} where id in (select id from camp_residents where user_id = ${me_} and place = 'home' limit 20)`;
-    await database.sql`update camp_residents set place = ${`cell:${y}`} where id in (select id from camp_residents where user_id = ${me_} and place = 'home' limit 6)`; // (a cell nobody lives on is given up)
+    await database.sql`update camp_residents set place = ${`cell:${x}`} where user_id = ${me_} and id in (select id from camp_residents where user_id = ${me_} and place = 'home' limit 20)`;
+    await database.sql`update camp_residents set place = ${`cell:${y}`} where user_id = ${me_} and id in (select id from camp_residents where user_id = ${me_} and place = 'home' limit 6)`; // (a cell nobody lives on is given up)
     expect((await me(e)).moonGatesLeft).toBe(1);
     const first = await t.call("POST", "/world/expeditions", { from: x, to: y, count: 5 }, e);
     expect(first.status).toBe(201);
@@ -888,7 +888,7 @@ describe("天賦樹頂端的新能力", () => {
     // 反制: a 瞭望塔 in the region attacked sees the next one coming
     const tower = neighbors(cellAt(DAAN))[0]!;
     await database.sql`insert into world_cells (cell, owner, held_since, building) values (${tower}, ${await id("g@example.com")}, now(), '{"kind": "watchtower", "level": 1}'::jsonb) on conflict (cell) do update set owner = excluded.owner, building = excluded.building`;
-    await database.sql`update camp_residents set place = ${`cell:${tower}`} where id in (select id from camp_residents where user_id = ${await id("g@example.com")} and place = 'home' limit 3)`;
+    await database.sql`update camp_residents set place = ${`cell:${tower}`} where user_id = ${await id("g@example.com")} and id in (select id from camp_residents where user_id = ${await id("g@example.com")} and place = 'home' limit 3)`;
     expect((await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, u)).status).toBe(201);
     expect((await me(g)).incoming).toHaveLength(1);
   });
@@ -948,7 +948,7 @@ describe("天賦樹頂端的新能力", () => {
     const cell = neighbors(neighbors(cellAt(XINYI))[3]!)[3]!;
     const bId = await id("b@example.com");
     await database.sql`insert into world_cells (cell, owner, held_since) values (${cell}, ${bId}, now()) on conflict (cell) do update set owner = excluded.owner`;
-    await database.sql`update camp_residents set place = ${`cell:${cell}`} where id in (select id from camp_residents where user_id = ${bId} and place = 'home' limit 5)`;
+    await database.sql`update camp_residents set place = ${`cell:${cell}`} where user_id = ${bId} and id in (select id from camp_residents where user_id = ${bId} and place = 'home' limit 5)`;
     await database.sql`update camps set materials = '{"rat_fang": 100, "log": 1000}'::jsonb where user_id = ${bId}`;
     expect((await t.call("POST", "/world/expeditions", { to: cell, count: 5, plunder: true }, b)).status).toBeGreaterThanOrEqual(400); // (not one's own)
     const res = await t.call("POST", "/world/expeditions", { to: cell, count: 25, plunder: true }, g);
@@ -975,7 +975,7 @@ describe("天賦樹頂端的新能力", () => {
     const fire = (await map(b, XINYI, 400)).find((c) => !c.owner && !c.lair && !c.boss && c.cell !== town && !neighbors(cellAt(XINYI)).includes(c.cell) && c.cell !== cellAt(XINYI))!.cell; // (no lair under it)
     await database.sql`insert into world_cells (cell, owner, held_since, town) values (${town}, ${bId}, now(), true) on conflict (cell) do update set owner = excluded.owner, town = true`;
     await database.sql`insert into world_cells (cell, owner, held_since, building) values (${fire}, ${bId}, now(), '{"kind": "campfire", "level": 1}'::jsonb) on conflict (cell) do update set owner = excluded.owner, building = excluded.building`;
-    for (const c of [town, fire]) await database.sql`update camp_residents set place = ${`cell:${c}`} where id in (select id from camp_residents where user_id = ${bId} and place = 'home' limit 4)`;
+    for (const c of [town, fire]) await database.sql`update camp_residents set place = ${`cell:${c}`} where user_id = ${bId} and id in (select id from camp_residents where user_id = ${bId} and place = 'home' limit 4)`;
     await database.sql`update camps set materials = '{"log": 1000}'::jsonb where user_id = ${bId}`;
     const home = (await camp(g)).residents.filter((r) => r.place === "home").length;
     const raid = await t.call("POST", "/world/expeditions", { to: town, count: Math.min(25, home - 2), plunder: true }, g);
@@ -1000,7 +1000,7 @@ describe("天賦樹頂端的新能力", () => {
     await database.sql`insert into world_cells (cell, owner, held_since) values (${next}, ${await id("b@example.com")}, now()) on conflict (cell) do update set owner = excluded.owner`;
     const far = neighbors(cellAt(XINYI))[1]!;
     await database.sql`insert into world_cells (cell, owner, held_since) values (${far}, ${await id("b@example.com")}, now()) on conflict (cell) do update set owner = excluded.owner`;
-    for (const c of [next, far]) await database.sql`update camp_residents set place = ${`cell:${c}`} where id in (select id from camp_residents where user_id = ${await id("b@example.com")} and place = 'home' limit 6)`;
+    for (const c of [next, far]) await database.sql`update camp_residents set place = ${`cell:${c}`} where user_id = ${await id("b@example.com")} and id in (select id from camp_residents where user_id = ${await id("b@example.com")} and place = 'home' limit 6)`;
     expect((await t.call("GET", `/world/cells/${next}`, undefined, b)).body.blighted).toBe(true);
     expect((await t.call("GET", `/world/cells/${far}`, undefined, b)).body.blighted).toBeFalsy();
     expect((await map(b, DAAN, 300)).find((c) => c.cell === neighbors(cellAt(DAAN))[2])!.threats).toContain("blight");

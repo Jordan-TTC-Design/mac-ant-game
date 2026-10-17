@@ -755,6 +755,8 @@ p { margin: 6px 0; line-height: 1.55; }
 .launch .btn { min-height: 36px; }
 .wall { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a2a1a; }
 .threat { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #6a3a96; }
+/* (the card's text column does not wrap, for the title; these lines must, or they are cut off) */
+.grow .wall, .grow .threat, .grow .alert, .grow .boss-tag { white-space: normal; }
 .boss-tag { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a5a00; }
 
 /* A wide window (the Mac app, a computer's browser): the map fills the left and stays put; the rest is a column on the right,

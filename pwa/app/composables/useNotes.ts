@@ -184,7 +184,7 @@ function connect() {
   if (socket || !state.saved) return;
   // (in development Nitro's proxy does not carry WebSockets, so it goes straight to the server; the session cookie goes
   // along, since cookies do not care about the port)
-  const base = import.meta.dev ? `ws://${location.hostname}:8787` : location.origin.replace(/^http/, "ws");
+  const base = import.meta.dev ? `ws://${location.hostname}:${useRuntimeConfig().public.devApiPort}` : location.origin.replace(/^http/, "ws");
   const ws = new WebSocket(`${base}/api/ws`);
   socket = ws;
   ws.onmessage = (event) => {

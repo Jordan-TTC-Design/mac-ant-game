@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
 
 // The phone app: a single-page app (no server rendering; it is behind a login) that works offline and gets reminder pushes.
-// In development it runs on :3000 and passes /api to the server on :8787 (the WebSocket goes to :8787 directly, see useNotes).
+// In development it runs on :3000 and passes /api to the server on :8787 (the WebSocket goes to :8787 directly, see useNotes);
+// API_ORIGIN=http://localhost:8790 points both at a server on another port (scripts/preview.sh).
 export default defineNuxtConfig({
   compatibilityDate: "2026-09-01",
   ssr: false,
@@ -26,6 +27,7 @@ export default defineNuxtConfig({
       link: [{ rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" }],
     },
   },
+  runtimeConfig: { public: { devApiPort: new URL(process.env.API_ORIGIN ?? "http://localhost:8787").port || "80" } },
   vite: {
     // the map's worker (components/WorldMap.vue) is a module: bundled as one
     worker: { format: "es" },
