@@ -588,9 +588,9 @@ describe("gear for residents away from home", () => {
     const { a, cell } = await away();
     await database.sql`update world_cells set town = true where cell = ${cell}`;
     await database.sql`update camps set armory = '[{"id": "bone_knife", "left": 120}]'::jsonb`;
-    t.advance(10 * MIN);
+    t.advance(MIN); // (a short while: the camp's own deaths and raids may put more into the store meanwhile)
     const c = await camp(a);
-    expect(c.armory).toHaveLength(0);
+    expect(c.armory.some((x) => x.id === "bone_knife")).toBe(false);
     expect(c.residents.filter((r) => r.place === `cell:${cell}` && r.gear?.weapon?.id === "bone_knife")).toHaveLength(1);
   });
 

@@ -905,14 +905,15 @@ describe("天賦樹頂端的新能力", () => {
 
   it("戰場復甦: some of the fallen of a won fight rise and join", async () => {
     const u = await withTalents("u@example.com", "undead", DAAN, LEGION);
-    const before = (await camp(u)).residents.length;
     const lair = (await map(u, DAAN, 1000)).filter((c) => c.lair && !c.lair.boss && !c.lair.minRaceLevel && c.cell !== cellAt(DAAN)).sort((x, y) => x.lair!.power - y.lair!.power)[0]!;
     const res = await t.call("POST", "/world/expeditions", { to: lair.cell, count: 25 }, u);
     t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
     const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, u)).body as ExpeditionReport;
     expect(report.outcome!.won).toBe(true);
     expect(report.outcome!.raised).toBeGreaterThan(0);
-    expect((await camp(u)).residents.length).toBeGreaterThanOrEqual(before - report.outcome!.fallen + report.outcome!.raised!);
+    // (those who rose were born the moment the party got there; the camp's own births and deaths go on meanwhile)
+    const risen = (await camp(u)).residents.filter((r) => Date.parse(r.bornAt) === Date.parse(report.arriveAt));
+    expect(risen.length).toBeGreaterThanOrEqual(report.outcome!.raised!);
   });
 
   it("劫掠: takes from the store and leaves; the cell stays, nobody turtles", async () => {
