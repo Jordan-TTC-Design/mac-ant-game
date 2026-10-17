@@ -29,6 +29,9 @@ async function camp(email: string, race: string, at: { lat: number; lng: number 
   const opened = await t.call("POST", "/world/open", { cell: cellAt(at) }, auth);
   if (opened.status !== 201) throw new Error(`open ${email}: ${JSON.stringify(opened.body)}`);
   await database.sql`update world_players set xp = 120050 where user_id = (select id from users where email = ${email})`; // (Lv50)
+  // (a camp that got there by playing has beaten the level bosses on the way; one put at Lv50 at once would meet the Lv10 boss
+  // with every raid and lose some thirty a time: raids.ts bossDue)
+  await database.sql`update camps set bosses_beaten = '[10, 20, 30, 40, 50]'::jsonb where user_id = (select id from users where email = ${email})`;
   const picks = fill(race, trees);
   const res = await t.call("POST", "/world/talents", { picks }, auth);
   if (res.status !== 200) throw new Error(`talents ${email}: ${JSON.stringify(res.body)}`);
