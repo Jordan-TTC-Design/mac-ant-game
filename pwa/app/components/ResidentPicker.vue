@@ -66,7 +66,7 @@ const blocked = (r: CampResidentView) => slot.value === "shield" && !!gearRule(r
           <span class="line"><b>{{ nameOf(r) }}</b><small>{{ names[r.breed] ?? r.breed }}</small><span class="grow" /><small>戰力 {{ power }}</small></span>
           <small class="now">
             <GearIcon v-if="now" :id="now.id" :size="18" />
-            {{ SLOT_LABELS[slot] }}：{{ now ? `${gearName(now.id)} ${durabilityText(now)}${now.pinned ? " 📌" : ""}` : "空" }}{{ blocked(r) ? "（拿著雙手武器）" : "" }}
+            {{ SLOT_LABELS[slot] }}：{{ now ? `${pieceLabel(now)} ${durabilityText(now)}${now.pinned ? " 📌" : ""}` : "空" }}{{ blocked(r) ? "（拿著雙手武器）" : "" }}
           </small>
         </button>
         </template>

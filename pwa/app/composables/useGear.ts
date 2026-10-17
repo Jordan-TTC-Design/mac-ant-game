@@ -1,6 +1,9 @@
 import {
+  enhanceCost,
+  ENHANCE_MAX,
   GEAR,
   GEAR_SLOTS,
+  gearMax,
   gearPower,
   gearRule,
   neediest,
@@ -21,15 +24,20 @@ import { ApiError, api } from "~/utils/api";
  * while the camp's switch is on.
  */
 export const SLOT_LABELS: Record<GearSlot, string> = { weapon: "武器", shield: "盾牌", head: "帽子", chest: "胸甲", legs: "褲子", feet: "鞋子", hands: "手甲" };
-export { GEAR, GEAR_SLOTS, gearRule, repairCost };
+export { enhanceCost, ENHANCE_MAX, GEAR, GEAR_SLOTS, gearMax, gearRule, repairCost };
 
 const unopened = new Set(unopenedGear());
-/** T−1 (only the camp's own wood and stone), 未開放 (its materials cannot be had yet), or nothing. */
+const TIER_TAGS: Record<number, string> = { 2: "T2", 3: "T3", 4: "T4", 5: "傳說" };
+/** T−1 (only the camp's own wood and stone), 未開放 (its materials cannot be had yet), the later tiers (ECONOMY.md §1.1), or nothing. */
 export function gearTier(rule: GearRule): string {
   if (unopened.has(rule.id)) return "未開放";
   if (Object.keys(rule.cost).every((id) => id === "log" || id === "stone")) return "T−1";
-  return "";
+  return rule.tier ? (TIER_TAGS[rule.tier] ?? "") : "";
 }
+
+/** A piece's name as shown: ★ refined, and its 強化 +N. */
+export const pieceLabel = (item: { id: string; refined?: boolean; plus?: number }) =>
+  `${item.refined ? "★ " : ""}${GEAR.find((g) => g.id === item.id)?.name ?? item.id}${item.plus ? ` +${item.plus}` : ""}`;
 
 const clean = (v: number) => (v === Math.round(v) ? String(v) : v.toFixed(1));
 /** The Mac's Gear.effectText. */
@@ -45,7 +53,7 @@ export function effectText(rule: GearRule): string {
   return parts.join("，");
 }
 
-export const durabilityText = (item: { id: string; left: number }) => `${Math.round((item.left / (gearRule(item.id)?.durability ?? 1)) * 100)}%`;
+export const durabilityText = (item: { id: string; left: number; plus?: number }) => `${Math.round((item.left / gearMax(item)) * 100)}%`;
 
 export function residentPower(race: string, r: CampResidentView): number {
   const f = residentFighter(residentAsFighter(race, { id: r.id, breed: r.breed, gear: r.gear as never }), "attack", { id: race, ranged: RACE_RANGE[race] ?? 0 });

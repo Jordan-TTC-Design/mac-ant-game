@@ -3,7 +3,7 @@
  * mac/Sources/GoblinCamp/Materials.swift). Only the server fights (raids and the big world); the Mac plays the result.
  */
 import { GEAR_ATTACK_PER_MIGHT, GEAR_HP_PER_HEALTH, type Resident as Fighter } from "../world/battle.ts";
-import { gearRule, REFINE_BONUS, type GearItem, type GearSlot } from "./gear.ts";
+import { gearBonus, gearMax, gearRule, type GearItem, type GearSlot } from "./gear.ts";
 
 /** A breed's fighting stats, per race (might and health as multiples of a plain goblin; speed ×). Missing = 1 / 3 / 1. */
 export const BREED_STATS: Record<string, Record<string, { might?: number; health?: number; speed?: number }>> = {
@@ -57,7 +57,7 @@ export function residentAsFighter(
   for (const item of Object.values(resident.gear ?? {})) {
     const rule = item && gearRule(item.id);
     if (!rule || !item) continue;
-    const k = (item.left / rule.durability < 0.25 ? 0.5 : 1) * (item.refined ? REFINE_BONUS : 1); // (★ refined: stronger)
+    const k = (item.left / gearMax(item) < 0.25 ? 0.5 : 1) * gearBonus(item); // (★ refined, +強化: stronger)
     might += (rule.might ?? 0) * k;
     health += (rule.health ?? 0) * k;
     block += (rule.block ?? 0) * k;

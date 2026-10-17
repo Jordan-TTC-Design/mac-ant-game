@@ -80,28 +80,44 @@ struct GearItem {
     /// ★ 精良: refined in the workshop (the 拼裝改造 talent; shared/src/camp/gear.ts REFINE_BONUS).
     var refined = false
 
+    /// 強化 +1…+5 (the workshop, ECONOMY.md §1.2; only signed in: the books keep it).
+    var plus = 0
+
     /// What a ★ refined piece's numbers are multiplied by (the same as the server's).
     static let refineBonus = 1.3
+    /// 強化: at most this many +, each one ×(1 + power) on its numbers and ×(1 + durability) on its wear (shared/src/camp/gear.ts).
+    static let enhanceMax = 5
+    static let enhancePower = 0.06
+    static let enhanceDurability = 0.1
 
     init(_ gear: Gear) { id = gear.id; left = gear.durability }
-    init(id: String, left: Double?, pinned: Bool = false, held: Bool = false, refined: Bool = false) {
+    init(id: String, left: Double?, pinned: Bool = false, held: Bool = false, refined: Bool = false, plus: Int = 0) {
         self.id = id
-        self.left = left ?? Gears.by(id: id)?.durability ?? 1
         self.pinned = pinned
         self.held = held
         self.refined = refined
+        self.plus = plus
+        self.left = left ?? GearItem.maxLeft(id: id, plus: plus)
     }
 
-    /// Its name, with ★ when refined.
-    var name: String { (refined ? "★ " : "") + (gear?.name ?? id) }
+    /// The most wear a piece can have (made new or mended): its own, more for each + (shared gearMax).
+    static func maxLeft(id: String, plus: Int) -> Double {
+        ((Gears.by(id: id)?.durability ?? 1) * (1 + enhanceDurability * Double(plus))).rounded()
+    }
+    var maxLeft: Double { GearItem.maxLeft(id: id, plus: plus) }
+    /// All its numbers are multiplied by this: ★ refined and its + (shared gearBonus).
+    var bonus: Double { (refined ? GearItem.refineBonus : 1) * (1 + GearItem.enhancePower * Double(plus)) }
+
+    /// Its name, with ★ when refined and +N when 強化'd.
+    var name: String { (refined ? "★ " : "") + (gear?.name ?? id) + (plus > 0 ? " +\(plus)" : "") }
 
     var gear: Gear? { Gears.by(id: id) }
     /// 1 = new, 0 = about to break.
-    var fraction: Double { min(1, max(0, left / max(1, gear?.durability ?? 1))) }
+    var fraction: Double { min(1, max(0, left / max(1, maxLeft))) }
     /// Worn out: it works at half strength until it breaks.
     var isWorn: Bool { fraction < 0.25 }
     /// What it is worth as gear now (a worn piece counts half).
-    var power: Double { (gear?.power ?? 0) * (isWorn ? 0.5 : 1) * (refined ? GearItem.refineBonus : 1) }
+    var power: Double { (gear?.power ?? 0) * (isWorn ? 0.5 : 1) * bonus }
 }
 
 private func rgb(_ r: Int, _ g: Int, _ b: Int) -> NSColor { NSColor(calibratedRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1) }
@@ -310,6 +326,113 @@ enum Gears {
              blurb: "箭頭是九頭蛇的毒牙，射得比什麼都遠。傳說級。"),
         Gear(id: "minotaur_helm", name: "牛角盔", slot: .head, might: 0.4, health: 1.8, cost: [("minotaur_horn", 2), ("scrap_iron", 3)], look: .helm, color: rgb(160, 120, 80),
              blurb: "頂著一對大牛角的頭盔，衝過去誰都怕。傳說級。"),
+        // every material something to be made of (ECONOMY.md §1.1, shared/src/camp/gear.ts `tier`): T2, T3, T4 and the legendary
+        Gear(id: "snake_fang_dagger", name: "蛇牙匕首", slot: .weapon, might: 2.5, speed: 0.03, cost: [("snake_fang", 3), ("snake_skin", 2), ("scrap_iron", 3)], look: .dagger, color: rgb(96, 170, 70),
+             blurb: "蛇牙磨成的刃，握柄纏著蛇皮。T2。"),
+        Gear(id: "snakeskin_boots", name: "蛇皮靴", slot: .feet, health: 0.6, speed: 0.1, cost: [("snake_skin", 4), ("leather_strap", 1)], look: .boots, color: rgb(96, 170, 70),
+             blurb: "蛇皮縫的靴子，走起來沙沙響。T2。"),
+        Gear(id: "spore_staff", name: "孢子法杖", slot: .weapon, might: 2.6, reach: 28, cost: [("spore_cap", 3), ("glow_spore", 2), ("scrap_wood", 4)], look: .staff, color: rgb(210, 60, 52),
+             blurb: "杖頭插著孢子傘，揮一下就撒出螢光孢子。T2。"),
+        Gear(id: "raven_hood", name: "鴉羽兜帽", slot: .head, health: 1.2, speed: 0.03, cost: [("raven_eye", 1), ("black_feather", 4), ("scrap_rag", 2)], look: .cap, color: rgb(40, 40, 52),
+             blurb: "黑羽縫的兜帽，額前嵌著一顆鴉眼。T2。"),
+        Gear(id: "warpaint_wraps", name: "戰紋護腕", slot: .hands, might: 0.5, health: 0.4, cost: [("war_paint", 2), ("leather_strap", 1), ("rat_pelt", 2)], look: .gloves, color: rgb(180, 60, 40),
+             blurb: "塗滿戰紋顏料的皮護腕，看了就想衝。T2。"),
+        Gear(id: "shaman_mask", name: "薩滿面具", slot: .head, might: 0.2, health: 1.1, cost: [("shaman_charm", 2), ("feather", 3), ("scrap_wood", 2)], look: .helm, color: rgb(120, 90, 60),
+             blurb: "薩滿護符綁成的面具，插著羽毛。T2。"),
+        Gear(id: "beeswax_shield", name: "蜂蠟木盾", slot: .shield, block: 0.3, cost: [("beeswax", 3), ("scrap_wood", 6)], look: .woodShield, color: rgb(230, 190, 80),
+             blurb: "抹了好幾層蜂蠟的木盾，滑不溜丟。T2。"),
+        Gear(id: "guard_plate_armor", name: "鐵片甲", slot: .chest, health: 2.6, speed: -0.03, cost: [("guard_plate", 4), ("leather_strap", 2), ("scrap_iron", 4)], look: .plate, color: rgb(150, 156, 168),
+             blurb: "城鎮守衛的鐵甲片拼起來的胸甲。T2。"),
+        Gear(id: "steel_crossbow", name: "鋼弩", slot: .weapon, grip: .two, might: 2.6, reach: 40, cost: [("steel_bolt", 6), ("scrap_iron", 5), ("scrap_wood", 4)], look: .bow, color: rgb(170, 176, 188),
+             blurb: "鋼弩箭配上自己釘的弩，射得又遠又準。T2。"),
+        Gear(id: "vampire_dagger", name: "吸血牙匕首", slot: .weapon, might: 2.7, speed: 0.04, cost: [("vampire_fang", 3), ("bat_fang", 2), ("night_dust", 1)], look: .dagger, color: rgb(150, 30, 50),
+             blurb: "吸血牙做的匕首，刺下去會滲出暗紅色。T2。"),
+        Gear(id: "banner_spear", name: "軍旗槍", slot: .weapon, grip: .two, might: 2.6, reach: 12, cost: [("war_banner", 1), ("scrap_iron", 5), ("scrap_wood", 4)], look: .spear, color: rgb(190, 40, 40),
+             blurb: "槍頭綁著軍團旗幟，衝鋒時一路飄。T2。"),
+        Gear(id: "bandit_cutlass", name: "山賊彎刀", slot: .weapon, might: 3.1, speed: 0.03, cost: [("bandit_mask", 2), ("stolen_coin", 4), ("scrap_iron", 8)], look: .shortSword, color: rgb(200, 160, 64),
+             blurb: "山賊的彎刀，刀柄上掛著搶來的銅錢。T3。"),
+        Gear(id: "troll_moss_cloak", name: "巨魔苔斗篷", slot: .chest, health: 2.9, cost: [("troll_moss", 4), ("troll_hide", 1), ("leather_strap", 2)], look: .cloak, color: rgb(60, 100, 50),
+             blurb: "巨魔身上的苔蘚織成的斗篷，濕濕的很耐打。T3。"),
+        Gear(id: "stone_wing_shield", name: "石翼盾", slot: .shield, block: 0.42, speed: -0.03, cost: [("stone_wing", 4), ("gargoyle_eye", 1), ("scrap_iron", 4)], look: .roundShield, color: rgb(130, 130, 136),
+             blurb: "石像鬼的石翼片拼成的盾，中間嵌著一顆紅眼。T3。"),
+        Gear(id: "gargoyle_helm", name: "石像鬼盔", slot: .head, health: 1.6, cost: [("gargoyle_eye", 1), ("gargoyle_stone", 3), ("scrap_iron", 4)], look: .helm, color: rgb(130, 130, 136),
+             blurb: "石像鬼的頭做的盔，眼睛還會發紅光。T3。"),
+        Gear(id: "salamander_mail", name: "火蠑螈鱗甲", slot: .chest, might: 0.3, health: 2.8, cost: [("salamander_scale", 5), ("ember_gland", 1), ("leather_strap", 2)], look: .plate, color: rgb(220, 90, 40),
+             blurb: "火蠑螈的鱗一片片疊起來，摸起來是溫的。T3。"),
+        Gear(id: "ember_blade", name: "火腺刃", slot: .weapon, might: 3.3, cost: [("ember_gland", 2), ("scrap_iron", 8), ("crude_blade", 1)], look: .longSword, color: rgb(250, 120, 40),
+             blurb: "劍身封著火腺，揮起來帶著火星。T3。"),
+        Gear(id: "hornet_bow", name: "蜂針弓", slot: .weapon, grip: .two, might: 3.0, reach: 46, cost: [("hornet_stinger", 3), ("spider_silk", 3), ("scrap_wood", 5)], look: .bow, color: rgb(240, 200, 50),
+             blurb: "箭頭是巨型虎頭蜂的針，射中會又腫又痛。T3。"),
+        Gear(id: "shadow_cloak", name: "暗影斗篷", slot: .chest, health: 2.5, speed: 0.06, cost: [("shadow_essence", 3), ("wisp_flame", 1), ("scrap_rag", 4)], look: .cloak, color: rgb(100, 60, 150),
+             blurb: "暗影精華染成的斗篷，在暗處幾乎看不見。T3。"),
+        Gear(id: "wisp_staff", name: "鬼火杖", slot: .weapon, might: 3.2, reach: 30, cost: [("wisp_flame", 2), ("shadow_essence", 2), ("scrap_wood", 4)], look: .staff, color: rgb(200, 160, 250),
+             blurb: "杖頭點著一團鬼火芯，晚上特別亮。T3。"),
+        Gear(id: "harpy_bow", name: "鷹羽弓", slot: .weapon, grip: .two, might: 3.2, reach: 48, cost: [("harpy_feather", 5), ("scrap_wood", 6), ("leather_strap", 1)], look: .bow, color: rgb(200, 160, 112),
+             blurb: "鷹身女妖的羽毛做箭羽，射得比風還快。T3。"),
+        Gear(id: "werewolf_boots", name: "狼人毛靴", slot: .feet, health: 0.8, speed: 0.12, cost: [("werewolf_fur", 3), ("leather_strap", 1)], look: .boots, color: rgb(106, 90, 80),
+             blurb: "狼人毛縫的靴子，跑起來像狼一樣快。T3。"),
+        Gear(id: "werewolf_gloves", name: "狼人爪套", slot: .hands, might: 0.7, health: 0.5, cost: [("werewolf_fur", 2), ("sharp_claw", 3)], look: .gloves, color: rgb(106, 90, 80),
+             blurb: "狼人毛手套，指尖縫著利爪。T3。"),
+        Gear(id: "lizard_shield", name: "蜥蜴人鱗盾", slot: .shield, block: 0.4, cost: [("lizard_scale", 5), ("scrap_wood", 4)], look: .roundShield, color: rgb(74, 138, 90),
+             blurb: "蜥蜴人鱗片釘成的圓盾，又輕又硬。T3。"),
+        Gear(id: "lizard_pants", name: "蜥鱗褲", slot: .legs, health: 1.5, speed: 0.02, cost: [("lizard_scale", 4), ("scrap_rag", 2)], look: .pants, color: rgb(74, 138, 90),
+             blurb: "蜥鱗縫的褲子，走在水邊也不怕濕。T3。"),
+        Gear(id: "ant_bracers", name: "蟻甲護腕", slot: .hands, might: 0.3, health: 0.9, cost: [("ant_chitin", 4), ("leather_strap", 1)], look: .gauntlet, color: rgb(106, 58, 42),
+             blurb: "巨蟻的甲殼磨成的護腕，硬得像石頭。T3。"),
+        Gear(id: "chitin_helm", name: "蟻甲盔", slot: .head, health: 1.7, cost: [("ant_chitin", 5), ("scrap_iron", 2)], look: .helm, color: rgb(106, 58, 42),
+             blurb: "兵蟻頭殼做的盔，還留著一對觸角。T3。"),
+        Gear(id: "ogre_maul", name: "食人魔大棒", slot: .weapon, grip: .two, might: 3.9, speed: -0.03, cost: [("ogre_club", 2), ("ogre_hide", 2), ("scrap_iron", 6)], look: .greatSword, color: rgb(110, 80, 50),
+             blurb: "食人魔的大棒再包一層皮，兩手才舉得動。T4。"),
+        Gear(id: "ogre_hide_armor", name: "食人魔皮甲", slot: .chest, health: 3.4, speed: -0.03, cost: [("ogre_hide", 5), ("leather_strap", 3)], look: .plate, color: rgb(200, 170, 120),
+             blurb: "食人魔的厚皮做的甲，刀砍下去只留一道白痕。T4。"),
+        Gear(id: "wyvern_scale_mail", name: "飛龍鱗甲", slot: .chest, health: 3.6, cost: [("wyvern_scale", 5), ("wyvern_wing", 1), ("leather_strap", 2)], look: .plate, color: rgb(70, 140, 120),
+             blurb: "飛龍鱗一片片縫成的甲，閃著青綠色。T4。"),
+        Gear(id: "wyvern_greaves", name: "飛龍護腿", slot: .legs, health: 1.9, speed: 0.04, cost: [("wyvern_scale", 3), ("wyvern_wing", 1)], look: .pants, color: rgb(70, 140, 120),
+             blurb: "飛龍鱗護腿，邊上縫著一截翼膜。T4。"),
+        Gear(id: "golem_helm", name: "魔像鐵盔", slot: .head, health: 2.1, cost: [("iron_plate", 3), ("golem_core", 1)], look: .helm, color: rgb(130, 136, 148),
+             blurb: "魔像鐵板敲成的盔，額前嵌著發光的核心。T4。"),
+        Gear(id: "golem_shield", name: "魔像鐵盾", slot: .shield, block: 0.46, speed: -0.04, cost: [("iron_plate", 4), ("scrap_iron", 6)], look: .roundShield, color: rgb(130, 136, 148),
+             blurb: "魔像的鐵板做的大盾，很重但什麼都擋得住。T4。"),
+        Gear(id: "ghost_veil_hood", name: "幽魂面紗", slot: .head, health: 1.8, speed: 0.05, cost: [("ghost_veil", 2), ("banshee_tear", 1)], look: .cap, color: rgb(220, 230, 240),
+             blurb: "幽魂面紗做的兜帽，戴上整個人變得輕飄飄。T4。"),
+        Gear(id: "banshee_staff", name: "女妖之淚法杖", slot: .weapon, might: 3.8, reach: 32, cost: [("banshee_tear", 2), ("ghost_veil", 1), ("elemental_core", 1)], look: .staff, color: rgb(170, 200, 240),
+             blurb: "杖頭封著女妖之淚，會發出淒厲的光。T4。"),
+        Gear(id: "basilisk_shield", name: "蛇蜥盾", slot: .shield, block: 0.44, cost: [("basilisk_scale", 4), ("basilisk_eye", 1)], look: .roundShield, color: rgb(90, 140, 60),
+             blurb: "蛇蜥鱗盾，盾心那顆石化之眼誰都不敢直視。T4。"),
+        Gear(id: "basilisk_boots", name: "蛇蜥靴", slot: .feet, health: 1.0, speed: 0.12, cost: [("basilisk_scale", 3), ("leather_strap", 1)], look: .boots, color: rgb(90, 140, 60),
+             blurb: "蛇蜥鱗做的靴子，又滑又快。T4。"),
+        Gear(id: "dark_silk_robe", name: "暗絲法袍", slot: .chest, health: 3.3, speed: 0.06, cost: [("dark_silk", 4), ("shadow_essence", 1)], look: .cloak, color: rgb(74, 58, 106),
+             blurb: "黑暗精靈的暗絲織成的法袍，輕得像沒穿。T4。"),
+        Gear(id: "naga_trident", name: "娜迦三叉戟", slot: .weapon, grip: .two, might: 3.8, reach: 14, cost: [("naga_pearl", 2), ("lizard_scale", 3), ("scrap_iron", 6)], look: .spear, color: rgb(160, 224, 240),
+             blurb: "娜迦戰士的三叉戟，叉尖鑲著珍珠。T4。"),
+        Gear(id: "elemental_blade", name: "元素刃", slot: .weapon, might: 4.0, cost: [("elemental_core", 2), ("scrap_iron", 8), ("crystal_shard", 3)], look: .longSword, color: rgb(240, 160, 240),
+             blurb: "劍身嵌著元素核心，時冷時熱。T4。"),
+        Gear(id: "ogre_king_girdle", name: "食人魔王腰帶", slot: .legs, might: 0.5, health: 2.4, cost: [("ogre_king_belt", 1), ("ogre_hide", 3)], look: .pants, color: rgb(160, 112, 64),
+             blurb: "食人魔王的腰帶改成的護腿，一穿上就站得特別穩。傳說級。"),
+        Gear(id: "harpy_crown_helm", name: "鷹身王冠", slot: .head, health: 2.2, speed: 0.08, cost: [("harpy_crown", 1), ("harpy_feather", 6)], look: .helm, color: rgb(240, 200, 96),
+             blurb: "鷹身女王的王冠插滿羽毛，戴上像要飛起來。傳說級。"),
+        Gear(id: "alpha_fang_blade", name: "狼王牙刃", slot: .weapon, might: 4.4, speed: 0.04, cost: [("alpha_fang", 1), ("werewolf_fur", 4), ("scrap_iron", 8)], look: .longSword, color: rgb(240, 232, 208),
+             blurb: "狼人王的牙做成的刀，月夜下會發光。傳說級。"),
+        Gear(id: "count_cape", name: "伯爵披風", slot: .chest, health: 3.9, speed: 0.06, cost: [("vampire_cape", 1), ("dark_silk", 3)], look: .cloak, color: rgb(138, 26, 42),
+             blurb: "吸血鬼伯爵的披風，內裡是暗絲。傳說級。"),
+        Gear(id: "flame_heart_staff", name: "炎魔之心杖", slot: .weapon, might: 4.6, reach: 32, cost: [("flame_heart", 1), ("elemental_core", 3), ("crystal_shard", 4)], look: .staff, color: rgb(255, 106, 42),
+             blurb: "杖頭是一顆還在跳的炎魔之心。傳說級。"),
+        Gear(id: "naga_crown_helm", name: "娜迦王冠", slot: .head, might: 0.4, health: 2.4, cost: [("naga_crown", 1), ("naga_pearl", 3)], look: .helm, color: rgb(96, 192, 224),
+             blurb: "娜迦女王的王冠，珍珠一顆顆閃著水光。傳說級。"),
+        Gear(id: "chief_war_axe", name: "酋長戰斧", slot: .weapon, grip: .two, might: 4.5, cost: [("chief_tusk", 2), ("war_totem", 1), ("scrap_iron", 10)], look: .greatSword, color: rgb(120, 86, 58),
+             blurb: "巨魔酋長的獠牙配上戰圖騰做的大斧。傳說級。"),
+        Gear(id: "elder_scale_armor", name: "遠古龍鱗甲", slot: .chest, health: 4.3, cost: [("elder_scale", 3), ("leather_strap", 4), ("crystal_shard", 4)], look: .plate, color: rgb(150, 40, 40),
+             blurb: "遠古飛龍的鱗片釘成的甲，連火都燒不進去。傳說級。"),
+        Gear(id: "dragon_heart_blade", name: "龍心劍", slot: .weapon, might: 5.4, cost: [("dragon_heart", 1), ("dragon_scale", 2), ("scrap_iron", 10)], look: .greatSword, color: rgb(255, 90, 58),
+             blurb: "劍柄封著一顆龍心，整把劍都是燙的。傳說級。"),
+        Gear(id: "lich_crown_helm", name: "巫妖冠", slot: .head, might: 0.6, health: 2.8, cost: [("lich_crown", 1), ("soul_gem", 2)], look: .helm, color: rgb(90, 58, 138),
+             blurb: "巫妖王的冠，鑲著兩顆靈魂寶石。傳說級。"),
+        Gear(id: "giant_heart_shield", name: "巨人之心盾", slot: .shield, block: 0.56, cost: [("giant_heart", 1), ("giant_bone", 4)], look: .roundShield, color: rgb(200, 160, 96),
+             blurb: "山丘巨人的心臟嵌在骨盾中間，還會微微跳。傳說級。"),
+        Gear(id: "hydra_gauntlets", name: "九頭蛇血手甲", slot: .hands, might: 1.1, health: 0.9, cost: [("hydra_blood", 1), ("hydra_fang", 2), ("scrap_iron", 4)], look: .gauntlet, color: rgb(58, 200, 74),
+             blurb: "浸過九頭蛇血的手甲，碰到的傷口會發綠。傳說級。"),
+        Gear(id: "labyrinth_boots", name: "迷宮之靴", slot: .feet, health: 1.4, speed: 0.16, cost: [("labyrinth_key", 1), ("minotaur_horn", 1), ("leather_strap", 2)], look: .boots, color: rgb(224, 192, 64),
+             blurb: "鞋底刻著迷宮鑰匙的紋路，怎麼走都不會迷路。傳說級。"),
     ]
 
     /// Wear before breaking, where it differs from the default (120 for a weapon, 20 for the rest). Cloth wears out fastest, iron lasts longest.
@@ -326,12 +449,59 @@ enum Gears {
         "slingshot": 100, "rabbit_cap": 14, "fox_cap": 18, "snail_shield": 20, "beetle_armor": 24, "feather_cloak": 18, "spine_gloves": 16, "goose_boots": 14,
         "dire_fang_blade": 200, "echo_bow": 170, "tusk_maul": 220, "royal_gel_shield": 30, "crown_helm": 26, "dire_pelt_armor": 30, "thick_hide_greaves": 24, "bat_lord_boots": 22, "toad_gloves": 24, "commander_bracer": 26,
         "dragon_scale_armor": 60, "lich_staff": 320, "giant_hammer": 300, "hydra_bow": 220, "minotaur_helm": 40,
+        "snake_fang_dagger": 150, "snakeskin_boots": 22, "spore_staff": 260, "raven_hood": 22, "warpaint_wraps": 22, "shaman_mask": 24, "beeswax_shield": 28, "guard_plate_armor": 44,
+        "steel_crossbow": 180, "vampire_dagger": 150, "banner_spear": 180, "bandit_cutlass": 200, "troll_moss_cloak": 40, "stone_wing_shield": 44, "gargoyle_helm": 36, "salamander_mail": 40,
+        "ember_blade": 200, "hornet_bow": 170, "shadow_cloak": 30, "wisp_staff": 280, "harpy_bow": 170, "werewolf_boots": 26, "werewolf_gloves": 28, "lizard_shield": 40,
+        "lizard_pants": 26, "ant_bracers": 30, "chitin_helm": 34, "ogre_maul": 280, "ogre_hide_armor": 50, "wyvern_scale_mail": 48, "wyvern_greaves": 34, "golem_helm": 44,
+        "golem_shield": 56, "ghost_veil_hood": 30, "banshee_staff": 300, "basilisk_shield": 50, "basilisk_boots": 30, "dark_silk_robe": 36, "naga_trident": 240, "elemental_blade": 240,
+        "ogre_king_girdle": 50, "harpy_crown_helm": 40, "alpha_fang_blade": 260, "count_cape": 44, "flame_heart_staff": 320, "naga_crown_helm": 44, "chief_war_axe": 280, "elder_scale_armor": 60,
+        "dragon_heart_blade": 300, "lich_crown_helm": 44, "giant_heart_shield": 70, "hydra_gauntlets": 44, "labyrinth_boots": 40,
     ]
+
+    /// How far along a piece is (shared/src/camp/gear.ts `tier`): 1 the first gear (left out), 2–4 from the later monsters,
+    /// 5 legendary. Sets what 強化 costs, and tags the recipe.
+    static let tiers: [String: Int] = Dictionary(uniqueKeysWithValues: [
+        ("snake_fang_dagger", 2), ("snakeskin_boots", 2), ("spore_staff", 2), ("raven_hood", 2), ("warpaint_wraps", 2), ("shaman_mask", 2),
+        ("beeswax_shield", 2), ("guard_plate_armor", 2), ("steel_crossbow", 2), ("vampire_dagger", 2), ("banner_spear", 2), ("bandit_cutlass", 3),
+        ("troll_moss_cloak", 3), ("stone_wing_shield", 3), ("gargoyle_helm", 3), ("salamander_mail", 3), ("ember_blade", 3), ("hornet_bow", 3),
+        ("shadow_cloak", 3), ("wisp_staff", 3), ("harpy_bow", 3), ("werewolf_boots", 3), ("werewolf_gloves", 3), ("lizard_shield", 3),
+        ("lizard_pants", 3), ("ant_bracers", 3), ("chitin_helm", 3), ("ogre_maul", 4), ("ogre_hide_armor", 4), ("wyvern_scale_mail", 4),
+        ("wyvern_greaves", 4), ("golem_helm", 4), ("golem_shield", 4), ("ghost_veil_hood", 4), ("banshee_staff", 4), ("basilisk_shield", 4),
+        ("basilisk_boots", 4), ("dark_silk_robe", 4), ("naga_trident", 4), ("elemental_blade", 4), ("ogre_king_girdle", 5), ("harpy_crown_helm", 5),
+        ("alpha_fang_blade", 5), ("count_cape", 5), ("flame_heart_staff", 5), ("naga_crown_helm", 5), ("chief_war_axe", 5), ("elder_scale_armor", 5),
+        ("dragon_heart_blade", 5), ("lich_crown_helm", 5), ("giant_heart_shield", 5), ("hydra_gauntlets", 5), ("labyrinth_boots", 5),
+    ])
+    static func tier(_ id: String) -> Int { tiers[id] ?? 1 }
+    static let tierNames = [2: "T2", 3: "T3", 4: "T4", 5: "傳說"]
+
+    /// 強化 (shared/src/camp/gear.ts enhanceCost): going to +1 costs ENHANCE_BASE by tier, each + after twice the one before;
+    /// from +3 some of the piece's own material, from +4 crystal shards, +5 amber too. Nil at +5.
+    private static let enhanceBase: [Int: [(String, Int)]] = [
+        1: [("log", 20), ("stone", 10)],
+        2: [("log", 40), ("stone", 20), ("scrap_iron", 5)],
+        3: [("log", 80), ("stone", 40), ("scrap_iron", 10)],
+        4: [("log", 150), ("stone", 80), ("scrap_iron", 20)],
+        5: [("log", 150), ("stone", 80), ("scrap_iron", 20)],
+    ]
+    private static let common: Set<String> = ["log", "stone", "scrap_iron", "scrap_wood", "scrap_rag", "leather_strap", "crystal_shard", "amber"]
+    static func enhanceCost(_ item: GearItem) -> [(String, Int)]? {
+        guard let gear = item.gear, item.plus < GearItem.enhanceMax else { return nil }
+        let times = 1 << item.plus
+        var cost = (enhanceBase[tier(gear.id)] ?? enhanceBase[1]!).map { ($0.0, $0.1 * times) }
+        func add(_ id: String, _ n: Int) {
+            if let i = cost.firstIndex(where: { $0.0 == id }) { cost[i].1 += n } else { cost.append((id, n)) }
+        }
+        let own = gear.cost.first { !common.contains($0.0) }?.0 ?? "scrap_iron"
+        if item.plus >= 2 { add(own, [2, 4, 8][item.plus - 2]) }
+        if item.plus >= 3 { add("crystal_shard", [2, 5][item.plus - 3]) }
+        if item.plus >= 4 { add("amber", 2) }
+        return cost
+    }
 
     /// Pieces that cannot be made yet: something they need comes only from big-world places not open yet (or the great
     /// monsters, while they are away). The same as shared/src/world/availability.ts `unopenedGear()` (mac-sync.test.ts checks).
     static let unopened: Set<String> = [
-        "heartwood_staff", "troll_greatsword", "cursed_blade", "gargoyle_shield", "bark_armor", "troll_armor", "golem_gauntlets", "dragon_scale_armor", "lich_staff", "giant_hammer", "hydra_bow", "minotaur_helm",
+        "lich_crown_helm", "giant_heart_shield", "hydra_gauntlets", "labyrinth_boots",
     ]
 
     static func by(id: String) -> Gear? { byID[id] }

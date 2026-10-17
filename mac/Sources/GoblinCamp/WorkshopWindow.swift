@@ -189,7 +189,7 @@ final class WorkshopWindow: NSObject, MainPane {
     static func tier(of gear: Gear) -> String? {
         if Gears.unopened.contains(gear.id) { return "未開放" }
         if gear.cost.allSatisfy({ ["log", "stone"].contains($0.0) }) { return "T−1" }
-        return nil
+        return Gears.tierNames[Gears.tier(gear.id)] // (the later monsters' gear: T2–T4 and 傳說, ECONOMY.md §1.1)
     }
 
     private func layoutMake(in holder: NSView, y start: CGFloat) -> CGFloat {
@@ -394,7 +394,8 @@ final class WorkshopWindow: NSObject, MainPane {
                 y += 32
                 guard isOpen else { continue }
                 for (index, item) in mineStock {
-                    label((item.refined ? "★ " : "") + "倉庫 \(Int(item.fraction * 100))%" + (item.held ? "　保留" : ""), color: item.held ? .systemOrange : .labelColor, in: holder, x: margin + 30, y: y + 6, width: inner - 350)
+                    label((item.refined ? "★ " : "") + (item.plus > 0 ? "+\(item.plus) " : "") + "倉庫 \(Int(item.fraction * 100))%" + (item.held ? "　保留" : ""), color: item.held ? .systemOrange : .labelColor, in: holder, x: margin + 30, y: y + 6, width: inner - 452)
+                    enhanceButton(item, antID: nil, slot: nil, stock: index, in: holder, x: margin + inner - 416, y: y)
                     refineButton(item, antID: nil, slot: nil, stock: index, in: holder, x: margin + inner - 314, y: y)
                     _ = button("給…", in: holder, x: margin + inner - 212, y: y, width: 96) { [weak self] sender in
                         guard let self, let gear = item.gear else { return }
@@ -413,7 +414,8 @@ final class WorkshopWindow: NSObject, MainPane {
                 for (ant, item) in mineWorn {
                     let breed = breeds[min(ant.breedIndex, breeds.count - 1)].name
                     let place = colony.placeLabel(of: ant.id).map { "・\($0)" } ?? ""
-                    label("\(item.pinned ? "📌 " : "")\(item.refined ? "★ " : "")\(Int(item.fraction * 100))% — \(ant.name)（\(breed)\(place)）", in: holder, x: margin + 30, y: y + 6, width: inner - 250)
+                    label("\(item.pinned ? "📌 " : "")\(item.refined ? "★ " : "")\(item.plus > 0 ? "+\(item.plus) " : "")\(Int(item.fraction * 100))% — \(ant.name)（\(breed)\(place)）", in: holder, x: margin + 30, y: y + 6, width: inner - 352)
+                    enhanceButton(item, antID: ant.id, slot: slot, stock: nil, in: holder, x: margin + inner - 314, y: y)
                     refineButton(item, antID: ant.id, slot: slot, stock: nil, in: holder, x: margin + inner - 212, y: y)
                     _ = button("收回倉庫", in: holder, x: margin + inner - 110, y: y, width: 110) { [weak self] _ in
                         self?.colony.unequip(antID: ant.id, slot: slot)
@@ -428,6 +430,47 @@ final class WorkshopWindow: NSObject, MainPane {
         }
         if !any { y += label("還沒有任何裝備，去「製作」做一件吧。", color: .secondaryLabelColor, in: holder, y: y).frame.height }
         return y
+    }
+
+    /// 強化 (signed in): +N → +N+1, shown in a little menu with what it gives and costs (red where short), then done.
+    private func enhanceButton(_ item: GearItem, antID: Int?, slot: GearSlot?, stock: Int?, in holder: NSView, x: CGFloat, y: CGFloat) {
+        guard colony.followsBooks, let gear = item.gear else { return }
+        guard let cost = Gears.enhanceCost(item) else {
+            _ = button("+\(GearItem.enhanceMax) 已滿", enabled: false, in: holder, x: x, y: y, width: 96) { _ in }
+            return
+        }
+        let b = button("強化 +\(item.plus)→+\(item.plus + 1)", in: holder, x: x, y: y, width: 96) { [weak self] sender in
+            guard let self else { return }
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            let head = NSMenuItem(title: "\(gear.name) +\(item.plus) → +\(item.plus + 1)", action: nil, keyEquivalent: "")
+            head.isEnabled = false
+            menu.addItem(head)
+            let gain = NSMenuItem(title: "數值 +\(Int(GearItem.enhancePower * 100))%、耐久 +\(Int(GearItem.enhanceDurability * 100))%（不會失敗，順便修好）", action: nil, keyEquivalent: "")
+            gain.isEnabled = false
+            menu.addItem(gain)
+            menu.addItem(.separator())
+            var enough = true
+            for (id, n) in cost {
+                let have = self.colony.materials[id, default: 0]
+                if have < n { enough = false }
+                let line = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                line.attributedTitle = NSAttributedString(string: "\(Materials.info(id)?.name ?? id) ×\(n)（有 \(have)）",
+                                                          attributes: [.foregroundColor: have < n ? NSColor.systemRed : NSColor.labelColor, .font: NSFont.menuFont(ofSize: 0)])
+                line.isEnabled = false
+                menu.addItem(line)
+            }
+            menu.addItem(.separator())
+            let go = ClosureMenuItem(title: enough ? "強化" : "材料不夠", handler: { [weak self] in
+                guard let self else { return }
+                self.lastMessage = self.colony.enhance(antID: antID, slot: slot, stock: stock) ? "強化\(gear.name)中…" : "強化不了\(gear.name)。"
+                self.refresh()
+            })
+            go.isEnabled = enough
+            menu.addItem(go)
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 2), in: sender)
+        }
+        b.toolTip = "強化：每 +1 數值 +6%、耐久 +10%，最多 +\(GearItem.enhanceMax)；不會失敗"
     }
 
     /// ★ 改造 (signed in, with the 拼裝改造 talent): for all the piece was made from; nothing for a refined one.
@@ -459,7 +502,7 @@ final class WorkshopWindow: NSObject, MainPane {
             let gear = job.gear
             let affordable = colony.canAffordRepair(gear)
             let shift = icon(gear.id, in: holder, y: y + 2, points: 30)
-            label("\(gear.name)　\(job.owner)　耐久 \(Int(job.item.fraction * 100))%", bold: true, in: holder, x: margin + shift, y: y, width: inner - 110 - shift)
+            label("\(job.item.name)　\(job.owner)　耐久 \(Int(job.item.fraction * 100))%", bold: true, in: holder, x: margin + shift, y: y, width: inner - 110 - shift)
             let cost = NSTextField(labelWithAttributedString: costText(Colony.repairCost(gear)))
             cost.frame = NSRect(x: margin + shift, y: y + 17, width: inner - 110 - shift, height: 16)
             holder.addSubview(cost)
@@ -525,7 +568,7 @@ enum GearMenus {
         let ants = colony.ants.filter { !$0.isDying && !$0.isDeparting && !$0.isChild }.sorted(by: strongest)
         func item(_ ant: Ant) -> NSMenuItem {
             let breed = breeds[min(ant.breedIndex, breeds.count - 1)].name
-            let now = ant.item(in: slot).map { "\($0.pinned ? "📌" : "")\($0.gear?.name ?? $0.id) \(Int($0.fraction * 100))%" } ?? "空"
+            let now = ant.item(in: slot).map { "\($0.pinned ? "📌" : "")\($0.name) \(Int($0.fraction * 100))%" } ?? "空"
             let entry = ClosureMenuItem(title: String(format: "%@（%@）力 %.1f 血 %.0f　現在：%@", ant.name, breed, ant.might, ant.maxHealth, now)) { pick(ant) }
             entry.image = ant.item(in: slot).flatMap { GearIcons.image($0.id, points: 16) } ?? GearMenus.empty
             return entry

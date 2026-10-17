@@ -12,7 +12,8 @@ final class CampLedger {
         var pinned: Bool?
         var held: Bool?
         var refined: Bool?
-        var item: GearItem { GearItem(id: id, left: left, pinned: pinned == true, held: held == true, refined: refined == true) }
+        var plus: Int?
+        var item: GearItem { GearItem(id: id, left: left, pinned: pinned == true, held: held == true, refined: refined == true, plus: plus ?? 0) }
     }
 
     struct Resident: Codable {

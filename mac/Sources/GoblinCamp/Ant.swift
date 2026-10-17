@@ -221,6 +221,8 @@ struct Ant {
     var gearPinned: Set<String> = []
     /// Slots whose piece is ★ refined (stronger: GearItem.refineBonus).
     var gearRefined: Set<String> = []
+    /// Slots whose piece is 強化'd, and how far (slot → +N).
+    var gearPlus: [String: Int] = [:]
     /// Damage per hit, hits it can take and the chance to shrug off a monster's hit: the breed's numbers plus what it wears (a worn-out piece counts half).
     var might: Double { traits.might + wornGear.reduce(0) { $0 + $1.might * condition($1) } }
     var maxHealth: Double { traits.maxHealth + wornGear.reduce(0) { $0 + $1.health * condition($1) } }
@@ -230,9 +232,12 @@ struct Ant {
     var gearReach: Double { wornGear.reduce(0) { $0 + $1.reach } }
 
     func item(in slot: GearSlot) -> GearItem? {
-        gear[slot.rawValue].map { GearItem(id: $0, left: gearLeft[slot.rawValue], pinned: gearPinned.contains(slot.rawValue), refined: gearRefined.contains(slot.rawValue)) }
+        gear[slot.rawValue].map { GearItem(id: $0, left: gearLeft[slot.rawValue], pinned: gearPinned.contains(slot.rawValue), refined: gearRefined.contains(slot.rawValue), plus: gearPlus[slot.rawValue] ?? 0) }
     }
-    private func condition(_ gear: Gear) -> Double { (item(in: gear.slot)?.isWorn == true ? 0.5 : 1) * (gearRefined.contains(gear.slot.rawValue) ? GearItem.refineBonus : 1) }
+    private func condition(_ gear: Gear) -> Double {
+        guard let item = item(in: gear.slot) else { return 1 }
+        return (item.isWorn ? 0.5 : 1) * item.bonus
+    }
 
     /// Puts a piece on; what it wore in that slot is handed back.
     mutating func equip(_ item: GearItem) -> GearItem? {
@@ -242,6 +247,7 @@ struct Ant {
         gearLeft[slot.rawValue] = item.left
         if item.pinned { gearPinned.insert(slot.rawValue) } else { gearPinned.remove(slot.rawValue) }
         if item.refined { gearRefined.insert(slot.rawValue) } else { gearRefined.remove(slot.rawValue) }
+        gearPlus[slot.rawValue] = item.plus > 0 ? item.plus : nil
         return old
     }
 
@@ -251,6 +257,7 @@ struct Ant {
         gearLeft[slot.rawValue] = nil
         gearPinned.remove(slot.rawValue)
         gearRefined.remove(slot.rawValue)
+        gearPlus[slot.rawValue] = nil
         return old
     }
     /// What it wears that counts: a shield is no use with a two-handed weapon in the hands.

@@ -227,14 +227,14 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
             popup.font = .systemFont(ofSize: 12)
             popup.menu?.autoenablesItems = false
             let current = ant.item(in: slot)
-            popup.addItem(withTitle: current.map { "\($0.pinned ? "📌 " : "")\($0.gear?.name ?? $0.id) \(Int($0.fraction * 100))%" } ?? "（空）")
+            popup.addItem(withTitle: current.map { "\($0.pinned ? "📌 " : "")\($0.name) \(Int($0.fraction * 100))%" } ?? "（空）")
             popup.lastItem?.image = current.flatMap { GearIcons.image($0.id, points: 16) } ?? GearMenus.empty
             let pieces = colony.armory.enumerated().filter { $0.element.gear?.slot == slot }.sorted { ($0.element.gear?.power ?? 0) > ($1.element.gear?.power ?? 0) }
             if !pieces.isEmpty {
                 popup.menu?.addItem(.separator())
                 for (index, item) in pieces {
                     let gear = item.gear!
-                    let entry = ClosureMenuItem(title: "換上 \(gear.name) \(Int(item.fraction * 100))%（\(gear.effectText)）" + (item.held ? "　保留" : "")) { [weak self] in
+                    let entry = ClosureMenuItem(title: "換上 \(item.name) \(Int(item.fraction * 100))%（\(gear.effectText)）" + (item.held ? "　保留" : "")) { [weak self] in
                         guard let self else { return }
                         if let why = self.colony.equip(stock: index, on: ant.id) { self.detail.stringValue = why }
                         self.gearSignature = ""

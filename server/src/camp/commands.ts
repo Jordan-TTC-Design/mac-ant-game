@@ -2,6 +2,9 @@ import { randomInt } from "node:crypto";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   canAfford,
+  enhanceCost,
+  ENHANCE_MAX,
+  gearMax,
   cannotWear,
   takeOff,
   buildableKinds,
@@ -246,8 +249,25 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       const price = repairCost(rule);
       if (!canAfford(materials, price)) return { ok: false, code: "not_enough", message: `素材不夠：修${rule.name}要 ${cost(price)}。` };
       spend(materials, price);
-      item.left = rule.durability;
+      item.left = gearMax(item);
       message = `修好了${rule.name}。`;
+      break;
+    }
+    case "enhance": {
+      // 強化 (ECONOMY.md §1.2): +1 at a time up to ENHANCE_MAX, never fails; mended as it goes
+      let item: GearItem | undefined;
+      if (command.stock !== undefined) item = store[command.stock];
+      else if (command.resident !== undefined && command.slot) item = (await loadWearers()).find((w) => w.id === command.resident)?.gear[command.slot];
+      const rule = item && gearRule(item.id);
+      if (!item || !rule) return { ok: false, code: "not_found", message: "找不到要強化的東西。" };
+      const price = enhanceCost(item);
+      if (!price) return { ok: false, code: "at_top", message: `${rule.name}已經 +${ENHANCE_MAX} 了。` };
+      if (!canAfford(materials, price)) return { ok: false, code: "not_enough", message: `素材不夠：強化${rule.name}要 ${cost(price)}。` };
+      spend(materials, price);
+      item.plus = (item.plus ?? 0) + 1;
+      item.left = gearMax(item);
+      extra = { gear: rule.id, plus: item.plus };
+      message = `${rule.name}強化到 +${item.plus}。`;
       break;
     }
     case "refine": {
@@ -262,22 +282,22 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (!canAfford(materials, rule.cost)) return { ok: false, code: "not_enough", message: `素材不夠：改造${rule.name}要 ${cost(rule.cost)}。` };
       spend(materials, rule.cost);
       item.refined = true;
-      item.left = rule.durability;
+      item.left = gearMax(item);
       message = `${rule.name}改造成 ★ 精良的了。`;
       break;
     }
     case "repair-all": {
       // the most worn first, while the materials last
       const jobs = [...(await loadWearers()).flatMap((w) => Object.values(w.gear) as GearItem[]), ...store]
-        .filter((i) => gearRule(i.id) && i.left / gearRule(i.id)!.durability < REPAIR_BELOW)
-        .sort((a, b) => a.left / gearRule(a.id)!.durability - b.left / gearRule(b.id)!.durability);
+        .filter((i) => gearRule(i.id) && i.left / gearMax(i) < REPAIR_BELOW)
+        .sort((a, b) => a.left / gearMax(a) - b.left / gearMax(b));
       if (!jobs.length) return { ok: false, code: "not_found", message: "沒有要修的。" };
       let done = 0;
       for (const item of jobs) {
         const price = repairCost(gearRule(item.id)!);
         if (!canAfford(materials, price)) continue;
         spend(materials, price);
-        item.left = gearRule(item.id)!.durability;
+        item.left = gearMax(item);
         done++;
       }
       if (!done) return { ok: false, code: "not_enough", message: "材料不夠，一件都修不了。" };

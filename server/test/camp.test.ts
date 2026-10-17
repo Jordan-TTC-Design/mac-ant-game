@@ -693,6 +693,26 @@ describe("decorations (DESKTOP.md §5)", () => {
   });
 });
 
+describe("強化 (ECONOMY.md §1.2)", () => {
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+
+  it("takes a piece in the store up a + at a time for logs and stones, never past +5", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    await database.sql`update camps set materials = '{"log": 2000, "stone": 1000, "rat_pelt": 50, "crystal_shard": 20, "amber": 10}', armory = '[{"id": "long_sword", "left": 50}]'`;
+    for (let plus = 1; plus <= 5; plus++) {
+      const res = await cmd(me, { kind: "enhance", stock: 0 });
+      expect(res.status, `+${plus}`).toBe(200);
+      const piece = (res.body.camp as CampView).armory[0]!;
+      expect(piece).toMatchObject({ id: "long_sword", plus, left: Math.round(200 * (1 + 0.1 * plus)) }); // (and mended)
+    }
+    expect((await cmd(me, { kind: "enhance", stock: 0 })).body.error).toBe("at_top");
+    const left = (await view(me)).materials;
+    expect(left.log).toBe(2000 - 20 * 31); // (20, 40, 80, 160, 320)
+    expect(left.amber).toBe(8);
+  });
+});
+
 describe("visitors and dismissing (DESKTOP.md §10.0)", () => {
   const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
 

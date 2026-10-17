@@ -125,9 +125,14 @@ const pieces = computed(() => {
 const jobs = computed(() =>
   Object.values(pieces.value)
     .flat()
-    .filter((p) => p.item.left / (gearRule(p.item.id)?.durability ?? 1) < 0.75)
-    .sort((a, b) => a.item.left / gearRule(a.item.id)!.durability - b.item.left / gearRule(b.item.id)!.durability),
+    .filter((p) => p.item.left / gearMax(p.item) < 0.75)
+    .sort((a, b) => a.item.left / gearMax(a.item) - b.item.left / gearMax(b.item)),
 );
+// 強化 (ECONOMY.md §1.2): the piece whose next + is shown, and what it takes
+const enhancing = ref<string | null>(null);
+const pieceKey = (p: { who: CampResidentView | null; stock: number | null; item: GearItem }, slot: GearSlot) => `${p.who?.id ?? "store"}-${p.stock ?? slot}-${p.item.id}`;
+const enhanceCommand = (p: { who: CampResidentView | null; stock: number | null }, slot: GearSlot) =>
+  p.who ? { kind: "enhance", resident: p.who.id, slot } : { kind: "enhance", stock: p.stock };
 const costText = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ×${n}`).join("、");
 const affordable = (cost: Record<string, number>) => Object.entries(cost).every(([id, n]) => have(id) >= n);
 /** A 道具's recipe is open once its quest is done (the server keeps which: view.questsDone). */
@@ -234,12 +239,21 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
             <article v-for="p in list" :key="`${p.who?.id ?? 'store'}-${p.stock ?? slot}-${p.item.id}`" class="piece sub">
               <GearIcon :id="p.item.id" />
               <div class="grow">
-                <b>{{ p.item.refined ? "★ " : "" }}{{ gearName(p.item.id) }}</b> <small>{{ durabilityText(p.item) }}</small>
+                <b>{{ pieceLabel(p.item) }}</b> <small>{{ durabilityText(p.item) }}</small>
                 <small v-if="p.item.pinned"> 📌</small>
                 <div class="muted small">{{ p.who ? `${nameOf(p.who)}（${breedNames[p.who.breed] ?? p.who.breed}${whereText(p.who)}）` : p.item.held ? "倉庫・保留" : "倉庫" }}</div>
               </div>
               <button v-if="view.canRefine && !p.item.refined" class="btn" :disabled="busy || !affordable(gearRule(p.item.id)!.cost)" :title="`改造成 ★ 精良（${costText(gearRule(p.item.id)!.cost)}）`"
                 @click="run(p.who ? { kind: 'refine', resident: p.who.id, slot } : { kind: 'refine', stock: p.stock })">★ 改造</button>
+              <button class="btn" :class="{ on: enhancing === pieceKey(p, slot) }" :disabled="busy || (p.item.plus ?? 0) >= ENHANCE_MAX"
+                @click="enhancing = enhancing === pieceKey(p, slot) ? null : pieceKey(p, slot)">{{ (p.item.plus ?? 0) >= ENHANCE_MAX ? `+${ENHANCE_MAX}` : "強化" }}</button>
+              <div v-if="enhancing === pieceKey(p, slot) && enhanceCost(p.item)" class="enhance">
+                <div class="small"><b>+{{ p.item.plus ?? 0 }} → +{{ (p.item.plus ?? 0) + 1 }}</b>：能力 +6%、耐久 +10%（不會失敗，順便修好）</div>
+                <div class="cost">
+                  <span v-for="[id, n] in Object.entries(enhanceCost(p.item)!)" :key="id" :class="have(id) >= n ? 'enough' : 'short'">{{ materialName(id) }} {{ have(id) }}/{{ n }}</span>
+                </div>
+                <button class="btn primary" :disabled="busy || !affordable(enhanceCost(p.item)!)" @click="run(enhanceCommand(p, slot))">強化到 +{{ (p.item.plus ?? 0) + 1 }}</button>
+              </div>
               <template v-if="p.who">
                 <button class="btn" :disabled="busy" @click="run({ kind: 'unequip', resident: p.who.id, slot: slot })">收回倉庫</button>
               </template>
@@ -263,7 +277,7 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
         <article v-for="p in jobs.slice(0, 30)" :key="`${p.who?.id ?? 'store'}-${p.stock ?? ''}-${p.item.id}`" class="piece">
           <GearIcon :id="p.item.id" />
           <div class="grow">
-            <b>{{ gearName(p.item.id) }}</b> <small>{{ durabilityText(p.item) }}</small>
+            <b>{{ pieceLabel(p.item) }}</b> <small>{{ durabilityText(p.item) }}</small>
             <div class="muted small">{{ p.who ? nameOf(p.who) + whereText(p.who) : "倉庫" }}・{{ costText(repairCost(gearRule(p.item.id)!)) }}</div>
           </div>
           <button class="btn primary" :disabled="busy || !affordable(repairCost(gearRule(p.item.id)!))"
@@ -318,6 +332,8 @@ h3 small { font-weight: 400; }
 .title { display: flex; gap: 6px; align-items: baseline; }
 .tier { font-size: 11px; background: #e8e2cc; border-radius: 6px; padding: 1px 6px; }
 .tier.closed { background: #ddd; color: #666; }
+.enhance { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; padding: 6px 0 0 40px; }
+.enhance .btn { align-self: flex-start; }
 .cost { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; margin-top: 3px; }
 .enough { color: var(--green); }
 .short { color: var(--red); }
@@ -326,4 +342,5 @@ h3 small { font-weight: 400; }
 .ok { color: var(--green); font-weight: 600; margin: 8px 2px 0; }
 .warn { color: #b3412c; margin: 8px 2px 0; }
 .piece .btn { white-space: nowrap; }
+.piece { flex-wrap: wrap; }
 </style>

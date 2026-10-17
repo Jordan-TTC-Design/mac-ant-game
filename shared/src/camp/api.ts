@@ -74,6 +74,8 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("auto-gear-far"), on: z.boolean() }),
   /** Mends a piece a resident wears (`resident` + `slot`) or one in the store (`stock`, its place in the list). */
   z.object({ requestId, kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
+  /** 強化 a piece one + (ECONOMY.md §1.2): one a resident wears (`resident` + `slot`) or one in the store (`stock`). */
+  z.object({ requestId, kind: z.literal("enhance"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
   /** Mends every piece under three quarters (REPAIR_BELOW) the camp can afford, the most worn first. */
   z.object({ requestId, kind: z.literal("repair-all") }),
   /** ★ Refines a piece (the 拼裝改造 talent): a resident's (`resident` + `slot`) or the store's (`stock`), for all it was made from. */

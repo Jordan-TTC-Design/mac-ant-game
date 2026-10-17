@@ -23,6 +23,8 @@ export interface GearRule {
   cost: Record<string, number>;
   /** Wear before it breaks (a weapon loses 1 per blow, the rest 1 per hit taken; a shield 2 for a blow it turns aside). */
   durability: number;
+  /** How far along it is (ECONOMY.md §1.1): 1 the first gear (left out), 2–4 from the later monsters, 5 legendary. Sets what強化 costs. */
+  tier?: 2 | 3 | 4 | 5;
 }
 
 const g = (id: string, name: string, slot: GearSlot, durability: number, cost: Record<string, number>, stats: Partial<GearRule> = {}): GearRule => ({ id, name, slot, durability, cost, ...stats });
@@ -128,6 +130,64 @@ export const GEAR: readonly GearRule[] = [
   g("giant_hammer", "巨人戰鎚", "weapon", 300, { giant_bone: 3, scrap_iron: 6 }, { might: 4.2, speed: -0.05, twoHanded: true }),
   g("hydra_bow", "九頭蛇弓", "weapon", 220, { hydra_fang: 2, spider_silk: 3, scrap_wood: 4 }, { might: 2.8, reach: 50, twoHanded: true }),
   g("minotaur_helm", "牛角盔", "head", 40, { minotaur_horn: 2, scrap_iron: 3 }, { health: 1.8, might: 0.4 }),
+  // ECONOMY.md §1.1 (2026-10-17): every material something to be made of. T2: the camp's second tier of raiders and what the
+  // world's tier-2 lairs leave
+  g("snake_fang_dagger", "蛇牙匕首", "weapon", 150, { snake_fang: 3, snake_skin: 2, scrap_iron: 3 }, { might: 2.5, speed: 0.03, tier: 2 }),
+  g("snakeskin_boots", "蛇皮靴", "feet", 22, { snake_skin: 4, leather_strap: 1 }, { health: 0.6, speed: 0.1, tier: 2 }),
+  g("spore_staff", "孢子法杖", "weapon", 260, { spore_cap: 3, glow_spore: 2, scrap_wood: 4 }, { might: 2.6, reach: 28, tier: 2 }),
+  g("raven_hood", "鴉羽兜帽", "head", 22, { raven_eye: 1, black_feather: 4, scrap_rag: 2 }, { health: 1.2, speed: 0.03, tier: 2 }),
+  g("warpaint_wraps", "戰紋護腕", "hands", 22, { war_paint: 2, leather_strap: 1, rat_pelt: 2 }, { might: 0.5, health: 0.4, tier: 2 }),
+  g("shaman_mask", "薩滿面具", "head", 24, { shaman_charm: 2, feather: 3, scrap_wood: 2 }, { health: 1.1, might: 0.2, tier: 2 }),
+  g("beeswax_shield", "蜂蠟木盾", "shield", 28, { beeswax: 3, scrap_wood: 6 }, { block: 0.3, tier: 2 }),
+  g("guard_plate_armor", "鐵片甲", "chest", 44, { guard_plate: 4, leather_strap: 2, scrap_iron: 4 }, { health: 2.6, speed: -0.03, tier: 2 }),
+  g("steel_crossbow", "鋼弩", "weapon", 180, { steel_bolt: 6, scrap_iron: 5, scrap_wood: 4 }, { might: 2.6, reach: 40, twoHanded: true, tier: 2 }),
+  g("vampire_dagger", "吸血牙匕首", "weapon", 150, { vampire_fang: 3, bat_fang: 2, night_dust: 1 }, { might: 2.7, speed: 0.04, tier: 2 }),
+  g("banner_spear", "軍旗槍", "weapon", 180, { war_banner: 1, scrap_iron: 5, scrap_wood: 4 }, { might: 2.6, reach: 12, twoHanded: true, tier: 2 }),
+  // T3: the camp's third tier, the world's tier-3 and 頂級 lairs
+  g("bandit_cutlass", "山賊彎刀", "weapon", 200, { bandit_mask: 2, stolen_coin: 4, scrap_iron: 8 }, { might: 3.1, speed: 0.03, tier: 3 }),
+  g("troll_moss_cloak", "巨魔苔斗篷", "chest", 40, { troll_moss: 4, troll_hide: 1, leather_strap: 2 }, { health: 2.9, tier: 3 }),
+  g("stone_wing_shield", "石翼盾", "shield", 44, { stone_wing: 4, gargoyle_eye: 1, scrap_iron: 4 }, { block: 0.42, speed: -0.03, tier: 3 }),
+  g("gargoyle_helm", "石像鬼盔", "head", 36, { gargoyle_eye: 1, gargoyle_stone: 3, scrap_iron: 4 }, { health: 1.6, tier: 3 }),
+  g("salamander_mail", "火蠑螈鱗甲", "chest", 40, { salamander_scale: 5, ember_gland: 1, leather_strap: 2 }, { health: 2.8, might: 0.3, tier: 3 }),
+  g("ember_blade", "火腺刃", "weapon", 200, { ember_gland: 2, scrap_iron: 8, crude_blade: 1 }, { might: 3.3, tier: 3 }),
+  g("hornet_bow", "蜂針弓", "weapon", 170, { hornet_stinger: 3, spider_silk: 3, scrap_wood: 5 }, { might: 3.0, reach: 46, twoHanded: true, tier: 3 }),
+  g("shadow_cloak", "暗影斗篷", "chest", 30, { shadow_essence: 3, wisp_flame: 1, scrap_rag: 4 }, { health: 2.5, speed: 0.06, tier: 3 }),
+  g("wisp_staff", "鬼火杖", "weapon", 280, { wisp_flame: 2, shadow_essence: 2, scrap_wood: 4 }, { might: 3.2, reach: 30, tier: 3 }),
+  g("harpy_bow", "鷹羽弓", "weapon", 170, { harpy_feather: 5, scrap_wood: 6, leather_strap: 1 }, { might: 3.2, reach: 48, twoHanded: true, tier: 3 }),
+  g("werewolf_boots", "狼人毛靴", "feet", 26, { werewolf_fur: 3, leather_strap: 1 }, { health: 0.8, speed: 0.12, tier: 3 }),
+  g("werewolf_gloves", "狼人爪套", "hands", 28, { werewolf_fur: 2, sharp_claw: 3 }, { might: 0.7, health: 0.5, tier: 3 }),
+  g("lizard_shield", "蜥蜴人鱗盾", "shield", 40, { lizard_scale: 5, scrap_wood: 4 }, { block: 0.4, tier: 3 }),
+  g("lizard_pants", "蜥鱗褲", "legs", 26, { lizard_scale: 4, scrap_rag: 2 }, { health: 1.5, speed: 0.02, tier: 3 }),
+  g("ant_bracers", "蟻甲護腕", "hands", 30, { ant_chitin: 4, leather_strap: 1 }, { health: 0.9, might: 0.3, tier: 3 }),
+  g("chitin_helm", "蟻甲盔", "head", 34, { ant_chitin: 5, scrap_iron: 2 }, { health: 1.7, tier: 3 }),
+  // T4: the camp's fourth tier, the world's highest mid lairs
+  g("ogre_maul", "食人魔大棒", "weapon", 280, { ogre_club: 2, ogre_hide: 2, scrap_iron: 6 }, { might: 3.9, speed: -0.03, twoHanded: true, tier: 4 }),
+  g("ogre_hide_armor", "食人魔皮甲", "chest", 50, { ogre_hide: 5, leather_strap: 3 }, { health: 3.4, speed: -0.03, tier: 4 }),
+  g("wyvern_scale_mail", "飛龍鱗甲", "chest", 48, { wyvern_scale: 5, wyvern_wing: 1, leather_strap: 2 }, { health: 3.6, tier: 4 }),
+  g("wyvern_greaves", "飛龍護腿", "legs", 34, { wyvern_scale: 3, wyvern_wing: 1 }, { health: 1.9, speed: 0.04, tier: 4 }),
+  g("golem_helm", "魔像鐵盔", "head", 44, { iron_plate: 3, golem_core: 1 }, { health: 2.1, tier: 4 }),
+  g("golem_shield", "魔像鐵盾", "shield", 56, { iron_plate: 4, scrap_iron: 6 }, { block: 0.46, speed: -0.04, tier: 4 }),
+  g("ghost_veil_hood", "幽魂面紗", "head", 30, { ghost_veil: 2, banshee_tear: 1 }, { health: 1.8, speed: 0.05, tier: 4 }),
+  g("banshee_staff", "女妖之淚法杖", "weapon", 300, { banshee_tear: 2, ghost_veil: 1, elemental_core: 1 }, { might: 3.8, reach: 32, tier: 4 }),
+  g("basilisk_shield", "蛇蜥盾", "shield", 50, { basilisk_scale: 4, basilisk_eye: 1 }, { block: 0.44, tier: 4 }),
+  g("basilisk_boots", "蛇蜥靴", "feet", 30, { basilisk_scale: 3, leather_strap: 1 }, { health: 1.0, speed: 0.12, tier: 4 }),
+  g("dark_silk_robe", "暗絲法袍", "chest", 36, { dark_silk: 4, shadow_essence: 1 }, { health: 3.3, speed: 0.06, tier: 4 }),
+  g("naga_trident", "娜迦三叉戟", "weapon", 240, { naga_pearl: 2, lizard_scale: 3, scrap_iron: 6 }, { might: 3.8, reach: 14, twoHanded: true, tier: 4 }),
+  g("elemental_blade", "元素刃", "weapon", 240, { elemental_core: 2, scrap_iron: 8, crystal_shard: 3 }, { might: 4.0, tier: 4 }),
+  // legendary: from the level bosses (camp/raids.ts) and the 中期魔王 (world/contents.ts); the world bosses' own (level 50) strongest
+  g("ogre_king_girdle", "食人魔王腰帶", "legs", 50, { ogre_king_belt: 1, ogre_hide: 3 }, { health: 2.4, might: 0.5, tier: 5 }),
+  g("harpy_crown_helm", "鷹身王冠", "head", 40, { harpy_crown: 1, harpy_feather: 6 }, { health: 2.2, speed: 0.08, tier: 5 }),
+  g("alpha_fang_blade", "狼王牙刃", "weapon", 260, { alpha_fang: 1, werewolf_fur: 4, scrap_iron: 8 }, { might: 4.4, speed: 0.04, tier: 5 }),
+  g("count_cape", "伯爵披風", "chest", 44, { vampire_cape: 1, dark_silk: 3 }, { health: 3.9, speed: 0.06, tier: 5 }),
+  g("flame_heart_staff", "炎魔之心杖", "weapon", 320, { flame_heart: 1, elemental_core: 3, crystal_shard: 4 }, { might: 4.6, reach: 32, tier: 5 }),
+  g("naga_crown_helm", "娜迦王冠", "head", 44, { naga_crown: 1, naga_pearl: 3 }, { health: 2.4, might: 0.4, tier: 5 }),
+  g("chief_war_axe", "酋長戰斧", "weapon", 280, { chief_tusk: 2, war_totem: 1, scrap_iron: 10 }, { might: 4.5, twoHanded: true, tier: 5 }),
+  g("elder_scale_armor", "遠古龍鱗甲", "chest", 60, { elder_scale: 3, leather_strap: 4, crystal_shard: 4 }, { health: 4.3, tier: 5 }),
+  g("dragon_heart_blade", "龍心劍", "weapon", 300, { dragon_heart: 1, dragon_scale: 2, scrap_iron: 10 }, { might: 5.4, tier: 5 }),
+  g("lich_crown_helm", "巫妖冠", "head", 44, { lich_crown: 1, soul_gem: 2 }, { health: 2.8, might: 0.6, tier: 5 }),
+  g("giant_heart_shield", "巨人之心盾", "shield", 70, { giant_heart: 1, giant_bone: 4 }, { block: 0.56, tier: 5 }),
+  g("hydra_gauntlets", "九頭蛇血手甲", "hands", 44, { hydra_blood: 1, hydra_fang: 2, scrap_iron: 4 }, { might: 1.1, health: 0.9, tier: 5 }),
+  g("labyrinth_boots", "迷宮之靴", "feet", 40, { labyrinth_key: 1, minotaur_horn: 1, leather_strap: 2 }, { health: 1.4, speed: 0.16, tier: 5 }),
 ];
 
 /** The middle gear: made of what the 初期魔王 leave (a quest asks for one). */
@@ -148,20 +208,70 @@ export interface GearItem {
   held?: boolean;
   /** ★ 精良: refined in the workshop (the 拼裝改造 talent): its numbers ×REFINE_BONUS. */
   refined?: boolean;
+  /** 強化 +1…+ENHANCE_MAX (the workshop, ECONOMY.md §1.2): its numbers and its wear last longer each. */
+  plus?: number;
 }
 
 /** What a ★ refined piece's numbers are multiplied by (2026-10-17, talents.ts refine). */
 export const REFINE_BONUS = 1.3;
 
-/** A piece as it moves from one place to another: which, its wear, and whether it is refined (not pinned or held). */
-export const plainPiece = (piece: GearItem): GearItem => ({ id: piece.id, left: piece.left, ...(piece.refined ? { refined: true } : {}) });
+/** A piece as it moves from one place to another: which, its wear, and whether it is refined or 強化'd (not pinned or held). */
+export const plainPiece = (piece: GearItem): GearItem => ({ id: piece.id, left: piece.left, ...(piece.refined ? { refined: true } : {}), ...(piece.plus ? { plus: piece.plus } : {}) });
+
+// ── 強化 (ECONOMY.md §1.2): never fails, never breaks it; mostly logs and stones ────────────────────────────────────────
+
+export const ENHANCE_MAX = 5;
+/** Each +1: its numbers × (1 + ENHANCE_POWER), its wear × (1 + ENHANCE_DURABILITY). */
+export const ENHANCE_POWER = 0.06;
+export const ENHANCE_DURABILITY = 0.1;
+/** What going to +1 costs, by the piece's tier (1–5); each + after twice the one before. */
+const ENHANCE_BASE: Record<number, Record<string, number>> = {
+  1: { log: 20, stone: 10 },
+  2: { log: 40, stone: 20, scrap_iron: 5 },
+  3: { log: 80, stone: 40, scrap_iron: 10 },
+  4: { log: 150, stone: 80, scrap_iron: 20 },
+  5: { log: 150, stone: 80, scrap_iron: 20 },
+};
+/** What any piece may be made of: not a piece's "own" material (the one its +3 and up ask for). */
+const COMMON = new Set(["log", "stone", "scrap_iron", "scrap_wood", "scrap_rag", "leather_strap", "crystal_shard", "amber"]);
+
+/** All a piece's numbers are multiplied by: ★ refined and its +. */
+export function gearBonus(item: Pick<GearItem, "refined" | "plus">): number {
+  return (item.refined ? REFINE_BONUS : 1) * (1 + ENHANCE_POWER * (item.plus ?? 0));
+}
+
+/** The most wear a piece can have (made new or mended): its rule's, more for each +. */
+export function gearMax(item: Pick<GearItem, "id" | "plus">): number {
+  const rule = gearRule(item.id);
+  return rule ? Math.round(rule.durability * (1 + ENHANCE_DURABILITY * (item.plus ?? 0))) : 1;
+}
+
+/** The material a piece is mostly its own of (its +3 and up ask for some); the first uncommon one of its cost. */
+export function gearOwnMaterial(rule: GearRule): string {
+  return Object.keys(rule.cost).find((id) => !COMMON.has(id)) ?? "scrap_iron";
+}
+
+/** What taking a piece from its + to the next costs (null: at ENHANCE_MAX). */
+export function enhanceCost(item: Pick<GearItem, "id" | "plus">): Record<string, number> | null {
+  const rule = gearRule(item.id);
+  const plus = item.plus ?? 0;
+  if (!rule || plus >= ENHANCE_MAX) return null;
+  const times = 2 ** plus;
+  const cost: Record<string, number> = Object.fromEntries(Object.entries(ENHANCE_BASE[rule.tier ?? 1]!).map(([id, n]) => [id, n * times]));
+  const own = gearOwnMaterial(rule);
+  const add = (id: string, n: number) => (cost[id] = (cost[id] ?? 0) + n);
+  if (plus >= 2) add(own, [2, 4, 8][plus - 2]!);
+  if (plus >= 3) add("crystal_shard", [2, 5][plus - 3]!);
+  if (plus >= 4) add("amber", 2);
+  return cost;
+}
 
 /** One number to tell which of two pieces for the same slot is better (a worn-out one, under a quarter, counts half). */
 export function gearPower(item: GearItem | undefined): number {
   const rule = item && gearRule(item.id);
   if (!rule || !item) return 0;
-  const power = ((rule.might ?? 0) + (rule.health ?? 0) + (rule.block ?? 0) * 5 + (rule.speed ?? 0) * 6 + (rule.reach ?? 0) / 40) * (item.refined ? REFINE_BONUS : 1);
-  return item.left / rule.durability < 0.25 ? power / 2 : power;
+  const power = ((rule.might ?? 0) + (rule.health ?? 0) + (rule.block ?? 0) * 5 + (rule.speed ?? 0) * 6 + (rule.reach ?? 0) / 40) * gearBonus(item);
+  return item.left / gearMax(item) < 0.25 ? power / 2 : power;
 }
 
 /** Pieces worn under this share are offered for mending (the workshop's 修理). */

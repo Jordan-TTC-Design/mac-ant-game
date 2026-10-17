@@ -2641,6 +2641,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .craft(let gear, let to, let count): q = .init(kind: "craft"); q.gear = gear; q.to = to; q.count = count
         case .repairAll: q = .init(kind: "repair-all")
         case .refine(let resident, let slot, let stock): q = .init(kind: "refine"); q.resident = resident; q.slot = slot; q.stock = stock
+        case .enhance(let resident, let slot, let stock): q = .init(kind: "enhance"); q.resident = resident; q.slot = slot; q.stock = stock
         case .equip(let resident, let stock, let gear): q = .init(kind: "equip"); q.resident = resident; q.stock = stock; q.gear = gear
         case .unequip(let resident, let slot): q = .init(kind: "unequip"); q.resident = resident; q.slot = slot
         case .gearHold(let stock, let gear, let held): q = .init(kind: "gear-hold"); q.stock = stock; q.gear = gear; q.held = held

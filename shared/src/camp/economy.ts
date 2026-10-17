@@ -27,6 +27,7 @@ export const FLOW_SOURCE_NAMES: Record<string, string> = {
   craft: "工坊製作",
   repair: "修理",
   refine: "拼裝改造",
+  enhance: "裝備強化",
   "site-build": "蓋工地",
   "site-upgrade": "升工地",
   "farm-upgrade": "升農田",

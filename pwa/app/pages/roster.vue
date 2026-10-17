@@ -112,10 +112,10 @@ async function change(r: CampResidentView, slot: GearSlot, value: string) {
               <GearIcon v-if="r.gear?.[slot]" :id="r.gear[slot]!.id" :size="24" />
               <span v-else class="no-gear" />
               <select :disabled="busy" :value="'now'" @change="change(r, slot, ($event.target as HTMLSelectElement).value)">
-                <option value="now">{{ r.gear?.[slot] ? `${gearName(r.gear[slot]!.id)} ${durabilityText(r.gear[slot]!)}${r.gear[slot]!.pinned ? " 📌" : ""}` : "（空）" }}</option>
+                <option value="now">{{ r.gear?.[slot] ? `${pieceLabel(r.gear[slot]!)} ${durabilityText(r.gear[slot]!)}${r.gear[slot]!.pinned ? " 📌" : ""}` : "（空）" }}</option>
                 <option v-if="r.gear?.[slot]" value="off">脫下，收回倉庫</option>
                 <option v-for="{ item, stock } in fits(slot)" :key="stock" :value="String(stock)">
-                  換上 {{ gearName(item.id) }} {{ durabilityText(item) }}{{ item.held ? "（保留的）" : "" }}
+                  換上 {{ pieceLabel(item) }} {{ durabilityText(item) }}{{ item.held ? "（保留的）" : "" }}
                 </option>
               </select>
             </label>

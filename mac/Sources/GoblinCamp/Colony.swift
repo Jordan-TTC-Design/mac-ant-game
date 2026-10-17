@@ -1602,6 +1602,15 @@ final class Colony {
         return true
     }
 
+    /// 強化 a piece one + (signed in: the books keep it; ECONOMY.md §1.2). Returns whether it was asked.
+    func enhance(antID: Int?, slot: GearSlot?, stock: Int?) -> Bool {
+        guard followsBooks else { return false }
+        let item = stock.flatMap { armory.indices.contains($0) ? armory[$0] : nil } ?? antID.flatMap { id in slot.flatMap { gearHolder(id)?.item(in: $0) } }
+        guard let item, let cost = Gears.enhanceCost(item), cost.allSatisfy({ materials[$0.0, default: 0] >= $0.1 }) else { return false }
+        onBookCommand?(.enhance(resident: antID, slot: slot?.rawValue, stock: stock))
+        return true
+    }
+
     func isOpen(_ item: ItemRecipe) -> Bool { item.unlock.map { booksQuestsDone.contains($0) } ?? true }
 
     /// Makes a 道具 (only signed in: they are taken along on the big world's expeditions); the server keeps it in the store.
@@ -1816,7 +1825,7 @@ final class Colony {
 
     /// A goblin is gone (old age, or killed in a fight): everything it wore comes back to the nest.
     private func returnGear(of index: Int) {
-        let pieces = GearSlot.allCases.compactMap { ants[index].takeOff($0) }.map { GearItem(id: $0.id, left: $0.left) }
+        let pieces = GearSlot.allCases.compactMap { ants[index].takeOff($0) }.map { GearItem(id: $0.id, left: $0.left, refined: $0.refined, plus: $0.plus) }
         guard !pieces.isEmpty else { return }
         armory.append(contentsOf: pieces)
         if let nest { addFloater("歸還 " + pieces.compactMap { $0.gear?.name }.joined(separator: "、"), .common, at: nest) }
@@ -1893,11 +1902,11 @@ final class Colony {
         switch job.place {
         case .worn(let id, let slot):
             guard let i = ants.firstIndex(where: { $0.id == id }), var item = ants[i].item(in: slot) else { return false }
-            item.left = job.gear.durability
+            item.left = item.maxLeft
             _ = ants[i].equip(item)
         case .stock(let index):
             guard armory.indices.contains(index) else { return false }
-            armory[index].left = job.gear.durability
+            armory[index].left = armory[index].maxLeft
         }
         onAntsChanged?()
         return true
@@ -1941,7 +1950,7 @@ final class Colony {
     /// Test aid: every worn piece is left with this fraction of its durability.
     func debugWear(fraction: Double) {
         for i in ants.indices {
-            for slot in GearSlot.allCases { if let item = ants[i].item(in: slot), let g = item.gear { ants[i].gearLeft[slot.rawValue] = g.durability * fraction } }
+            for slot in GearSlot.allCases { if let item = ants[i].item(in: slot), item.gear != nil { ants[i].gearLeft[slot.rawValue] = item.maxLeft * fraction } }
         }
     }
 
@@ -2425,6 +2434,7 @@ enum BookCommand {
     case craft(String, to: Int?, count: Int?)
     case repairAll
     case refine(resident: Int?, slot: String?, stock: Int?)
+    case enhance(resident: Int?, slot: String?, stock: Int?)
     case equip(resident: Int, stock: Int, gear: String)
     case unequip(resident: Int, slot: String)
     case gearHold(stock: Int, gear: String, held: Bool)
@@ -2507,7 +2517,7 @@ extension Colony {
             for slot in GearSlot.allCases {
                 let want = r.gear[slot.rawValue]
                 let now = ants[i].item(in: slot)
-                if want?.id == now?.id, want?.left == now?.left, want?.pinned == now?.pinned, want?.refined == now?.refined { continue }
+                if want?.id == now?.id, want?.left == now?.left, want?.pinned == now?.pinned, want?.refined == now?.refined, want?.plus == now?.plus { continue }
                 _ = ants[i].takeOff(slot)
                 if let want, want.gear != nil { _ = ants[i].equip(want) }
                 changed = true

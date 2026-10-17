@@ -191,3 +191,10 @@ export function merchantVisit(visit: string, race: string, stage: number, arrive
 export function taipeiDay(at: Date): string {
   return new Date(at.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
 }
+
+/** Everything any of the merchant's swaps may give (for what can be had: world/availability.ts). */
+export function merchantGets(): Set<string> {
+  const out = new Set<string>();
+  for (const deal of [...Object.values(OWN_DEALS).flat(), ...COMMON_DEALS, ...Object.values(RARE_DEALS).flat(), ...LEGEND_DEALS]) for (const id of Object.keys(deal.get)) out.add(id);
+  return out;
+}
