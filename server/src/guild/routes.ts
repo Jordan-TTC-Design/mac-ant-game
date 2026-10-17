@@ -1,8 +1,21 @@
 import { Hono } from "hono";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import {
+  avatarOutfitProblem,
   avatarProblem,
   avatarSchema,
+  FREE_OUTFITS,
+  guildOutfit,
+  hallPlotsProblem,
+  hallWallAt,
+  hallWallsChanged,
+  hallWallsProblem,
+  keepTileKeys,
+  outfitBuyInput,
+  outfitBuyProblem,
+  hallAreaHas,
+  type GuildWardrobe,
+  type HallPlots,
   DEFAULT_BADGE,
   defaultAvatar,
   GUILD_INVITE_DAYS,
@@ -128,6 +141,15 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     const [row] = await db.select({ race: camps.race }).from(camps).where(eq(camps.userId, userId));
     return row?.race ?? "goblin";
   }
+  /** The clothes an account has and the contribution it has left: all it ever gave its guilds, less what it spent. */
+  async function wardrobe(tx: Tx | Db, userId: string): Promise<GuildWardrobe> {
+    const [row] = await tx.select({ outfits: avatars.outfits, spent: avatars.spent }).from(avatars).where(eq(avatars.userId, userId));
+    const [{ given }] = (await tx.select({ given: sql<number>`coalesce(sum(${guildDonations.points}), 0)::int` }).from(guildDonations).where(eq(guildDonations.userId, userId))) as [{ given: number }];
+    const spent = row?.spent ?? 0;
+    return { owned: [...FREE_OUTFITS, ...(row?.outfits ?? []).filter((id) => !FREE_OUTFITS.includes(id))], points: given - spent, spent };
+  }
+  /** The places of those still in the guild (a plot of someone who left is nobody's). */
+  const plotsOf = (plots: HallPlots, members: ReadonlySet<string>): HallPlots => Object.fromEntries(Object.entries(plots).filter(([, who]) => members.has(who)));
 
   async function view(userId: string): Promise<GuildResponse> {
     const at = now();
@@ -139,6 +161,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       .where(eq(users.id, userId));
     const own = avatarFor(mine?.avatar, mine?.race ?? "goblin");
     const wait = await waitUntil(userId, at);
+    const clothes = await wardrobe(db, userId);
     let me = await membership(userId);
     if (me) {
       // (a leader whose account went away leaves the guild leaderless until someone looks)
@@ -172,6 +195,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         waitUntil: wait?.toISOString() ?? null,
         avatar: own.avatar,
         avatarChosen: own.chosen,
+        wardrobe: clothes,
       };
     }
     let [guild] = await db.select().from(guilds).where(eq(guilds.id, me.guildId));
@@ -257,6 +281,8 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         floor: guild!.floor,
         area,
         wall: guild!.wall,
+        walls: guild!.walls,
+        plots: plotsOf(guild!.plots, new Set(members.map((r) => r.m.userId))),
         points: guild!.points,
         toNext: guildPointsToNext(guild!.points),
         seasons: guildSeasonViews(taipeiDay(at)),
@@ -266,6 +292,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       waitUntil: wait?.toISOString() ?? null,
       avatar: own.avatar,
       avatarChosen: own.chosen,
+      wardrobe: clothes,
     };
   }
 
@@ -447,7 +474,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     const at = now();
     const race = await raceOf(me.id);
     if (body.data.race !== race) return apiError(c, 400, "invalid_input", "角色的種族要和營地一樣。", { fields: { race: "角色的種族要和營地一樣。" } });
-    const problem = avatarProblem(body.data);
+    const problem = avatarProblem(body.data) ?? avatarOutfitProblem(body.data, (await wardrobe(db, me.id)).owned);
     if (problem) return apiError(c, 400, "invalid_input", problem);
     await db
       .insert(avatars)
@@ -456,6 +483,27 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     const mine = await membership(me.id);
     await tell(mine?.guildId ?? null, me.id);
     return c.json(await view(me.id));
+  });
+
+  /** Buys a piece of clothing with the account's contribution (shared/src/guild-outfits.ts); it is the account's for good. */
+  app.post("/outfits/buy", async (c) => {
+    const body = await readJson(c, outfitBuyInput);
+    if ("response" in body) return body.response;
+    const me = c.get("session").user;
+    const at = now();
+    const out = await db.transaction(async (tx) => {
+      await tx.insert(avatars).values({ userId: me.id, updatedAt: at }).onConflictDoNothing();
+      await tx.select().from(avatars).where(eq(avatars.userId, me.id)).for("update"); // (two buys at once: one after the other)
+      const w = await wardrobe(tx, me.id);
+      const problem = outfitBuyProblem(body.data.id, w);
+      if (problem) return problem;
+      const price = guildOutfit(body.data.id)!.price;
+      const [row] = await tx.select({ outfits: avatars.outfits }).from(avatars).where(eq(avatars.userId, me.id));
+      await tx.update(avatars).set({ outfits: [...(row?.outfits ?? []), body.data.id], spent: w.spent + price }).where(eq(avatars.userId, me.id));
+      return null;
+    });
+    if (out) return out.code === "unknown" ? apiError(c, 400, "invalid_input", out.message) : apiError(c, 409, "conflict", out.message);
+    return c.json({ wardrobe: await wardrobe(db, me.id) });
   });
 
   /** The Mac says whether its person is focusing, there, away or gone (when it changes, and every PRESENCE_HEARTBEAT_SECONDS). */
@@ -485,27 +533,55 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     const result = await db.transaction(async (tx) => {
       const [guild] = await tx.select().from(guilds).where(eq(guilds.id, mine.guildId)).for("update");
       if (guild!.decorVersion !== body.data.version) return { error: 409 as const, message: "別人剛改過裝飾，請重新整理後再試一次。" };
-      const races = new Set(
-        (await tx.select({ race: camps.race }).from(guildMembers).leftJoin(camps, eq(camps.userId, guildMembers.userId)).where(eq(guildMembers.guildId, mine.guildId))).map((r) => r.race ?? "goblin"),
-      );
+      const people = await tx
+        .select({ id: guildMembers.userId, race: camps.race, name: users.displayName })
+        .from(guildMembers)
+        .innerJoin(users, eq(users.id, guildMembers.userId))
+        .leftJoin(camps, eq(camps.userId, guildMembers.userId))
+        .where(eq(guildMembers.guildId, mine.guildId));
+      const races = new Set(people.map((r) => r.race ?? "goblin"));
+      const memberSet = new Set(people.map((r) => r.id));
       const floor = body.data.floor ?? guild!.floor;
       const areaWas = guild!.area ?? DEFAULT_HALL_AREA;
       const area = body.data.area ?? areaWas;
       const areaChanged = JSON.stringify(area) !== JSON.stringify(areaWas);
       if (areaChanged && mine.role === "member") return { error: 403 as const, message: "只有會長和幹部可以改據點的範圍。" };
+      // (the wall segments and places, as sent, or as they were; a shape drawn anew by an app that sends neither drops what is now off it)
+      const plotsWas = plotsOf(guild!.plots, memberSet);
+      const walls = body.data.walls ?? keepTileKeys(guild!.walls, (x, y) => hallWallAt(area, x, y));
+      const plots = plotsOf(body.data.plots ?? keepTileKeys(plotsWas, (x, y) => hallAreaHas(area, x, y)), memberSet);
+      const wallsChanged = hallWallsChanged(guild!.walls, walls);
+      const plotsChanged = JSON.stringify(plots) !== JSON.stringify(plotsWas);
+      if (mine.role === "member" && body.data.walls && wallsChanged) return { error: 403 as const, message: "只有會長和幹部可以換牆壁。" };
+      if (mine.role === "member" && body.data.plots && plotsChanged) return { error: 403 as const, message: "只有會長和幹部可以分配位置。" };
       const problem =
         (areaChanged ? hallAreaProblem(area, guild!.level) : null) ??
         guildDecorProblem(body.data.items, guild!.level, area, races, guild!.decor, taipeiDay(at)) ??
-        hallFloorProblem(floor, area, races, guild!.floor);
+        hallFloorProblem(floor, area, races, guild!.floor) ??
+        hallWallsProblem(walls, area, races, guild!.walls, guild!.wall) ??
+        hallPlotsProblem(plots, area, memberSet);
       if (problem) return { error: 400 as const, message: problem };
-      const change = guildDecorChange(guild!.decor, body.data.items, mine.role);
+      const names = new Map(people.map((r) => [r.id, r.name]));
+      const change = guildDecorChange(guild!.decor, body.data.items, mine.role, { me: me.id, area: areaWas, plots: plotsWas, names });
       if (typeof change === "string") return { error: 403 as const, message: change };
       const floorChanged = hallFloorChanged(guild!.floor, floor, area);
-      if (!change.added && !change.moved && !change.removed && !floorChanged && !areaChanged) return { ok: true };
-      await tx.update(guilds).set({ decor: body.data.items, floor, area, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
-      await tx
-        .insert(guildDecorLog)
-        .values({ guildId: mine.guildId, userId: me.id, at, ...change, floorChanged, before: guild!.decor, floorBefore: guild!.floor, areaChanged, areaBefore: areaWas });
+      if (!change.added && !change.moved && !change.removed && !floorChanged && !areaChanged && !wallsChanged && !plotsChanged) return { ok: true };
+      await tx.update(guilds).set({ decor: body.data.items, floor, area, walls, plots, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
+      await tx.insert(guildDecorLog).values({
+        guildId: mine.guildId,
+        userId: me.id,
+        at,
+        ...change,
+        floorChanged,
+        before: guild!.decor,
+        floorBefore: guild!.floor,
+        areaChanged,
+        areaBefore: areaWas,
+        wallsChanged,
+        wallsBefore: guild!.walls,
+        plotsChanged,
+        plotsBefore: guild!.plots,
+      });
       await tx.delete(guildDecorLog).where(and(eq(guildDecorLog.guildId, mine.guildId), lt(guildDecorLog.at, new Date(at.getTime() - GUILD_DECOR_LOG_DAYS * DAY))));
       return { ok: true };
     });
@@ -526,7 +602,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       .where(eq(guildDecorLog.guildId, mine.guildId))
       .orderBy(desc(guildDecorLog.at))
       .limit(100);
-    const entries: GuildDecorLogEntry[] = rows.map((r) => ({ id: r.l.id, by: r.name ?? "", at: r.l.at.toISOString(), added: r.l.added, moved: r.l.moved, removed: r.l.removed, restored: r.l.restored, floor: r.l.floorChanged, area: r.l.areaChanged }));
+    const entries: GuildDecorLogEntry[] = rows.map((r) => ({ id: r.l.id, by: r.name ?? "", at: r.l.at.toISOString(), added: r.l.added, moved: r.l.moved, removed: r.l.removed, restored: r.l.restored, floor: r.l.floorChanged, area: r.l.areaChanged, walls: r.l.wallsChanged, plots: r.l.plotsChanged }));
     return c.json({ entries });
   });
 
@@ -549,7 +625,10 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       // (a change from before the shape could be drawn: the hall was the level's rectangle then)
       const areaWas = guild!.area ?? DEFAULT_HALL_AREA;
       const area = entry.areaBefore ?? levelHall(guild!.level);
-      await tx.update(guilds).set({ decor: entry.before, floor, area, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
+      // (a change from before walls and places were kept: they stay as they are, less what is now off the hall)
+      const walls = entry.wallsBefore ?? keepTileKeys(guild!.walls, (x, y) => hallWallAt(area, x, y));
+      const plots = entry.plotsBefore ?? keepTileKeys(guild!.plots, (x, y) => hallAreaHas(area, x, y));
+      await tx.update(guilds).set({ decor: entry.before, floor, area, walls, plots, decorVersion: guild!.decorVersion + 1 }).where(eq(guilds.id, mine.guildId));
       await tx.insert(guildDecorLog).values({
         guildId: mine.guildId,
         userId: me.id,
@@ -563,6 +642,10 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         floorBefore: guild!.floor,
         areaChanged: JSON.stringify(area) !== JSON.stringify(areaWas),
         areaBefore: areaWas,
+        wallsChanged: hallWallsChanged(guild!.walls, walls),
+        wallsBefore: guild!.walls,
+        plotsChanged: JSON.stringify(plots) !== JSON.stringify(guild!.plots),
+        plotsBefore: guild!.plots,
       });
       return true;
     });

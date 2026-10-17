@@ -90,6 +90,82 @@ export function hallFloorProblem(floor: HallFloor, area: HallArea, races: Readon
   return null;
 }
 
+/** Tiles keyed "x,y" (floor tiles, wall segments, plots): two digits each at most (HALL_AREA_MAX_WIDTH, HALL_AREA_MAX_HEIGHT). */
+const tileKey = z.string().regex(/^\d{1,2},\d{1,2}$/);
+const keyXY = (key: string) => key.split(",").map(Number) as [number, number];
+
+/**
+ * The wall brushed segment by segment (GUILD.md §4.3, 2026-10-17): "x,y" of the floor tile whose top edge grows that column
+ * of wall → its style. The rest are the guild's `wall`.
+ */
+export const hallWallsSchema = z.record(tileKey, z.string().max(30));
+export type HallWalls = z.infer<typeof hallWallsSchema>;
+
+/** Whether floor tile (x, y) has wall over it (it is floor and the tile above is not). */
+export function hallWallAt(area: HallArea, x: number, y: number): boolean {
+  return hallAreaHas(area, x, y) && !hallAreaHas(area, x, y - 1);
+}
+
+/** Why these wall segments cannot be the hall's (null: they can). A style already up stays even if its race left. */
+export function hallWallsProblem(walls: HallWalls, area: HallArea, races: ReadonlySet<string>, before: HallWalls = {}, base?: string): string | null {
+  const had = new Set([...Object.values(before), ...(base ? [base] : [])]);
+  for (const id of new Set(Object.values(walls))) {
+    const style = HALL_WALLS.find((w) => w.id === id);
+    if (!style) return "沒有這種牆壁。";
+    if (!had.has(id) && !hallStyleOpen(style, races)) return "這種牆壁要公會裡有這個種族的成員才能用。";
+  }
+  for (const key of Object.keys(walls)) if (!hallWallAt(area, ...keyXY(key))) return "牆壁刷到沒有牆的地方了。";
+  return null;
+}
+
+/** How many wall segments differ (for the log). */
+export function hallWallsChanged(a: HallWalls, b: HallWalls): number {
+  let n = 0;
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) if (a[key] !== b[key]) n++;
+  return n;
+}
+
+/**
+ * The members' own places (GUILD.md §4, 2026-10-17: the leader or an officer gives each member some floor): "x,y" → the
+ * member's id. Inside one only that member, the leader and the officers touch the pieces.
+ */
+export const hallPlotsSchema = z.record(tileKey, z.uuid());
+export type HallPlots = z.infer<typeof hallPlotsSchema>;
+
+/** Why these plots cannot be the hall's (null: they can): each on the floor, each a member's. */
+export function hallPlotsProblem(plots: HallPlots, area: HallArea, members: ReadonlySet<string>): string | null {
+  for (const [key, who] of Object.entries(plots)) {
+    if (!hallAreaHas(area, ...keyXY(key))) return "分到的位置在據點外面。";
+    if (!members.has(who)) return "只能分給公會的成員。";
+  }
+  return null;
+}
+
+/** The tile a piece belongs to (for the plots): the one under its feet; a wall piece's, the floor tile at the foot of its wall. */
+export function guildDecorTile(area: HallArea, d: Pick<GuildDecorPlaced, "kind" | "x" | "y">): string {
+  const x = Math.floor(d.x);
+  if (BY_ID.get(d.kind)?.wall) {
+    for (let r = Math.ceil(d.y); r <= Math.ceil(d.y) + WALL_ROWS; r++) if (hallWallAt(area, x, r)) return `${x},${r}`;
+  }
+  return `${x},${Math.floor(d.y - 1e-6)}`;
+}
+
+/** Tile keys moved by (dx, dy) (the hall's shape grew up or to the left: hallAreaPaint), the ones pushed off dropped. */
+export function shiftTileKeys<T>(map: Readonly<Record<string, T>>, dx: number, dy: number): Record<string, T> {
+  if (!dx && !dy) return { ...map };
+  const out: Record<string, T> = {};
+  for (const [key, v] of Object.entries(map)) {
+    const [x, y] = keyXY(key);
+    if (x + dx >= 0 && y + dy >= 0) out[`${x + dx},${y + dy}`] = v;
+  }
+  return out;
+}
+
+/** The keys still good after the hall's shape changed (`ok`: hallAreaHas for plots, hallWallAt for walls). */
+export function keepTileKeys<T>(map: Readonly<Record<string, T>>, ok: (x: number, y: number) => boolean): Record<string, T> {
+  return Object.fromEntries(Object.entries(map).filter(([key]) => ok(...keyXY(key))));
+}
+
 /** How many of the hall's tiles differ between two floors (for the log). */
 export function hallFloorChanged(a: HallFloor, b: HallFloor, area: HallArea): number {
   const { width, height } = hallAreaSize(area);
@@ -111,6 +187,9 @@ export const guildDecorInput = z.object({
   floor: hallFloorSchema.optional(),
   /** The hall's shape too, when it was drawn anew (the leader and officers; shared/src/guild-hall.ts HallArea). */
   area: z.array(z.string().max(HALL_AREA_LINE_MAX)).max(HALL_AREA_LINES_MAX).optional(),
+  /** The wall segments brushed, and the members' places, when changed (the leader and officers). */
+  walls: hallWallsSchema.optional(),
+  plots: hallPlotsSchema.optional(),
 });
 export const guildDecorRestoreInput = z.object({ logId: z.uuid() });
 
@@ -235,27 +314,52 @@ export interface GuildDecorChange {
   removed: number;
 }
 
-/** What changed from `before` to `after`; or why this member may not make that change (a locked piece, or locking at all). */
-export function guildDecorChange(before: readonly GuildDecorPlaced[], after: readonly GuildDecorPlaced[], role: GuildRole): GuildDecorChange | string {
+/** Whose place a member may not touch (the plots, with who they are), for guildDecorChange. */
+export interface GuildDecorPlaces {
+  me: string;
+  area: HallArea;
+  plots: HallPlots;
+  /** Member id → name (a plot of someone not in here is nobody's). */
+  names: ReadonlyMap<string, string>;
+}
+
+/**
+ * What changed from `before` to `after`; or why this member may not make that change (a locked piece, locking at all, or a
+ * piece in someone else's place: `places`, where it was or where it went).
+ */
+export function guildDecorChange(before: readonly GuildDecorPlaced[], after: readonly GuildDecorPlaced[], role: GuildRole, places?: GuildDecorPlaces): GuildDecorChange | string {
   const was = new Map(before.map((d) => [d.uid, d]));
   const now = new Map(after.map((d) => [d.uid, d]));
   const boss = role !== "member";
   const change: GuildDecorChange = { added: 0, moved: 0, removed: 0 };
+  const theirs = (d: GuildDecorPlaced) => {
+    if (boss || !places) return null;
+    const who = places.plots[guildDecorTile(places.area, d)];
+    return who && who !== places.me && places.names.has(who) ? `這裡是${places.names.get(who)}的位置，只有他自己和會長、幹部能動。` : null;
+  };
   for (const d of after) {
     const old = was.get(d.uid);
     if (!old) {
       if (d.locked && !boss) return "只有會長和幹部可以鎖定裝飾。";
+      const why = theirs(d);
+      if (why) return why;
       change.added++;
       continue;
     }
     const same = old.kind === d.kind && old.x === d.x && old.y === d.y && !!old.flip === !!d.flip;
     if (!!old.locked !== !!d.locked && !boss) return "只有會長和幹部可以鎖定裝飾。";
     if (!same && old.locked && !boss) return `${guildDecorKind(old.kind)?.name ?? "這件裝飾"}被鎖住了，只有會長和幹部能動。`;
+    if (!same) {
+      const why = theirs(old) ?? theirs(d);
+      if (why) return why;
+    }
     if (!same || !!old.locked !== !!d.locked) change.moved++; // (locking or unlocking counts as a change too)
   }
   for (const d of before) {
     if (now.has(d.uid)) continue;
     if (d.locked && !boss) return `${guildDecorKind(d.kind)?.name ?? "這件裝飾"}被鎖住了，只有會長和幹部能收掉。`;
+    const why = theirs(d);
+    if (why) return why;
     change.removed++;
   }
   return change;
@@ -283,4 +387,7 @@ export interface GuildDecorLogEntry {
   floor: number;
   /** The hall's shape was drawn anew. */
   area: boolean;
+  /** Wall segments brushed, and whether the members' places were changed (older entries: 0, false). */
+  walls: number;
+  plots: boolean;
 }

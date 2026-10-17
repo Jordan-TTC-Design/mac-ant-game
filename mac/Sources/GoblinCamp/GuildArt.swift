@@ -188,21 +188,31 @@ final class GuildArt {
         return (UInt8(v >> 16 & 0xff), UInt8(v >> 8 & 0xff), UInt8(v & 0xff))
     }
 
+    /// Whether this body has a picture of these clothes (a hat: whether there is one at all); one that has none cannot wear it.
+    func canWear(_ slot: String, _ id: String, race: String, sex: String) -> Bool {
+        slot == "hat" ? file("hat", id) != nil : file(slot, "\(race)_\(sex)_\(id)") != nil
+    }
+
     private func look(_ a: GuildInfo.Avatar) -> CGImage? {
         if let hit = looks[a] { return hit }
         guard let root = avatarsRoot else { return nil }
         let who = "\(a.race)_\(a.sex)"
         let type = bodyType[who] ?? a.race
+        // (clothes the body has no picture of: its own; a hat flattens the hair under it, manifest render.hats)
+        func clothes(_ slot: String, _ id: String?) -> URL? { id.flatMap { file(slot, "\(who)_\($0)") } ?? file(slot, "\(who)_default") }
+        let hat = a.hat.flatMap { file("hat", $0) }
+        let hair = "\(who)_\(a.hair)"
         let pick: [String: URL?] = [
-            "hair_back": file("hair_back", "\(who)_\(a.hair)"),
+            "hair_back": hat != nil ? file("hair_back_flat", hair) ?? file("hair_back", hair) : file("hair_back", hair),
             "body": file("body", "\(who)_\(a.face)"),
-            "bottom": file("bottom", "\(who)_default"),
-            "top": file("top", "\(who)_default"),
-            "shoes": file("shoes", "\(who)_default"),
+            "bottom": clothes("bottom", a.bottom),
+            "top": clothes("top", a.top),
+            "shoes": clothes("shoes", a.shoes),
             "brows": file("brows", "\(type)_\(a.brows)"),
             "eyes": file("eyes", "\(type)_\(a.eyes)"),
             "mouth": file("mouth", "\(type)_\(a.mouth)"),
-            "hair_front": file("hair_front", "\(who)_\(a.hair)"),
+            "hair_front": hat != nil ? file("hair_front_flat", hair) ?? file("hair_front", hair) : file("hair_front", hair),
+            "hat": hat,
         ]
         let w = frameW * frames, h = frameH
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),

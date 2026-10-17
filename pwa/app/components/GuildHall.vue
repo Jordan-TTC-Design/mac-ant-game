@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { guildDecorKind, guildFurnishing, hallLayout, hallPose, WALL_ROWS, type GuildDecorPlaced, type HallArea, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
+import { guildDecorKind, guildFurnishing, hallLayout, hallPose, hallWallAt, WALL_ROWS, type GuildDecorPlaced, type HallArea, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
 import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
 
 /**
@@ -15,11 +15,18 @@ const props = defineProps<{
   decor: GuildDecorPlaced[];
   floor: HallFloor;
   wall: string;
+  /** Wall segments brushed another style ("x,y" of the floor tile under them; the rest are `wall`). */
+  walls?: Record<string, string>;
+  /** The members' own places ("x,y" → id), shown while decorating, with whose they are. */
+  plots?: Record<string, string>;
+  plotNames?: Record<string, string>;
   editing?: boolean;
   /** Laying floor tiles: a tap or a drag paints the tiles under it. */
   painting?: boolean;
   /** Drawing the hall's shape: like painting, but anywhere round the hall too (a margin to grow into shows round it). */
   shaping?: boolean;
+  /** Brushing the wall: a tap or a drag on the wall gives the floor tile under that column of it. */
+  wallPainting?: boolean;
   selected?: string | null;
   /** Avatars walked by hand (GUILD.md §3.1), this one's and others': where they are and what they are doing. */
   hand?: Record<string, GuildMove & { since?: number }>;
@@ -128,6 +135,11 @@ function paintAt(e: PointerEvent) {
   // (one tile once a stroke: drawing the shape may move everything under the pointer)
   if (`${x},${y}` === lastPainted) return;
   lastPainted = `${x},${y}`;
+  if (props.wallPainting) {
+    // (on the wall: the floor tile at its foot, the column it is part of)
+    for (let r = y; r <= y + WALL_ROWS; r++) if (hallWallAt(layout.value.area, x, r)) return emit("paint", x, r);
+    return;
+  }
   if (props.shaping || layout.value.area[y - WALL_ROWS]?.[x] === "#") emit("paint", x, y);
   if (props.shaping) {
     // (drawing at the edge of what is seen: the view moves a tile that way, so the drawing can go on)
@@ -151,7 +163,7 @@ function wheel(e: WheelEvent) {
 }
 function down(e: PointerEvent) {
   canvas.value!.setPointerCapture(e.pointerId);
-  if (props.editing && (props.painting || props.shaping)) {
+  if (props.editing && (props.painting || props.shaping || props.wallPainting)) {
     lastPainted = "";
     painting = true;
     paintAt(e);
@@ -300,14 +312,49 @@ function draw() {
   }
 
   // a wall over every top edge of the floor, then the floor's tiles (over the top of a wall with floor right behind it)
-  const wallInfo = hall.walls[props.wall] ?? Object.values(hall.walls)[0];
-  const wall = wallInfo && loaded.get(`/guild-hall/${wallInfo.file}`);
-  if (wall) for (const t of L.floorTiles) if (!isFloor(t.x, t.y - 1)) g.drawImage(wall, 0, 0, hall.tile, wall.height, t.x * T, t.y * T - wall.height * scale, T, wall.height * scale);
+  // (each column of wall in its own style, where one was brushed)
+  const wallOf = (id: string) => {
+    const info = hall.walls[id] ?? hall.walls[props.wall] ?? Object.values(hall.walls)[0];
+    return info && loaded.get(`/guild-hall/${info.file}`);
+  };
+  for (const t of L.floorTiles) {
+    if (isFloor(t.x, t.y - 1)) continue;
+    const wall = wallOf(props.walls?.[`${t.x},${t.y}`] ?? props.wall);
+    if (wall) g.drawImage(wall, 0, 0, hall.tile, wall.height, t.x * T, t.y * T - wall.height * scale, T, wall.height * scale);
+  }
   const fallback = Object.values(hall.floors)[0];
   for (const { x, y } of L.floorTiles) {
     const id = props.floor.tiles[`${x},${y}`] ?? props.floor.base;
     const tile = loaded.get(`/guild-hall/${hall.floors[id] ?? fallback}`);
     if (tile) g.drawImage(tile, x * T, y * T, T, T);
+  }
+  if (props.editing && props.plots) {
+    // (the members' places: a tint each, and the name on the first tile of each)
+    const named = new Set<string>();
+    g.font = `bold ${Math.max(9, T / 3)}px system-ui`;
+    g.textAlign = "left";
+    g.textBaseline = "top";
+    const keys = Object.keys(props.plots).sort((a, b) => {
+      const [ax, ay] = a.split(",").map(Number) as [number, number];
+      const [bx, by] = b.split(",").map(Number) as [number, number];
+      return ay - by || ax - bx;
+    });
+    for (const key of keys) {
+      const who = props.plots[key]!;
+      const [x, y] = key.split(",").map(Number) as [number, number];
+      const hue = [...who].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+      g.fillStyle = `hsla(${hue},70%,60%,0.28)`;
+      g.fillRect(x * T, y * T, T, T);
+      if (!named.has(who)) {
+        named.add(who);
+        g.fillStyle = `hsl(${hue},60%,92%)`;
+        g.strokeStyle = "rgba(0,0,0,0.7)";
+        g.lineWidth = 3;
+        const label = `🏠${props.plotNames?.[who] ?? ""}`;
+        g.strokeText(label, x * T + 2, y * T + 2);
+        g.fillText(label, x * T + 2, y * T + 2);
+      }
+    }
   }
   if (props.painting || props.shaping) {
     // (the floor's tiles; drawing the shape, every tile in view)

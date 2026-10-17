@@ -437,4 +437,80 @@ describe("公會", () => {
     expect((await decor()).find((d) => d.uid === fu.uid)?.x).toBe(8);
     expect((await put([...(await decor()), { ...fu, uid: "fu000002", x: 10 }])).status).toBe(400);
   });
+
+  it("the leader gives members their own places; there only they (and the leader, officers) touch the pieces", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const c = await person("c@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "分區隊" }, a.auth)).body as GuildResponse).guild!;
+    for (const p of [b, c]) {
+      await t.call("POST", "/guild/invites", { userId: p.id }, a.auth);
+      await t.call("POST", `/guild/join/${g.id}`, undefined, p.auth);
+    }
+    const kind = GUILD_DECOR.find((k) => k.level === 1 && !k.wall && !k.race)!.id;
+    const start = starterDecor();
+    const plots = { "25,10": b.id, "26,10": b.id };
+    // only the leader and officers hand out places
+    expect((await t.call("PUT", "/guild/decor", { version: 0, items: start, plots }, b.auth)).status).toBe(403);
+    let res = await t.call("PUT", "/guild/decor", { version: 0, items: start, plots }, a.auth);
+    expect((res.body as GuildResponse).guild).toMatchObject({ plots, decorVersion: 1 });
+    expect(((await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[])[0]).toMatchObject({ plots: true });
+    // b puts a lamp in their place; c may not touch it, nor put one there; a may
+    const lamp = { uid: "lamp0001", kind, x: 25.5, y: 11 };
+    expect((await t.call("PUT", "/guild/decor", { version: 1, items: [...start, lamp] }, c.auth)).body.message).toContain("咕嚕的位置");
+    expect((await t.call("PUT", "/guild/decor", { version: 1, items: [...start, lamp] }, b.auth)).status).toBe(200);
+    expect((await t.call("PUT", "/guild/decor", { version: 2, items: start }, c.auth)).status).toBe(403);
+    expect((await t.call("PUT", "/guild/decor", { version: 2, items: [...start, { ...lamp, x: 12 }] }, c.auth)).status).toBe(403);
+    expect((await t.call("PUT", "/guild/decor", { version: 2, items: start }, a.auth)).status).toBe(200);
+    // a place on no floor, or for someone not in the guild
+    expect((await t.call("PUT", "/guild/decor", { version: 3, items: start, plots: { "25,1": b.id } }, a.auth)).status).toBe(400);
+    // b leaves: their place is nobody's
+    await t.call("POST", "/guild/leave", undefined, b.auth);
+    expect((await guildOf(a)).guild!.plots).toEqual({});
+  });
+
+  it("the wall is brushed a segment at a time by the leader and officers, logged and can go back", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "刷牆隊" }, a.auth)).body as GuildResponse).guild!;
+    await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
+    await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
+    const start = starterDecor();
+    expect((await guildOf(a)).guild!.walls).toEqual({});
+    const walls = { "3,2": "wood", "4,2": "wood" };
+    expect((await t.call("PUT", "/guild/decor", { version: 0, items: start, walls }, b.auth)).status).toBe(403);
+    for (const bad of [{ "3,5": "wood" }, { "3,2": "lava" }, { "3,2": "elf_vines" }]) {
+      expect((await t.call("PUT", "/guild/decor", { version: 0, items: start, walls: bad }, a.auth)).status).toBe(400);
+    }
+    let res = await t.call("PUT", "/guild/decor", { version: 0, items: start, walls }, a.auth);
+    expect((res.body as GuildResponse).guild!.walls).toEqual(walls);
+    // a member's save that leaves the walls out keeps them
+    expect(((await t.call("PUT", "/guild/decor", { version: 1, items: [] }, b.auth)).body as GuildResponse).guild!.walls).toEqual(walls);
+    const log = (await t.call("GET", "/guild/decor/log", undefined, a.auth)).body.entries as GuildDecorLogEntry[];
+    expect(log[1]).toMatchObject({ walls: 2 });
+    res = await t.call("POST", "/guild/decor/restore", { logId: log[1]!.id }, a.auth);
+    expect((res.body as GuildResponse).guild!.walls).toEqual({});
+  });
+
+  it("clothes: the free ones to start, the rest bought with one's own contribution, worn only once owned", async () => {
+    const a = await person("a@example.com");
+    await t.call("POST", "/guild", { name: "服裝隊" }, a.auth);
+    let me = await guildOf(a);
+    expect(me.wardrobe).toEqual({ owned: ["linen_shirt", "work_trousers", "sandals", "straw_hat"], points: 0, spent: 0 });
+    const avatar = { ...me.avatar, top: "leather_vest" };
+    expect((await t.call("PUT", "/guild/avatar", avatar, a.auth)).body.message).toContain("皮背心");
+    expect((await t.call("POST", "/guild/outfits/buy", { id: "leather_vest" }, a.auth)).status).toBe(409);
+    await database.db.update(camps).set({ materials: { log: 500 } }).where(eq(camps.userId, a.id));
+    await t.call("POST", "/guild/donate", { materials: { log: 500 } }, a.auth);
+    let res = await t.call("POST", "/guild/outfits/buy", { id: "leather_vest" }, a.auth);
+    expect(res.body.wardrobe).toMatchObject({ points: 200, spent: 300 });
+    expect(res.body.wardrobe.owned).toContain("leather_vest");
+    expect((await t.call("POST", "/guild/outfits/buy", { id: "leather_vest" }, a.auth)).status).toBe(409);
+    expect((await t.call("POST", "/guild/outfits/buy", { id: "nope" }, a.auth)).status).toBe(400);
+    res = await t.call("PUT", "/guild/avatar", { ...avatar, hat: "straw_hat" }, a.auth);
+    expect(res.status).toBe(200);
+    expect((res.body as GuildResponse).avatar).toMatchObject({ top: "leather_vest", hat: "straw_hat" });
+    me = await guildOf(a);
+    expect(me.guild!.members[0]!.avatar).toMatchObject({ top: "leather_vest" });
+  });
 });

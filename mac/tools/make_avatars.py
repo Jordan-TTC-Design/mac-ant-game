@@ -292,8 +292,11 @@ def jump_legs(t, a, oy):
 
 
 # --- body + clothes per frame -----------------------------------------------------------------------------------------------
-def body_layers(bk, face, fr):
-    a = AVB[BODIES[bk]]
+def body_layers(bk, face, fr, a=None, lower=None):
+    """The body and its clothes in one frame. `a` and `lower` (the rule sorting the legs' pixels) default to the body's
+    approved design; the outfits (section 2b) pass their own to draw other clothes on the same rig."""
+    a = a or AVB[BODIES[bk]]
+    lower = lower or lower_rule_for(a)
     race = a["race"]
     plain = dict(a, cape=False)
     view = fr["view"]
@@ -327,7 +330,7 @@ def body_layers(bk, face, fr):
             if race not in ("skeleton", "ghost"):
                 for x, lift in ((9, 1 if fr["phase"] == 1 else 0), (13, 1 if fr["phase"] == 3 else 0)):
                     b.rect(x, oy + 23, x + 1, oy + 26 - lift, "s")
-        split(t, L, lower_rule_for(a))
+        split(t, L, lower)
         t = C()
         pv.torso_front(t, plain, u)
         split(t, L, upper_rule)
@@ -371,7 +374,7 @@ def body_layers(bk, face, fr):
             for x, lift in ((9, 1 if fr["phase"] == 1 else 0), (13, 1 if fr["phase"] == 3 else 0)):
                 b.rect(x, oy + 23, x + 1, oy + 26 - lift, "s")
             b.rect(8, u + 15, 15, u + 22, "s")
-        split(t, L, lower_rule_for(a))
+        split(t, L, lower)
         t = C()
         pv.torso_front(t, plain, u, back=True)
         split(t, L, upper_rule)
@@ -408,7 +411,7 @@ def body_layers(bk, face, fr):
             pv.sit_legs_side(t, a, oy, fr["swing"])
         else:
             pv.legs_side(t, a, fr["phase"], oy)
-        split(t, L, lower_rule_for(a))
+        split(t, L, lower)
         t = C()
         pv.torso_side(t, plain, u)
         split(t, L, upper_rule)
@@ -1528,10 +1531,233 @@ def strip(frame_canvases, pal, x_off=DX):
     return None if empty else out
 
 
+# --- outfits (GUILD.md §2, shared/src/guild-outfits.ts): clothes bought with contribution ------------------------------------
+# Every top, bottom and pair of shoes is drawn on each body's own rig by body_layers, with a design of its own (`a`) and only
+# its slot's layer kept, so it moves in every frame exactly as the default clothes do. Hats sit on the head like feather_cap
+# and are the same for every body. A body that cannot wear something gets no file (the spirit has a tail, not legs).
+OUTFIT_BASE = dict(patch=False, cape=False, cuff=False, buckle=False, sleeve="short", sleeve_col="T", belt=20)
+
+# id -> (design, colours); `emblem`: a gold cross on the chest and back, `robe`: the gown's long skirt is part of the top
+TOPS = {
+    "linen_shirt": (dict(outfit="tunic"),
+                    dict(T=(222, 206, 166), U=(184, 166, 124), u=(246, 238, 214), k=(140, 110, 70), A=(200, 170, 90))),
+    "leather_vest": (dict(outfit="tunic", sleeve="long", sleeve_col="V", buckle=True),
+                     dict(T=(140, 90, 50), U=(104, 64, 34), u=(236, 230, 214), V=(236, 230, 214), k=(70, 46, 26), A=(214, 176, 80))),
+    "knight_tabard": (dict(outfit="tunic", sleeve="long", sleeve_col="M", buckle=True, emblem=True),
+                      dict(T=(60, 90, 170), U=(40, 62, 128), u=(230, 200, 90), M=(150, 156, 166), k=(60, 50, 40), A=(236, 204, 90))),
+    "mage_robe": (dict(outfit="gown", sleeve="long", cuff=True, buckle=True, robe=True),
+                  dict(T=(96, 64, 150), U=(70, 44, 112), u=(230, 200, 100), k=(200, 160, 60), A=(255, 236, 140))),
+    "noble_doublet": (dict(outfit="tunic", sleeve="long", cuff=True, buckle=True, cape=True),
+                      dict(T=(150, 40, 60), U=(110, 26, 44), u=(240, 220, 160), k=(60, 30, 30), A=(240, 200, 80),
+                           C=(44, 44, 86), c=(28, 28, 60))),
+}
+# id -> (the legs' cut, colours, how its pixels are coloured)
+BOTTOMS = {
+    "work_trousers": ("tunic", dict(P=(110, 96, 78), Q=(84, 72, 58)), "trousers"),
+    "leather_pants": ("tunic", dict(P=(96, 62, 36), Q=(70, 44, 24)), "trousers"),
+    "plaid_kilt": ("dress", dict(T=(176, 52, 52), G=(52, 104, 64), U=(126, 34, 40), Y=(232, 196, 96)), "kilt"),
+    "silk_skirt": ("gown", dict(T=(220, 150, 190), U=(180, 110, 150), u=(255, 230, 240)), "skirt"),
+}
+# id -> (colours: K the shoe, B the shaft or strap; how many rows of shaft over the foot; pointed toes)
+SHOES = {
+    "sandals": (dict(K=(206, 172, 104), B=(130, 96, 56)), 1, False),
+    "leather_boots": (dict(K=(96, 60, 34), B=(132, 86, 50)), 2, False),
+    "pointy_slippers": (dict(K=(150, 60, 110), B=(150, 60, 110)), 0, True),
+    "iron_greaves": (dict(K=(104, 110, 122), B=(168, 174, 186)), 3, False),
+}
+
+
+def _top_rule(k):
+    if k == "K":
+        return "shoes"
+    if k in SKIN_K:
+        return "body"
+    if k in ("P", "Q"):                                                  # trousers under a tunic: the bottom's
+        return "bottom"
+    return "top"
+
+
+def outfit_pal(bk, cols):
+    p = layer_pal("top", bk)
+    p.update(cols)
+    return p
+
+
+def outfit_frames(bk, slot, oid):
+    """The outfit's canvases, one a frame (None: this body cannot wear it)."""
+    base = AVB[BODIES[bk]]
+    spirit = base["outfit"] == "spirit"
+    if spirit and slot in ("bottom", "shoes"):
+        return None
+    out = []
+    if slot == "top":
+        design, _ = TOPS[oid]
+        a = dict(base, **OUTFIT_BASE)
+        a.update({k: v for k, v in design.items() if k not in ("emblem", "robe")})
+        if base["race"] == "skeleton":
+            a["race"] = "elf"                                            # (no capelet: the clothes cover the bones)
+        for fr in FRAMES:
+            c = body_layers(bk, "round", fr, a, _top_rule)["top"]
+            if design.get("emblem") and fr["view"] in ("front", "back"):
+                _oy, u, _hy = heads(fr)
+                for x, y in [(11, u + 16), (12, u + 16), (11, u + 17), (12, u + 17), (10, u + 17), (13, u + 17), (11, u + 18), (12, u + 18)]:
+                    if c.px[y][x] == "T":
+                        c.put(x, y, "A")
+            out.append(c)
+        return out
+    if slot == "bottom":
+        cut, _, how = BOTTOMS[oid]
+        a = dict(base, **OUTFIT_BASE)
+        a["outfit"] = cut
+        skel = base["race"] == "skeleton"
+        if skel:
+            a["race"] = "elf"
+        for fr in FRAMES:
+            c = body_layers(bk, "round", fr, a, lambda k: "shoes" if k == "K" else "bottom")["bottom"]
+            if how == "kilt":                                            # a row longer than the dress, so it shows under a tunic
+                cloth = {(x, y) for y in range(FH) for x in range(RW) if c.px[y][x] in ("T", "U", "u")}
+                for x, y in cloth:
+                    c.px[y][x] = "T"
+                for x, y in cloth:
+                    if (x, y + 1) not in cloth and y + 1 < FH and c.px[y + 1][x] in (None,) + SKIN_K:
+                        c.put(x, y + 1, "U")
+            for y in range(FH):
+                for x in range(RW):
+                    k = c.px[y][x]
+                    if k is None:
+                        continue
+                    if k in SKIN_K and skel:                             # (the bones show from the body underneath)
+                        c.px[y][x] = None
+                    elif how == "trousers":
+                        c.px[y][x] = {"T": "P", "U": "Q", "u": "P"}.get(k, k)
+                    elif how == "kilt" and k in ("T", "u"):
+                        c.px[y][x] = "Y" if y % 4 == 1 and x % 4 == 2 else "G" if x % 4 == 1 or y % 4 == 3 else "T"
+            out.append(c)
+        return out
+    colours, shaft, pointed = SHOES[oid]
+    a = dict(base, outfit="tunic")
+    for fr in FRAMES:
+        L = body_layers(bk, "round", fr, a)
+        c = L["shoes"]
+        leg = lambda x, y: y >= 0 and (L["bottom"].px[y][x] is not None or L["body"].px[y][x] is not None)  # noqa: E731
+        feet = [(x, y) for y in range(FH) for x in range(RW) if c.px[y][x] == "K"]
+        for x, y in feet:
+            if (x, y - 1) in feet:
+                continue
+            for r in range(1, shaft + 1):
+                if leg(x, y - r) and c.px[y - r][x] is None:
+                    c.put(x, y - r, "B")
+        if pointed:                                                     # each foot one pixel longer, outward (forward from the side)
+            for y in range(FH):
+                xs = [x for x in range(RW) if c.px[y][x] == "K"]
+                runs, run = [], []
+                for x in xs:
+                    if run and x != run[-1] + 1:
+                        runs.append(run); run = []
+                    run.append(x)
+                if run:
+                    runs.append(run)
+                for r in runs:
+                    if fr["view"] == "side":
+                        c.put(r[-1] + 1, y, "K")
+                    elif (r[0] + r[-1]) / 2 < RW / 2:
+                        c.put(r[0] - 1, y, "K")
+                    else:
+                        c.put(r[-1] + 1, y, "K")
+        out.append(c)
+    return out
+
+
+# --- hats: drawn per view on the head (`y` its base, the head's top at y + 3), the same for every body ---------------------
+HAT_PALS = {
+    "straw_hat": {"Y": (226, 196, 120), "y": (184, 152, 84), "h": (246, 226, 160), "R": (180, 60, 50)},
+    "flower_crown": {"G": (90, 160, 80), "g": (60, 120, 60), "P": (240, 150, 180), "W": (255, 255, 255), "Y": (250, 214, 90)},
+    "iron_helm": {"M": (150, 156, 166), "m": (110, 116, 128), "h": (206, 212, 222)},
+    "wizard_hat": {"B": (70, 60, 140), "b": (48, 40, 104), "L": (110, 96, 184), "A": (255, 220, 90)},
+}
+
+
+def _mirror(c):
+    m = C()
+    for y in range(FH):
+        for x in range(RW):
+            if c.px[y][x] is not None:
+                m.put(RW - 1 - x, y, c.px[y][x])
+    return m
+
+
+def straw_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    side = fr["view"] == "side"
+    c.rect(9, y + 1, 14, y + 1, "Y"); c.rect(8, y + 2, 15, y + 3, "Y")                     # the crown
+    c.rect(8, y + 4, 15, y + 4, "R")                                                        # its band
+    c.rect(3, y + 5, 20, y + 5, "Y"); c.cells([(3, y + 5), (20, y + 5)], "y")              # the wide brim
+    c.rect(4, y + 6, 6, y + 6, "y") if side else c.cells([(4, y + 6), (19, y + 6)], "y")   # (its edge droops a little)
+    if fr["view"] == "back":
+        c.rect(8, y + 2, 8, y + 3, "y")
+    else:
+        c.rect(15, y + 2, 15, y + 3, "y"); c.cells([(9, y + 2), (10, y + 2)], "h")
+    return c
+
+
+def flower_crown_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    if fr["view"] == "side":
+        c.rect(7, y + 3, 16, y + 3, "G"); c.cells([(7, y + 4), (8, y + 4)], "g")
+        for x, k in ((9, "P"), (12, "W"), (15, "Y")):
+            c.cells([(x, y + 2), (x, y + 3)], k)
+        return c
+    c.rect(6, y + 3, 17, y + 3, "G"); c.cells([(6, y + 4), (17, y + 4)], "g")
+    for x, k in ((7, "P"), (10, "W"), (13, "Y"), (16, "P")):
+        c.cells([(x, y + 2), (x, y + 3)], k)
+    return c
+
+
+def iron_helm_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    c.rect(9, y + 1, 14, y + 1, "M"); c.rect(7, y + 2, 16, y + 2, "M"); c.rect(6, y + 3, 17, y + 5, "M")   # the dome
+    if view == "front":
+        c.rect(5, y + 6, 18, y + 6, "m")                                                    # the rim
+        c.rect(11, y + 7, 12, y + 9, "m")                                                   # the nose guard
+        c.rect(17, y + 3, 17, y + 5, "m"); c.cells([(9, y + 2), (8, y + 3), (7, y + 4)], "h")
+    elif view == "back":
+        c.rect(6, y + 6, 17, y + 7, "M"); c.rect(5, y + 8, 18, y + 8, "m"); c.rect(6, y + 3, 6, y + 7, "m")
+        c.cells([(14, y + 2), (15, y + 3), (16, y + 4)], "h")
+    else:                                                                                   # facing right: open at the face
+        c.rect(6, y + 6, 12, y + 7, "M"); c.rect(5, y + 6, 17, y + 6, "m")
+        c.rect(17, y + 6, 17, y + 8, "m")
+        c.rect(6, y + 3, 6, y + 7, "m"); c.cells([(10, y + 2), (11, y + 2), (13, y + 3)], "h")
+    return c
+
+
+def wizard_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    side = fr["view"] == "side"
+    c.rect(4 if not side else 3, y + 5, 19 if not side else 20, y + 5, "B")                # the brim
+    c.cells([(4 if not side else 3, y + 5), (19 if not side else 20, y + 5)], "b")
+    c.rect(8, y + 4, 15, y + 4, "A")                                                        # a gold band
+    for row, (x0, x1) in ((3, (8, 15)), (2, (9, 14)), (1, (9, 14)), (0, (10, 13)), (-1, (10, 13)), (-2, (11, 12)), (-3, (11, 12))):
+        c.rect(x0, y + row, x1, y + row, "B"); c.put(x1, y + row, "b"); c.put(x0, y + row, "L")
+    tip = [(9, y - 4), (10, y - 4), (8, y - 5)] if side else [(12, y - 4), (13, y - 4), (14, y - 5)]   # (it flops back from the side)
+    c.cells(tip, "B")
+    c.cells([(10, y + 1), (12, y - 1)], "A")                                                # stars
+    return _mirror(c) if fr["view"] == "back" else c
+
+
+HATS = {"straw_hat": straw_hat_layer, "flower_crown": flower_crown_layer, "iron_helm": iron_helm_layer, "wizard_hat": wizard_hat_layer}
+
+
 # --- writing -------------------------------------------------------------------------------------------------------------------
 def check_fixed_colours():
     """No fixed colour may equal a key colour (the renderer would recolour it)."""
     pals = [layer_pal(l, bk) for l in ("body", "top", "hair_front", "eyes") for bk in BODIES] + [HAT, FX]
+    pals += [outfit_pal(bk, cols) for bk in BODIES for cols in [t[1] for t in TOPS.values()] + [b[1] for b in BOTTOMS.values()]
+             + [h[0] for h in SHOES.values()]] + list(HAT_PALS.values())
     for p in pals:
         for k, v in p.items():
             if k in KEY_SKIN or k in KEY_HAIR or k in KEY_FLAME:
@@ -1944,6 +2170,13 @@ def main():
             img = strip(cs, layer_pal(n, bk))
             if img:
                 files[n][f"{bk}_default"] = save(img, f"{n}/{bk}_default.png")
+        for slot, table in (("top", TOPS), ("bottom", BOTTOMS), ("shoes", SHOES)):
+            for oid, spec in table.items():
+                frs = outfit_frames(bk, slot, oid)
+                cols = spec[0] if slot == "shoes" else spec[1]
+                img = frs and strip(frs, outfit_pal(bk, cols))
+                if img:
+                    files[slot][f"{bk}_{oid}"] = save(img, f"{slot}/{bk}_{oid}.png")
         for hair in HAIRS[bk]:
             parts = [hair_layers(bk, hair, fr) for fr in FRAMES]
             for idx, name in enumerate(("hair_back", "hair_front", "hair_front_flat", "hair_back_flat")):
@@ -1969,6 +2202,8 @@ def main():
             if img:
                 files["brows"][f"{bt}_{b}"] = save(img, f"brows/{bt}_{b}.png")
     files["hat"]["feather_cap"] = save(strip([hat_layer(fr) for fr in FRAMES], HAT), "hat/feather_cap.png")
+    for hid, draw in HATS.items():
+        files["hat"][hid] = save(strip([draw(fr) for fr in FRAMES], HAT_PALS[hid]), f"hat/{hid}.png")
     fx = strip([fx_layer(fr) for fr in FRAMES], FX, x_off=0)
     files["fx"] = save(fx, "fx.png")
 
