@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 import { loadLastAttack, saveLastAttack, type LastAttack } from "~/utils/again";
@@ -270,7 +270,12 @@ watch(dispatch, (d) => {
 });
 const plan = computed(() => (way.value?.waypoints.length ? way.value.waypoints.map(cellCenter) : null));
 /** About how long the walk is from where it would set out (the slowest goblin and food make it differ a little). */
-const minutesTo = computed(() => (way.value?.waypoints.length ? walkMinutes(way.value.meters) : null));
+/** Moving between one's own joined cells is quick (REGION_TRAVEL). */
+const inRegion = computed(() => {
+  const start = wayFrom.value === "home" ? s.me?.homeCell : wayFrom.value;
+  return !!start && !!selected.value && sameRegion(start, selected.value, new Set((s.me?.cells ?? []).map((c) => c.cell)));
+});
+const minutesTo = computed(() => (way.value?.waypoints.length ? Math.max(1, Math.round(walkMinutes(way.value.meters) * (inRegion.value ? REGION_TRAVEL : 1))) : null));
 const detourTo = computed(() => (way.value && way.value.waypoints.length > 2 ? walkMinutes(way.value.meters) - walkMinutes(way.value.straight) : 0));
 const lootText = (loot: Record<string, number>) => Object.entries(loot).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 const costList = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ${n}`).join("、");

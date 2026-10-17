@@ -352,6 +352,41 @@ describe("camps against camps", () => {
     expect((await me(a)).cells.map((c) => c.cell)).toEqual([aCell]);
   });
 
+  it("a camp is helped by its held cells next to it", async () => {
+    const a = await account("a@example.com");
+    const b = await account("b@example.com");
+    await grow(a);
+    const aCell = cellAt(DAAN);
+    await t.call("POST", "/world/open", { cell: aCell }, a);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, b);
+    await veteran("a@example.com");
+    await veteran("b@example.com");
+    const next = (await map(a, cellCenter(aCell), 400)).find((c) => neighbors(aCell).includes(c.cell) && !c.owner && !c.lair && !c.boss)!.cell;
+    const res = await t.call("POST", "/world/expeditions", { to: next, count: 12, settle: true }, a);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const wa = await me(a);
+    expect(wa.cells.find((c) => c.cell === next)?.garrison).toBe(12);
+    const odds = (await t.call("POST", "/world/expeditions/estimate", { to: aCell, count: 10 }, b)).body as { total: number };
+    expect(odds.total).toBe(wa.atHome + 5); // (everybody at home, and five from the cell next door: it keeps the rest)
+  });
+
+  it("moves residents between its own joined cells quickly", async () => {
+    const a = await account("a@example.com");
+    await grow(a);
+    const aCell = cellAt(DAAN);
+    await t.call("POST", "/world/open", { cell: aCell }, a);
+    await veteran("a@example.com");
+    const next = (await map(a, cellCenter(aCell), 400)).find((c) => neighbors(aCell).includes(c.cell) && !c.owner && !c.lair && !c.boss)!.cell;
+    const first = await t.call("POST", "/world/expeditions", { to: next, count: 10, settle: true }, a); // (not ours yet: a normal walk)
+    const slow = Date.parse(first.body.arriveAt) - Date.parse(first.body.setOutAt);
+    t.advance(slow + 1000);
+    expect((await me(a)).cells.map((c) => c.cell)).toContain(next);
+    const second = await t.call("POST", "/world/expeditions", { to: next, count: 10 }, a); // (ours now, and joined to the camp)
+    expect(second.status).toBe(201);
+    const quick = Date.parse(second.body.arriveAt) - Date.parse(second.body.setOutAt);
+    expect(quick).toBeLessThanOrEqual(Math.max(60_000, slow * 0.4));
+  });
+
   it("parties go round other camps' built-up land, and cannot go where it walls them out (not a friend's)", async () => {
     const a = await account("a@example.com");
     const b = await account("b@example.com");

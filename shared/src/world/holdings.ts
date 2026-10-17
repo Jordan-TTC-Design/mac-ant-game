@@ -179,6 +179,14 @@ export const NEIGHBOUR_YIELD_MAX = 3;
 export const REINFORCE_PER_CELL = 5;
 
 /** The held cells joined to `cell` through held cells next to each other (itself included; empty if it is not held). */
+/** Within one's own connected region (2026-10-17), residents moving between its cells walk this share of the time. */
+export const REGION_TRAVEL = 0.25;
+
+/** Whether `a` and `b` are both held and joined by held cells (one region: connectedCells). */
+export function sameRegion(a: string, b: string, held: ReadonlySet<string>): boolean {
+  return held.has(a) && held.has(b) && connectedCells(a, held).includes(b);
+}
+
 export function connectedCells(cell: string, held: ReadonlySet<string>): string[] {
   if (!held.has(cell)) return [];
   const seen = new Set([cell]);
@@ -294,6 +302,8 @@ export interface CellBonus {
   xp: number;
   /** The ground yields this share more (held cells next to it). */
   yieldBoost: number;
+  /** The pairings (REGION_COMBOS) its building is part of in its region, by name. */
+  combos?: string[];
 }
 
 /** Besides its building: the landmark on the cell, and whether a temple of the same holder stands next to it. */
@@ -306,6 +316,27 @@ export interface CellSurroundings {
   townsJoined?: number;
   /** It is a town itself (TOWN_TRAVEL, TOWN_FORT). */
   town?: boolean;
+  /** The kinds of building working in its region (for REGION_COMBOS). */
+  regionKinds?: readonly string[];
+}
+
+/**
+ * Two buildings that work well together in one region (2026-10-17): with both standing (built, anywhere in the joined
+ * cells), each does a little more — what it makes +1 each, what it finds +3%, its fort +10%, its room +5, its party +1, its
+ * walking time −10%.
+ */
+export const REGION_COMBOS: readonly { kinds: readonly [CellBuildingKind, CellBuildingKind]; name: string; blurb: string }[] = [
+  { kinds: ["sawmill", "workshop"], name: "木工坊", blurb: "伐木營地 + 工坊" },
+  { kinds: ["orchard", "lodge"], name: "林間補給", blurb: "採集園 + 獵人小屋" },
+  { kinds: ["field", "barracks"], name: "屯田", blurb: "田 + 營舍" },
+  { kinds: ["fishery", "tollgate"], name: "河岸市集", blurb: "漁場 + 關卡" },
+  { kinds: ["watchtower", "campfire"], name: "守備營", blurb: "瞭望塔 + 營火廣場" },
+  { kinds: ["dock", "inn"], name: "水陸驛道", blurb: "碼頭 + 驛站" },
+];
+
+/** The pairings `kind` is part of, given the kinds working in its region. */
+export function combosFor(kind: string, regionKinds: readonly string[]): typeof REGION_COMBOS {
+  return REGION_COMBOS.filter((c) => (c.kinds as readonly string[]).includes(kind) && c.kinds.every((k) => regionKinds.includes(k)));
 }
 
 /** A town is a base (2026-10-17): parties setting out from it walk this much of the time, and its walls add this to its defenders' hit points. */
@@ -355,6 +386,17 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
   if (rule.travel) out.travel *= rule.travel[k];
   if (rule.room) out.room += rule.room[k];
   if (rule.party) out.party += rule.party[k];
+  // paired with its partner in the region (REGION_COMBOS): a little more of what it does
+  const combos = combosFor(rule.kind, around.regionKinds ?? []);
+  for (const _ of combos) {
+    for (const id of Object.keys(rule.races?.[race]?.makes ?? rule.makes ?? {})) out.makes[id] = (out.makes[id] ?? 0) + 1;
+    for (const id of Object.keys(rule.finds ?? {})) out.finds[id] = Math.min(1, (out.finds[id] ?? 0) + 0.03);
+    if (rule.fort) out.fort += 0.1;
+    if (rule.room) out.room += 5;
+    if (rule.party) out.party += 1;
+    if (rule.travel) out.travel *= 0.9;
+  }
+  if (combos.length) out.combos = combos.map((c) => c.name);
   return out;
 }
 
