@@ -1,0 +1,311 @@
+{
+ "note": "art pixels; each sprite stands on its bottom-centre pixel; one art pixel is two points",
+ "races": {
+  "goblin": {
+   "warehouse_1": {
+    "file": "goblin/warehouse_1.png",
+    "w": 24,
+    "h": 22
+   },
+   "warehouse_2": {
+    "file": "goblin/warehouse_2.png",
+    "w": 30,
+    "h": 26
+   },
+   "warehouse_3": {
+    "file": "goblin/warehouse_3.png",
+    "w": 46,
+    "h": 30
+   },
+   "clinic_1": {
+    "file": "goblin/clinic_1.png",
+    "w": 20,
+    "h": 21
+   },
+   "clinic_2": {
+    "file": "goblin/clinic_2.png",
+    "w": 26,
+    "h": 25
+   },
+   "clinic_3": {
+    "file": "goblin/clinic_3.png",
+    "w": 32,
+    "h": 29
+   },
+   "training_1": {
+    "file": "goblin/training_1.png",
+    "w": 28,
+    "h": 26
+   },
+   "training_2": {
+    "file": "goblin/training_2.png",
+    "w": 36,
+    "h": 26
+   },
+   "training_3": {
+    "file": "goblin/training_3.png",
+    "w": 44,
+    "h": 26
+   },
+   "banquet_1": {
+    "file": "goblin/banquet_1.png",
+    "w": 28,
+    "h": 30
+   },
+   "banquet_2": {
+    "file": "goblin/banquet_2.png",
+    "w": 36,
+    "h": 28
+   },
+   "banquet_3": {
+    "file": "goblin/banquet_3.png",
+    "w": 44,
+    "h": 31
+   },
+   "watchtower_1": {
+    "file": "goblin/watchtower_1.png",
+    "w": 22,
+    "h": 40
+   },
+   "watchtower_2": {
+    "file": "goblin/watchtower_2.png",
+    "w": 24,
+    "h": 48
+   },
+   "watchtower_3": {
+    "file": "goblin/watchtower_3.png",
+    "w": 28,
+    "h": 56
+   },
+   "wall_1": {
+    "file": "goblin/wall_1.png",
+    "w": 16,
+    "h": 12
+   },
+   "wall_2": {
+    "file": "goblin/wall_2.png",
+    "w": 16,
+    "h": 14
+   },
+   "wall_2_tower": {
+    "file": "goblin/wall_2_tower.png",
+    "w": 12,
+    "h": 22
+   },
+   "wall_3": {
+    "file": "goblin/wall_3.png",
+    "w": 16,
+    "h": 17
+   },
+   "wall_3_tower": {
+    "file": "goblin/wall_3_tower.png",
+    "w": 12,
+    "h": 28
+   }
+  },
+  "elf": {
+   "warehouse_1": {
+    "file": "elf/warehouse_1.png",
+    "w": 24,
+    "h": 22
+   },
+   "warehouse_2": {
+    "file": "elf/warehouse_2.png",
+    "w": 30,
+    "h": 26
+   },
+   "warehouse_3": {
+    "file": "elf/warehouse_3.png",
+    "w": 46,
+    "h": 30
+   },
+   "clinic_1": {
+    "file": "elf/clinic_1.png",
+    "w": 20,
+    "h": 21
+   },
+   "clinic_2": {
+    "file": "elf/clinic_2.png",
+    "w": 26,
+    "h": 25
+   },
+   "clinic_3": {
+    "file": "elf/clinic_3.png",
+    "w": 32,
+    "h": 29
+   },
+   "training_1": {
+    "file": "elf/training_1.png",
+    "w": 28,
+    "h": 26
+   },
+   "training_2": {
+    "file": "elf/training_2.png",
+    "w": 36,
+    "h": 26
+   },
+   "training_3": {
+    "file": "elf/training_3.png",
+    "w": 44,
+    "h": 26
+   },
+   "banquet_1": {
+    "file": "elf/banquet_1.png",
+    "w": 28,
+    "h": 30
+   },
+   "banquet_2": {
+    "file": "elf/banquet_2.png",
+    "w": 36,
+    "h": 28
+   },
+   "banquet_3": {
+    "file": "elf/banquet_3.png",
+    "w": 44,
+    "h": 31
+   },
+   "watchtower_1": {
+    "file": "elf/watchtower_1.png",
+    "w": 22,
+    "h": 40
+   },
+   "watchtower_2": {
+    "file": "elf/watchtower_2.png",
+    "w": 24,
+    "h": 48
+   },
+   "watchtower_3": {
+    "file": "elf/watchtower_3.png",
+    "w": 28,
+    "h": 56
+   },
+   "wall_1": {
+    "file": "elf/wall_1.png",
+    "w": 16,
+    "h": 12
+   },
+   "wall_2": {
+    "file": "elf/wall_2.png",
+    "w": 16,
+    "h": 14
+   },
+   "wall_2_tower": {
+    "file": "elf/wall_2_tower.png",
+    "w": 12,
+    "h": 22
+   },
+   "wall_3": {
+    "file": "elf/wall_3.png",
+    "w": 16,
+    "h": 17
+   },
+   "wall_3_tower": {
+    "file": "elf/wall_3_tower.png",
+    "w": 12,
+    "h": 28
+   }
+  },
+  "undead": {
+   "warehouse_1": {
+    "file": "undead/warehouse_1.png",
+    "w": 24,
+    "h": 22
+   },
+   "warehouse_2": {
+    "file": "undead/warehouse_2.png",
+    "w": 30,
+    "h": 26
+   },
+   "warehouse_3": {
+    "file": "undead/warehouse_3.png",
+    "w": 46,
+    "h": 30
+   },
+   "clinic_1": {
+    "file": "undead/clinic_1.png",
+    "w": 20,
+    "h": 21
+   },
+   "clinic_2": {
+    "file": "undead/clinic_2.png",
+    "w": 26,
+    "h": 25
+   },
+   "clinic_3": {
+    "file": "undead/clinic_3.png",
+    "w": 32,
+    "h": 29
+   },
+   "training_1": {
+    "file": "undead/training_1.png",
+    "w": 28,
+    "h": 26
+   },
+   "training_2": {
+    "file": "undead/training_2.png",
+    "w": 36,
+    "h": 26
+   },
+   "training_3": {
+    "file": "undead/training_3.png",
+    "w": 44,
+    "h": 26
+   },
+   "banquet_1": {
+    "file": "undead/banquet_1.png",
+    "w": 28,
+    "h": 30
+   },
+   "banquet_2": {
+    "file": "undead/banquet_2.png",
+    "w": 36,
+    "h": 28
+   },
+   "banquet_3": {
+    "file": "undead/banquet_3.png",
+    "w": 44,
+    "h": 31
+   },
+   "watchtower_1": {
+    "file": "undead/watchtower_1.png",
+    "w": 22,
+    "h": 40
+   },
+   "watchtower_2": {
+    "file": "undead/watchtower_2.png",
+    "w": 24,
+    "h": 48
+   },
+   "watchtower_3": {
+    "file": "undead/watchtower_3.png",
+    "w": 28,
+    "h": 56
+   },
+   "wall_1": {
+    "file": "undead/wall_1.png",
+    "w": 16,
+    "h": 12
+   },
+   "wall_2": {
+    "file": "undead/wall_2.png",
+    "w": 16,
+    "h": 14
+   },
+   "wall_2_tower": {
+    "file": "undead/wall_2_tower.png",
+    "w": 12,
+    "h": 22
+   },
+   "wall_3": {
+    "file": "undead/wall_3.png",
+    "w": 16,
+    "h": 17
+   },
+   "wall_3_tower": {
+    "file": "undead/wall_3_tower.png",
+    "w": 12,
+    "h": 28
+   }
+  }
+ }
+}

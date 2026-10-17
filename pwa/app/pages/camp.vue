@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import {
   bossDue,
+  buildingEffects,
+  buildingLevel,
+  buildingNext,
+  CAMP_BUILDING_MAX,
+  CAMP_BUILDINGS,
+  FARM_KEEP,
   breedName as sharedBreedName,
   campBoss,
   RANCH_CAP,
@@ -172,6 +178,30 @@ async function siteCommand(question: string, command: Record<string, unknown>) {
     siteBusy.value = false;
   }
 }
+// 營地建設 (shared/src/camp/buildings.ts): six great works, three levels each, one going up at a time
+const buildingBusy = computed(() => Object.entries(view.value?.buildings ?? {}).find(([, b]) => b?.busyUntil) ?? null);
+const works = computed(() => buildingEffects(view.value?.buildings));
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+const nowDoes: Record<string, () => string> = {
+  wall: () => `魔獸攻擊 −${pct(works.value.raidMonsterAttack)}`,
+  warehouse: () => `糧食存到 ${works.value.foodKeep}`,
+  clinic: () => `回血 +${pct(works.value.heal)}`,
+  training: () => `打突襲血量 +${pct(works.value.raidDefenderHp)}`,
+  banquet: () => `來訪者 +${pct(works.value.visitorChance)}${works.value.merchantMore ? "、商人多帶一樣" : ""}`,
+  watchtower: () => `等級王來時攻擊 +${pct(works.value.bossAttack)}`,
+};
+const buildings = computed(() =>
+  CAMP_BUILDINGS.map((rule) => {
+    const level = buildingLevel(view.value?.buildings, rule.id);
+    const busyUntil = view.value?.buildings?.[rule.id]?.busyUntil ?? null;
+    return { rule, level, busyUntil, does: level ? nowDoes[rule.id]!() : "", next: buildingNext(rule.id, level, view.value?.campBonus?.build ?? 0) };
+  }),
+);
+watch(() => !!buildingBusy.value?.[1]?.busyUntil && Date.parse(buildingBusy.value[1]!.busyUntil!) <= now.value, (done) => {
+  if (done && camp.state.status === "ok") setTimeout(() => void camp.refresh(), 3000);
+});
+const hoursText = (h: number) => `${+h.toFixed(1)} 小時`;
+
 const showAllRaids = ref(false);
 const openRaid = ref<number | null>(null);
 const monsters = (list: { id: string; count: number; variant?: MonsterVariant }[]) => list.map((m) => `${monsterName(m.id, m.variant)} ×${m.count}`).join("、");
@@ -333,6 +363,37 @@ async function answerVisitor(yes: boolean) {
         <p v-if="siteProblem" class="warn">{{ siteProblem }}</p>
       </section>
 
+      <section class="panel production">
+        <h2>🏰 營地建設</h2>
+        <p v-if="buildingBusy" class="upgrading">🔨 正在蓋{{ buildings.find((b) => b.rule.id === buildingBusy![0])?.rule.name }}，還要 {{ leftText(buildingBusy[1]!.busyUntil!) }}</p>
+        <ul class="sites">
+          <li v-for="b in buildings" :key="b.rule.id">
+            <div class="site-row building">
+              <b>{{ b.rule.name }}</b>
+              <small>Lv{{ b.level }}/{{ CAMP_BUILDING_MAX }}</small>
+              <span class="grow makes">{{ b.does || b.rule.effect }}</span>
+            </div>
+            <div class="site-more">
+              <p class="muted small">每級：{{ b.rule.effect }}</p>
+              <template v-if="b.next && !b.busyUntil">
+                <ul class="chips">
+                  <li v-for="[id, n] in Object.entries(b.next.cost)" :key="id" :class="{ short: (view.materials[id] ?? 0) < n }">{{ materialName(id) }} {{ view.materials[id] ?? 0 }}/{{ n }}</li>
+                  <li>⏱ {{ hoursText(b.next.hours) }}</li>
+                </ul>
+                <div class="actions">
+                  <button class="btn primary" :disabled="siteBusy || !!buildingBusy || !affordable(b.next.cost)"
+                    @click="siteCommand(`${b.level ? `升級${b.rule.name}到 Lv${b.level + 1}` : `蓋${b.rule.name}`}？\n\n要 ${costText(b.next.cost)}，${hoursText(b.next.hours)}後完成。`, { kind: 'building-build', building: b.rule.id })">{{ b.level ? "升級" : "蓋" }}</button>
+                  <small v-if="buildingBusy" class="muted">一次只能蓋一個</small>
+                </div>
+              </template>
+              <p v-else-if="b.busyUntil" class="small">🔨 蓋到 Lv{{ b.level + 1 }}，還要 {{ leftText(b.busyUntil) }}</p>
+              <p v-else class="muted small">已滿</p>
+            </div>
+          </li>
+        </ul>
+        <p class="muted small">建設不佔空地，主要吃木頭、石頭，高級的要魔獸素材。沒蓋大倉庫時糧食存到 {{ FARM_KEEP }}。</p>
+      </section>
+
       <section v-if="ranch.total" class="panel ranch">
         <h2>牧場 <small>{{ ranch.total }}/{{ RANCH_CAP[view.stage] }} 隻</small></h2>
         <ul class="chips">
@@ -474,6 +535,7 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .site-row small { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .site-row .makes { min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
 .site-row.free { border-style: dashed; background: none; }
+.site-row.building { cursor: default; }
 .open .site-row { border-color: var(--green); }
 .site-more { padding: 6px 4px 4px; }
 .actions { display: flex; gap: 8px; margin-top: 8px; }

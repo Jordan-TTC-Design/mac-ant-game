@@ -55,12 +55,17 @@ export interface RaidHelp {
   weaken?: number;
   /** Loot × (1 + this). */
   loot?: number;
+  /** Monsters' attack × (1 − this) (the 城牆), defenders' hit points × (1 + this) (the 訓練場), and everyone's attack × (1 + this)
+   *  more when a level boss comes (the 瞭望塔): buildings.ts. */
+  monsterAttack?: number;
+  hp?: number;
+  bossAttack?: number;
 }
 
 /** Defenders a boss draws, as if it were this many monsters. */
 const BOSS_DRAWS = 8;
 
-function monsterFighters(plan: RaidPlan, level: number, weaken = 0): { fighters: Fighter[]; kinds: string[] } {
+function monsterFighters(plan: RaidPlan, level: number, weaken = 0, blunt = 0): { fighters: Fighter[]; kinds: string[] } {
   // (a level adds less than a lair's: a big camp meets more monsters, not much tougher ones)
   const hpScale = (1 + RAID_LEVEL_STEP * 1.25 * (level - 1)) * RAID_POWER;
   const attackScale = (1 + RAID_LEVEL_STEP * (level - 1)) * RAID_POWER;
@@ -75,7 +80,7 @@ function monsterFighters(plan: RaidPlan, level: number, weaken = 0): { fighters:
       row: foe.row,
       hp,
       maxHp: hp,
-      attack: foe.attack * attackScale * attackTimes,
+      attack: foe.attack * attackScale * attackTimes * (1 - blunt),
       range: foe.range,
       speed: foe.speed,
       heal: foe.heal ?? 0,
@@ -113,7 +118,7 @@ export function resolveRaid(
   raceLevel = 1,
   help: RaidHelp = {},
 ): RaidOutcome {
-  const { fighters: monsters, kinds } = monsterFighters(plan, raidLevel(alive.length, raceLevel), help.weaken ?? 0);
+  const { fighters: monsters, kinds } = monsterFighters(plan, raidLevel(alive.length, raceLevel), help.weaken ?? 0, help.monsterAttack ?? 0);
   const pick = randomFrom(hashString(`${campSeed}|raid-defenders|${plan.index}`));
   const pool = [...alive];
   for (let i = pool.length - 1; i > 0; i--) {
@@ -122,9 +127,11 @@ export function resolveRaid(
   }
   const defenders = pool.slice(0, Math.min(pool.length, Math.ceil((monsters.length + (plan.boss ? BOSS_DRAWS - 1 : 0)) * DEFENDERS_PER_MONSTER)));
   const traits = { id: race, ranged: RACE_RANGE[race] ?? 0 };
+  const attackMore = (help.attack ?? 0) + (plan.boss ? (help.bossAttack ?? 0) : 0);
   const defending = defenders.map((r) => {
     const f = residentFighter(residentAsFighter(race, r), "defend", traits, boosts);
-    return help.attack ? { ...f, attack: f.attack * (1 + help.attack) } : f;
+    const hp = help.hp ? Math.round(f.hp * (1 + help.hp)) : f.hp;
+    return { ...f, attack: f.attack * (1 + attackMore), hp, maxHp: help.hp ? Math.round(f.maxHp * (1 + help.hp)) : f.maxHp };
   });
 
   const battle = simulateBattle(monsters, defending, { seed: hashString(`${campSeed}|raid-battle|${plan.index}`) });

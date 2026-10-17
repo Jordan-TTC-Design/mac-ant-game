@@ -693,6 +693,31 @@ describe("decorations (DESKTOP.md §5)", () => {
   });
 });
 
+describe("營地建設 (ECONOMY.md §1.3)", () => {
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+
+  it("builds one at a time for logs and stones; once done, its level counts", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    expect((await cmd(me, { kind: "building-build", building: "warehouse" })).body.error).toBe("not_enough");
+    await database.sql`update camps set materials = '{"log": 5000, "stone": 5000, "spider_silk": 30}'`;
+    let res = await cmd(me, { kind: "building-build", building: "warehouse" });
+    expect(res.status).toBe(200);
+    expect((res.body.camp as CampView).buildings!.warehouse).toMatchObject({ level: 0 });
+    expect((await cmd(me, { kind: "building-build", building: "wall" })).body.error).toBe("busy");
+    t.advance(5 * 3_600_000);
+    const camp = await view(me);
+    expect(camp.buildings!.warehouse).toEqual({ level: 1 });
+    expect(camp.materials.stone).toBeLessThanOrEqual(5000 - 200 + 5 * 2); // (the warehouse's 200 stones went; a little gathered meanwhile)
+    res = await cmd(me, { kind: "building-build", building: "warehouse" });
+    expect(res.status).toBe(200);
+    t.advance(13 * 3_600_000);
+    expect((await view(me)).buildings!.warehouse).toEqual({ level: 2 });
+    const feed = (await t.call("GET", "/camp/feed", undefined, me)).body;
+    expect(JSON.stringify(feed)).toContain("大倉庫蓋好了（Lv2）");
+  });
+});
+
 describe("強化 (ECONOMY.md §1.2)", () => {
   const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
 

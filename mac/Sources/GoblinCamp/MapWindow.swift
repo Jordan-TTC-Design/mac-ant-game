@@ -110,7 +110,8 @@ final class MapWindow: NSObject, NSWindowDelegate, MainPane {
             paneView.addSubview(view, positioned: .below, relativeTo: nil)
             view.addSubview(popOut)
             let decor = view.subviews.first { $0.identifier?.rawValue == "decor-button" }?.frame.width ?? 72
-            popOut.frame.origin = NSPoint(x: view.bounds.maxX - decor - 10 - 6 - popOut.frame.width, y: view.bounds.maxY - popOut.frame.height - 8)
+            let build = view.subviews.first { $0.identifier?.rawValue == "buildings-button" }.map { $0.frame.width + 6 } ?? 0 // (🏰 建設, left of 🏡 裝飾)
+            popOut.frame.origin = NSPoint(x: view.bounds.maxX - decor - build - 10 - 6 - popOut.frame.width, y: view.bounds.maxY - popOut.frame.height - 8)
             placeholder.isHidden = true
         } else {
             popOut.removeFromSuperview()

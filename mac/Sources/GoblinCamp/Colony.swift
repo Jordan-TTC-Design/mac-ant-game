@@ -171,6 +171,9 @@ final class Colony {
     /// Who waits at the gate wanting to move in, and the 營地 talents' bonuses, as the books have them (Visitors.swift).
     var booksVisitor: CampLedger.View.Visitor?
     var booksCampBonus: CampLedger.View.CampBonus?
+    /// 營地建設 as the books have them (Buildings.swift); where they stand is worked out again when they or the ground change.
+    var booksBuildings: [String: BuildingState] = [:] { didSet { buildingCache = nil } }
+    var buildingCache: (key: String, placed: [BuildingPlaced])?
     /// The residents at home as the books have them (for choosing who to swap out for a visitor).
     var booksHome: [CampLedger.Resident] = []
     /// A race level just reached (Visitors.swift celebrate): fireworks and cheering until then.
@@ -2294,7 +2297,7 @@ final class Colony {
         world.pace = pace
         world.raining = isRaining
         world.fire = fire
-        world.obstacles = obstacles + decorObstacles
+        world.obstacles = obstacles + decorObstacles + buildingObstacles
         world.ponds = scene?.visiblePonds ?? []
         world.crowd = Double(visibleCount) / Double(visibleCap)
         world.night = Colony.isNight
@@ -2364,7 +2367,7 @@ final class Colony {
         }
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
-        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") ? 1.2 : 1) * decorLevelHeal
+        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") ? 1.2 : 1) * decorLevelHeal * clinicHeal
         let healer = Characters.current.breeds.firstIndex { $0.id == "healer" }
         world.healers = healer.map { i in ants.filter { $0.breedIndex == i && !$0.isHidden }.map(\.pos) } ?? []
         let raceRules = Characters.current.rules

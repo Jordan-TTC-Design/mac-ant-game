@@ -10,6 +10,8 @@ struct CampOrder: Encodable {
     var visit: String?
     var replace: Int?
     var resident: Int?
+    /// A building to build or raise (Buildings.swift).
+    var building: String?
 }
 
 struct VisitorError: Error { let message: String }

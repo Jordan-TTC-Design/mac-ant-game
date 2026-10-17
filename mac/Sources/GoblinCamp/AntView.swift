@@ -903,6 +903,7 @@ final class AntView: NSView {
         if isMap {
             standing = colony.decorStanding().map { k in (colony.decorPoint(colony.decor[k]).y, { [unowned self] in self.drawDecorItem(k) }) }
             standing += colony.ranch.beasts.filter { $0.pen >= 0 }.map { b in (b.pos.y, { [unowned self] in self.drawBeast(b) }) }
+            standing += colony.placedBuildings().map { b in (b.at.y, { [unowned self] in self.drawBuilding(b) }) } // (營地建設: Buildings.swift)
             standing.sort { $0.y > $1.y }
         }
         defer { for item in standing { item.draw() } } // (those nearer than everybody)
@@ -2625,6 +2626,42 @@ extension AntView {
         button.autoresizingMask = [.minXMargin, .minYMargin]
         button.toolTip = "自己擺營地的裝飾"
         addSubview(button)
+        let build = NSButton(title: "🏰 建設", target: self, action: #selector(buildingsButton(_:)))
+        build.identifier = NSUserInterfaceItemIdentifier("buildings-button")
+        build.bezelStyle = .rounded
+        build.controlSize = .small
+        build.font = .systemFont(ofSize: 11)
+        build.sizeToFit()
+        build.frame.origin = NSPoint(x: button.frame.minX - build.frame.width - 6, y: button.frame.minY)
+        build.autoresizingMask = [.minXMargin, .minYMargin]
+        build.toolTip = "營地建設：城牆、大倉庫、醫館、訓練場、宴會廳、瞭望塔"
+        addSubview(build)
+    }
+
+    /// A camp building (Buildings.swift): as built, or the one going up as faint scaffolding with the time it still needs.
+    fileprivate func drawBuilding(_ b: BuildingPlaced) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let o = originOverride ?? .zero
+        let r = b.box.offsetBy(dx: -o.x, dy: -o.y)
+        guard bounds.insetBy(dx: -80, dy: -80).intersects(r) else { return }
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        if b.building { ctx.setAlpha(0.45) }
+        ctx.draw(b.image, in: r)
+        ctx.restoreGState()
+        guard b.building, b.id != "wall" || b.at.x > (colony.nest?.x ?? 0) + 325 else { return } // (the wall going up: one label, on its rightmost stretch)
+        // the scaffolding: poles and planks over it
+        let wood = NSColor(calibratedRed: 0.55, green: 0.38, blue: 0.2, alpha: 1)
+        wood.setFill()
+        for x in stride(from: r.minX + 2, to: r.maxX, by: 12) { NSRect(x: x, y: r.minY, width: 2, height: r.height).fill() }
+        for y in stride(from: r.minY + 10, to: r.maxY, by: 14) { NSRect(x: r.minX, y: y, width: r.width, height: 2).fill() }
+        let left = BuildingPanel.left(colony.booksBuildings[b.id]?.busyUntil)
+        drawPill("🏗️ \(Buildings.rule(b.id)?.name ?? "") Lv\(b.level)・\(left)", center: NSPoint(x: r.midX, y: r.maxY + 10), fontSize: 10)
+    }
+
+    @objc private func buildingsButton(_ sender: NSButton) {
+        guard colony.phase == .running else { return }
+        BuildingPanel.shared.toggle(colony: colony, near: window)
     }
 
     @objc private func decorButton(_ sender: NSButton) {

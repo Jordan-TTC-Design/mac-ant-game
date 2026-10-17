@@ -72,6 +72,7 @@ export function feedEntry(e: CampEvent, noun = "居民"): FeedEntry | null {
     case "levelup":
       return line("🎉", `種族等級升到 ${d.level} 級！${d.opens ? `${d.opens}。` : ""}`, "camp");
     case "site":
+      if (d.building) return line("🏰", `${d.name}蓋好了（Lv${d.level}）！`, "camp");
       return line("🏗️", d.kind === "farm" ? `${d.name}升級了（Lv${d.level}）。` : d.level <= 1 ? `${d.name}蓋好了！` : `${d.name}升到 Lv${d.level}。`, "camp");
     case "focus": {
       const r = d.rounds as number;
@@ -96,6 +97,7 @@ export function feedEntry(e: CampEvent, noun = "居民"): FeedEntry | null {
         case "craft":
         case "repair":
           return message ? line("🔨", message, "camp") : null;
+        case "building-build":
         case "site-build":
         case "site-upgrade":
         case "farm-upgrade":

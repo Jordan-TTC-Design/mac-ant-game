@@ -120,6 +120,8 @@ export const campCommand = z.discriminatedUnion("kind", [
   }),
   /** Takes in the visitor at the gate (visitors.ts), paying its welcome present; a full camp sends `replace` away for it. */
   z.object({ requestId, kind: z.literal("visitor-accept"), visit: z.string().max(20), replace: z.number().int().optional() }),
+  /** Builds a camp building, or raises it a level (buildings.ts; one at a time). */
+  z.object({ requestId, kind: z.literal("building-build"), building: z.enum(["wall", "warehouse", "clinic", "training", "banquet", "watchtower"]) }),
   /** Sends the visitor at the gate on its way. */
   z.object({ requestId, kind: z.literal("visitor-decline"), visit: z.string().max(20) }),
   /** Asks a resident at home to leave the camp for good (its gear goes back to the store). */
@@ -187,6 +189,8 @@ export interface CampView {
   /** Who waits at the gate wanting to move in (visitors.ts; null: nobody), and the level bosses beaten (raids.ts). Older servers leave them out. */
   visitor?: import("./visitors.ts").CampVisitor | null;
   bossesBeaten?: number[];
+  /** The camp's buildings (buildings.ts: id → level and when the one going up is done). Older servers leave it out. */
+  buildings?: import("./buildings.ts").CampBuildings;
   /** The camp may refine gear into ★ pieces (the 拼裝改造 talent, talents.ts refine). Older servers leave it out. */
   canRefine?: boolean;
   /** The 營地 talents' bonuses (shared/src/world/talents.ts: 0.03 is +3%; trade is a count). Older servers leave it out. */

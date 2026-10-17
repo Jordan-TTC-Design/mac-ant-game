@@ -31,6 +31,10 @@ import {
   SPECIAL_LIFESPAN,
   specialResident,
   visitorAt,
+  buildingEffects,
+  buildingLevel,
+  buildingNext,
+  campBuilding,
   MERCHANT_STAY_MINUTES,
   merchantGift,
   merchantName,
@@ -361,7 +365,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
         .select({ id: campResidents.id, breed: campResidents.breed, gear: campResidents.gear })
         .from(campResidents)
         .where(and(eq(campResidents.userId, camp.userId), eq(campResidents.place, "home"), isNull(campResidents.diedAt)));
-      const visitor = visitorAt(camp.seed, now, level, new Set(home.map((r) => r.breed)), host);
+      const visitor = visitorAt(camp.seed, now, level, new Set(home.map((r) => r.breed)), host, buildingEffects(camp.buildings).visitorChance);
       if (!visitor || visitor.id !== command.visit || camp.visitors[visitor.id]) return { ok: false, code: "not_found", message: "門口已經沒有人了。" };
       const who = breedName(camp.race, visitor.breed);
       if (command.kind === "visitor-decline") {
@@ -398,6 +402,21 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       changes.visitors = { ...camp.visitors, [visitor.id]: "yes" };
       extra = { visitor: visitor.breed, answer: "yes", fee: visitor.fee, ...(leaving ? { replaced: leaving.id } : {}) };
       message = `${who}住進營地了。`;
+      break;
+    }
+    case "building-build": {
+      // 營地建設 (buildings.ts): one going up at a time
+      const rule = campBuilding(command.building)!;
+      const busy = Object.entries(camp.buildings ?? {}).find(([, b]) => b?.busyUntil);
+      if (busy) return { ok: false, code: "busy", message: `${campBuilding(busy[0])?.name ?? "建設"}還在蓋，一次只能蓋一個。` };
+      const level = buildingLevel(camp.buildings, command.building);
+      const next = buildingNext(command.building, level, talentEffect(await talentBonusOf(tx, camp.userId), "campBuild"));
+      if (!next) return { ok: false, code: "at_top", message: `${rule.name}已經是最高級了。` };
+      if (!canAfford(materials, next.cost)) return { ok: false, code: "not_enough", message: `素材不夠：${level ? `升級${rule.name}` : `蓋${rule.name}`}要 ${cost(next.cost)}。` };
+      spend(materials, next.cost);
+      changes.buildings = { ...camp.buildings, [command.building]: { level, busyUntil: new Date(now.getTime() + next.hours * 3_600_000).toISOString() } };
+      extra = { building: command.building, level: level + 1 };
+      message = `開始蓋${rule.name} Lv${level + 1}，${+next.hours.toFixed(1)} 小時後完成。`;
       break;
     }
     case "resident-dismiss": {
@@ -508,7 +527,9 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       // (a day of much focus: the merchant brings a rare find, marked in the visit's id)
       // (and a race level of MERCHANT_RARE_AT, MERCHANT_LEGEND_AT, or the 精打細算 talent: more of them, marked the same way)
       const trade = talentEffect(await talentBonusOf(tx, camp.userId), "campTrade");
-      const visit = `${camp.userId.slice(0, 8)}-${now.getTime()}${merchantMarks(level, focusToday(camp.focus, now) >= FOCUS_RARE_ROUNDS, trade)}`;
+      // (the 宴會廳 from level 2 brings one more too)
+      const more = trade + (buildingEffects(camp.buildings).merchantMore ? 1 : 0);
+      const visit = `${camp.userId.slice(0, 8)}-${now.getTime()}${merchantMarks(level, focusToday(camp.focus, now) >= FOCUS_RARE_ROUNDS, more)}`;
       const gift = merchantGift(visit, campStage(camp.race, camp.peak));
       for (const [id, n] of Object.entries(gift)) materials[id] = (materials[id] ?? 0) + n;
       extra = { visit, gift };

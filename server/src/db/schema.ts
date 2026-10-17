@@ -156,6 +156,8 @@ export const camps = pgTable("camps", {
   bossesBeaten: jsonb("bosses_beaten").$type<number[]>().notNull().default([]),
   celebratedLevel: integer("celebrated_level").notNull().default(0),
   visitors: jsonb("visitors").$type<Record<string, "yes" | "no">>().notNull().default({}),
+  /** 營地建設 (shared/src/camp/buildings.ts; ECONOMY.md §1.3). */
+  buildings: jsonb("buildings").$type<import("@goblincamp/shared/camp").CampBuildings>().notNull().default({}),
   /** The ranch: the animals kept in the pens the player fenced, and when a Mac last reported (shared/src/camp/ranch.ts). */
   ranch: jsonb("ranch").$type<Ranch>().notNull().default({ animals: [] }),
   /** The pomodoro's focus rounds that ran to the end, per day (shared/src/camp/focus.ts); null until the first. */

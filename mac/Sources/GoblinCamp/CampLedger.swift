@@ -118,11 +118,14 @@ final class CampLedger {
         let bossesBeaten: [Int]?
         struct CampBonus: Codable { let yield: Double; let births: Double; let `guard`: Double; let ranch: Double; let build: Double; let life: Double; let host: Double; let trade: Double; let heart: Double }
         let campBonus: CampBonus?
+        /// 營地建設 (shared/src/camp/buildings.ts): id → finished level, and when the one going up is done; older servers leave it out.
+        struct BuildingView: Codable { let level: Int; let busyUntil: String? }
+        let buildings: [String: BuildingView]?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, autoGearFar, places, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, canRefine, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, canRefine, buildings, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -161,6 +164,7 @@ final class CampLedger {
             visitor = try? c.decodeIfPresent(Visitor.self, forKey: .visitor)
             bossesBeaten = try? c.decodeIfPresent([Int].self, forKey: .bossesBeaten)
             campBonus = try? c.decodeIfPresent(CampBonus.self, forKey: .campBonus)
+            buildings = try? c.decodeIfPresent([String: BuildingView].self, forKey: .buildings)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }

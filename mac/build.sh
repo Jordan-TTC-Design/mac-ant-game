@@ -32,6 +32,7 @@ cp -R Resources/Decor "$APP/Contents/Resources/Decor"
 cp -R Resources/Avatars "$APP/Contents/Resources/Avatars"
 cp -R Resources/Guild "$APP/Contents/Resources/Guild"
 cp -R Resources/Gear "$APP/Contents/Resources/Gear"
+cp -R Resources/Buildings "$APP/Contents/Resources/Buildings"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # The same certificate every build (tools/make_signing_cert.sh, once), so macOS keeps knowing it is the same app and
 # "永遠允許" for the sign-in in the Keychain lasts across updates; without it, ad hoc (asked again after every update).

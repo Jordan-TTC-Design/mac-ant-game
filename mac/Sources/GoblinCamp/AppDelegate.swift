@@ -2386,6 +2386,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // (someone at the gate whose wait is not over; the talents' bonuses; who lives at home)
         colony.booksVisitor = ledger.view?.visitor.flatMap { MerchantVisitInfo.date($0.leaves) > Date() ? $0 : nil }
         colony.booksCampBonus = ledger.view?.campBonus
+        colony.booksBuildings = (ledger.view?.buildings ?? [:]).mapValues { BuildingState(level: $0.level, busyUntil: $0.busyUntil.map(MerchantVisitInfo.date)) }
+        BuildingPanel.shared.refresh()
         colony.booksHome = ledger.view?.residents.filter { $0.place == "home" && $0.diesAt.map { MerchantVisitInfo.date($0) > Date() } ?? true } ?? []
         colony.applyBooksDecor(ledger.view?.decor)
         colony.applyBooksRanch(ledger.view?.ranch?.animals.map { ($0.id, $0.kind, MerchantVisitInfo.date($0.bornAt), $0.caught == true, $0.name ?? "") })

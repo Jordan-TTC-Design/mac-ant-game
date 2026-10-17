@@ -10,6 +10,10 @@ import { focusView, decorEarned,
   planRaid,
   specialEffects,
   visitorAt,
+  buildingEffects,
+  campBuilding,
+  type CampBuildingId,
+  type CampBuildings,
   levelOpens,
   raidTime,
   SANCTUARY_REST_HOURS,
@@ -122,6 +126,15 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const bonus = await talentBonusOf(tx, camp.userId);
   const beaten = [...(camp.bossesBeaten ?? [])];
   const salvaged: Record<string, number> = {}; // (for the economy dashboard: what broken gear gave back)
+  // 營地建設 (buildings.ts): the one going up is done once its time is past; what they do counts from then
+  const buildings: CampBuildings = structuredClone(camp.buildings ?? {});
+  const built: { id: string; level: number; at: Date }[] = [];
+  for (const [id, b] of Object.entries(buildings)) {
+    if (!b?.busyUntil || Date.parse(b.busyUntil) > now.getTime()) continue;
+    buildings[id as CampBuildingId] = { level: b.level + 1 };
+    built.push({ id, level: b.level + 1, at: new Date(b.busyUntil) });
+  }
+  const works = buildingEffects(buildings);
 
   // gear: who wears what; the store; newborns are handed gear, the dead give theirs back (as on the Mac)
   const store: GearItem[] = camp.armory.map((i) => ({ ...i }));
@@ -176,7 +189,14 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length, level, beaten);
     if (plan) {
       const specials = specialEffects(alive.map((r) => r.breed));
-      const help = { attack: talentEffect(bonus, "campGuard") + specials.raidAttack, weaken: specials.raidWeaken, loot: talentEffect(bonus, "campHeart") };
+      const help = {
+        attack: talentEffect(bonus, "campGuard") + specials.raidAttack,
+        weaken: specials.raidWeaken,
+        loot: talentEffect(bonus, "campHeart"),
+        monsterAttack: works.raidMonsterAttack,
+        hp: works.raidDefenderHp,
+        bossAttack: works.bossAttack,
+      };
       const outcome = resolveRaid(camp.race, camp.seed, plan, alive.map((r) => ({ ...r, gear: wearers.get(r.id)?.gear })), fightBoosts(camp.race, camp.boosts, t), level, help);
       if (outcome.bossBeaten && plan.boss) beaten.push(plan.boss);
       // wear, and what broke (about a third of what it was made from can be picked out of the wreck)
@@ -220,7 +240,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const made: Record<string, number> = {};
   const produceTo = (to: number) => {
     const boost = talentEffect(bonus, "campYield") + specialEffects(population.residents.filter((r) => r.diedAt === null).map((r) => r.breed)).siteYield;
-    const step = produce({ race: camp.race, seed: camp.seed, sites, workers, from: producedTo, to, carry, store: materials, boost });
+    const step = produce({ race: camp.race, seed: camp.seed, sites, workers, from: producedTo, to, carry, store: materials, boost, foodKeep: works.foodKeep });
     for (const [id, n] of Object.entries(step.got)) {
       materials[id] = (materials[id] ?? 0) + n;
       made[id] = (made[id] ?? 0) + n;
@@ -256,7 +276,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   }
   const armoryChanged = JSON.stringify(store) !== JSON.stringify(camp.armory);
 
-  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged || Object.keys(made).length > 0 || finished.length > 0;
+  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged || Object.keys(made).length > 0 || finished.length > 0 || built.length > 0;
   const version = changed ? camp.version + 1 : camp.version;
   const set = {
     advancedTo: now,
@@ -273,6 +293,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     productionCarry: carry,
     bossesBeaten: beaten,
     celebratedLevel: Math.max(camp.celebratedLevel, level),
+    buildings,
   };
   await tx.update(camps).set(set).where(eq(camps.userId, camp.userId));
   // (the race level went up since: a 🎉 line in the camp's feed, and one in the guild's chat for the others to see)
@@ -293,6 +314,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   for (const raid of raids) await recordFlow(tx, camp.userId, new Date(raid.at), "raid", raid.loot);
   await recordFlow(tx, camp.userId, now, "salvage", salvaged);
   await recordFlow(tx, camp.userId, now, "production", made);
+  for (const b of built) await addEvent(tx, camp.userId, b.at, "site", { building: b.id, level: b.level, name: campBuilding(b.id)?.name ?? b.id });
   for (const { site, at } of finished) {
     const part = site.kind === "farm" ? farmParts(camp.race, site.level).at(-1) : undefined;
     await addEvent(tx, camp.userId, at, "site", { site: site.id, kind: site.kind, level: site.level, name: siteName(camp.race, site.kind), part });
@@ -337,10 +359,11 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     raceLevel: level,
     visitor: await (async () => {
       const home = rows.filter((r) => r.place === "home");
-      const v = visitorAt(camp.seed, camp.advancedTo, level, new Set(home.map((r) => r.breed)), talentEffect(await talentBonusOf(tx, camp.userId), "campHost"));
+      const v = visitorAt(camp.seed, camp.advancedTo, level, new Set(home.map((r) => r.breed)), talentEffect(await talentBonusOf(tx, camp.userId), "campHost"), buildingEffects(camp.buildings).visitorChance);
       return v && !camp.visitors[v.id] ? v : null;
     })(),
     bossesBeaten: camp.bossesBeaten,
+    buildings: camp.buildings,
     canRefine: ((await talentBonusOf(tx, camp.userId)).refine ?? 0) > 0,
     campBonus: await (async () => {
       const b = await talentBonusOf(tx, camp.userId);

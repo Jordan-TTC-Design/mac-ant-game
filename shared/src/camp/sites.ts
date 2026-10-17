@@ -226,6 +226,8 @@ export interface ProduceInput {
   store: Record<string, number>;
   /** The sites make this much more (the 豐收 talent, a 工匠 at home: 0.1 is +10%; not what is gathered without them). */
   boost?: number;
+  /** Most of each food the store keeps (the 大倉庫: buildings.ts; FARM_KEEP without). */
+  foodKeep?: number;
 }
 
 export interface ProduceResult {
@@ -263,7 +265,7 @@ export function produce(input: ProduceInput): ProduceResult {
       const whole = Math.floor(total + 1e-9);
       carry[id] = Math.max(0, total - whole);
       if (whole === 0) continue;
-      if (isKeptFood(id) && (input.store[id] ?? 0) + (got[id] ?? 0) >= FARM_KEEP) continue; // (a full store: what grows past it is lost)
+      if (isKeptFood(id) && (input.store[id] ?? 0) + (got[id] ?? 0) >= (input.foodKeep ?? FARM_KEEP)) continue; // (a full store: what grows past it is lost)
       got[id] = (got[id] ?? 0) + whole;
     }
   }

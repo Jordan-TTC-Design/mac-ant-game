@@ -99,7 +99,7 @@ export function visitorFee(breed: string, host = 0): Record<string, number> {
  * Who is at the gate at `at` (null: nobody): `raceLevel` opens the specials, `have` are the breeds already at home (a special
  * comes only when the camp has none of it), `host` the 好客 talent.
  */
-export function visitorAt(campSeed: number, at: Date, raceLevel: number, have: ReadonlySet<string>, host = 0): CampVisitor | null {
+export function visitorAt(campSeed: number, at: Date, raceLevel: number, have: ReadonlySet<string>, host = 0, more = 0): CampVisitor | null {
   const day = taipeiDay(at);
   const midnight = Date.parse(`${day}T00:00:00+08:00`);
   for (let slot = 0; slot < VISIT_SLOTS; slot++) {
@@ -107,7 +107,7 @@ export function visitorAt(campSeed: number, at: Date, raceLevel: number, have: R
     const span = (VISIT_TO_HOUR - VISIT_FROM_HOUR) / VISIT_SLOTS;
     const arrives = midnight + (VISIT_FROM_HOUR + span * slot + r() * (span - VISIT_HOURS)) * HOUR;
     const leaves = arrives + VISIT_HOURS * HOUR;
-    const comes = r() < Math.min(1, VISIT_CHANCE + host);
+    const comes = r() < Math.min(1, VISIT_CHANCE + host + more); // (`more`: the 宴會廳)
     if (!comes || at.getTime() < arrives || at.getTime() >= leaves) continue;
     const open = SPECIAL_RESIDENTS.filter((s) => s.level <= raceLevel && !have.has(s.id));
     let breed: string;
