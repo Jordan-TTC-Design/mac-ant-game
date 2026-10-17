@@ -50,6 +50,12 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         hall.autoresizingMask = [.width, .height]
         hall.send = sendLive
         hall.onTalk = { [weak self] in self?.paneView.window?.makeFirstResponder(self?.sayField) }
+        hall.onMerchant = { [weak self] in
+            guard let self else { return }
+            // (he came while the page was open: his goods are fetched first, then the panel shows them)
+            if self.info?.guild?.merchant?.here != true { self.load() }
+            if !(self.controller is GuildMerchantPanel) { self.toggle(GuildMerchantPanel.self) }
+        }
         paneView.addSubview(hall)
         buildOverlay()
     }
@@ -82,6 +88,7 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
             ("🪑 擺裝飾", "擺裝飾、鋪地板、換牆壁", { [weak self] in self?.toggleDecor() }),
             ("🧑‍🎨 角色", "捏自己的角色", { [weak self] in self?.toggle(GuildAvatarPanel.self) }),
             ("🎁 捐獻", "營地的材料捐給公會，讓公會升級", { [weak self] in self?.toggle(GuildDonatePanel.self) }),
+            ("🛒 商人", "公會商人：每週來兩天，用貢獻換限定的裝飾和衣服", { [weak self] in self?.toggle(GuildMerchantPanel.self) }),
             ("👥 成員", "成員、邀請、職位", { [weak self] in self?.toggle(GuildMembersPanel.self) }),
             ("⚙️ 設定", "名字、徽章、擺放紀錄（會長、幹部）", { [weak self] in self?.toggle(GuildSettingsPanel.self) }),
         ]
@@ -246,6 +253,12 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
             hall.plots = g.plots
         }
         hall.wall = g.wall
+        hall.guildId = g.id
+        hall.merchantVisit = g.merchant.flatMap { m in
+            guard let from = ISO8601DateFormatter.guild.date(from: m.from) ?? ISO8601DateFormatter().date(from: m.from),
+                  let until = ISO8601DateFormatter.guild.date(from: m.until) ?? ISO8601DateFormatter().date(from: m.until) else { return nil }
+            return (from, until)
+        }
         // (the settings button is the leader's and officers')
         let mine = g.members.first { $0.id == myId }
         buttons.arrangedSubviews.last?.isHidden = mine?.role == "member"

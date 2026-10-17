@@ -383,6 +383,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
           <button type="button" @click="startDecor(); menuOpen = false">🪑 擺裝飾</button>
           <NuxtLink to="/avatar">🧑‍🎨 角色{{ g?.avatarChosen ? "" : "（還沒捏過）" }}</NuxtLink>
           <NuxtLink to="/guild/donate">🎁 捐獻</NuxtLink>
+          <NuxtLink to="/guild/merchant">🛒 公會商人{{ guild?.merchant?.here ? "（來了）" : "" }}</NuxtLink>
           <NuxtLink to="/guild/members">👥 成員</NuxtLink>
           <NuxtLink v-if="role !== 'member'" to="/guild/settings">⚙️ 設定</NuxtLink>
           <NuxtLink to="/" class="leave-link">🏠 回主畫面</NuxtLink>
@@ -392,6 +393,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         <button type="button" class="hud-btn" :class="{ on: editing }" @click="editing ? (editing = false) : startDecor()">🪑 {{ editing ? "擺裝飾中" : "擺裝飾" }}</button>
         <NuxtLink to="/avatar" class="hud-btn">🧑‍🎨 角色</NuxtLink>
         <NuxtLink to="/guild/donate" class="hud-btn">🎁 捐獻</NuxtLink>
+        <NuxtLink to="/guild/merchant" class="hud-btn">🛒 商人{{ guild?.merchant?.here ? "來了" : "" }}</NuxtLink>
         <NuxtLink to="/guild/members" class="hud-btn">👥 成員</NuxtLink>
         <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="hud-btn">⚙️ 設定</NuxtLink>
       </div>
@@ -424,7 +426,10 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :bubbles="bubbles"
         :follow="follow"
         :fill="immersive || phone"
+        :merchant-here="!!guild.merchant?.here"
+        :guild-id="guild.id"
         class="hall"
+        @merchant="navigateTo('/guild/merchant')"
         @select="selected = $event"
         @move="moveDecor"
         @paint="paint"
@@ -473,6 +478,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :room="guild.rules.room"
         :races="guild.races"
         :seasons="guild.seasons"
+        :unlocked="guild.unlocked ?? []"
         :role="role"
         :selected="selected"
         :busy="busy"

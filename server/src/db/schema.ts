@@ -361,7 +361,7 @@ export const blocks = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.blockedId] })],
 );
 
-/** Messages between friends (at most 200 characters; cleared after a while, maintenance.ts). */
+/** Messages between friends (at most 200 characters; the latest MESSAGES_KEPT per conversation are kept). */
 export const messages = pgTable(
   "messages",
   {
@@ -471,6 +471,8 @@ export const guilds = pgTable("guilds", {
   /** Wall segments brushed another style, and the members' own places (shared/src/guild-decor.ts HallWalls, HallPlots). */
   walls: jsonb("walls").$type<import("@goblincamp/shared").HallWalls>().notNull().default({}),
   plots: jsonb("plots").$type<import("@goblincamp/shared").HallPlots>().notNull().default({}),
+  /** The guild merchant's pieces the guild bought (shared/src/guild-merchant.ts): its to put down for good. */
+  unlocked: jsonb("unlocked").$type<string[]>().notNull().default([]),
   /** Which tiles are the hall's floor (shared/src/guild-hall.ts HallArea), drawn by the leader and officers; null: from before
    * the shape could be drawn (it is set once, to the starting hall, the first time the guild is looked at). */
   area: jsonb("area").$type<import("@goblincamp/shared").HallArea>(),
@@ -548,7 +550,7 @@ export const avatars = pgTable("avatars", {
   updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull(),
 });
 
-/** What was said in a guild hall (GUILD.md §3.1); kept a week. */
+/** What was said in a guild hall (GUILD.md §3.1); the latest GUILD_CHAT_KEPT per guild are kept. */
 export const guildChat = pgTable(
   "guild_chat",
   {

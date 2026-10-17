@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import {
   avatarOutfitProblem,
+  merchantBuyInput,
+  merchantBuyProblem,
+  merchantVisit,
   avatarProblem,
   avatarSchema,
   FREE_OUTFITS,
@@ -39,6 +42,7 @@ import {
   type HallArea,
   taipeiDay,
   guildSeasonViews,
+  GUILD_CHAT_KEPT,
   GUILD_SAY_PER_MINUTE,
   guildDonateInput,
   guildPointsToNext,
@@ -283,6 +287,8 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
         wall: guild!.wall,
         walls: guild!.walls,
         plots: plotsOf(guild!.plots, new Set(members.map((r) => r.m.userId))),
+        unlocked: guild!.unlocked,
+        merchant: merchantVisit(guild!.id, at),
         points: guild!.points,
         toNext: guildPointsToNext(guild!.points),
         seasons: guildSeasonViews(taipeiDay(at)),
@@ -495,7 +501,10 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       await tx.insert(avatars).values({ userId: me.id, updatedAt: at }).onConflictDoNothing();
       await tx.select().from(avatars).where(eq(avatars.userId, me.id)).for("update"); // (two buys at once: one after the other)
       const w = await wardrobe(tx, me.id);
-      const problem = outfitBuyProblem(body.data.id, w);
+      // (the limited ones: a holiday on, the guild's level, the merchant here with it)
+      const [g] = await tx.select({ id: guilds.id, level: guilds.level }).from(guildMembers).innerJoin(guilds, eq(guilds.id, guildMembers.guildId)).where(eq(guildMembers.userId, me.id));
+      const shop = { today: taipeiDay(at), guildLevel: g?.level ?? 0, merchant: new Set(g ? merchantVisit(g.id, at).outfits : []) };
+      const problem = outfitBuyProblem(body.data.id, w, shop);
       if (problem) return problem;
       const price = guildOutfit(body.data.id)!.price;
       const [row] = await tx.select({ outfits: avatars.outfits }).from(avatars).where(eq(avatars.userId, me.id));
@@ -504,6 +513,32 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     });
     if (out) return out.code === "unknown" ? apiError(c, 400, "invalid_input", out.message) : apiError(c, 409, "conflict", out.message);
     return c.json({ wardrobe: await wardrobe(db, me.id) });
+  });
+
+  /** Buys a decoration off the guild merchant with the member's own contribution: the guild's to put down from then on. */
+  app.post("/merchant/buy", async (c) => {
+    const body = await readJson(c, merchantBuyInput);
+    if ("response" in body) return body.response;
+    const me = c.get("session").user;
+    const at = now();
+    const mine = await membership(me.id);
+    if (!mine) return apiError(c, 404, "not_found", "你還沒有加入公會。");
+    const problem = await db.transaction(async (tx) => {
+      const [guild] = await tx.select().from(guilds).where(eq(guilds.id, mine.guildId)).for("update");
+      await tx.insert(avatars).values({ userId: me.id, updatedAt: at }).onConflictDoNothing();
+      await tx.select().from(avatars).where(eq(avatars.userId, me.id)).for("update");
+      const w = await wardrobe(tx, me.id);
+      const visit = merchantVisit(guild!.id, at);
+      const why = merchantBuyProblem(body.data.kind, visit, guild!.unlocked, w.points);
+      if (why) return why;
+      const price = visit.decor.find((d) => d.kind === body.data.kind)!.price;
+      await tx.update(avatars).set({ spent: w.spent + price }).where(eq(avatars.userId, me.id));
+      await tx.update(guilds).set({ unlocked: [...guild!.unlocked, body.data.kind] }).where(eq(guilds.id, guild!.id));
+      return null;
+    });
+    if (problem) return apiError(c, 409, "conflict", problem);
+    await tell(mine.guildId);
+    return c.json(await view(me.id));
   });
 
   /** The Mac says whether its person is focusing, there, away or gone (when it changes, and every PRESENCE_HEARTBEAT_SECONDS). */
@@ -556,7 +591,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       if (mine.role === "member" && body.data.plots && plotsChanged) return { error: 403 as const, message: "只有會長和幹部可以分配位置。" };
       const problem =
         (areaChanged ? hallAreaProblem(area, guild!.level) : null) ??
-        guildDecorProblem(body.data.items, guild!.level, area, races, guild!.decor, taipeiDay(at)) ??
+        guildDecorProblem(body.data.items, guild!.level, area, races, guild!.decor, taipeiDay(at), guild!.unlocked) ??
         hallFloorProblem(floor, area, races, guild!.floor) ??
         hallWallsProblem(walls, area, races, guild!.walls, guild!.wall) ??
         hallPlotsProblem(plots, area, memberSet);
@@ -704,7 +739,7 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
     return c.json(body);
   });
 
-  /** Says something in the hall: it floats over the sayer's avatar, and goes in the chat (kept a week). */
+  /** Says something in the hall: it floats over the sayer's avatar, and goes in the chat (the latest GUILD_CHAT_KEPT are kept). */
   app.post("/say", async (c) => {
     const body = await readJson(c, guildSayInput);
     if ("response" in body) return body.response;
@@ -718,7 +753,8 @@ export function guildRoutes(deps: AppDeps, live?: ReturnType<typeof guildLive>) 
       .where(and(eq(guildChat.userId, me.id), gt(guildChat.at, new Date(at.getTime() - 60_000))))) as [{ n: number }];
     if (n >= GUILD_SAY_PER_MINUTE) return apiError(c, 429, "rate_limited", "說太快了，休息一下。");
     const [row] = await db.insert(guildChat).values({ guildId: mine.guildId, userId: me.id, text: body.data.text, at }).returning();
-    await db.delete(guildChat).where(and(eq(guildChat.guildId, mine.guildId), lt(guildChat.at, new Date(at.getTime() - 7 * DAY))));
+    const [oldest] = await db.select({ at: guildChat.at }).from(guildChat).where(eq(guildChat.guildId, mine.guildId)).orderBy(desc(guildChat.at)).offset(GUILD_CHAT_KEPT - 1).limit(1);
+    if (oldest) await db.delete(guildChat).where(and(eq(guildChat.guildId, mine.guildId), lt(guildChat.at, oldest.at)));
     const line: GuildChatLine = { id: row!.id, userId: me.id, name: me.displayName, text: row!.text, at: at.toISOString() };
     for (const id of await memberIds(mine.guildId)) deps.hub.notify(id, { type: "guild.say", ...line });
     return c.json(line, 201);

@@ -73,7 +73,7 @@ class Canvas(pv.C):
 
 class Item:
     def __init__(self, id, name, cat, size, w, h, frames=1, fps=0, wall=False, flat=False, seat=None, note="", draw=None,
-                 race=None, ceiling=False, level=1, season=None):
+                 race=None, ceiling=False, level=1, season=None, merchant=False):
         self.__dict__.update(locals())
         del self.__dict__["self"]
 
@@ -82,11 +82,13 @@ ITEMS = []
 RACE = [None]                 # the race set being defined (None: shared)
 
 
-def item(id, name, cat, size, w, h, frames=1, fps=None, wall=False, flat=False, seat=False, note="", ceiling=False, level=1, season=None):
-    """`level`: the guild level that unlocks it; `season`: a holiday piece (shared/src/guild-seasons.ts), put down only while it is on."""
+def item(id, name, cat, size, w, h, frames=1, fps=None, wall=False, flat=False, seat=False, note="", ceiling=False, level=1, season=None,
+         merchant=False):
+    """`level`: the guild level that unlocks it; `season`: a holiday piece (shared/src/guild-seasons.ts), put down only while it is on;
+    `merchant`: only the guild merchant sells it (make_guild_decor_merchant.py), and a guild that bought it may put it down."""
     def deco(fn):
         ITEMS.append(Item(id, name, cat, size, w, h, frames, fps if fps is not None else (0 if frames == 1 else 4), wall, flat,
-                          seat, note, fn, RACE[0], ceiling, level, season))
+                          seat, note, fn, RACE[0], ceiling, level, season, merchant))
         return fn
     return deco
 
@@ -3146,6 +3148,9 @@ def main():
     for n in range(2, 8):                  # the pieces each guild level unlocks (make_guild_decor_lv<N>.py), when they are made
         if os.path.exists(os.path.join(HERE, f"make_guild_decor_lv{n}.py")):
             __import__(f"make_guild_decor_lv{n}")
+    merchant = None
+    if os.path.exists(os.path.join(HERE, "make_guild_decor_merchant.py")):   # the guild merchant's wares, and the merchant himself
+        import make_guild_decor_merchant as merchant
     ids = [it.id for it in ITEMS]
     assert len(ids) == len(set(ids)), "duplicate ids"
     os.makedirs(OUTDIR, exist_ok=True)
@@ -3174,6 +3179,8 @@ def main():
             e["level"] = it.level
         if it.season:
             e["season"] = it.season
+        if it.merchant:
+            e["merchant"] = True
         e["file"] = f"decor/{it.id}.png"
         e["note"] = it.note
         catalog.append(e)
@@ -3184,7 +3191,7 @@ def main():
     for old in os.listdir(DOCS):
         if old.startswith("decor_shared_overview"):
             os.remove(os.path.join(DOCS, old))
-    shared = [(it, fr) for it, fr in rendered if it.race is None and it.season is None and it.level == 1]
+    shared = [(it, fr) for it, fr in rendered if it.race is None and it.season is None and it.level == 1 and not it.merchant]
     pages = overview(shared)
     for i, p in enumerate(pages):
         p.save(os.path.join(DOCS, f"decor_shared_overview_{i + 1}.png"))
@@ -3215,6 +3222,10 @@ def main():
             os.remove(os.path.join(DOCS, old))
     for lv, mine in sorted(levels.items()):
         overview_compact(mine, f"公會 {lv} 級解鎖：{LEVEL_THEMES.get(lv, '')}（{len(mine)} 樣；×3）").save(os.path.join(DOCS, f"decor_level_{lv}_overview.png"))
+    if merchant:
+        mine = [(it, fr) for it, fr in rendered if it.merchant]
+        overview_compact(mine, f"公會商人限定（{len(mine)} 樣；×3；商人帶來時用貢獻換，換到的整個公會都能擺）").save(os.path.join(DOCS, "decor_merchant_overview.png"))
+        merchant.write_merchant()
     for race in (None, "goblin", "elf", "undead"):
         its = [it for it in ITEMS if it.race == race]
         print(race or "shared", len(its), {c: sum(1 for it in its if it.cat == c) for c in CATS})

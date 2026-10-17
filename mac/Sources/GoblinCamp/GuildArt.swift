@@ -24,6 +24,8 @@ final class GuildArt {
         let id: String; let name: String; let category: String; let race: String?; let size: Int; let level: Int
         /// A holiday piece: the season it can be put down in (nil: always).
         let season: String?
+        /// Only from the guild merchant: put down once the guild has bought it (shared/src/guild-merchant.ts).
+        var merchant = false
     }
 
     private(set) var ready = false
@@ -44,6 +46,8 @@ final class GuildArt {
     private var walls: [String: CGImage] = [:]
     private var furniture: [String: Piece] = [:]
     private var decor: [String: Piece] = [:]
+    /// The guild merchant at his cart (manifest `merchant`), while he visits.
+    private(set) var merchant: Piece?
 
     private var avatarsRoot: URL?
     private var hallRoot: URL?
@@ -122,7 +126,8 @@ final class GuildArt {
                     return (x, y)
                 }
                 kinds.append(DecorKind(id: id, name: d["name"] as? String ?? id, category: d["category"] as? String ?? "", race: d["race"] as? String,
-                                       size: d["size"] as? Int ?? 1, level: d["level"] as? Int ?? 1, season: d["season"] as? String))
+                                       size: d["size"] as? Int ?? 1, level: d["level"] as? Int ?? 1, season: d["season"] as? String,
+                                       merchant: d["merchant"] as? Bool ?? false))
                 decor[id] = Piece(image: img, w: w, h: hh, frames: d["frames"] as? Int ?? 1, fps: (d["fps"] as? NSNumber)?.doubleValue ?? 0,
                                   anchorX: Double(w) / 2, anchorY: Double(hh), flat: d["flat"] as? Bool ?? false, wall: d["wall"] as? Bool ?? false, ceiling: d["ceiling"] as? Bool ?? false,
                                   seat: seat, living: d["living"] as? Bool ?? (d["category"] as? String == "會動的"),
@@ -130,6 +135,10 @@ final class GuildArt {
             }
         }
         kinds.sort { $0.level != $1.level ? $0.level < $1.level : $0.name < $1.name }
+        if let m = hm["merchant"] as? [String: Any], let file = m["file"] as? String, let img = image(h.appendingPathComponent(file)) {
+            merchant = Piece(image: img, w: m["w"] as? Int ?? img.width, h: m["h"] as? Int ?? img.height, frames: m["frames"] as? Int ?? 1, fps: (m["fps"] as? NSNumber)?.doubleValue ?? 0,
+                             anchorX: (m["anchorX"] as? NSNumber)?.doubleValue ?? 0, anchorY: (m["anchorY"] as? NSNumber)?.doubleValue ?? 0, flat: false, wall: false, ceiling: false)
+        }
         ready = !layers.isEmpty && !floors.isEmpty
     }
 

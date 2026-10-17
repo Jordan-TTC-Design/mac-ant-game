@@ -513,4 +513,40 @@ describe("公會", () => {
     me = await guildOf(a);
     expect(me.guild!.members[0]!.avatar).toMatchObject({ top: "leather_vest" });
   });
+
+  it("the guild merchant comes for two days a week; a member buys a piece and the whole guild may put it down", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const g = ((await t.call("POST", "/guild", { name: "商人隊" }, a.auth)).body as GuildResponse).guild!;
+    await t.call("POST", "/guild/invites", { userId: b.id }, a.auth);
+    await t.call("POST", `/guild/join/${g.id}`, undefined, b.auth);
+    let view = (await guildOf(a)).guild!;
+    if (view.merchant.here) t.advance(Date.parse(view.merchant.until) - t.now().getTime() + 1000); // (start from a time he is away)
+    view = (await guildOf(a)).guild!;
+    expect(view.merchant).toMatchObject({ here: false, decor: [], outfits: [] });
+    expect(view.unlocked).toEqual([]);
+    expect((await t.call("POST", "/guild/merchant/buy", { kind: "anything" }, b.auth)).body.message).toContain("不在");
+    t.advance(Date.parse(view.merchant.from) - t.now().getTime() + 1000);
+    view = (await guildOf(a)).guild!;
+    expect(view.merchant.here).toBe(true);
+    // (a piece for the floor: his stock changes with the week, and a wall piece would need the wall)
+    const { kind, price } = view.merchant.decor.find((d) => !GUILD_DECOR.find((k) => k.id === d.kind)!.wall) ?? view.merchant.decor[0]!;
+    const start = starterDecor();
+    // not bought yet: no one may put it down
+    expect((await t.call("PUT", "/guild/decor", { version: 0, items: [...start, { uid: "merch001", kind, x: 25, y: 12 }] }, a.auth)).body.message).toContain("商人");
+    expect((await t.call("POST", "/guild/merchant/buy", { kind }, b.auth)).body.message).toContain("貢獻不夠");
+    await database.db.update(camps).set({ materials: { log: price } }).where(eq(camps.userId, b.id));
+    await t.call("POST", "/guild/donate", { materials: { log: price } }, b.auth);
+    const res = await t.call("POST", "/guild/merchant/buy", { kind }, b.auth);
+    expect(res.status).toBe(200);
+    expect((res.body as GuildResponse).guild!.unlocked).toEqual([kind]);
+    expect((res.body as GuildResponse).wardrobe).toMatchObject({ points: 0, spent: price });
+    expect((await t.call("POST", "/guild/merchant/buy", { kind }, a.auth)).body.message).toContain("已經有");
+    // now anyone in the guild may put it down
+    expect((await t.call("PUT", "/guild/decor", { version: 0, items: [...start, { uid: "merch001", kind, x: 25, y: 12 }] }, a.auth)).status).toBe(200);
+    // his clothes only while he is here
+    const cloth = view.merchant.outfits[0]!;
+    t.advance(Date.parse(view.merchant.until) - t.now().getTime() + 1000);
+    expect((await t.call("POST", "/guild/outfits/buy", { id: cloth }, b.auth)).body.message).toContain("商人");
+  });
 });

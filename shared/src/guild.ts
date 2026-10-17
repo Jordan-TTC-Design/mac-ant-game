@@ -102,45 +102,45 @@ export interface AvatarOptions {
   flame: Record<AvatarSex, readonly string[]>;
 }
 
-export const AVATAR_FACES = ["round", "pointed", "square"] as const;
-export const AVATAR_EYES = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide"] as const;
-export const AVATAR_BROWS = ["thin", "thick", "faint", "none"] as const;
+export const AVATAR_FACES = ["round", "pointed", "square", "heart", "chubby"] as const;
+export const AVATAR_EYES = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide", "droopy", "cat_eye", "smiley", "big"] as const;
+export const AVATAR_BROWS = ["thin", "thick", "faint", "arched", "angry", "none"] as const;
 export const AVATAR_HAIR_COLORS = ["black", "darkbrown", "chestnut", "orange", "yellow", "blonde", "silver", "pink", "lavender", "mint", "navy", "forest"] as const;
 
-const MOUTHS = ["line", "smile", "smirk", "open", "pout", "cat"] as const;
-const SKULL_MOUTHS = ["teeth", "grin", "gap", "jaw", "fang", "stitch"] as const;
+const MOUTHS = ["line", "smile", "smirk", "open", "pout", "cat", "tongue", "toothy", "wavy"] as const;
+const SKULL_MOUTHS = ["teeth", "grin", "gap", "jaw", "fang", "stitch", "crooked", "buck", "toothless"] as const;
 
 export const AVATAR_OPTIONS: Record<"goblin" | "elf" | "undead", AvatarOptions> = {
   goblin: {
     hair: {
-      m: ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes"],
-      f: ["braids", "bun", "dreads", "wild", "tuft", "pigtails", "mohawk", "bob"],
+      m: ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes", "afro", "side_shave", "warrior_tail", "bowl", "shaggy", "long_braid"],
+      f: ["braids", "bun", "dreads", "wild", "tuft", "pigtails", "mohawk", "bob", "twin_buns", "long_braid", "afro", "shaggy", "bowl", "warrior_tail"],
     },
-    skin: ["light", "grass", "moss", "deep"],
+    skin: ["light", "grass", "moss", "deep", "olive", "teal"],
     mouth: { m: MOUTHS, f: MOUTHS },
     flame: { m: [], f: [] },
   },
   elf: {
     hair: {
-      m: ["neat", "long", "halfup", "ponytail", "side_braid", "waves", "messy", "braided_crown"],
-      f: ["long_wreath", "braided_crown", "side_braid", "waves", "long", "ponytail", "halfup", "wreath_updo"],
+      m: ["neat", "long", "halfup", "ponytail", "side_braid", "waves", "messy", "braided_crown", "short_crop", "low_tail", "circlet", "pixie", "twin_braids", "flower_bun"],
+      f: ["long_wreath", "braided_crown", "side_braid", "waves", "long", "ponytail", "halfup", "wreath_updo", "hime", "flower_bun", "twin_braids", "circlet", "pixie", "low_tail"],
     },
-    skin: ["fair", "warm", "tan", "bronze"],
+    skin: ["fair", "warm", "tan", "bronze", "rosy", "umber"],
     mouth: { m: MOUTHS, f: MOUTHS },
     flame: { m: [], f: [] },
   },
   undead: {
     hair: {
-      m: ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle"],
-      f: ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown"],
+      m: ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle", "antlers", "unicorn_horn", "bone_ridge", "soul_flame", "iron_circlet", "mossy"],
+      f: ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown", "veil", "short_wisp", "ponytail_wisp", "star_crown", "twin_buns", "hime"],
     },
-    skin: ["bone", "ivory", "ash", "slate"],
+    skin: ["bone", "ivory", "ash", "slate", "moss_bone", "dusk"],
     mouth: { m: SKULL_MOUTHS, f: MOUTHS },
     flame: { m: ["cyan", "violet", "green", "orange"], f: [] },
   },
 };
 /** The spirit's skins (the undead women). */
-const SPIRIT_SKINS = ["pale_blue", "ice", "pale_violet", "lavender"] as const;
+const SPIRIT_SKINS = ["pale_blue", "ice", "pale_violet", "lavender", "pale_green", "rose"] as const;
 
 export function avatarOptions(race: string, sex: AvatarSex): { hair: readonly string[]; skin: readonly string[]; mouth: readonly string[]; flame: readonly string[] } {
   const o = AVATAR_OPTIONS[race as keyof typeof AVATAR_OPTIONS] ?? AVATAR_OPTIONS.goblin;
@@ -311,6 +311,9 @@ export interface GuildView {
   /** Wall segments brushed another style ("x,y" of the floor tile under them), and the members' own places ("x,y" → id). */
   walls: import("./guild-decor.ts").HallWalls;
   plots: import("./guild-decor.ts").HallPlots;
+  /** The merchant's pieces the guild has bought (they may be put down), and the merchant: here or when he comes next. */
+  unlocked: string[];
+  merchant: import("./guild-merchant.ts").MerchantView;
   /** The races among the members (each unlocks its decoration set). */
   races: string[];
   /** Contribution given so far, and what the next level still needs (null: at the top). */
@@ -347,12 +350,14 @@ export interface GuildResponse {
 /** The names the avatar maker shows for each option id. */
 export const AVATAR_LABELS: Record<string, string> = {
   // faces, eyes, brows
-  round: "圓", pointed: "尖", square: "方",
+  round: "圓", pointed: "尖", square: "方", heart: "心形", chubby: "肉肉",
   narrow: "細長", sparkle: "大閃", dot: "豆豆", sleepy: "睏睏", sharp: "銳利", lashes: "長睫毛", wide: "圓睜",
-  thin: "細眉", thick: "粗眉", faint: "淡眉", none: "無眉",
+  droopy: "垂眼", cat_eye: "貓眼", smiley: "瞇瞇笑眼", big: "大眼睛",
+  thin: "細眉", thick: "粗眉", faint: "淡眉", none: "無眉", arched: "彎眉", angry: "劍眉",
   // mouths
   line: "一字", smile: "微笑", smirk: "歪嘴笑", open: "張嘴", pout: "嘟嘴", cat: "貓嘴",
-  teeth: "一排牙", grin: "咧嘴", gap: "缺牙", jaw: "下巴骨", fang: "尖牙", stitch: "縫線",
+  tongue: "吐舌", toothy: "露齒笑", wavy: "波浪嘴",
+  teeth: "一排牙", grin: "咧嘴", gap: "缺牙", jaw: "下巴骨", fang: "尖牙", stitch: "縫線", crooked: "歪牙", buck: "暴牙", toothless: "沒牙",
   // hair
   tuft: "亂翹一撮", mohawk: "莫霍克", topknot: "沖天辮", bald_ring: "光頭加耳環", dreads: "髒辮", wild: "狂野亂髮", bun: "頭頂小髻", spikes: "刺刺頭",
   braids: "雙麻花", pigtails: "雙馬尾", bob: "短鮑伯",
@@ -360,11 +365,16 @@ export const AVATAR_LABELS: Record<string, string> = {
   long_wreath: "長直髮・花冠", wreath_updo: "花環盤髮",
   hood: "兜帽", bare: "光頭骨", crack: "頭骨裂痕", horns: "小角", long_horns: "長角", ragged_hood: "破兜帽", bone_crown: "骨冠", candle: "頭頂蠟燭",
   drift: "飄散的靈髮", flame: "火焰髮", mist: "霧狀長髮", wisp_twins: "雙馬尾鬼火", glass_short: "半透明短髮", long_wave: "長波浪", side_wisp: "側邊靈絲", flame_crown: "火焰冠",
+  afro: "爆炸頭", side_shave: "側剃油頭", warrior_tail: "戰士馬尾", bowl: "西瓜皮", shaggy: "蓬亂短髮", long_braid: "單長辮", twin_buns: "雙丸子頭",
+  short_crop: "清爽短髮", low_tail: "低馬尾", circlet: "頭環長髮", pixie: "精靈短髮", twin_braids: "雙垂辮", flower_bun: "花苞頭", hime: "公主切",
+  antlers: "鹿角", unicorn_horn: "獨角", bone_ridge: "骨刺", soul_flame: "頭頂魂火", iron_circlet: "鐵頭箍", mossy: "長苔蘚",
+  veil: "面紗", short_wisp: "短靈髮", ponytail_wisp: "靈絲馬尾", star_crown: "星冠長髮",
   // skins
   light: "淺綠", grass: "草綠", moss: "苔綠", deep: "深綠",
   fair: "白皙", warm: "暖膚", tan: "小麥", bronze: "古銅",
   bone: "骨白", ivory: "象牙", ash: "灰骨", slate: "石灰",
-  pale_blue: "淡藍", ice: "冰藍", pale_violet: "淡紫", lavender: "薰衣草",
+  olive: "橄欖綠", teal: "藍綠", rosy: "粉嫩", umber: "深褐", moss_bone: "苔骨", dusk: "夜骨",
+  pale_blue: "淡藍", ice: "冰藍", pale_violet: "淡紫", lavender: "薰衣草", pale_green: "淡綠", rose: "淡粉",
   // hair colours and eye flames
   black: "黑", darkbrown: "深棕", chestnut: "栗色", orange: "橘紅", yellow: "蜜黃", blonde: "淡金", silver: "銀白", pink: "粉紅", mint: "薄荷", navy: "深藍", forest: "森綠",
   cyan: "青", violet: "紫", green: "綠",
@@ -399,6 +409,8 @@ export const guildClientMessage = z.discriminatedUnion("type", [
 export const GUILD_SAY_MAX = 120;
 /** Lines one account may say in a minute. */
 export const GUILD_SAY_PER_MINUTE = 20;
+/** Lines a guild's chat keeps: older ones go when a new one is said (no time limit). */
+export const GUILD_CHAT_KEPT = 200;
 /** How long a line stays over its sayer's head. */
 export const GUILD_BUBBLE_MS = 6000;
 export const guildSayInput = z.object({ text: z.string().trim().min(1).max(GUILD_SAY_MAX) });

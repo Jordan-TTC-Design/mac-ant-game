@@ -37,6 +37,22 @@ final class GuildHallView: NSView {
     var walls: [String: String] = [:] { didSet { if walls != oldValue { groundVersion += 1 } } }
     /// The floor given to members ("x,y" → their id), shown while decorating.
     var plots: [String: String] = [:]
+    /// The guild (its id places the merchant) and whether the guild merchant is visiting; a click on him calls `onMerchant`.
+    var guildId = ""
+    /// His visit (this one, or the next): he is in the hall from `from` until `until`, by the clock.
+    var merchantVisit: (from: Date, until: Date)?
+    var onMerchant: (() -> Void)?
+    /// Where the merchant stands while he visits (not while decorating: the floor is the editor's then); shared/src/guild-merchant.ts.
+    private var merchantSpot: HallPoint? {
+        guard let v = merchantVisit, (v.from..<v.until).contains(Date()), !editing, art.merchant != nil else { return nil }
+        return hallFreeSpot(layout, [guildId, "merchant"])
+    }
+    /// The box he is drawn in (hall tiles), for clicks.
+    private func merchantBox(_ p: HallPoint) -> CGRect? {
+        guard let m = art.merchant else { return nil }
+        let px = 1 / Double(art.tile)
+        return CGRect(x: p.x - m.anchorX * px, y: p.y - m.anchorY * px, width: Double(m.w) * px, height: Double(m.h) * px)
+    }
     /// The floor and the wall are drawn once into a picture and put on at every frame (a hall has over a thousand tiles; putting
     /// each one on thirty times a second was what made decorating slow). Made again when any of these change.
     private var groundVersion = 0
@@ -329,6 +345,11 @@ final class GuildHallView: NSView {
             if k.ceiling { overhead.append(paint) } else { items.append((k.flat ? -1 : k.wall ? -0.5 + d.y / 100 : d.y, paint)) }
         }
         var labels: [() -> Void] = []
+        if let spot = merchantSpot, let m = art.merchant, let img = art.frame(of: m, at: t) { // (the guild merchant at his cart, a 🛒 over him)
+            let fx = CGFloat(spot.x) * T, fy = CGFloat(spot.y) * T
+            items.append((spot.y, { put(img, fx - CGFloat(m.anchorX) * px, fy - CGFloat(m.anchorY) * px, m.w, m.h) }))
+            labels.append { self.bubble(g, "🛒 公會商人", x: fx, top: fy - CGFloat(m.anchorY + 4) * px, size: max(10, T * 0.32)) }
+        }
         for m in members {
             var pose: HallPose?
             if m.id == me, let mine {
@@ -658,7 +679,12 @@ final class GuildHallView: NSView {
         }
         guard let d = drag, !d.panning else { return }
         if editing { return }
-        walk(to: tiles(at: convert(event.locationInWindow, from: nil)))
+        let at = tiles(at: convert(event.locationInWindow, from: nil))
+        if let spot = merchantSpot, let box = merchantBox(spot), box.contains(CGPoint(x: at.x, y: at.y)) { // (a click on the merchant: his wares)
+            onMerchant?()
+            return
+        }
+        walk(to: at)
     }
 
     private static let pads: [UInt16: String] = [126: "up", 125: "down", 123: "left", 124: "right", 13: "up", 1: "down", 0: "left", 2: "right"] // arrows, W S A D

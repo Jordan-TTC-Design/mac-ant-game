@@ -8,6 +8,9 @@ import {
   avatarOptions,
   defaultAvatar,
   GUILD_OUTFITS,
+  guildSeason,
+  outfitClosed,
+  taipeiDay,
   OUTFIT_SLOTS,
   OUTFIT_SLOT_NAMES,
   randomAvatar,
@@ -129,7 +132,28 @@ function rollAll() {
 
 // the clothes (GUILD.md §2): bought with one's own contribution, worn once owned (saved with the rest of the look)
 const wardrobe = computed(() => g.value?.wardrobe ?? { owned: [], points: 0, spent: 0 });
-const outfitSlots = computed(() => OUTFIT_SLOTS.map((slot) => ({ slot, title: OUTFIT_SLOT_NAMES[slot], list: GUILD_OUTFITS.filter((o) => o.slot === slot) })));
+/** The clothes in four groups: the plain ones, a holiday's, a guild level's, the merchant's (2026-10-17). */
+type OutfitGroup = "basic" | "season" | "level" | "merchant";
+const OUTFIT_GROUPS: { id: OutfitGroup; title: string }[] = [
+  { id: "basic", title: "基本" },
+  { id: "season", title: "節日限定" },
+  { id: "level", title: "公會等級" },
+  { id: "merchant", title: "商人" },
+];
+const groupOf = (o: GuildOutfit): OutfitGroup => (o.season ? "season" : o.level ? "level" : o.merchant ? "merchant" : "basic");
+const outfitGroup = ref<OutfitGroup>("basic");
+const outfitSlots = computed(() =>
+  OUTFIT_SLOTS.map((slot) => ({ slot, title: OUTFIT_SLOT_NAMES[slot], list: GUILD_OUTFITS.filter((o) => o.slot === slot && groupOf(o) === outfitGroup.value) })).filter((s) => s.list.length),
+);
+/** Where one stands for the limited ones: today, one's guild's level, what the merchant has on him now. */
+const shop = computed(() => {
+  const guild = g.value?.guild;
+  return { today: taipeiDay(new Date()), guildLevel: guild?.level ?? 0, merchant: new Set(guild?.merchant?.here ? guild.merchant.outfits : []) };
+});
+/** Why a piece one hasn't got can't be had now (null: it can). */
+const closed = (o: GuildOutfit) => outfitClosed(o, shop.value);
+/** What a limited piece is: its holiday, its level, the merchant's. */
+const tag = (o: GuildOutfit) => (o.season ? guildSeason(o.season)?.name ?? "節日" : o.level ? `Lv ${o.level}` : o.merchant ? "商人" : "");
 /** Whether this body has a picture of this piece (unknown until the art is in: then it counts as yes). */
 function fits(o: GuildOutfit): boolean {
   void artReady.value;
@@ -226,11 +250,14 @@ const sexNames = computed(() => (look.value?.race === "undead" ? { m: "骨系", 
           <h2>衣服</h2>
           <span class="points">貢獻 {{ wardrobe.points }}</span>
         </div>
-        <p class="dim">捐東西給公會會累積自己的貢獻，可以拿來換衣服；換到的永遠是你的。</p>
+        <p class="dim">捐東西給公會會累積自己的貢獻，可以拿來換衣服；換到的永遠是你的。節日限定的要在節日期間換，公會等級的要公會升到那一級，商人的要等公會商人帶來。</p>
+        <div class="groups">
+          <button v-for="gr in OUTFIT_GROUPS" :key="gr.id" type="button" class="tab" :class="{ on: outfitGroup === gr.id }" @click="outfitGroup = gr.id">{{ gr.title }}</button>
+        </div>
         <div v-for="s in outfitSlots" :key="s.slot" class="slot">
           <h3>{{ s.title }}</h3>
           <div class="choices">
-            <button type="button" class="choice" :class="{ on: look[s.slot] === undefined }" @click="wear(s.slot, undefined)">
+            <button v-if="outfitGroup === 'basic'" type="button" class="choice" :class="{ on: look[s.slot] === undefined }" @click="wear(s.slot, undefined)">
               <span>{{ s.slot === "hat" ? "不戴" : "原本的" }}</span>
             </button>
             <template v-for="o in s.list" :key="o.id">
@@ -250,13 +277,13 @@ const sexNames = computed(() => (look.value?.race === "undead" ? { m: "骨系", 
                 v-else
                 type="button"
                 class="choice locked"
-                :class="{ shut: !fits(o) || wardrobe.points < o.price }"
-                :disabled="busy || !fits(o)"
-                :title="fits(o) ? `用 ${o.price} 貢獻換${o.name}` : '這個身形穿不了'"
+                :class="{ shut: !fits(o) || !!closed(o) || wardrobe.points < o.price }"
+                :disabled="busy || !fits(o) || !!closed(o)"
+                :title="!fits(o) ? '這個身形穿不了' : closed(o) ?? `用 ${o.price} 貢獻換${o.name}`"
                 @click="buy(o)"
               >
                 <span>{{ o.name }}</span>
-                <small>{{ fits(o) ? `🔒 ${o.price}` : "這個身形穿不了" }}</small>
+                <small>{{ !fits(o) ? "這個身形穿不了" : closed(o) ? `${tag(o)}・還換不到` : `🔒 ${o.price}${tag(o) ? `・${tag(o)}` : ""}` }}</small>
               </button>
             </template>
           </div>
@@ -288,6 +315,9 @@ h2 { margin: 0 0 6px; font-size: 16px; }
 .points { font-weight: 700; font-size: 14px; }
 .dim { margin: 0 0 8px; color: #666; font-size: 12px; }
 .slot h3 { margin: 8px 0 4px; font-size: 13px; }
+.groups { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.groups .tab { padding: 5px 10px; border: 2px solid #1f1f1f; border-radius: 999px; background: #fffdf6; font-size: 13px; font-weight: 700; }
+.groups .tab.on { background: #e8c547; }
 .choice.shut { opacity: 0.45; }
 .choice.locked { background: #efe6d2; }
 .choice small { font-size: 11px; color: #777; }

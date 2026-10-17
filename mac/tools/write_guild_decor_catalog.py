@@ -26,8 +26,8 @@ EXTRAS = [
 ]
 # Desks one works at (sitting behind), and the water one drinks beside (shared/src/guild-hall.ts hallFurnishing).
 DESKS = {"guild_desk", "crystal_desk", "oak_desk", "corner_desk", "guildmaster_desk", "drafting_table", "gob_log_desk", "elf_root_desk", "und_coffin_desk",
-         "l2_writing_desk", "l3_secretary_desk", "l6_commander_desk", "l7_archmage_desk"}
-DRINKS = {"water_elemental", "water_cooler", "gob_waterskin", "elf_spring_basin", "l3_big_cooler", "l6_water_trough", "l7_elixir_fountain"}
+         "l2_writing_desk", "l3_secretary_desk", "l6_commander_desk", "l7_archmage_desk", "m_lacquer_desk"}
+DRINKS = {"water_elemental", "water_cooler", "gob_waterskin", "elf_spring_basin", "l3_big_cooler", "l6_water_trough", "l7_elixir_fountain", "m_samovar"}
 
 items = json.load(open(CATALOG, encoding="utf-8")) + EXTRAS
 level = {item["id"]: int(item.get("level", 1)) for item in items}
@@ -35,6 +35,8 @@ assert all(1 <= v <= TOP_LEVEL for v in level.values()), "a level is out of 1–
 # A holiday piece names its season (shared/src/guild-seasons.ts GUILD_SEASONS): put down only while the season is on.
 SEASONS = set(re.findall(r'\{ id: "([a-z_]+)", name: ', open(os.path.join(HERE, "..", "..", "shared", "src", "guild-seasons.ts"), encoding="utf-8").read()))
 assert all(item.get("season") is None or item["season"] in SEASONS for item in items), "a piece names a season that does not exist"
+# The guild merchant's wares (make_guild_decor_merchant.py) are for any guild that bought them: no level, race or season of their own.
+assert all(level[item["id"]] == 1 and not item.get("race") and not item.get("season") for item in items if item.get("merchant")), "a merchant piece has a level, race or season"
 
 rows = []
 mac = {}
@@ -48,6 +50,7 @@ for item in items:
         "size": item["size"],
         "level": level[item["id"]],
         "season": item.get("season"),
+        "merchant": bool(item.get("merchant")),
         "file": item["file"],
         "w": item["w"],
         "h": item["h"],
@@ -77,6 +80,8 @@ export interface GuildDecorKind {
   level: number;
   /** A holiday piece: the season (shared/src/guild-seasons.ts) it can be put down in; null: always. */
   season: string | null;
+  /** Only the guild merchant sells it: a guild puts it down once one of its members bought it (GuildView.unlocked). */
+  merchant: boolean;
   /** Under mac/Resources/Guild (public/guild-hall on the phone): a strip of `frames` frames, each w × h, standing on its bottom middle. */
   file: string;
   w: number;

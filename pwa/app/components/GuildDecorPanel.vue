@@ -26,6 +26,8 @@ const props = defineProps<{
   races: string[];
   /** The holiday seasons as the server says they are today (a holiday piece can only be put down while its season is on). */
   seasons: GuildSeasonView[];
+  /** The guild merchant's pieces the guild bought (the rest of his can't be put down). */
+  unlocked: string[];
   role: GuildRole;
   selected: string | null;
   busy: boolean;
@@ -62,17 +64,23 @@ const emit = defineEmits<{
 const tile = (file: string) => ({ backgroundImage: `url(/guild-hall/${file})` });
 
 const RACE_NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
-/** The tab of the holiday pieces, in front of the categories (when there are any). */
+/** The tabs of the holiday pieces and the merchant's, in front of the categories (when there are any). */
 const HOLIDAY = "節日限定";
-const tabs = computed(() => (GUILD_DECOR.some((k) => k.season) ? [HOLIDAY, ...GUILD_DECOR_CATEGORIES] : [...GUILD_DECOR_CATEGORIES]));
+const MERCHANT = "商人限定";
+const tabs = computed(() => [
+  ...(GUILD_DECOR.some((k) => k.season) ? [HOLIDAY] : []),
+  ...(GUILD_DECOR.some((k) => k.merchant) ? [MERCHANT] : []),
+  ...GUILD_DECOR_CATEGORIES,
+]);
 const tab = ref<string>(GUILD_DECOR_CATEGORIES[0]);
 const seasonOf = (k: GuildDecorKind) => props.seasons.find((s) => s.id === k.season);
 /** Whether this piece may be put down now: its level, its race, its season. */
-const isOpen = (k: GuildDecorKind) => k.level <= props.level && (!k.race || raceSet.value.has(k.race)) && (!k.season || !!seasonOf(k)?.on);
+const isOpen = (k: GuildDecorKind) =>
+  k.level <= props.level && (!k.race || raceSet.value.has(k.race)) && (!k.season || !!seasonOf(k)?.on) && (!k.merchant || props.unlocked.includes(k.id));
 const used = computed(() => guildDecorRoomUsed(props.items));
 const raceSet = computed(() => new Set(props.races));
 const kinds = computed(() =>
-  GUILD_DECOR.filter((k) => (tab.value === HOLIDAY ? !!k.season : k.category === tab.value))
+  GUILD_DECOR.filter((k) => (tab.value === HOLIDAY ? !!k.season : tab.value === MERCHANT ? k.merchant : k.category === tab.value))
     .map((k) => ({ k, open: isOpen(k) }))
     .sort((a, b) => Number(b.open) - Number(a.open) || a.k.level - b.k.level),
 );
@@ -92,12 +100,13 @@ function thumb(k: GuildDecorKind) {
 function why(k: GuildDecorKind) {
   if (k.level > props.level) return `Lv ${k.level}`;
   if (k.race && !raceSet.value.has(k.race)) return `要有${RACE_NAMES[k.race] ?? ""}`;
+  if (k.merchant) return "商人限定";
   const s = seasonOf(k);
   return s ? `${s.name} ${seasonRange(s)}` : "節日限定";
 }
 /** The line under an open piece: what it takes, and the season it belongs to. */
 function cost(k: GuildDecorKind) {
-  return `${k.size} 點${k.season ? `・${seasonOf(k)?.name ?? ""}` : ""}`;
+  return `${k.size} 點${k.season ? `・${seasonOf(k)?.name ?? ""}` : k.merchant ? "・商人" : ""}`;
 }
 </script>
 

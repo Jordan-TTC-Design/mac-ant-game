@@ -198,9 +198,10 @@ export function guildDecorRoomUsed(items: readonly GuildDecorPlaced[]): number {
 }
 
 /** Whether the guild may put this kind down (`today`: "yyyy-mm-dd" in Taiwan): its level is reached, a race's piece needs a member
- *  of that race, and a holiday piece needs its season to be on. */
-export function guildDecorUnlocked(kind: Pick<GuildDecorKind, "level" | "race" | "season">, level: number, races: ReadonlySet<string>, today: string = taipeiDay(new Date())): boolean {
+ *  of that race, a holiday piece needs its season to be on, and a merchant's piece needs the guild to have bought it (`unlocked`). */
+export function guildDecorUnlocked(kind: Pick<GuildDecorKind, "level" | "race" | "season"> & Partial<Pick<GuildDecorKind, "id" | "merchant">>, level: number, races: ReadonlySet<string>, today: string = taipeiDay(new Date()), unlocked: readonly string[] = []): boolean {
   if (kind.level > level || (kind.race && !races.has(kind.race))) return false;
+  if (kind.merchant && !unlocked.includes(kind.id ?? "")) return false;
   const season = kind.season ? guildSeason(kind.season) : undefined;
   return !season || seasonOpen(season, today);
 }
@@ -229,7 +230,7 @@ export function guildDecorFits(area: HallArea, kind: { w: number; wall: boolean 
 }
 
 /** Why this list cannot be the hall's (null: it can). A piece already there stays even if its race left or its season is over (it just can't be added again). */
-export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: number, area: HallArea, races: ReadonlySet<string>, before: readonly GuildDecorPlaced[] = [], today: string = taipeiDay(new Date())): string | null {
+export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: number, area: HallArea, races: ReadonlySet<string>, before: readonly GuildDecorPlaced[] = [], today: string = taipeiDay(new Date()), unlocked: readonly string[] = []): string | null {
   if (items.length > GUILD_DECOR_MAX_ITEMS) return `最多放 ${GUILD_DECOR_MAX_ITEMS} 件。`;
   const { room } = guildLevel(level);
   const had = new Map(before.map((d) => [d.uid, d.kind]));
@@ -239,8 +240,9 @@ export function guildDecorProblem(items: readonly GuildDecorPlaced[], level: num
     uids.add(d.uid);
     const kind = BY_ID.get(d.kind);
     if (!kind) return "沒有這種裝飾。";
-    if (had.get(d.uid) !== d.kind && !guildDecorUnlocked(kind, level, races, today)) {
+    if (had.get(d.uid) !== d.kind && !guildDecorUnlocked(kind, level, races, today, unlocked)) {
       if (kind.level > level) return `${kind.name}要公會 ${kind.level} 級才能用。`;
+      if (kind.merchant) return `${kind.name}要先跟公會商人買下來才能擺。`;
       if (kind.race && !races.has(kind.race)) return `${kind.name}要公會裡有這個種族的成員才能用。`;
       return `${kind.name}是${guildSeason(kind.season ?? "")?.name ?? "節日"}限定，節日期間才能擺新的。`;
     }

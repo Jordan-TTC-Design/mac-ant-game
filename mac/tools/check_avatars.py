@@ -25,21 +25,21 @@ FW, FH = M["frameW"], M["frameH"]
 
 # shared/src/guild.ts: AVATAR_OPTIONS and defaultAvatar(), mirrored here for the check
 OPTIONS = {
-    "goblin": {"hair": {"m": ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes"],
-                        "f": ["braids", "bun", "dreads", "wild", "tuft", "pigtails", "mohawk", "bob"]},
-               "skin": ["light", "grass", "moss", "deep"]},
-    "elf": {"hair": {"m": ["neat", "long", "halfup", "ponytail", "side_braid", "waves", "messy", "braided_crown"],
-                     "f": ["long_wreath", "braided_crown", "side_braid", "waves", "long", "ponytail", "halfup", "wreath_updo"]},
-            "skin": ["fair", "warm", "tan", "bronze"]},
-    "undead": {"hair": {"m": ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle"],
-                        "f": ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown"]},
-               "skin": ["bone", "ivory", "ash", "slate"]},
+    "goblin": {"hair": {"m": ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes", "afro", "side_shave", "warrior_tail", "bowl", "shaggy", "long_braid"],
+                        "f": ["braids", "bun", "dreads", "wild", "tuft", "pigtails", "mohawk", "bob", "twin_buns", "long_braid", "afro", "shaggy", "bowl", "warrior_tail"]},
+               "skin": ["light", "grass", "moss", "deep", "olive", "teal"]},
+    "elf": {"hair": {"m": ["neat", "long", "halfup", "ponytail", "side_braid", "waves", "messy", "braided_crown", "short_crop", "low_tail", "circlet", "pixie", "twin_braids", "flower_bun"],
+                     "f": ["long_wreath", "braided_crown", "side_braid", "waves", "long", "ponytail", "halfup", "wreath_updo", "hime", "flower_bun", "twin_braids", "circlet", "pixie", "low_tail"]},
+            "skin": ["fair", "warm", "tan", "bronze", "rosy", "umber"]},
+    "undead": {"hair": {"m": ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle", "antlers", "unicorn_horn", "bone_ridge", "soul_flame", "iron_circlet", "mossy"],
+                        "f": ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown", "veil", "short_wisp", "ponytail_wisp", "star_crown", "twin_buns", "hime"]},
+               "skin": ["bone", "ivory", "ash", "slate", "moss_bone", "dusk"]},
 }
-SPIRIT_SKINS = ["pale_blue", "ice", "pale_violet", "lavender"]
-EYES = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide"]
-BROWS = ["thin", "thick", "faint", "none"]
-MOUTHS = ["line", "smile", "smirk", "open", "pout", "cat"]
-SKULL = ["teeth", "grin", "gap", "jaw", "fang", "stitch"]
+SPIRIT_SKINS = ["pale_blue", "ice", "pale_violet", "lavender", "pale_green", "rose"]
+EYES = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide", "droopy", "cat_eye", "smiley", "big"]
+BROWS = ["thin", "thick", "faint", "arched", "angry", "none"]
+MOUTHS = ["line", "smile", "smirk", "open", "pout", "cat", "tongue", "toothy", "wavy"]
+SKULL = ["teeth", "grin", "gap", "jaw", "fang", "stitch", "crooked", "buck", "toothless"]
 HAIRC = ["black", "darkbrown", "chestnut", "orange", "yellow", "blonde", "silver", "pink", "lavender", "mint", "navy", "forest"]
 
 
@@ -60,7 +60,7 @@ def default_avatar(race, sex):
 def random_avatar(race, sex, rng):
     a = default_avatar(race, sex)
     skins = SPIRIT_SKINS if (race, sex) == ("undead", "f") else OPTIONS[race]["skin"]
-    a.update(face=rng.choice(["round", "pointed", "square"]), eyes=rng.choice(EYES), brows=rng.choice(BROWS),
+    a.update(face=rng.choice(["round", "pointed", "square", "heart", "chubby"]), eyes=rng.choice(EYES), brows=rng.choice(BROWS),
              mouth=rng.choice(SKULL if (race, sex) == ("undead", "m") else MOUTHS), hair=rng.choice(OPTIONS[race]["hair"][sex]),
              skin=rng.choice(skins), hairColor=rng.choice(HAIRC))
     if "flame" in a:

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { guildDecorKind, guildFurnishing, hallLayout, hallPose, hallWallAt, WALL_ROWS, type GuildDecorPlaced, type HallArea, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
+import { guildDecorKind, guildFurnishing, hallFreeSpot, hallLayout, hallPose, hallWallAt, WALL_ROWS, type GuildDecorPlaced, type HallArea, type GuildMove, type HallFloor, type GuildMemberView, type HallMember, type HallPose, type Presence } from "@goblincamp/shared";
 import { loadImage, type AvatarManifest } from "~/composables/useAvatarArt";
 
 /**
@@ -36,15 +36,23 @@ const props = defineProps<{
   follow?: { x: number; y: number } | null;
   /** Fill the box it is in (the Mac's whole window), tiles sized to it, instead of a 16-tile-wide strip. */
   fill?: boolean;
+  /** The guild merchant (shared/src/guild-merchant.ts) is in the hall: he stands at a free spot picked from the guild's id. */
+  merchantHere?: boolean;
+  guildId?: string;
 }>();
-const emit = defineEmits<{ select: [uid: string | null]; move: [uid: string, x: number, y: number]; paint: [x: number, y: number]; walkTo: [x: number, y: number] }>();
+const emit = defineEmits<{ select: [uid: string | null]; move: [uid: string, x: number, y: number]; paint: [x: number, y: number]; walkTo: [x: number, y: number]; merchant: [] }>();
 
 interface HallManifest {
   tile: number;
   floors: Record<string, string>;
   walls: Record<string, { file: string; [k: string]: unknown }>;
   furniture: Record<string, { file: string; w: number; h: number; frames?: number; fps?: number; anchor: { x: number; y: number }; flat?: boolean }>;
+  /** The guild merchant's picture: a strip of frames, standing on (anchorX, anchorY). */
+  merchant?: { file: string; w: number; h: number; frames: number; fps: number; anchorX: number; anchorY: number };
 }
+/** The merchant's picture when the manifest does not say (the art's own numbers). */
+const MERCHANT_ART = { file: "merchant.png", w: 44, h: 42, frames: 4, fps: 3, anchorX: 22, anchorY: 41 };
+const merchantArt = () => hallInfo?.merchant ?? MERCHANT_ART;
 
 const art = useAvatarArt();
 const box = ref<HTMLDivElement>();
@@ -203,7 +211,8 @@ function up(e: PointerEvent) {
   // (not decorating, a tap that did not drag walks this one's avatar there)
   if (press && !press.panning && !props.editing) {
     const p = tilesAt(e);
-    emit("walkTo", p.x, p.y);
+    if (onMerchant(p)) emit("merchant");
+    else emit("walkTo", p.x, p.y);
   }
   press = null;
   dragging = null;
@@ -212,6 +221,16 @@ function up(e: PointerEvent) {
 
 /** The hall as the pieces put down make it: where one works, sits, drinks and cannot go. */
 const layout = computed(() => hallLayout(props.area, guildFurnishing(props.decor)));
+/** Where the merchant stands (his feet), while he is here. */
+const merchantSpot = computed(() => (props.merchantHere && props.guildId ? hallFreeSpot(layout.value, props.guildId, "merchant") : null));
+/** Whether a tap at `p` (tiles) is on the merchant (his picture, a little round it). */
+function onMerchant(p: { x: number; y: number }): boolean {
+  const at = merchantSpot.value;
+  if (!at) return false;
+  const a = merchantArt();
+  const px = 16; // (art pixels to a tile, as the decorations')
+  return Math.abs(p.x - at.x) <= a.w / px / 2 + 0.2 && p.y <= at.y + 0.3 && p.y >= at.y - a.h / px - 0.6;
+}
 /** The ways the wanderers walk, kept while the hall and who is in it stay the same. */
 let ways = new Map<string, import("@goblincamp/shared").Point[]>();
 watch([layout, () => props.members.map((m) => `${m.id}:${m.presence}`).join()], () => (ways = new Map()));
@@ -474,6 +493,34 @@ function draw() {
       },
     });
   }
+  // the guild merchant, at his cart, with a 🛒 over him (a tap opens his shop)
+  const spot = merchantSpot.value;
+  const ma = merchantArt();
+  const mimg = spot ? loaded.get(`/guild-hall/${ma.file}`) : undefined;
+  if (spot && mimg) {
+    const frame = ma.frames > 1 ? Math.floor((now / 1000) * (ma.fps || 3)) % ma.frames : 0;
+    const left = spot.x * T - ma.anchorX * scale;
+    const top = spot.y * T - ma.anchorY * scale;
+    items.push({ y: spot.y, paint: () => g.drawImage(mimg, frame * ma.w, 0, ma.w, ma.h, left, top, ma.w * scale, ma.h * scale) });
+    if (!props.editing) {
+      bubbles.push(() => {
+        g.font = `${Math.max(12, 6 * scale)}px system-ui, sans-serif`;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        const r = Math.max(9, 5 * scale);
+        const cy = top - r - scale + Math.sin(now / 400) * scale;
+        g.fillStyle = "rgba(255,253,246,0.96)";
+        g.strokeStyle = "#1f1f1f";
+        g.lineWidth = Math.max(1, scale / 2);
+        g.beginPath();
+        g.arc(spot.x * T, cy, r, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        g.fillStyle = "#1f1f1f";
+        g.fillText("🛒", spot.x * T, cy + 1);
+      });
+    }
+  }
   items.sort((a, b) => a.y - b.y);
   for (const it of items) it.paint();
   for (const paint of overhead) paint();
@@ -511,6 +558,7 @@ onMounted(async () => {
     ...Object.values(h.floors).map((f) => preload(`/guild-hall/${f}`)),
     ...Object.values(h.walls).map((w) => preload(`/guild-hall/${w.file}`)),
     ...Object.values(h.furniture).map((f) => preload(`/guild-hall/${f.file}`)),
+    preload(`/guild-hall/${merchantArt().file}`),
   ]);
   fit();
   resize = new ResizeObserver(fit);

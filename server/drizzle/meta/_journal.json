@@ -253,6 +253,13 @@
       "when": 1792205230703,
       "tag": "0035_cell_target",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792205495953,
+      "tag": "0036_guild_merchant",
+      "breakpoints": true
     }
   ]
 }

@@ -417,6 +417,9 @@ def main():
         json.dump(man, f, ensure_ascii=False, indent=1)
         f.write("\n")
     overview(man)
+    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "make_guild_decor_merchant.py")):
+        import make_guild_decor_merchant                                   # (make_avatars.py rewrote the manifest: the merchant goes back in)
+        make_guild_decor_merchant.write_merchant()
     print("floors", list(man["floors"]), "walls", list(man["walls"]))
 
 

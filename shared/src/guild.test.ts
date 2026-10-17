@@ -19,12 +19,12 @@ describe("guild rules", () => {
     expect(badgeSchema.safeParse(DEFAULT_BADGE).success).toBe(true);
   });
 
-  it("every race has 8 hairstyles per sex, and its defaults and random avatars are allowed", () => {
+  it("every race has 14 hairstyles per sex, and its defaults and random avatars are allowed", () => {
     let seed = 1;
     const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
     for (const race of ["goblin", "elf", "undead"] as const) {
       for (const sex of ["m", "f"] as const) {
-        expect(new Set(AVATAR_OPTIONS[race].hair[sex]).size).toBe(8);
+        expect(new Set(AVATAR_OPTIONS[race].hair[sex]).size).toBe(14);
         expect(avatarProblem(defaultAvatar(race, sex))).toBeNull();
         for (let i = 0; i < 200; i++) expect(avatarProblem(randomAvatar(race, sex, rand))).toBeNull();
       }

@@ -63,6 +63,8 @@ struct GuildInfo: Decodable {
             case seasonList = "seasons"
             case wallList = "walls"
             case plotList = "plots"
+            case unlockedList = "unlocked"
+            case merchant
         }
         let id: String
         let name: String
@@ -89,6 +91,11 @@ struct GuildInfo: Decodable {
         let plotList: [String: String]?
         var walls: [String: String] { wallList ?? [:] }
         var plots: [String: String] { plotList ?? [:] }
+        /// The guild merchant's pieces the guild has bought (they may be put down), and the merchant: here with his goods, or
+        /// when he comes next (shared/src/guild-merchant.ts). Older servers leave them out.
+        let unlockedList: [String]?
+        var unlocked: [String] { unlockedList ?? [] }
+        let merchant: Merchant?
         /// The hall's floor: as drawn, or (a server from before shapes) the rectangle of its size.
         var hallArea: [String] {
             if let area { return area }
@@ -97,6 +104,17 @@ struct GuildInfo: Decodable {
         }
         /// Asked and not answered yet (only the leader and officers are sent this).
         let invited: [Invited]
+    }
+
+    /// The guild merchant (shared/src/guild-merchant.ts `MerchantView`).
+    struct Merchant: Decodable {
+        struct Item: Decodable { let kind: String; let price: Int }
+        let here: Bool
+        /// This visit (or the next, when he is not here): ISO times.
+        let from: String
+        let until: String
+        let decor: [Item]
+        let outfits: [String]
     }
 
     struct Season: Decodable {

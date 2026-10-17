@@ -1577,6 +1577,41 @@ def _top_rule(k):
     return "top"
 
 
+def _pattern(c, how, fr):
+    """A pattern over an outfit's cloth (T, and the cape's C; P for trousers): R the pattern's colour, W a trim or apron."""
+    _oy, u, _hy = heads(fr)
+    view = fr["view"]
+    cloth = {"T", "C", "P"}
+    for y in range(FH):
+        for x in range(RW):
+            k = c.px[y][x]
+            if k not in cloth and not (how in ("trim", "fur") and k in ("U", "Q")):
+                continue
+            hit = False
+            if how == "stripes":
+                hit = y % 3 == 0
+            elif how == "dots":
+                hit = x % 3 == 1 and y % 3 == 1
+            elif how == "stars":
+                hit = (x * 7 + y * 13) % 9 == 0
+            elif how == "scales":
+                hit = y % 2 == 0 and (x + 2 * (y // 2 % 2)) % 4 == 0
+            elif how == "chain":
+                hit = (x + y) % 2 == 0
+            elif how == "plates":
+                hit = y % 3 == 0
+            elif how == "sash":
+                hit = view in ("front", "back") and (x + (y - u)) in (28, 29)
+            elif how == "apron":
+                hit = view == "front" and 9 <= x <= 14 and y >= u + 17
+            elif how in ("trim", "fur"):                                  # the hem (and the short sleeves' ends): the edge over nothing
+                below = c.px[y + 1][x] if y + 1 < FH else None
+                below2 = c.px[y + 2][x] if y + 2 < FH else None
+                hit = below is None or (how == "fur" and below2 is None)
+            if hit:
+                c.px[y][x] = "W" if how in ("trim", "fur", "apron") else "R"
+
+
 def outfit_pal(bk, cols):
     p = layer_pal("top", bk)
     p.update(cols)
@@ -1593,7 +1628,7 @@ def outfit_frames(bk, slot, oid):
     if slot == "top":
         design, _ = TOPS[oid]
         a = dict(base, **OUTFIT_BASE)
-        a.update({k: v for k, v in design.items() if k not in ("emblem", "robe")})
+        a.update({k: v for k, v in design.items() if k not in ("emblem", "robe", "pattern")})
         if base["race"] == "skeleton":
             a["race"] = "elf"                                            # (no capelet: the clothes cover the bones)
         for fr in FRAMES:
@@ -1603,6 +1638,8 @@ def outfit_frames(bk, slot, oid):
                 for x, y in [(11, u + 16), (12, u + 16), (11, u + 17), (12, u + 17), (10, u + 17), (13, u + 17), (11, u + 18), (12, u + 18)]:
                     if c.px[y][x] == "T":
                         c.put(x, y, "A")
+            for how in design.get("pattern", ()):
+                _pattern(c, how, fr)
             out.append(c)
         return out
     if slot == "bottom":
@@ -1632,6 +1669,8 @@ def outfit_frames(bk, slot, oid):
                         c.px[y][x] = {"T": "P", "U": "Q", "u": "P"}.get(k, k)
                     elif how == "kilt" and k in ("T", "u"):
                         c.px[y][x] = "Y" if y % 4 == 1 and x % 4 == 2 else "G" if x % 4 == 1 or y % 4 == 3 else "T"
+            for pat in BOTTOM_PATTERNS.get(oid, ()):
+                _pattern(c, pat, fr)
             out.append(c)
         return out
     colours, shaft, pointed = SHOES[oid]
@@ -1750,6 +1789,359 @@ def wizard_hat_layer(fr):
 
 
 HATS = {"straw_hat": straw_hat_layer, "flower_crown": flower_crown_layer, "iron_helm": iron_helm_layer, "wizard_hat": wizard_hat_layer}
+
+
+# --- round 3 (2026-10-17): holiday clothes, the guild levels' clothes, the guild merchant's rare ones -----------------------
+# (shared/src/guild-outfits.ts says which is which and what each costs.) `pattern` goes over the cloth after it is drawn.
+BOTTOM_PATTERNS = {}
+
+TOPS.update({
+    # the holidays
+    "red_festive_jacket": (dict(outfit="tunic", sleeve="long", cuff=True, buckle=True, pattern=("dots",)),
+                           dict(T=(190, 40, 40), U=(140, 24, 30), u=(240, 200, 90), k=(90, 30, 20), A=(250, 210, 80), R=(236, 190, 70))),
+    "lantern_robe": (dict(outfit="gown", sleeve="long", cuff=True, robe=True, pattern=("stripes",)),
+                     dict(T=(230, 110, 40), U=(180, 70, 24), u=(255, 220, 120), k=(120, 40, 20), A=(255, 230, 120), R=(200, 56, 36))),
+    "rower_vest": (dict(outfit="tunic", pattern=("stripes",)),
+                   dict(T=(40, 140, 90), U=(24, 100, 60), u=(250, 240, 200), k=(40, 40, 40), A=(240, 200, 70), R=(240, 220, 90))),
+    "moon_gown": (dict(outfit="gown", sleeve="long", cuff=True, robe=True, pattern=("stars",)),
+                  dict(T=(226, 230, 240), U=(180, 188, 210), u=(250, 220, 120), k=(150, 150, 190), A=(250, 220, 120), R=(240, 200, 100))),
+    "parade_jacket": (dict(outfit="tunic", sleeve="long", cuff=True, buckle=True, emblem=True, pattern=("trim",)),
+                      dict(T=(40, 50, 110), U=(26, 32, 80), u=(240, 240, 240), k=(200, 170, 70), A=(240, 200, 80), W=(220, 40, 50))),
+    "sequin_jacket": (dict(outfit="tunic", sleeve="long", pattern=("stars", "dots")),
+                      dict(T=(60, 40, 120), U=(40, 26, 90), u=(250, 220, 250), k=(30, 20, 60), A=(255, 230, 140), R=(255, 236, 150))),
+    "santa_coat": (dict(outfit="tunic", sleeve="long", cuff=True, buckle=True, pattern=("fur",)),
+                   dict(T=(200, 30, 40), U=(150, 20, 30), u=(250, 250, 250), k=(30, 30, 30), A=(240, 200, 80), W=(250, 250, 250))),
+    # the guild levels: 2 the workshop and study, 3 the meeting room, 4 the courtyard, 5 the banquet hall, 6 the training ground, 7 the tower
+    "craftsman_apron": (dict(outfit="tunic", pattern=("apron",)),
+                        dict(T=(200, 190, 170), U=(160, 150, 130), u=(236, 228, 210), k=(80, 60, 40), A=(200, 170, 90), W=(130, 86, 50))),
+    "scholar_vest": (dict(outfit="tunic", sleeve="long", sleeve_col="V", buckle=True),
+                     dict(T=(60, 80, 120), U=(40, 56, 90), u=(240, 236, 220), V=(240, 236, 220), k=(50, 40, 30), A=(220, 190, 90))),
+    "council_coat": (dict(outfit="tunic", sleeve="long", cuff=True, buckle=True, cape=True, pattern=("trim",)),
+                     dict(T=(90, 40, 60), U=(64, 24, 42), u=(240, 220, 170), k=(60, 40, 30), A=(240, 200, 90), C=(30, 30, 40), c=(20, 20, 28),
+                          W=(240, 200, 90))),
+    "clerk_shirt": (dict(outfit="tunic", sleeve="long", pattern=("sash",)),
+                    dict(T=(236, 236, 226), U=(196, 196, 186), u=(250, 250, 250), k=(60, 60, 70), A=(200, 170, 90), R=(40, 60, 110))),
+    "gardener_smock": (dict(outfit="tunic", pattern=("apron",)),
+                       dict(T=(140, 170, 110), U=(100, 130, 80), u=(240, 236, 210), k=(110, 80, 50), A=(220, 190, 90), W=(190, 160, 110))),
+    "hunter_jerkin": (dict(outfit="tunic", sleeve="long", sleeve_col="V", buckle=True, pattern=("trim",)),
+                      dict(T=(80, 100, 50), U=(56, 72, 34), V=(120, 90, 60), u=(160, 130, 90), k=(70, 50, 30), A=(200, 170, 90), W=(120, 90, 60))),
+    "banquet_gown": (dict(outfit="gown", sleeve="long", cuff=True, buckle=True, robe=True, pattern=("dots",)),
+                     dict(T=(140, 30, 90), U=(100, 18, 64), u=(250, 220, 240), k=(240, 200, 90), A=(250, 220, 120), R=(240, 200, 90))),
+    "velvet_doublet": (dict(outfit="tunic", sleeve="long", cuff=True, buckle=True, cape=True, pattern=("dots",)),
+                       dict(T=(40, 90, 70), U=(24, 64, 48), u=(240, 220, 160), k=(40, 30, 20), A=(240, 200, 80), C=(110, 20, 40), c=(80, 12, 28),
+                            R=(230, 190, 80))),
+    "chainmail": (dict(outfit="tunic", sleeve="long", sleeve_col="M", pattern=("chain",)),
+                  dict(T=(150, 156, 166), U=(110, 116, 128), M=(130, 136, 148), u=(190, 196, 206), k=(90, 60, 40), A=(200, 170, 90), R=(118, 124, 136))),
+    "padded_gambeson": (dict(outfit="tunic", sleeve="long", buckle=True, pattern=("stripes",)),
+                        dict(T=(200, 180, 140), U=(160, 140, 104), u=(230, 214, 180), k=(110, 80, 50), A=(200, 170, 90), R=(168, 148, 110))),
+    "archmage_robe": (dict(outfit="gown", sleeve="long", cuff=True, buckle=True, robe=True, pattern=("stars",)),
+                      dict(T=(30, 40, 110), U=(20, 26, 80), u=(230, 200, 100), k=(230, 200, 100), A=(255, 236, 150), R=(255, 236, 150))),
+    "star_mantle": (dict(outfit="tunic", sleeve="long", cuff=True, buckle=True, cape=True, pattern=("stars",)),
+                    dict(T=(60, 60, 90), U=(40, 40, 64), u=(200, 210, 240), k=(40, 40, 60), A=(230, 230, 255), C=(24, 30, 80), c=(14, 18, 56),
+                         R=(230, 230, 255))),
+    # the guild merchant's
+    "silk_kimono": (dict(outfit="gown", sleeve="long", cuff=True, robe=True, pattern=("dots",)),
+                    dict(T=(220, 90, 110), U=(170, 60, 80), u=(255, 230, 200), k=(60, 40, 90), A=(250, 220, 120), R=(255, 236, 200))),
+    "desert_robe": (dict(outfit="gown", sleeve="long", robe=True, pattern=("stripes",)),
+                    dict(T=(230, 210, 170), U=(190, 170, 130), u=(250, 240, 220), k=(160, 60, 40), A=(220, 180, 80), R=(180, 90, 60))),
+    "dragon_scale_armor": (dict(outfit="tunic", sleeve="long", sleeve_col="M", buckle=True, pattern=("scales",)),
+                           dict(T=(40, 120, 90), U=(24, 84, 60), M=(30, 100, 74), u=(200, 180, 80), k=(70, 40, 30), A=(240, 200, 80), R=(70, 170, 126))),
+    "phoenix_coat": (dict(outfit="tunic", sleeve="long", cuff=True, cape=True, pattern=("scales",)),
+                     dict(T=(230, 110, 40), U=(190, 70, 24), u=(255, 220, 100), k=(150, 40, 20), A=(255, 230, 120), C=(200, 40, 30), c=(150, 24, 20),
+                          R=(255, 190, 70))),
+})
+BOTTOMS.update({
+    "canvas_trousers": ("tunic", dict(P=(170, 150, 110), Q=(130, 112, 80)), "trousers"),
+    "pleated_trousers": ("tunic", dict(P=(60, 60, 70), Q=(40, 40, 48)), "trousers"),
+    "dark_skirt": ("gown", dict(T=(50, 50, 70), U=(34, 34, 50), u=(90, 90, 110)), "skirt"),
+    "green_breeches": ("tunic", dict(P=(80, 110, 60), Q=(56, 80, 40)), "trousers"),
+    "satin_skirt": ("gown", dict(T=(240, 220, 150), U=(200, 176, 110), u=(255, 246, 210)), "skirt"),
+    "velvet_breeches": ("tunic", dict(P=(60, 40, 90), Q=(40, 26, 64)), "trousers"),
+    "armored_leggings": ("tunic", dict(P=(150, 156, 166), Q=(110, 116, 128), R=(196, 202, 212)), "trousers"),
+    "war_kilt": ("dress", dict(T=(120, 40, 40), G=(60, 60, 60), U=(90, 26, 26), Y=(200, 170, 90)), "kilt"),
+    "runed_skirt": ("gown", dict(T=(40, 40, 90), U=(26, 26, 64), u=(80, 80, 140), R=(130, 220, 240)), "skirt"),
+    "harem_pants": ("tunic", dict(P=(200, 60, 100), Q=(150, 40, 74)), "trousers"),
+})
+BOTTOM_PATTERNS.update({"armored_leggings": ("plates",), "runed_skirt": ("stars",)})
+SHOES.update({
+    "embroidered_slippers": (dict(K=(190, 40, 50), B=(190, 40, 50)), 0, True),
+    "cloud_shoes": (dict(K=(230, 230, 240), B=(180, 190, 220)), 0, False),
+    "jingle_boots": (dict(K=(40, 120, 60), B=(200, 40, 40)), 2, True),
+    "work_clogs": (dict(K=(170, 130, 80), B=(170, 130, 80)), 0, False),
+    "study_slippers": (dict(K=(120, 60, 60), B=(120, 60, 60)), 0, False),
+    "polished_shoes": (dict(K=(30, 30, 36), B=(30, 30, 36)), 0, False),
+    "garden_boots": (dict(K=(60, 110, 60), B=(80, 140, 80)), 3, False),
+    "hunter_boots": (dict(K=(90, 64, 40), B=(120, 90, 60)), 3, False),
+    "buckle_shoes": (dict(K=(40, 30, 30), B=(230, 190, 80)), 1, False),
+    "sabatons": (dict(K=(130, 136, 148), B=(170, 176, 186)), 2, True),
+    "starlit_slippers": (dict(K=(60, 70, 140), B=(230, 230, 255)), 1, True),
+    "silver_greaves": (dict(K=(190, 196, 210), B=(220, 226, 236)), 3, False),
+    "golden_sandals": (dict(K=(230, 190, 80), B=(200, 160, 60)), 1, False),
+    "dragon_boots": (dict(K=(40, 110, 80), B=(60, 150, 110)), 3, True),
+})
+
+HAT_PALS.update({
+    "lion_dance_hat": {"R": (200, 40, 40), "r": (150, 24, 30), "A": (250, 210, 80), "W": (255, 255, 255), "K": (30, 24, 24), "G": (60, 150, 80)},
+    "lantern_hat": {"R": (210, 40, 40), "r": (160, 24, 30), "A": (250, 210, 80), "Y": (255, 236, 150), "B": (60, 40, 30)},
+    "rice_dumpling_hat": {"G": (80, 150, 70), "g": (54, 110, 50), "L": (130, 190, 100), "T": (200, 170, 110)},
+    "rabbit_ear_hood": {"W": (246, 246, 250), "w": (206, 206, 220), "P": (240, 170, 190), "Y": (250, 214, 110)},
+    "flag_cap": {"R": (200, 40, 50), "r": (150, 26, 36), "B": (40, 60, 150), "W": (255, 255, 255), "P": (120, 100, 80)},
+    "party_hat": {"P": (240, 110, 170), "Y": (250, 220, 90), "p": (190, 70, 130), "W": (255, 255, 255), "C": (90, 200, 230)},
+    "santa_hat": {"R": (200, 30, 40), "r": (150, 20, 30), "W": (252, 252, 252), "w": (214, 214, 224)},
+    "reading_cap": {"B": (50, 60, 100), "b": (34, 40, 72), "L": (80, 94, 140), "A": (230, 190, 80)},
+    "tricorn_hat": {"K": (40, 34, 40), "k": (24, 20, 26), "A": (230, 190, 80), "L": (70, 62, 72)},
+    "sun_bonnet": {"W": (246, 236, 210), "w": (210, 196, 160), "R": (230, 120, 140), "G": (110, 160, 90)},
+    "jeweled_tiara": {"A": (240, 200, 80), "a": (190, 150, 50), "R": (220, 40, 70), "C": (110, 200, 240)},
+    "knight_helm": {"M": (160, 166, 178), "m": (114, 120, 132), "h": (214, 220, 230), "K": (30, 30, 36), "R": (200, 40, 50)},
+    "astral_crown": {"M": (190, 200, 230), "m": (130, 140, 180), "C": (120, 220, 250), "Y": (255, 240, 160)},
+    "golden_crown": {"A": (244, 204, 70), "a": (196, 150, 40), "h": (255, 240, 160), "R": (210, 30, 60), "C": (70, 140, 230)},
+    "turban": {"W": (240, 232, 214), "w": (200, 186, 160), "O": (220, 120, 40), "R": (200, 40, 70), "F": (60, 150, 140)},
+    "dragon_horn_helm": {"G": (50, 110, 80), "g": (32, 76, 54), "h": (90, 160, 120), "H": (236, 226, 196), "e": (220, 200, 160)},
+})
+
+
+def _cap(c, y, k, shade, x0=7, x1=16, top=1, bottom=4):
+    """A round cap over the head: the crown narrower at the top."""
+    c.rect(x0 + 2, y + top, x1 - 2, y + top, k)
+    c.rect(x0, y + top + 1, x1, y + bottom, k)
+    c.rect(x1 - 1, y + top + 1, x1, y + bottom, shade)
+
+
+def lion_dance_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    _cap(c, y, "R", "r", 6, 17, 0, 5)
+    c.rect(6, y - 1, 17, y - 1, "A"); c.cells([(9, y - 2), (10, y - 2), (13, y - 2), (14, y - 2)], "A")        # the gold mane
+    c.cells([(11, y - 3), (12, y - 3), (11, y - 2), (12, y - 2)], "G")                                          # the horn
+    c.rect(5, y + 6, 18, y + 6, "A")                                                                            # the jaw's edge
+    if view == "front":
+        for ex in (8, 14):                                                                                      # big eyes
+            c.rect(ex, y + 1, ex + 1, y + 2, "W"); c.put(ex + (1 if ex == 8 else 0), y + 2, "K")
+        c.rect(9, y + 4, 14, y + 4, "W")                                                                        # teeth
+    elif view == "back":
+        for x in (7, 10, 13, 16):
+            c.rect(x, y + 1, x, y + 5, "A")
+    else:
+        c.rect(14, y + 1, 15, y + 2, "W"); c.put(15, y + 2, "K"); c.rect(13, y + 4, 17, y + 4, "W")
+    return c
+
+
+def lantern_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    c.rect(7, y + 3, 16, y + 4, "R"); c.rect(7, y + 4, 16, y + 4, "A")                                         # a band round the head
+    c.rect(11, y + 1, 12, y + 2, "B")                                                                           # the lantern's cord
+    c.rect(9, y - 4, 14, y + 0, "R"); c.rect(10, y - 5, 13, y - 5, "A"); c.rect(10, y + 1, 13, y + 1, "A")      # the lantern
+    c.rect(13, y - 4, 14, y + 0, "r"); c.cells([(10, y - 3), (10, y - 2), (11, y - 2)], "Y")
+    c.cells([(11, y - 6), (12, y - 6)], "B")
+    if fr["view"] != "back":
+        c.cells([(12, y + 2), (12, y + 3)], "A")                                                                # its tassel
+    return c
+
+
+def rice_dumpling_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    for row, (x0, x1) in ((-4, (11, 12)), (-3, (10, 13)), (-2, (10, 13)), (-1, (9, 14)), (0, (9, 14)), (1, (8, 15)), (2, (7, 16)),
+                          (3, (6, 17)), (4, (5, 18))):
+        c.rect(x0, y + row, x1, y + row, "G"); c.put(x1, y + row, "g"); c.put(x0, y + row, "L")
+    for x, yy in ((9, y + 3), (10, y + 2), (11, y + 1), (12, y + 1), (13, y + 2), (14, y + 3)):                 # the string tying it
+        c.put(x, yy, "T")
+    c.rect(5, y + 5, 18, y + 5, "g")
+    return _mirror(c) if fr["view"] == "back" else c
+
+
+def rabbit_ear_hood_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    _cap(c, y, "W", "w", 6, 17, 1, 5)
+    ears = [(7, 9), (14, 16)] if view != "side" else [(6, 8), (9, 11)]                                          # (from the side: both lean back)
+    for x0, x1 in ears:
+        c.rect(x0, y - 6, x1, y + 0, "W"); c.put(x1, y - 6, "w"); c.put(x0, y - 6, "w")
+        if view == "front":
+            c.rect(x0 + 1, y - 5, x0 + 1, y - 1, "P")
+    if view == "front":
+        c.rect(6, y + 5, 17, y + 5, "w"); c.put(16, y + 2, "Y")                                                 # a little moon pin
+    return c
+
+
+def flag_cap_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    _cap(c, y, "R", "r", 7, 16, 1, 4)
+    c.rect(6, y + 5, 17, y + 5, "r")
+    c.rect(15, y - 5, 15, y + 1, "P")                                                                           # a little flag on a stick
+    c.rect(16, y - 5, 20, y - 2, "R"); c.rect(16, y - 5, 17, y - 4, "B"); c.put(16, y - 5, "W")
+    return _mirror(c) if fr["view"] == "back" else c
+
+
+def party_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    for i, (x0, x1) in enumerate(((11, 12), (11, 12), (10, 13), (10, 13), (9, 14), (9, 14), (8, 15), (8, 15))):
+        row = y - 4 + i
+        c.rect(x0, row, x1, row, "Y" if i % 3 == 1 else "P"); c.put(x1, row, "p")
+    c.cells([(10, y - 1), (13, y + 2)], "C")
+    c.rect(10, y - 6, 13, y - 5, "W")                                                                           # the pompom
+    c.rect(7, y + 4, 16, y + 4, "W")                                                                            # the elastic band
+    return c
+
+
+def santa_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    side = fr["view"] == "side"
+    _cap(c, y, "R", "r", 7, 16, 0, 3)
+    c.rect(9, y - 2, 15, y - 1, "R"); c.rect(14, y - 2, 17, y - 2, "R"); c.rect(17, y - 1, 18, y + 1, "r")       # it flops over
+    c.rect(18, y + 1, 19, y + 2, "W"); c.put(19, y + 2, "w")                                                    # the pompom
+    c.rect(6, y + 4, 17, y + 5, "W"); c.rect(6, y + 5, 17, y + 5, "w")                                          # the fur
+    c = _mirror(c) if side or fr["view"] == "back" else c                                                       # (from behind or the side it falls back)
+    return c
+
+
+def reading_cap_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    c.rect(7, y + 1, 17, y + 1, "B"); c.rect(6, y + 2, 17, y + 3, "B"); c.rect(6, y + 1, 7, y + 1, "L")         # a soft cap, leaning over
+    c.rect(7, y + 4, 16, y + 4, "b"); c.rect(15, y + 1, 17, y + 3, "b")
+    c.cells([(12, y + 0), (11, y + 0)], "B"); c.cells([(17, y + 2), (18, y + 3), (18, y + 4)], "A")             # the tassel
+    return _mirror(c) if fr["view"] == "back" else c
+
+
+def tricorn_hat_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    c.rect(8, y + 1, 15, y + 3, "K"); c.cells([(9, y + 1), (10, y + 2)], "L")
+    if view == "side":
+        c.rect(4, y + 3, 19, y + 4, "K"); c.cells([(4, y + 2), (19, y + 2)], "K"); c.rect(4, y + 4, 19, y + 4, "A")
+    else:
+        c.rect(4, y + 3, 19, y + 4, "K"); c.cells([(4, y + 2), (5, y + 2), (18, y + 2), (19, y + 2)], "K")
+        c.rect(4, y + 4, 19, y + 4, "A")
+        if view == "front":
+            c.cells([(11, y + 5), (12, y + 5)], "k"); c.cells([(10, y + 5), (13, y + 5)], "A")                    # the point at the front
+    return c
+
+
+def sun_bonnet_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    _cap(c, y, "W", "w", 6, 17, 1, 5)
+    c.rect(6, y + 3, 17, y + 3, "R")                                                                            # a ribbon round it
+    if view == "front":
+        c.rect(4, y + 5, 19, y + 6, "W"); c.rect(4, y + 6, 19, y + 6, "w")                                      # the brim round the face
+        c.cells([(6, y + 7), (6, y + 8), (17, y + 7), (17, y + 8)], "R")                                        # tied under the chin
+    elif view == "side":
+        c.rect(12, y + 5, 19, y + 6, "W"); c.put(19, y + 6, "w"); c.cells([(10, y + 7), (10, y + 8)], "R")
+    else:
+        c.rect(6, y + 6, 17, y + 7, "W"); c.cells([(11, y + 8), (12, y + 8), (11, y + 9)], "R")
+    c.cells([(8, y + 2), (9, y + 2)], "G")
+    return c
+
+
+def jeweled_tiara_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    if view == "side":
+        c.rect(7, y + 4, 16, y + 4, "A"); c.cells([(13, y + 3), (15, y + 2), (15, y + 3)], "A"); c.put(15, y + 3, "R")
+        return c
+    c.rect(6, y + 4, 17, y + 4, "A"); c.cells([(6, y + 4), (17, y + 4)], "a")
+    for x in (8, 15):
+        c.cells([(x, y + 3)], "A")
+    for x in (10, 13):
+        c.cells([(x, y + 3), (x, y + 2)], "A")
+    if view == "front":
+        c.rect(11, y + 1, 12, y + 3, "A"); c.cells([(11, y + 2), (12, y + 2)], "R"); c.cells([(8, y + 3), (15, y + 3)], "C")
+    return c
+
+
+def knight_helm_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    c.rect(8, y + 0, 15, y + 0, "M"); c.rect(6, y + 1, 17, y + 10, "M"); c.rect(16, y + 1, 17, y + 10, "m")      # a great helm, closed
+    c.cells([(8, y + 1), (7, y + 2), (7, y + 3)], "h")
+    c.rect(11, y - 3, 12, y - 1, "R"); c.rect(10, y - 4, 13, y - 4, "R")                                       # a red plume
+    if view == "front":
+        c.rect(7, y + 6, 16, y + 6, "K"); c.rect(11, y + 7, 12, y + 10, "m")                                    # the eye slit, the nose ridge
+        c.cells([(9, y + 8), (14, y + 8), (9, y + 9), (14, y + 9)], "K")
+    elif view == "side":
+        c.rect(12, y + 6, 17, y + 6, "K"); c.cells([(15, y + 8), (15, y + 9)], "K")
+    else:
+        c.rect(6, y + 9, 17, y + 10, "m")
+    return c
+
+
+def astral_crown_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    x0, x1 = (7, 16) if view == "side" else (6, 17)
+    c.rect(x0, y + 3, x1, y + 4, "M"); c.rect(x0, y + 4, x1, y + 4, "m")
+    for x in range(x0 + 1, x1, 3):                                                                              # star points
+        c.cells([(x, y + 2), (x, y + 1)], "M"); c.put(x, y + 0, "Y")
+    if view == "front":
+        c.rect(11, y - 1, 12, y + 3, "M"); c.cells([(11, y + 3), (12, y + 3)], "C"); c.cells([(10, y - 2), (13, y - 2), (11, y - 3), (12, y - 3)], "Y")
+    else:
+        c.cells([(x0 + 2, y + 3), (x1 - 2, y + 3)], "C")
+    return c
+
+
+def golden_crown_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    x0, x1 = (7, 16) if view == "side" else (6, 17)
+    c.rect(x0, y + 1, x1, y + 4, "A"); c.rect(x0, y + 4, x1, y + 4, "a"); c.rect(x1 - 1, y + 1, x1, y + 4, "a")
+    for x in range(x0, x1 + 1, 3):                                                                              # the points, with balls on them
+        c.cells([(x, y + 0), (x, y - 1)], "A"); c.put(x, y - 2, "h")
+    c.cells([(x0 + 1, y + 2), (x0 + 2, y + 2)], "h")
+    if view != "back":
+        c.rect(11, y + 2, 12, y + 3, "R"); c.cells([(x0 + 3, y + 3), (x1 - 3, y + 3)], "C")
+    return c
+
+
+def turban_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    for row, (x0, x1) in ((0, (8, 15)), (1, (6, 17)), (2, (5, 18)), (3, (5, 18)), (4, (5, 18)), (5, (6, 17))):
+        c.rect(x0, y + row, x1, y + row, "W"); c.put(x1, y + row, "w")
+    for x in range(6, 18, 3):                                                                                    # the wraps
+        c.cells([(x, y + 1), (x + 1, y + 2), (x + 2, y + 3)], "w")
+    c.rect(5, y + 5, 18, y + 5, "O")
+    if view == "front":
+        c.rect(11, y + 2, 12, y + 3, "R"); c.cells([(12, y - 1), (13, y - 2), (13, y - 3), (14, y - 4)], "F")    # a jewel and a plume
+    elif view == "side":
+        c.rect(15, y + 2, 16, y + 3, "R"); c.cells([(15, y - 1), (14, y - 2), (14, y - 3), (13, y - 4)], "F")
+    return c
+
+
+def dragon_horn_helm_layer(fr):
+    c = C()
+    _oy, _u, y = heads(fr)
+    view = fr["view"]
+    _cap(c, y, "G", "g", 6, 17, 1, 5)
+    c.rect(5, y + 5, 18, y + 5, "g"); c.cells([(8, y + 2), (9, y + 2)], "h")
+    for x in range(8, 16, 2):                                                                                    # scales
+        c.put(x, y + 4, "h")
+    horns = [((5, y + 2), (4, y + 1), (3, y + 0), (3, y - 1), (4, y - 2), (5, y - 3)), ((18, y + 2), (19, y + 1), (20, y + 0), (20, y - 1), (19, y - 2), (18, y - 3))]
+    if view == "side":
+        horns = [((7, y + 1), (6, y + 0), (5, y - 1), (5, y - 2), (6, y - 3), (7, y - 4))]
+    for horn in horns:
+        c.cells(list(horn), "H"); c.put(*horn[-1], "e")
+    return c
+
+
+HATS.update({"lion_dance_hat": lion_dance_hat_layer, "lantern_hat": lantern_hat_layer, "rice_dumpling_hat": rice_dumpling_hat_layer,
+             "rabbit_ear_hood": rabbit_ear_hood_layer, "flag_cap": flag_cap_layer, "party_hat": party_hat_layer, "santa_hat": santa_hat_layer,
+             "reading_cap": reading_cap_layer, "tricorn_hat": tricorn_hat_layer, "sun_bonnet": sun_bonnet_layer, "jeweled_tiara": jeweled_tiara_layer,
+             "knight_helm": knight_helm_layer, "astral_crown": astral_crown_layer, "golden_crown": golden_crown_layer, "turban": turban_layer,
+             "dragon_horn_helm": dragon_horn_helm_layer})
 
 
 # --- writing -------------------------------------------------------------------------------------------------------------------
@@ -2247,6 +2639,10 @@ def main():
     import subprocess
     subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "make_guild_tiles.py")], check=True)
 
+
+# the second batch of looks (2026-10-17): more hairstyles, eyes, brows, mouths, skins and face shapes
+import make_avatars_faces  # noqa: E402
+make_avatars_faces.register(globals())
 
 if __name__ == "__main__":
     main()

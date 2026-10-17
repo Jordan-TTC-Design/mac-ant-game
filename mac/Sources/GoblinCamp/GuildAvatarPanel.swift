@@ -2,13 +2,13 @@ import AppKit
 
 /// What an avatar may be put together from (shared/src/guild.ts: AVATAR_OPTIONS, avatarOptions, defaultAvatar, randomAvatar).
 enum AvatarKit {
-    static let faces = ["round", "pointed", "square"]
-    static let eyes = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide"]
-    static let brows = ["thin", "thick", "faint", "none"]
+    static let faces = ["round", "pointed", "square", "heart", "chubby"]
+    static let eyes = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide", "droopy", "cat_eye", "smiley", "big"]
+    static let brows = ["thin", "thick", "faint", "arched", "angry", "none"]
     static let hairColors = ["black", "darkbrown", "chestnut", "orange", "yellow", "blonde", "silver", "pink", "lavender", "mint", "navy", "forest"]
-    private static let mouths = ["line", "smile", "smirk", "open", "pout", "cat"]
-    private static let skullMouths = ["teeth", "grin", "gap", "jaw", "fang", "stitch"]
-    private static let spiritSkins = ["pale_blue", "ice", "pale_violet", "lavender"]
+    private static let mouths = ["line", "smile", "smirk", "open", "pout", "cat", "tongue", "toothy", "wavy"]
+    private static let skullMouths = ["teeth", "grin", "gap", "jaw", "fang", "stitch", "crooked", "buck", "toothless"]
+    private static let spiritSkins = ["pale_blue", "ice", "pale_violet", "lavender", "pale_green", "rose"]
 
     struct Options { let hair: [String]; let skin: [String]; let mouth: [String]; let flame: [String] }
 
@@ -16,24 +16,26 @@ enum AvatarKit {
         let m = sex == "m"
         switch race {
         case "elf":
-            return Options(hair: m ? ["neat", "long", "halfup", "ponytail", "side_braid", "waves", "messy", "braided_crown"]
-                                   : ["long_wreath", "braided_crown", "side_braid", "waves", "long", "ponytail", "halfup", "wreath_updo"],
-                           skin: ["fair", "warm", "tan", "bronze"], mouth: mouths, flame: [])
+            return Options(hair: m ? ["neat", "long", "halfup", "ponytail", "side_braid", "waves", "messy", "braided_crown", "short_crop", "low_tail", "circlet", "pixie", "twin_braids", "flower_bun"]
+                                   : ["long_wreath", "braided_crown", "side_braid", "waves", "long", "ponytail", "halfup", "wreath_updo", "hime", "flower_bun", "twin_braids", "circlet", "pixie", "low_tail"],
+                           skin: ["fair", "warm", "tan", "bronze", "rosy", "umber"], mouth: mouths, flame: [])
         case "undead":
-            return Options(hair: m ? ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle"]
-                                   : ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown"],
-                           skin: m ? ["bone", "ivory", "ash", "slate"] : spiritSkins, mouth: m ? skullMouths : mouths, flame: m ? ["cyan", "violet", "green", "orange"] : [])
+            return Options(hair: m ? ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle", "antlers", "unicorn_horn", "bone_ridge", "soul_flame", "iron_circlet", "mossy"]
+                                   : ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown", "veil", "short_wisp", "ponytail_wisp", "star_crown", "twin_buns", "hime"],
+                           skin: m ? ["bone", "ivory", "ash", "slate", "moss_bone", "dusk"] : spiritSkins, mouth: m ? skullMouths : mouths, flame: m ? ["cyan", "violet", "green", "orange"] : [])
         default:
-            return Options(hair: m ? ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes"]
-                                   : ["braids", "bun", "dreads", "wild", "tuft", "pigtails", "mohawk", "bob"],
-                           skin: ["light", "grass", "moss", "deep"], mouth: mouths, flame: [])
+            return Options(hair: m ? ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes", "afro", "side_shave", "warrior_tail", "bowl", "shaggy", "long_braid"]
+                                   : ["braids", "bun", "dreads", "wild", "tuft", "pigtails", "mohawk", "bob", "twin_buns", "long_braid", "afro", "shaggy", "bowl", "warrior_tail"],
+                           skin: ["light", "grass", "moss", "deep", "olive", "teal"], mouth: mouths, flame: [])
         }
     }
 
     static let labels: [String: String] = [
-        "round": "圓", "pointed": "尖", "square": "方",
+        "round": "圓", "pointed": "尖", "square": "方", "heart": "心形", "chubby": "肉肉",
         "narrow": "細長", "sparkle": "大閃", "dot": "豆豆", "sleepy": "睏睏", "sharp": "銳利", "lashes": "長睫毛", "wide": "圓睜",
-        "thin": "細眉", "thick": "粗眉", "faint": "淡眉", "none": "無眉",
+        "droopy": "垂眼", "cat_eye": "貓眼", "smiley": "瞇瞇笑眼", "big": "大眼睛",
+        "thin": "細眉", "thick": "粗眉", "faint": "淡眉", "none": "無眉", "arched": "彎眉", "angry": "劍眉",
+        "tongue": "吐舌", "toothy": "露齒笑", "wavy": "波浪嘴", "crooked": "歪牙", "buck": "暴牙", "toothless": "沒牙",
         "line": "一字", "smile": "微笑", "smirk": "歪嘴笑", "open": "張嘴", "pout": "嘟嘴", "cat": "貓嘴",
         "teeth": "一排牙", "grin": "咧嘴", "gap": "缺牙", "jaw": "下巴骨", "fang": "尖牙", "stitch": "縫線",
         "tuft": "亂翹一撮", "mohawk": "莫霍克", "topknot": "沖天辮", "bald_ring": "光頭加耳環", "dreads": "髒辮", "wild": "狂野亂髮", "bun": "頭頂小髻", "spikes": "刺刺頭",
@@ -42,6 +44,11 @@ enum AvatarKit {
         "long_wreath": "長直髮・花冠", "wreath_updo": "花環盤髮",
         "hood": "兜帽", "bare": "光頭骨", "crack": "頭骨裂痕", "horns": "小角", "long_horns": "長角", "ragged_hood": "破兜帽", "bone_crown": "骨冠", "candle": "頭頂蠟燭",
         "drift": "飄散的靈髮", "flame": "火焰髮", "mist": "霧狀長髮", "wisp_twins": "雙馬尾鬼火", "glass_short": "半透明短髮", "long_wave": "長波浪", "side_wisp": "側邊靈絲", "flame_crown": "火焰冠",
+        "afro": "爆炸頭", "side_shave": "側剃油頭", "warrior_tail": "戰士馬尾", "bowl": "西瓜皮", "shaggy": "蓬亂短髮", "long_braid": "單長辮", "twin_buns": "雙丸子頭",
+        "short_crop": "清爽短髮", "low_tail": "低馬尾", "circlet": "頭環長髮", "pixie": "精靈短髮", "twin_braids": "雙垂辮", "flower_bun": "花苞頭", "hime": "公主切",
+        "antlers": "鹿角", "unicorn_horn": "獨角", "bone_ridge": "骨刺", "soul_flame": "頭頂魂火", "iron_circlet": "鐵頭箍", "mossy": "長苔蘚",
+        "veil": "面紗", "short_wisp": "短靈髮", "ponytail_wisp": "靈絲馬尾", "star_crown": "星冠長髮",
+        "olive": "橄欖綠", "teal": "藍綠", "rosy": "粉嫩", "umber": "深褐", "moss_bone": "苔骨", "dusk": "夜骨", "pale_green": "淡綠", "rose": "淡粉",
         "light": "淺綠", "grass": "草綠", "moss": "苔綠", "deep": "深綠",
         "fair": "白皙", "warm": "暖膚", "tan": "小麥", "bronze": "古銅",
         "bone": "骨白", "ivory": "象牙", "ash": "灰骨", "slate": "石灰",
@@ -51,18 +58,95 @@ enum AvatarKit {
     ]
 
     /// The clothes (shared/src/guild-outfits.ts GUILD_OUTFITS): bought with one's own contribution, the free ones everyone has.
-    struct Outfit { let id: String; let slot: String; let name: String; let price: Int }
+    /// The limited ones only while a holiday is on, from a guild level on, or when the guild merchant brings them (what one has stays).
+    struct Outfit {
+        let id: String; let slot: String; let name: String; let price: Int
+        var season: String? = nil
+        var level: Int? = nil
+        var merchant = false
+    }
     static let outfits: [Outfit] = [
-        Outfit(id: "linen_shirt", slot: "top", name: "亞麻上衣", price: 0), Outfit(id: "leather_vest", slot: "top", name: "皮背心", price: 300),
-        Outfit(id: "knight_tabard", slot: "top", name: "騎士罩袍", price: 800), Outfit(id: "mage_robe", slot: "top", name: "法師長袍", price: 1200),
+        Outfit(id: "linen_shirt", slot: "top", name: "亞麻上衣", price: 0),
+        Outfit(id: "leather_vest", slot: "top", name: "皮背心", price: 300),
+        Outfit(id: "knight_tabard", slot: "top", name: "騎士罩袍", price: 800),
+        Outfit(id: "mage_robe", slot: "top", name: "法師長袍", price: 1200),
         Outfit(id: "noble_doublet", slot: "top", name: "貴族短上衣", price: 2000),
-        Outfit(id: "work_trousers", slot: "bottom", name: "工作褲", price: 0), Outfit(id: "leather_pants", slot: "bottom", name: "皮褲", price: 400),
-        Outfit(id: "plaid_kilt", slot: "bottom", name: "格子裙", price: 600), Outfit(id: "silk_skirt", slot: "bottom", name: "絲綢長裙", price: 1000),
-        Outfit(id: "sandals", slot: "shoes", name: "草鞋", price: 0), Outfit(id: "leather_boots", slot: "shoes", name: "皮靴", price: 300),
-        Outfit(id: "pointy_slippers", slot: "shoes", name: "尖頭軟鞋", price: 500), Outfit(id: "iron_greaves", slot: "shoes", name: "鐵護脛", price: 900),
-        Outfit(id: "straw_hat", slot: "hat", name: "草帽", price: 0), Outfit(id: "flower_crown", slot: "hat", name: "花冠", price: 400),
-        Outfit(id: "feather_cap", slot: "hat", name: "羽毛帽", price: 600), Outfit(id: "iron_helm", slot: "hat", name: "鐵頭盔", price: 1000),
+        Outfit(id: "work_trousers", slot: "bottom", name: "工作褲", price: 0),
+        Outfit(id: "leather_pants", slot: "bottom", name: "皮褲", price: 400),
+        Outfit(id: "plaid_kilt", slot: "bottom", name: "格子裙", price: 600),
+        Outfit(id: "silk_skirt", slot: "bottom", name: "絲綢長裙", price: 1000),
+        Outfit(id: "sandals", slot: "shoes", name: "草鞋", price: 0),
+        Outfit(id: "leather_boots", slot: "shoes", name: "皮靴", price: 300),
+        Outfit(id: "pointy_slippers", slot: "shoes", name: "尖頭軟鞋", price: 500),
+        Outfit(id: "iron_greaves", slot: "shoes", name: "鐵護脛", price: 900),
+        Outfit(id: "straw_hat", slot: "hat", name: "草帽", price: 0),
+        Outfit(id: "flower_crown", slot: "hat", name: "花冠", price: 400),
+        Outfit(id: "feather_cap", slot: "hat", name: "羽毛帽", price: 600),
+        Outfit(id: "iron_helm", slot: "hat", name: "鐵頭盔", price: 1000),
         Outfit(id: "wizard_hat", slot: "hat", name: "巫師帽", price: 1500),
+        Outfit(id: "red_festive_jacket", slot: "top", name: "紅繡花襖", price: 800, season: "spring_festival"),
+        Outfit(id: "lion_dance_hat", slot: "hat", name: "舞獅帽", price: 900, season: "spring_festival"),
+        Outfit(id: "embroidered_slippers", slot: "shoes", name: "繡花鞋", price: 400, season: "spring_festival"),
+        Outfit(id: "lantern_robe", slot: "top", name: "元宵燈籠袍", price: 700, season: "lantern"),
+        Outfit(id: "lantern_hat", slot: "hat", name: "燈籠帽", price: 600, season: "lantern"),
+        Outfit(id: "rower_vest", slot: "top", name: "龍舟隊背心", price: 500, season: "dragon_boat"),
+        Outfit(id: "rice_dumpling_hat", slot: "hat", name: "粽子帽", price: 600, season: "dragon_boat"),
+        Outfit(id: "rabbit_ear_hood", slot: "hat", name: "玉兔耳帽", price: 700, season: "mid_autumn"),
+        Outfit(id: "moon_gown", slot: "top", name: "月白長袍", price: 800, season: "mid_autumn"),
+        Outfit(id: "cloud_shoes", slot: "shoes", name: "雲紋鞋", price: 400, season: "mid_autumn"),
+        Outfit(id: "flag_cap", slot: "hat", name: "國慶小旗帽", price: 500, season: "national"),
+        Outfit(id: "parade_jacket", slot: "top", name: "閱兵禮服", price: 800, season: "national"),
+        Outfit(id: "party_hat", slot: "hat", name: "派對帽", price: 400, season: "new_year"),
+        Outfit(id: "sequin_jacket", slot: "top", name: "亮片外套", price: 800, season: "new_year"),
+        Outfit(id: "santa_hat", slot: "hat", name: "聖誕帽", price: 500, season: "christmas"),
+        Outfit(id: "santa_coat", slot: "top", name: "聖誕紅外套", price: 900, season: "christmas"),
+        Outfit(id: "jingle_boots", slot: "shoes", name: "鈴鐺靴", price: 500, season: "christmas"),
+        Outfit(id: "craftsman_apron", slot: "top", name: "工匠圍裙", price: 600, level: 2),
+        Outfit(id: "scholar_vest", slot: "top", name: "書生背心", price: 700, level: 2),
+        Outfit(id: "canvas_trousers", slot: "bottom", name: "帆布褲", price: 500, level: 2),
+        Outfit(id: "work_clogs", slot: "shoes", name: "木鞋", price: 500, level: 2),
+        Outfit(id: "study_slippers", slot: "shoes", name: "書房拖鞋", price: 500, level: 2),
+        Outfit(id: "reading_cap", slot: "hat", name: "書生帽", price: 800, level: 2),
+        Outfit(id: "council_coat", slot: "top", name: "議事長外套", price: 1000, level: 3),
+        Outfit(id: "clerk_shirt", slot: "top", name: "書記襯衫", price: 800, level: 3),
+        Outfit(id: "pleated_trousers", slot: "bottom", name: "摺線長褲", price: 700, level: 3),
+        Outfit(id: "dark_skirt", slot: "bottom", name: "深色長裙", price: 700, level: 3),
+        Outfit(id: "polished_shoes", slot: "shoes", name: "亮皮鞋", price: 650, level: 3),
+        Outfit(id: "tricorn_hat", slot: "hat", name: "三角帽", price: 1050, level: 3),
+        Outfit(id: "gardener_smock", slot: "top", name: "園丁罩衫", price: 900, level: 4),
+        Outfit(id: "hunter_jerkin", slot: "top", name: "獵人短衣", price: 1100, level: 4),
+        Outfit(id: "green_breeches", slot: "bottom", name: "綠色馬褲", price: 850, level: 4),
+        Outfit(id: "garden_boots", slot: "shoes", name: "雨靴", price: 800, level: 4),
+        Outfit(id: "hunter_boots", slot: "shoes", name: "獵人長靴", price: 950, level: 4),
+        Outfit(id: "sun_bonnet", slot: "hat", name: "遮陽帽", price: 1000, level: 4),
+        Outfit(id: "banquet_gown", slot: "top", name: "宴會禮服", price: 1500, level: 5),
+        Outfit(id: "velvet_doublet", slot: "top", name: "絲絨短上衣", price: 1400, level: 5),
+        Outfit(id: "satin_skirt", slot: "bottom", name: "緞面長裙", price: 1100, level: 5),
+        Outfit(id: "velvet_breeches", slot: "bottom", name: "絲絨馬褲", price: 1000, level: 5),
+        Outfit(id: "buckle_shoes", slot: "shoes", name: "金扣鞋", price: 950, level: 5),
+        Outfit(id: "jeweled_tiara", slot: "hat", name: "寶石頭冠", price: 1550, level: 5),
+        Outfit(id: "chainmail", slot: "top", name: "鎖子甲", price: 1600, level: 6),
+        Outfit(id: "padded_gambeson", slot: "top", name: "軟甲", price: 1200, level: 6),
+        Outfit(id: "armored_leggings", slot: "bottom", name: "鐵腿甲", price: 1400, level: 6),
+        Outfit(id: "war_kilt", slot: "bottom", name: "戰裙", price: 1100, level: 6),
+        Outfit(id: "sabatons", slot: "shoes", name: "鐵靴", price: 1300, level: 6),
+        Outfit(id: "knight_helm", slot: "hat", name: "騎士頭盔", price: 1800, level: 6),
+        Outfit(id: "archmage_robe", slot: "top", name: "大法師長袍", price: 2050, level: 7),
+        Outfit(id: "star_mantle", slot: "top", name: "星辰披風", price: 1900, level: 7),
+        Outfit(id: "runed_skirt", slot: "bottom", name: "符文長裙", price: 1500, level: 7),
+        Outfit(id: "starlit_slippers", slot: "shoes", name: "星光軟鞋", price: 1250, level: 7),
+        Outfit(id: "silver_greaves", slot: "shoes", name: "銀護脛", price: 1400, level: 7),
+        Outfit(id: "astral_crown", slot: "hat", name: "星辰冠", price: 2050, level: 7),
+        Outfit(id: "silk_kimono", slot: "top", name: "絲綢和服", price: 2500, merchant: true),
+        Outfit(id: "desert_robe", slot: "top", name: "沙漠長袍", price: 1800, merchant: true),
+        Outfit(id: "dragon_scale_armor", slot: "top", name: "龍鱗甲", price: 3000, merchant: true),
+        Outfit(id: "phoenix_coat", slot: "top", name: "鳳凰羽衣", price: 2800, merchant: true),
+        Outfit(id: "harem_pants", slot: "bottom", name: "燈籠褲", price: 1500, merchant: true),
+        Outfit(id: "golden_sandals", slot: "shoes", name: "金涼鞋", price: 1600, merchant: true),
+        Outfit(id: "dragon_boots", slot: "shoes", name: "龍皮靴", price: 2200, merchant: true),
+        Outfit(id: "golden_crown", slot: "hat", name: "黃金王冠", price: 3000, merchant: true),
+        Outfit(id: "turban", slot: "hat", name: "纏頭巾", price: 1600, merchant: true),
+        Outfit(id: "dragon_horn_helm", slot: "hat", name: "龍角盔", price: 2600, merchant: true),
     ]
     static let slots = [("top", "上衣"), ("bottom", "下身"), ("shoes", "鞋子"), ("hat", "帽子")]
 
@@ -368,12 +452,23 @@ final class GuildAvatarPanel: GuildPanelController, GuildPanelInit {
                 self.look = AvatarKit.wearing(self.look, slot, nil)
                 self.changed()
             })
-            for o in AvatarKit.outfits where o.slot == slot {
+            // (基本, then 節日限定, 公會等級, 商人, each under its name; one not had that can't be had now says when it can: shared outfitClosed)
+            let group = { (o: AvatarKit.Outfit) in o.season != nil ? 1 : o.level != nil ? 2 : o.merchant ? 3 : 0 }
+            let groups = ["基本", "節日限定", "公會等級", "公會商人"]
+            var shown = 0
+            for o in AvatarKit.outfits.filter({ $0.slot == slot }).sorted(by: { group($0) != group($1) ? group($0) < group($1) : ($0.level ?? 0, $0.price) < ($1.level ?? 0, $1.price) }) {
+                if group(o) != shown {
+                    out.append(GuildAvatarPanel.grid(cells, width: inner))
+                    out.append(GuildUI.note("\(title)・\(groups[group(o)])"))
+                    cells = []
+                    shown = group(o)
+                }
                 let fits = art.canWear(slot, o.id, race: look.race, sex: look.sex)
                 let owned = w.owned.contains(o.id)
-                let sub = !fits ? "這個身形穿不了" : owned ? (worn == o.id ? "穿著" : "") : "用 \(o.price) 貢獻換"
+                let closed = owned ? nil : closedNow(o)
+                let sub = !fits ? "這個身形穿不了" : owned ? (worn == o.id ? "穿著" : "") : closed ?? "用 \(o.price) 貢獻換"
                 cells.append(CatalogCell(image: art.avatarFrame(AvatarKit.wearing(look, slot, o.id), idle), pixels: NSSize(width: art.frameW, height: art.frameH), fit: 56, maxScale: 2,
-                                         name: o.name, sub: sub, on: worn == o.id, shut: !fits || busy) { [weak self] in
+                                         name: o.name, sub: sub, on: worn == o.id, shut: !fits || closed != nil || busy) { [weak self] in
                     guard let self else { return }
                     if owned {
                         self.look = AvatarKit.wearing(self.look, slot, o.id)
@@ -386,6 +481,18 @@ final class GuildAvatarPanel: GuildPanelController, GuildPanelInit {
             out.append(GuildAvatarPanel.grid(cells, width: inner))
         }
         return out
+    }
+
+    /// When a limited piece not had can be had, if not now (shared/src/guild-outfits.ts outfitClosed; the days are the server's).
+    private func closedNow(_ o: AvatarKit.Outfit) -> String? {
+        let g = ctx.info()?.guild
+        if let id = o.season {
+            let s = g?.seasons.first { $0.id == id }
+            return s?.on == true ? nil : s.map { "\($0.name) \($0.range)" } ?? "節日限定"
+        }
+        if let level = o.level, (g?.level ?? 0) < level { return "公會 \(level) 級" }
+        if o.merchant, g?.merchant?.here != true || g?.merchant?.outfits.contains(o.id) != true { return "公會商人帶來時" }
+        return nil
     }
 
     /// Cards in rows as wide as the panel.

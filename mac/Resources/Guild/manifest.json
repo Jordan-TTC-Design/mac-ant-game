@@ -374,5 +374,14 @@
   "goblin_hide": "goblin",
   "elf_vines": "elf",
   "undead_gothic": "undead"
+ },
+ "merchant": {
+  "file": "merchant.png",
+  "w": 44,
+  "h": 42,
+  "frames": 4,
+  "fps": 3,
+  "anchorX": 22,
+  "anchorY": 41
  }
 }

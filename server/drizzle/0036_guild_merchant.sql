@@ -1,0 +1,1 @@
+ALTER TABLE "guilds" ADD COLUMN "unlocked" jsonb DEFAULT '[]'::jsonb NOT NULL;

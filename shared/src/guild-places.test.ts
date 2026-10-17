@@ -67,6 +67,17 @@ describe("clothes", () => {
     expect(FREE_OUTFITS).toEqual(["linen_shirt", "work_trousers", "sandals", "straw_hat"]);
   });
 
+  it("the limited ones: two or three a holiday, six a guild level from 2 to 7, ten from the merchant, each one kind only", () => {
+    const limited = GUILD_OUTFITS.filter((o) => o.season || o.level || o.merchant);
+    for (const o of limited) expect([o.season, o.level, o.merchant].filter(Boolean), o.id).toHaveLength(1);
+    for (const season of ["spring_festival", "lantern", "dragon_boat", "mid_autumn", "national", "new_year", "christmas"]) {
+      expect(GUILD_OUTFITS.filter((o) => o.season === season).length, season).toBeGreaterThanOrEqual(2);
+      expect(GUILD_OUTFITS.filter((o) => o.season === season).length, season).toBeLessThanOrEqual(3);
+    }
+    for (let level = 2; level <= 7; level++) expect(GUILD_OUTFITS.filter((o) => o.level === level), `level ${level}`).toHaveLength(6);
+    expect(GUILD_OUTFITS.filter((o) => o.merchant)).toHaveLength(10);
+  });
+
   it("are worn in their slot and only when owned", () => {
     const a = defaultAvatar("goblin", "m");
     expect(avatarProblem({ ...a, top: "leather_vest", hat: "wizard_hat" })).toBeNull();

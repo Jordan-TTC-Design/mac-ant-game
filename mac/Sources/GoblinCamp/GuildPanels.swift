@@ -566,3 +566,138 @@ final class GuildFoundPanel: GuildPanelController, GuildPanelInit {
         ctx.run({ try await self.ctx.api.raw("DELETE", "guild/join/\(id)") }, then: ctx.reload)
     }
 }
+
+// MARK: 公會商人
+
+/// 公會商人 (GUILD.md §5.3, shared/src/guild-merchant.ts): once a week he visits the hall for two days. His pieces are bought
+/// with one's own contribution and are then the whole guild's to put down; his clothes are the buyer's own.
+final class GuildMerchantPanel: GuildPanelController, GuildPanelInit {
+    let view: GuildPanel
+    private let ctx: GuildContext
+    private var busy = false
+
+    init(_ ctx: GuildContext) {
+        self.ctx = ctx
+        view = GuildPanel(title: "🛒 公會商人", sub: "每週來據點兩天，帶來別處買不到的東西", close: ctx.close)
+        render()
+    }
+
+    func guildChanged() { render() }
+
+    /// "10/21 星期三 00:00" (Taiwan time, as his days are).
+    private static func when(_ iso: String) -> String {
+        guard let d = ISO8601DateFormatter.guild.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return iso }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_TW")
+        f.timeZone = TimeZone(identifier: "Asia/Taipei")
+        f.dateFormat = "M/d EEEE HH:mm"
+        return f.string(from: d)
+    }
+
+    private func render() {
+        let inner = view.inner
+        guard let info = ctx.info(), let g = info.guild else { return }
+        var out: [NSView] = []
+        guard let m = g.merchant else {
+            out.append(GuildUI.note("伺服器還不認識公會商人，更新之後再來看看。", width: inner))
+            view.show(out)
+            return
+        }
+        let points = info.wardrobe?.points ?? 0
+        out.append(GuildUI.row([GuildUI.heading(m.here ? "商人在據點裡" : "商人不在"), NSView(), GuildUI.heading("貢獻 \(points)")]))
+        guard m.here else {
+            out.append(GuildUI.note("下次來：\(Self.when(m.from))\n待到 \(Self.when(m.until))。他每次帶的東西都不一樣。", width: inner))
+            view.show(out)
+            return
+        }
+        out.append(GuildUI.note("待到 \(Self.when(m.until))。裝飾換了之後整個公會都能擺；衣服是你自己的。貢獻是你捐給公會累積的。", width: inner))
+
+        let art = GuildArt.shared
+        out.append(GuildUI.separator())
+        out.append(GuildUI.heading("裝飾"))
+        var cells: [CatalogCell] = []
+        for item in m.decor {
+            let kind = art.kinds.first { $0.id == item.kind }
+            let piece = art.decorPiece(item.kind)
+            let had = g.unlocked.contains(item.kind)
+            let sub = had ? "公會已經有了" : "\(kind?.size ?? 1) 點・用 \(item.price) 貢獻換"
+            cells.append(CatalogCell(image: piece.flatMap { art.frame(of: $0, at: 0) }, pixels: NSSize(width: piece?.w ?? 16, height: piece?.h ?? 16),
+                                     name: kind?.name ?? item.kind, sub: sub, on: had, shut: had || busy) { [weak self] in
+                self?.buyDecor(item.kind, name: kind?.name ?? item.kind, price: item.price, points: points)
+            })
+        }
+        out.append(Self.grid(cells, width: inner))
+
+        if !m.outfits.isEmpty {
+            out.append(GuildUI.heading("衣服"))
+            let idle = art.frameIndex(anim: "idle", dir: "front", t: 0)
+            let look = info.avatar
+            var clothes: [CatalogCell] = []
+            for id in m.outfits {
+                guard let o = AvatarKit.outfits.first(where: { $0.id == id }) else { continue }
+                let fits = art.canWear(o.slot, o.id, race: look.race, sex: look.sex)
+                let owned = info.wardrobe?.owned.contains(o.id) == true
+                let sub = !fits ? "這個身形穿不了" : owned ? "已經有了" : "用 \(o.price) 貢獻換"
+                clothes.append(CatalogCell(image: art.avatarFrame(AvatarKit.wearing(look, o.slot, o.id), idle), pixels: NSSize(width: art.frameW, height: art.frameH), fit: 56, maxScale: 2,
+                                           name: o.name, sub: sub, on: owned, shut: !fits || owned || busy) { [weak self] in
+                    self?.buyOutfit(o, points: points)
+                })
+            }
+            out.append(Self.grid(clothes, width: inner))
+        }
+        view.show(out)
+    }
+
+    /// Cards in rows as wide as the panel.
+    private static func grid(_ cells: [CatalogCell], width: CGFloat) -> NSView {
+        let box = TopDownView()
+        let size = CatalogCell.size, gap: CGFloat = 4
+        let cols = max(1, Int((width + gap) / (size.width + gap)))
+        for (i, c) in cells.enumerated() {
+            c.frame.origin = NSPoint(x: CGFloat(i % cols) * (size.width + gap), y: CGFloat(i / cols) * (size.height + gap))
+            box.addSubview(c)
+        }
+        let rows = (cells.count + cols - 1) / cols
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.widthAnchor.constraint(equalToConstant: width).isActive = true
+        box.heightAnchor.constraint(equalToConstant: max(1, CGFloat(rows) * (size.height + gap) - gap)).isActive = true
+        return box
+    }
+
+    private func ask(_ title: String, _ text: String) -> Bool {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = text
+        a.addButton(withTitle: "換")
+        a.addButton(withTitle: "取消")
+        return a.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Buys a piece for the guild (asked first); the server says why not (he left, too little, the guild has it).
+    private func buyDecor(_ kind: String, name: String, price: Int, points: Int) {
+        guard !busy, ask("用 \(price) 貢獻換「\(name)」？", "你現在有 \(points) 貢獻。換了之後，整個公會都可以在「🪑 擺裝飾」裡擺它。") else { return }
+        struct Body: Encodable { let kind: String }
+        busy = true
+        render()
+        ctx.run({
+            defer { self.busy = false; self.render() }
+            let got = try await self.ctx.api.request("POST", "guild/merchant/buy", body: Body(kind: kind), as: GuildInfo.self)
+            self.ctx.apply(got)
+        }, done: "換到「\(name)」了，整個公會都能擺了。")
+    }
+
+    /// Buys clothes (asked first) and puts them on right away.
+    private func buyOutfit(_ o: AvatarKit.Outfit, points: Int) {
+        guard !busy, let look = ctx.info()?.avatar, ask("用 \(o.price) 貢獻換「\(o.name)」？", "你現在有 \(points) 貢獻。換了就是你的，馬上幫你穿上。") else { return }
+        struct Body: Encodable { let id: String }
+        struct Got: Decodable { let wardrobe: GuildInfo.Wardrobe }
+        busy = true
+        render()
+        ctx.run({
+            defer { self.busy = false; self.render() }
+            _ = try await self.ctx.api.request("POST", "guild/outfits/buy", body: Body(id: o.id), as: Got.self)
+            let got = try await self.ctx.api.request("PUT", "guild/avatar", body: AvatarKit.wearing(look, o.slot, o.id), as: GuildInfo.self)
+            self.ctx.apply(got)
+        }, done: "換到「\(o.name)」，已經穿上了。")
+    }
+}
