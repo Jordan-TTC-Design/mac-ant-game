@@ -71,4 +71,6 @@ function add() {
   position: fixed; right: 20px; bottom: calc(env(safe-area-inset-bottom) + 84px); z-index: 30; width: 60px; height: 60px; border-radius: 16px;
   background: var(--paper-yellow); border: 3px solid #1f1f1f; font-size: 32px; font-weight: 900; box-shadow: 4px 4px 0 #1f1f1f; cursor: pointer;
 }
+/* (above the pomodoro strip when it shows: TabBar.vue) */
+:global(.focus-strip-on) .fab { bottom: calc(env(safe-area-inset-bottom) + 140px); }
 </style>

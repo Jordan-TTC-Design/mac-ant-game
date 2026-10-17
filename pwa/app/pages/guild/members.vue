@@ -43,13 +43,7 @@ async function leave() {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/guild" class="back">‹</NuxtLink>
-      <div style="flex: 1">
-        <h1>公會成員</h1>
-        <div v-if="guild" class="sub">{{ guild.name }}・{{ guild.members.length }}／{{ guild.rules.members }} 人</div>
-      </div>
-    </header>
+    <AppHeader title="公會成員" :sub="guild ? `${guild.name}・${guild.members.length}／${guild.rules.members} 人` : undefined" back="/guild" back-label="公會" />
     <p v-if="message" class="note">{{ message }}</p>
 
     <template v-if="guild">

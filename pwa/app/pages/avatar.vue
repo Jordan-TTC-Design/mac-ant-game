@@ -201,13 +201,7 @@ const sexNames = computed(() => (look.value?.race === "undead" ? { m: "骨系", 
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/guild" class="back">‹</NuxtLink>
-      <div style="flex: 1">
-        <h1>我的角色</h1>
-        <div class="sub">在公會據點裡代表你</div>
-      </div>
-    </header>
+    <AppHeader title="我的角色" sub="在公會據點裡代表你" back="/guild" back-label="公會" />
 
     <template v-if="look">
       <section class="panel stage">

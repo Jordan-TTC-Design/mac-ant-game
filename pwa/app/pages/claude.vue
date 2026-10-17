@@ -44,13 +44,7 @@ const answerText = (q: ClaudeAsk) => {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
-      <div style="flex: 1">
-        <h1>Claude</h1>
-        <div class="sub">離開電腦時，Claude 的問題會送到這裡</div>
-      </div>
-    </header>
+    <AppHeader title="Claude" sub="離開電腦時，Claude 的問題會送到這裡" back="/" back-label="今天" />
 
     <p v-if="problem" class="problem">{{ problem }}</p>
     <section v-for="q in c?.waiting ?? []" :key="q.id" class="panel ask">

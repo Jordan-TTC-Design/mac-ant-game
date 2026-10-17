@@ -40,10 +40,7 @@ async function addFriend(r: RankedEntry) {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/world" class="icon-btn">← 大世界</NuxtLink>
-      <h1>排行榜</h1>
-    </header>
+    <PalsHead sub="排行榜：人口、戰力、種族等級" />
     <div class="tabs">
       <button :class="{ on: tab === 'all' }" @click="tab = 'all'">全部</button>
       <button v-for="(name, id) in RACES" :key="id" :class="{ on: tab === id }" @click="tab = String(id)">{{ name }}</button>

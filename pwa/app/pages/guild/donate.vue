@@ -65,13 +65,7 @@ const list = (m: Record<string, number>) => Object.entries(m).map(([id, n]) => `
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/guild" class="back">‹</NuxtLink>
-      <div style="flex: 1">
-        <h1>捐獻</h1>
-        <div class="sub">營地的材料捐給公會，累積貢獻讓公會升級</div>
-      </div>
-    </header>
+    <AppHeader title="捐獻" sub="營地的材料捐給公會，累積貢獻讓公會升級" back="/guild" back-label="公會" />
     <p v-if="message" class="note">{{ message }}</p>
 
     <template v-if="guild">

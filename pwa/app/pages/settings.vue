@@ -101,10 +101,7 @@ async function signOut() {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
-      <h1>設定</h1>
-    </header>
+    <AppHeader title="設定" back="/" back-label="今天" />
 
     <section class="panel">
       <h2>帳號</h2>
@@ -112,6 +109,8 @@ async function signOut() {
       <p>好友代碼：<code>{{ user?.friendCode }}</code> <button class="btn small" @click="copyCode">{{ copied ? "複製了" : "複製" }}</button></p>
       <p v-if="admin"><NuxtLink to="/admin" class="btn">後台（帳號、公告、伺服器狀態）</NuxtLink></p>
     </section>
+
+    <NuxtLink to="/feedback" class="panel link-row">📣 回報問題・建議 <span>›</span></NuxtLink>
 
     <section class="panel">
       <h2>提醒通知</h2>
@@ -156,6 +155,8 @@ async function signOut() {
 </template>
 
 <style scoped>
+.link-row { display: flex; justify-content: space-between; align-items: center; color: var(--ink); text-decoration: none; font-weight: 700; padding: 16px 20px; }
+.link-row span { color: #999; }
 .panel { margin-bottom: 14px; }
 h2 { font-size: 15px; margin: 0 0 8px; }
 .muted { color: var(--muted); }

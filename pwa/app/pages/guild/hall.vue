@@ -1,0 +1,587 @@
+<script setup lang="ts">
+import {
+  merchantVisit,
+  GUILD_BUBBLE_MS,
+  GUILD_MOVE_STALE_MS,
+  GUILD_SAY_MAX,
+  DEFAULT_HALL_AREA,
+  guildDecorFits,
+  guildDecorKind,
+  guildFurnishing,
+  HALL_AREA_MAX_HEIGHT,
+  HALL_AREA_MAX_WIDTH,
+  hallAreaHas,
+  hallAreaPaint,
+  hallAreaProblem,
+  hallAreaSize,
+  hallAreaTiles,
+  hallFreeSpot,
+  hallLayout,
+  keepInside,
+  shiftHall,
+  guildDecorTile,
+  hallWallAt,
+  keepTileKeys,
+  shiftTileKeys,
+  hallPose,
+  newDecorUid,
+  snapDecor,
+  WALL_ROWS,
+  type GuildMove,
+  type GuildDecorPlaced,
+  type HallArea,
+  type HallFloor,
+  type GuildResponse,
+  type GuildRole,
+} from "@goblincamp/shared";
+import { noteTime } from "~/utils/time";
+
+// (the guild merchant comes and goes on his own time: worked out here each minute, not only when the guild was last fetched)
+const minute = ref(Date.now());
+const minuteTimer = setInterval(() => (minute.value = Date.now()), 60_000);
+onBeforeUnmount(() => clearInterval(minuteTimer));
+import { ApiError, api } from "~/utils/api";
+
+// 公會大廳 (GUILD.md): everyone in it, walking one's own avatar, talking, decorating. Founding a guild and saying yes to an
+// invitation are on /guild (pwa/UI.md §4.4), as is the way into everything else; without a guild this goes back there.
+const ok = await useSignedIn();
+const { user, live, g, guild, role, busy, message, online, inHall, act } = useGuild();
+watchEffect(() => {
+  if (g.value && !g.value.guild) void navigateTo("/guild", { replace: true });
+});
+
+// decorating: a copy of the list is changed here and saved in one go (GUILD.md §4.2)
+const editing = ref(false);
+const draft = ref<GuildDecorPlaced[]>([]);
+const draftVersion = ref(0);
+const selected = ref<string | null>(null);
+const mode = ref<"decor" | "floor" | "wall" | "area" | "plot">("decor");
+const brush = ref("oak");
+const draftFloor = ref<HallFloor>({ base: "oak", tiles: {} });
+// the hall's shape (the leader and officers, GUILD.md §4.1): drawn tile by tile, saved with the rest
+const draftArea = ref<HallArea>(DEFAULT_HALL_AREA);
+const shapeBrush = ref<"add" | "erase">("add");
+// the wall brushed a segment at a time, and the members' own places (the leader and officers; GUILD.md §4, §4.3)
+const draftWalls = ref<Record<string, string>>({});
+const wallBrush = ref("stone");
+const draftPlots = ref<Record<string, string>>({});
+/** Whose place the 位置 brush gives (null: rubs places out). */
+const plotBrush = ref<string | null>(null);
+const plotNames = computed(() => Object.fromEntries((guild.value?.members ?? []).map((m) => [m.id, m.name])));
+const hallView = ref<{ nudge: (dx: number, dy: number) => void }>();
+const shownDecor = computed(() => (editing.value ? draft.value : (guild.value?.decor ?? [])));
+const shownFloor = computed(() => (editing.value ? draftFloor.value : (guild.value?.floor ?? { base: "oak", tiles: {} })));
+const shownArea = computed(() => (editing.value ? draftArea.value : (guild.value?.area ?? DEFAULT_HALL_AREA)));
+const shownWalls = computed(() => (editing.value ? draftWalls.value : (guild.value?.walls ?? {})));
+const draftTiles = computed(() => hallAreaTiles(draftArea.value));
+const shapeProblem = computed(() => (editing.value && guild.value ? hallAreaProblem(draftArea.value, guild.value.level) : null));
+function startDecor() {
+  draft.value = structuredClone(toRaw(guild.value?.decor ?? []));
+  draftFloor.value = structuredClone(toRaw(guild.value?.floor ?? { base: "oak", tiles: {} }));
+  draftArea.value = [...(guild.value?.area ?? DEFAULT_HALL_AREA)];
+  draftWalls.value = { ...(guild.value?.walls ?? {}) };
+  draftPlots.value = { ...(guild.value?.plots ?? {}) };
+  wallBrush.value = guild.value?.wall ?? "stone";
+  plotBrush.value = guild.value?.members.find((m) => m.role === "member")?.id ?? guild.value?.members[0]?.id ?? null;
+  mode.value = "decor";
+  draftVersion.value = guild.value?.decorVersion ?? 0;
+  selected.value = null;
+  editing.value = true;
+  message.value = "";
+}
+/** Where a piece dragged to (x, y) goes, on the art's pixels: there if it fits (on the floor, or on a wall); null: it does not. */
+function place(kind: string, x: number, y: number) {
+  const k = guildDecorKind(kind)!;
+  const at = { x: snapDecor(x), y: snapDecor(y) };
+  return guildDecorFits(draftArea.value, k, at.x, at.y) ? at : null;
+}
+/**
+ * Why this member may not touch a piece standing at (x, y) (null: they may): it is in someone else's place (as saved: that is
+ * what the server goes by). The leader and officers may touch any.
+ */
+function theirPlace(d: Pick<GuildDecorPlaced, "kind" | "x" | "y">): string | null {
+  if (role.value !== "member" || !guild.value || !user.value) return null;
+  const who = (guild.value.plots ?? {})[guildDecorTile(guild.value.area, d)];
+  return who && who !== user.value.id && plotNames.value[who] ? `這裡是${plotNames.value[who]}的位置，只有他自己和會長、幹部能動。` : null;
+}
+function addDecor(kind: string) {
+  if (phone.value) sheetOpen.value = false;
+  const k = guildDecorKind(kind)!;
+  // (the middle of the hall if it fits there, else the first floor tile, or wall over a top edge, where it does)
+  const { width } = hallAreaSize(draftArea.value);
+  const tries = [{ x: width / 2, y: k.wall ? WALL_ROWS : WALL_ROWS + 3 }];
+  for (const t of hallLayout(draftArea.value).floorTiles) tries.push(k.wall ? { x: t.x + 0.5, y: t.y } : { x: t.x + 0.5, y: t.y + 1 });
+  const at = tries.map((p) => place(kind, p.x, p.y)).find((p) => p && !theirPlace({ kind, ...p }));
+  if (!at) {
+    message.value = `據點裡沒有放得下${k.name}的地方。`;
+    return;
+  }
+  const d: GuildDecorPlaced = { uid: newDecorUid(), kind, ...at };
+  draft.value.push(d);
+  selected.value = d.uid;
+}
+function moveDecor(uid: string, x: number, y: number) {
+  const d = draft.value.find((p) => p.uid === uid);
+  if (!d || (d.locked && role.value === "member")) return;
+  const why = theirPlace(guild.value?.decor.find((p) => p.uid === uid) ?? d);
+  if (why) {
+    message.value = why;
+    return;
+  }
+  // (dragged off the floor, or into someone else's place: it stays where it last fitted, and says why for the latter)
+  const at = place(d.kind, x, y);
+  if (!at) return;
+  const there = theirPlace({ kind: d.kind, ...at });
+  if (there) message.value = there;
+  else Object.assign(d, at);
+}
+/** Draws one tile of the hall's shape on, or rubs it out; everything moves with it when it grows up or to the left. */
+function paintShape(x: number, y: number) {
+  const on = shapeBrush.value === "add";
+  if (hallAreaHas(draftArea.value, x, y) === on) return;
+  if (on && draftTiles.value >= guild.value!.rules.tiles) {
+    message.value = `地板最多 ${guild.value!.rules.tiles} 格，先擦掉別的地方，或等公會升級。`;
+    return;
+  }
+  const next = hallAreaPaint(draftArea.value, x, y, on);
+  if (!next) return;
+  const size = hallAreaSize(next.area);
+  if (size.width > HALL_AREA_MAX_WIDTH || size.height > HALL_AREA_MAX_HEIGHT) {
+    message.value = `據點最寬 ${HALL_AREA_MAX_WIDTH} 格、最高 ${HALL_AREA_MAX_HEIGHT - WALL_ROWS} 格。`;
+    return;
+  }
+  const moved = shiftHall(draft.value, draftFloor.value, next.dx, next.dy);
+  const kept = keepInside(next.area, moved.decor, moved.floor);
+  if (kept.dropped) {
+    message.value = "這格上面有裝飾，先把它移開才能擦掉。";
+    return;
+  }
+  message.value = "";
+  draftArea.value = next.area;
+  draft.value = kept.decor;
+  draftFloor.value = kept.floor;
+  draftWalls.value = keepTileKeys(shiftTileKeys(draftWalls.value, next.dx, next.dy), (x, y) => hallWallAt(next.area, x, y));
+  draftPlots.value = keepTileKeys(shiftTileKeys(draftPlots.value, next.dx, next.dy), (x, y) => hallAreaHas(next.area, x, y));
+  if (next.dx || next.dy) hallView.value?.nudge(next.dx, next.dy);
+}
+/** Brushes one column of wall (the base style needs no segment of its own). */
+function paintWall(x: number, y: number) {
+  const key = `${x},${y}`;
+  if (wallBrush.value === guild.value?.wall) delete draftWalls.value[key];
+  else draftWalls.value[key] = wallBrush.value;
+}
+/** Gives one floor tile to the 位置 brush's member, or takes it back. */
+function paintPlot(x: number, y: number) {
+  const key = `${x},${y}`;
+  if (plotBrush.value) draftPlots.value[key] = plotBrush.value;
+  else delete draftPlots.value[key];
+}
+const paint = (x: number, y: number) =>
+  ({ area: paintShape, wall: paintWall, plot: paintPlot, floor: paintTile, decor: paintTile })[mode.value](x, y);
+/** The piece picked, if this member may touch it (else says why). */
+function touchable() {
+  const d = draft.value.find((p) => p.uid === selected.value);
+  const why = d && theirPlace(guild.value?.decor.find((p) => p.uid === d.uid) ?? d);
+  if (why) message.value = why;
+  return why ? undefined : d;
+}
+function flipDecor() {
+  const d = touchable();
+  if (d) d.flip = !d.flip;
+}
+function removeDecor() {
+  if (!touchable()) return;
+  draft.value = draft.value.filter((p) => p.uid !== selected.value);
+  selected.value = null;
+}
+function lockDecor() {
+  const d = draft.value.find((p) => p.uid === selected.value);
+  if (d) d.locked = !d.locked;
+}
+/** Lays the brush's floor on one tile (the base style needs no tile of its own). */
+function paintTile(x: number, y: number) {
+  const key = `${x},${y}`;
+  const tiles = draftFloor.value.tiles;
+  if (brush.value === draftFloor.value.base) delete tiles[key];
+  else tiles[key] = brush.value;
+}
+function fillFloor() {
+  draftFloor.value = { base: brush.value, tiles: {} };
+}
+const setWall = (id: string) => act(async () => (live.state.guild = await api<GuildResponse>("PUT", "guild/wall", { wall: id })), "牆壁換好了。");
+const saveDecor = () =>
+  act(async () => {
+    try {
+      const area = JSON.stringify(draftArea.value) === JSON.stringify(guild.value?.area) ? undefined : draftArea.value;
+      const boss = role.value !== "member";
+      live.state.guild = await api<GuildResponse>("PUT", "guild/decor", {
+        version: draftVersion.value,
+        items: draft.value,
+        floor: draftFloor.value,
+        area,
+        // (the walls and places: the leader's and officers' to change; sent by them, kept as they are otherwise)
+        ...(boss ? { walls: draftWalls.value, plots: draftPlots.value } : {}),
+      });
+      editing.value = false;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) editing.value = false; // (someone else saved: start again from theirs)
+      throw e;
+    }
+  }, "裝飾存好了。");
+// walking one's own avatar and talking (GUILD.md §3.1)
+const layout = computed(() => (guild.value ? hallLayout(guild.value.area, guildFurnishing(guild.value.decor)) : null));
+const control = useHallControl(layout, () => {
+  // (where this one's avatar is wandering right now, so taking it over does not make it jump)
+  const L = layout.value;
+  if (!L || !guild.value || !user.value) return null;
+  const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
+  const mine = order.find((m) => m.id === user.value!.id);
+  const present = order.filter((m) => m.presence !== "offline");
+  const at = mine && hallPose(L, mine, present, Date.now());
+  return at ? { x: at.x, y: at.y } : hallFreeSpot(L, user.value.id, "start");
+});
+const tick = ref(Date.now());
+let ticker: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  ticker = setInterval(() => (tick.value = Date.now()), 1000);
+  void live.loadGuildChat();
+});
+onUnmounted(() => clearInterval(ticker));
+/** The ways the camera's wanderer walks (kept while the hall stays the same). */
+let followWays = new Map<string, import("@goblincamp/shared").Point[]>();
+watch(layout, () => (followWays = new Map()));
+/** Where the camera keeps to: this one's avatar, walked by hand or wandering. */
+const follow = computed(() => {
+  if (control.pose.value) return { x: control.pose.value.x, y: control.pose.value.y };
+  void tick.value; // (wandering: looked at again every second; the camera eases in between)
+  const L = layout.value;
+  if (!L || !user.value) return null;
+  const order = [...inHall.value].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt)).map((m, seat) => ({ id: m.id, presence: m.presence, seat }));
+  const mine = order.find((m) => m.id === user.value!.id);
+  const at = mine && hallPose(L, mine, order.filter((m) => m.presence !== "offline"), Date.now(), followWays);
+  return at ? { x: at.x, y: at.y } : null;
+});
+const hand = computed(() => {
+  const out: Record<string, GuildMove & { since?: number }> = {};
+  for (const [id, mv] of Object.entries(live.state.guildMoves)) if (tick.value - mv.heard < GUILD_MOVE_STALE_MS) out[id] = { ...mv, since: mv.heard };
+  if (control.pose.value && user.value) out[user.value.id] = control.pose.value;
+  return out;
+});
+const bubbles = computed(() => {
+  const out: Record<string, { text: string; until: number }> = {};
+  for (const line of live.state.guildChat) {
+    const until = Date.parse(line.at) + GUILD_BUBBLE_MS;
+    if (until > tick.value) out[line.userId] = { text: line.text, until };
+  }
+  return out;
+});
+const sayBox = ref<HTMLInputElement>();
+const saying = ref("");
+async function say() {
+  const text = saying.value.trim();
+  if (!text) return;
+  saying.value = "";
+  try {
+    const line = await api<import("@goblincamp/shared").GuildChatLine>("POST", "guild/say", { text });
+    if (!live.state.guildChat.some((l) => l.id === line.id)) live.state.guildChat = [...live.state.guildChat, line].slice(-50);
+  } catch (e) {
+    message.value = e instanceof ApiError ? e.message : String(e);
+  }
+}
+function talk() {
+  chatOpen.value = true;
+  void nextTick(() => sayBox.value?.focus());
+}
+// Enter to talk, Esc to stop typing (on the Mac)
+function keys(e: KeyboardEvent) {
+  const inBox = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (e.key === "Enter" && !inBox && guild.value && !editing.value) {
+    e.preventDefault();
+    talk();
+  } else if (e.key === "Escape" && e.target === sayBox.value) {
+    sayBox.value?.blur();
+    chatOpen.value = false;
+  }
+}
+onMounted(() => window.addEventListener("keydown", keys));
+onUnmounted(() => window.removeEventListener("keydown", keys));
+const recentChat = computed(() => live.state.guildChat.slice(-6));
+
+// The Mac's window (or any wide window): the hall fills it, like the camp, with the rest floating over it or sliding in
+// from the right; a phone keeps the page.
+const wide = ref(false);
+const immersive = computed(() => !!guild.value && (inMacApp() || wide.value));
+// A phone (or any narrow window outside the Mac app): the hall fills the screen above the tab bar, the name floats over its
+// corner, the pad floats over the bottom, the chat folds to one line, and decorating opens a sheet from the bottom.
+const phone = computed(() => !!guild.value && !immersive.value);
+const menuOpen = ref(false);
+const chatOpen = ref(false);
+// (decorating on a phone: the catalog sheet folds away after a pick, so the hall is in full view; the bar below it brings it back)
+const sheetOpen = ref(true);
+// (the tab bar is left out here: the screen is small; "‹" and the menu go back to /guild)
+watchEffect(() => document.documentElement.classList.toggle("guild-full", phone.value));
+onUnmounted(() => document.documentElement.classList.remove("guild-full"));
+watch(editing, (on) => {
+  if (on) {
+    sheetOpen.value = true;
+    menuOpen.value = false;
+    chatOpen.value = false;
+  }
+});
+function measure() {
+  wide.value = window.innerWidth >= 1000;
+}
+onMounted(() => {
+  measure();
+  window.addEventListener("resize", measure);
+});
+onUnmounted(() => window.removeEventListener("resize", measure));
+
+const merchantHere = computed(() => (guild.value ? merchantVisit(guild.value.id, new Date(minute.value)).here : false));
+</script>
+
+<template>
+  <main v-if="ok" class="page" :class="{ immersive, phone, sheet: phone && editing && sheetOpen, bar: phone && editing && !sheetOpen }">
+    <p v-if="message" class="note">{{ message }}</p>
+
+    <template v-if="guild">
+      <div v-if="phone" class="menu">
+        <button type="button" class="menu-btn" :class="{ on: menuOpen || editing }" aria-label="選單" @click="menuOpen = !menuOpen">{{ editing ? "🪑" : "☰" }}</button>
+        <div v-if="menuOpen" class="menu-list">
+          <button type="button" @click="startDecor(); menuOpen = false">🪑 擺裝飾</button>
+          <NuxtLink to="/avatar">🧑‍🎨 角色{{ g?.avatarChosen ? "" : "（還沒捏過）" }}</NuxtLink>
+          <NuxtLink to="/guild/donate">🎁 捐獻</NuxtLink>
+          <NuxtLink to="/guild/merchant">🛒 公會商人{{ merchantHere ? "（來了）" : "" }}</NuxtLink>
+          <NuxtLink to="/guild/members">👥 成員</NuxtLink>
+          <NuxtLink v-if="role !== 'member'" to="/guild/settings">⚙️ 設定</NuxtLink>
+          <NuxtLink to="/guild" class="leave-link">‹ 回公會</NuxtLink>
+        </div>
+      </div>
+      <div v-if="immersive" class="hud-top">
+        <button type="button" class="hud-btn" :class="{ on: editing }" @click="editing ? (editing = false) : startDecor()">🪑 {{ editing ? "擺裝飾中" : "擺裝飾" }}</button>
+        <NuxtLink to="/avatar" class="hud-btn">🧑‍🎨 角色</NuxtLink>
+        <NuxtLink to="/guild/donate" class="hud-btn">🎁 捐獻</NuxtLink>
+        <NuxtLink to="/guild/merchant" class="hud-btn">🛒 商人{{ merchantHere ? "來了" : "" }}</NuxtLink>
+        <NuxtLink to="/guild/members" class="hud-btn">👥 成員</NuxtLink>
+        <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="hud-btn">⚙️ 設定</NuxtLink>
+      </div>
+      <section class="panel head">
+        <NuxtLink v-if="phone" to="/guild" class="home" aria-label="回公會">‹</NuxtLink>
+        <GuildBadge :badge="guild.badge" :size="64" />
+        <div class="grow">
+          <b class="gname">{{ guild.name }}</b>
+          <small>Lv {{ guild.level }}・{{ guild.members.length }}／{{ guild.rules.members }} 人・{{ online }} 人在線</small>
+        </div>
+      </section>
+
+      <GuildHall
+        ref="hallView"
+        :area="shownArea"
+        :members="inHall"
+        :me="user?.id"
+        :decor="shownDecor"
+        :floor="shownFloor"
+        :wall="guild.wall"
+        :walls="shownWalls"
+        :plots="editing ? draftPlots : undefined"
+        :plot-names="plotNames"
+        :editing="editing"
+        :painting="editing && (mode === 'floor' || mode === 'plot')"
+        :wall-painting="editing && mode === 'wall'"
+        :shaping="editing && mode === 'area'"
+        :selected="selected"
+        :hand="hand"
+        :bubbles="bubbles"
+        :follow="follow"
+        :fill="immersive || phone"
+        :merchant-here="merchantHere"
+        :guild-id="guild.id"
+        class="hall"
+        @merchant="navigateTo('/guild/merchant')"
+        @select="selected = $event"
+        @move="moveDecor"
+        @paint="paint"
+        @walk-to="control.walkTo"
+      />
+      <template v-if="!editing">
+        <GuildPad v-if="phone" @pad="control.press" @a="control.pressA" @b="control.pressB" @talk="talk" />
+        <template v-if="phone">
+          <section v-if="chatOpen" class="chat-sheet">
+            <div v-for="line in recentChat" :key="line.id" class="line"><b>{{ line.name }}</b>：{{ line.text }} <small>{{ noteTime(line.at) }}</small></div>
+            <p v-if="!recentChat.length" class="dim">還沒有人說話，打個招呼吧。</p>
+            <form class="say" @submit.prevent="say">
+              <input ref="sayBox" v-model="saying" class="field" :maxlength="GUILD_SAY_MAX" placeholder="說點什麼…" enterkeyhint="send" />
+              <button class="btn primary" :disabled="!saying.trim()">說</button>
+              <button type="button" class="btn" aria-label="收起" @click="chatOpen = false">✕</button>
+            </form>
+          </section>
+        </template>
+        <section v-else class="panel chat">
+          <div v-for="line in recentChat" :key="line.id" class="line">
+            <b>{{ line.name }}</b>：{{ line.text }} <small>{{ noteTime(line.at) }}</small>
+          </div>
+          <p v-if="!recentChat.length" class="muted">還沒有人說話，打個招呼吧。</p>
+          <form class="say" @submit.prevent="say">
+            <input ref="sayBox" v-model="saying" class="field" :maxlength="GUILD_SAY_MAX" placeholder="說點什麼…（Enter 送出）" enterkeyhint="send" />
+            <button class="btn primary" :disabled="!saying.trim()">說</button>
+          </form>
+        </section>
+      </template>
+      <div v-if="phone && editing && !sheetOpen" class="edit-bar">
+        <button type="button" class="eb add" @click="sheetOpen = true">＋ 裝飾</button>
+        <template v-if="selected">
+          <button type="button" class="eb" @click="flipDecor">翻面</button>
+          <button type="button" class="eb" @click="removeDecor">移除</button>
+        </template>
+        <span class="grow" />
+        <button type="button" class="eb primary" :disabled="busy" @click="saveDecor">儲存</button>
+        <button type="button" class="eb" :disabled="busy" @click="editing = false">取消</button>
+      </div>
+      <div class="side" :class="{ open: editing && sheetOpen }">
+      <button v-if="phone && editing" type="button" class="fold" aria-label="收起" @click="sheetOpen = false">⌄ 收起看畫面</button>
+      <GuildDecorPanel
+        v-if="editing && role"
+        :items="draft"
+        :level="guild.level"
+        :room="guild.rules.room"
+        :races="guild.races"
+        :seasons="guild.seasons"
+        :unlocked="guild.unlocked ?? []"
+        :role="role"
+        :selected="selected"
+        :busy="busy"
+        :mode="mode"
+        :brush="brush"
+        :wall="guild.wall"
+        :wall-brush="wallBrush"
+        :members="guild.members"
+        :plot-brush="plotBrush"
+        :tiles="draftTiles"
+        :tiles-max="guild.rules.tiles"
+        :shape-brush="shapeBrush"
+        :shape-problem="shapeProblem"
+        @mode="mode = $event"
+        @shape-brush="shapeBrush = $event"
+        @brush="brush = $event"
+        @fill-all="fillFloor"
+        @wall="setWall"
+        @wall-brush="wallBrush = $event"
+        @plot-brush="plotBrush = $event"
+        @add="addDecor"
+        @flip="flipDecor"
+        @remove="removeDecor"
+        @lock="lockDecor"
+        @save="saveDecor"
+        @cancel="editing = false"
+      />
+      </div>
+    </template>
+  </main>
+</template>
+
+<style scoped>
+.grow { flex: 1; min-width: 0; }
+h2 { margin: 0 0 6px; font-size: 17px; }
+.note { color: #fff3c4; margin: 6px 2px; font-weight: 600; }
+.hint { color: #c9d6c0; font-size: 12px; margin: 8px 2px; }
+.muted { color: #666; font-size: 13px; }
+.stack { display: grid; gap: 10px; }
+.field { border: 2px solid #1f1f1f; border-radius: 10px; padding: 10px 12px; font-size: 16px; background: #fffdf6; min-width: 0; }
+.badge-line { display: flex; align-items: center; gap: 12px; }
+.add { display: flex; gap: 8px; margin-bottom: 6px; }
+.add .field { flex: 1; }
+.head { display: flex; align-items: center; gap: 12px; }
+.gname { font-size: 20px; display: block; }
+.head small { color: #666; }
+.row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(0, 0, 0, 0.06); flex-wrap: wrap; }
+.row:first-of-type { border-top: 0; }
+.row small { color: #666; }
+.face-wrap { position: relative; flex: none; }
+.face { width: 36px; height: 36px; image-rendering: pixelated; display: block; }
+.dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fffdf6; }
+.role { border-radius: 6px; padding: 0 5px; font-weight: 700; background: #eee; }
+.role.leader { background: #e8c547; color: #3a2a00; }
+.role.officer { background: #cfe3ff; color: #1f3b6e; }
+.actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.btn.small { padding: 4px 8px; font-size: 12px; }
+.tools { display: flex; gap: 8px; margin-top: 10px; }
+.leave { margin-top: 4px; }
+.back { color: #fff3c4; font-size: 30px; text-decoration: none; padding: 0 10px 0 0; }
+.hall { margin: 0 0 12px; }
+/* the Mac's window: the hall fills it; the name, buttons and chat float over it; the rest slides in from the right */
+.immersive { padding: 0 !important; max-width: none !important; }
+.immersive .hall { position: fixed; inset: 0; margin: 0; z-index: 0; }
+.immersive .head { position: fixed; top: 10px; left: 10px; z-index: 2; padding: 8px 12px; gap: 8px; background: rgba(255, 253, 246, 0.92); }
+.immersive .head :deep(svg) { width: 36px; height: 36px; }
+.immersive .head .gname { font-size: 16px; }
+.immersive .head .btn { display: none; }
+.hud-top { position: fixed; top: 10px; right: 10px; z-index: 3; display: flex; gap: 6px; }
+.hud-btn { border: 2px solid #1f1f1f; border-radius: 10px; background: rgba(255, 253, 246, 0.92); padding: 6px 10px; font-size: 13px; font-weight: 700; color: inherit; text-decoration: none; }
+.hud-btn.on { background: #e8c547; }
+.immersive .chat { position: fixed; left: 10px; bottom: 10px; z-index: 2; width: min(420px, 45vw); background: rgba(255, 253, 246, 0.88); }
+.immersive .hint { position: fixed; left: 10px; bottom: calc(10px + var(--chat-h, 0px)); z-index: 2; display: none; }
+.immersive > .note { position: fixed; top: 64px; left: 10px; z-index: 3; background: rgba(0, 0, 0, 0.6); padding: 4px 10px; border-radius: 8px; }
+.immersive .side { display: none; }
+.immersive .side.open { display: block; position: fixed; top: 54px; right: 10px; bottom: 10px; z-index: 3; width: 380px; overflow-y: auto; padding-right: 2px; }
+/* a wide browser window (not the Mac's): the tab bar is along the bottom (60 points high), so what floats there sits above it */
+:global(html:not(.in-mac)) .immersive .chat { bottom: calc(70px + env(safe-area-inset-bottom)); }
+:global(html:not(.in-mac)) .immersive .side.open { bottom: calc(70px + env(safe-area-inset-bottom)); }
+
+/* a phone: the hall fills the screen above the tab bar; everything else floats over it (the same dark glass as the Mac's) */
+.phone, .phone * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.phone input { -webkit-user-select: text; user-select: text; }
+.phone { padding: 0 !important; max-width: none !important; --glass: rgba(18, 26, 16, 0.74); --glass-line: rgba(255, 255, 255, 0.22); --top: calc(env(safe-area-inset-top) + 10px); }
+.phone .hall { position: fixed; top: 0; left: 0; right: 0; bottom: var(--pad-h); height: auto !important; margin: 0; z-index: 0; } /* (not the hall's own 100% high: that would go under the pad) */
+.phone.sheet .hall { bottom: 46dvh; }
+.phone.bar .hall { bottom: calc(env(safe-area-inset-bottom) + 58px); }
+.edit-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; align-items: center; gap: 6px; padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px); background: var(--bg-deep); border-top: 2px solid var(--glass-line); }
+.edit-bar .grow { flex: 1; }
+.eb { height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 15px; font-weight: 700; }
+.eb.primary { background: var(--accent, #6aa84f); border-color: transparent; }
+.eb:disabled { opacity: 0.5; }
+.fold { position: sticky; top: -8px; z-index: 2; display: block; width: 100%; margin: -8px 0 6px; padding: 8px; border: 0; background: var(--bg-deep); color: #c9d6c0; font-size: 14px; font-weight: 700; }
+.phone .head { position: fixed; top: var(--top); left: 10px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; max-width: calc(100vw - 76px); border-radius: 12px; background: var(--glass); border: 2px solid var(--glass-line); box-shadow: none; color: #fff; }
+.phone .head :deep(svg) { width: 34px; height: 34px; flex: none; }
+.phone .head .gname { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.phone .head small { color: #d6e0cf; font-size: 11px; }
+.phone .head .btn { display: none; }
+.phone .head .home { flex: none; display: grid; place-items: center; width: 34px; height: 34px; margin-right: -2px; border-radius: 10px; background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 26px; line-height: 1; text-decoration: none; padding-bottom: 3px; }
+.phone > .note { position: fixed; top: calc(var(--top) + 60px); left: 10px; right: 10px; z-index: 6; margin: 0; padding: 6px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.72); font-size: 13px; }
+/* the menu: one round button at the top right, a short list under it */
+.menu { position: fixed; top: var(--top); right: 10px; z-index: 5; display: grid; justify-items: end; gap: 6px; }
+.menu-btn { width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--glass-line); background: var(--glass); color: #fff; font-size: 20px; line-height: 1; }
+.menu-btn.on { background: #e8c547; color: #2b1d00; border-color: #1f1f1f; }
+.menu-list { display: grid; min-width: 176px; border-radius: 12px; border: 2px solid var(--glass-line); background: rgba(18, 26, 16, 0.92); overflow: hidden; }
+.menu-list > * { padding: 13px 16px; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); background: none; color: #fff; text-align: left; font-size: 15px; font-weight: 700; text-decoration: none; }
+.menu-list > *:first-child { border-top: 0; }
+.menu-list .leave-link { border-top: 2px solid rgba(255, 255, 255, 0.22); color: #ffe9a8; }
+.menu-list > *:active { background: rgba(255, 255, 255, 0.14); }
+/* the chat opens from the pad's 💬: the lines and the box at the top (out of the keyboard's way) */
+.chat-sheet .dim { color: #b9c7b1; }
+.chat-sheet { position: fixed; top: calc(var(--top) + 60px); left: 10px; right: 10px; z-index: 6; display: grid; gap: 4px; max-width: 520px; margin: 0 auto; padding: 10px 12px; border: 2px solid var(--glass-line); border-radius: 14px; background: rgba(18, 26, 16, 0.94); color: #fff; }
+.chat-sheet .line { font-size: 14px; line-height: 1.4; word-break: break-word; }
+.chat-sheet .line small { color: #9fb096; font-size: 11px; }
+.chat-sheet .dim { margin: 0; font-size: 13px; }
+.chat-sheet .say { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+/* the box and its two buttons are the same height */
+.chat-sheet .field, .chat-sheet .btn { height: 42px; min-height: 42px; margin: 0; padding-top: 0; padding-bottom: 0; border-radius: 10px; }
+.chat-sheet .field { flex: 1; min-width: 0; padding-left: 12px; padding-right: 12px; color: #1f1f1f; background: #fffdf6; }
+.chat-sheet .field::placeholder { color: #8a8a80; }
+.chat-sheet .btn { flex: none; min-width: 44px; padding-left: 12px; padding-right: 12px; }
+.chat-sheet .btn:not(.primary) { background: rgba(255, 255, 255, 0.14); color: #fff; border-color: rgba(255, 255, 255, 0.25); }
+/* decorating: the catalog is a sheet from the bottom, the hall stays in sight above it */
+.phone .side { display: none; }
+.phone .side.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 46dvh; overflow-y: auto; padding: 8px 8px calc(env(safe-area-inset-bottom) + 8px); border-radius: 16px 16px 0 0; background: var(--bg-deep); border-top: 2px solid var(--glass-line); overscroll-behavior: contain; }
+.phone .side.open :deep(.grid) { max-height: none; }
+</style>
+
+<style scoped>
+.wide-link { display: block; margin: 0 0 12px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; text-decoration: none; font-weight: 700; text-align: center; border: 0; font-size: 15px; width: 100%; }
+.links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chat { display: grid; gap: 4px; }
+.chat .line { font-size: 14px; line-height: 1.4; word-break: break-word; }
+.chat .line small { color: #999; font-size: 11px; }
+.say { display: flex; gap: 6px; margin-top: 4px; }
+.say .field { flex: 1; }
+.log-link { display: block; margin: -4px auto 12px; background: none; border: 0; color: #c9d6c0; font-size: 13px; }
+</style>

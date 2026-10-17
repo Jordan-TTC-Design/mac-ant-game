@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { pomodoroPartName } from "@goblincamp/shared";
+import { DEFAULT_POMODORO, pomodoroPartName, type PomodoroPlan } from "@goblincamp/shared";
+import { ApiError } from "~/utils/api";
 import { noteTime } from "~/utils/time";
 
-// 首頁: the phone app's big parts, each a card with how it stands now, one tap into it.
+// 今天 (pwa/UI.md §4.1): the pomodoro to start right here, Claude waiting, 公告, and "現在可以做": what waits in each of the
+// big parts (they are all in the tab bar), one tap to it.
 const ok = await useSignedIn();
 const { user } = useAccount();
 const notes = useNotes();
 const live = useLive();
+const nav = useNav();
 const camp = useCamp();
-const { race, noun, ensure } = useRace();
+const { race, ensure } = useRace();
 void ensure();
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   live.refresh();
+  nav.refresh();
 });
 onUnmounted(() => {
   clearInterval(clock);
@@ -35,19 +39,52 @@ const clockText = computed(() => {
 });
 const view = computed(() => camp.state.saved?.view ?? null);
 const atHome = computed(() => view.value?.residents.filter((r) => r.place === "home").length ?? 0);
-const farmLine = computed(() => {
-  const p = view.value?.production;
-  if (!p) return "";
-  const farm = p.sites.find((x) => x.kind === "farm");
-  const others = p.sites.filter((x) => x.kind !== "farm" && x.level > 0).length;
-  return `${farm ? `${farm.name} Lv${farm.level}` : ""}・場地 ${p.used}/${p.slots}${others ? `（${others} 個在生產）` : ""}${p.busy ? "・蓋的中" : ""}`;
-});
 const lastRaid = computed(() => camp.state.saved?.raids[0] ?? null);
-const friends = computed(() => live.state.friends);
-const unread = computed(() => friends.value?.friends.reduce((n, f) => n + f.unread, 0) ?? 0);
 const waiting = computed(() => live.state.claude?.waiting ?? []);
-const guild = computed(() => live.state.guild);
-const guildOnline = computed(() => guild.value?.guild?.members.filter((m) => m.presence !== "offline").length ?? 0);
+
+// the pomodoro, started from here with the plan last used on this phone (the 番茄鐘 page keeps the same one)
+const plan = ref<PomodoroPlan>({ ...DEFAULT_POMODORO });
+onMounted(() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem("gc-pomodoro-plan") ?? "null") as PomodoroPlan | null;
+    if (saved) plan.value = saved;
+  } catch {
+    // (none kept)
+  }
+});
+const planName = computed(() => `${plan.value.focusMinutes} 分專注${plan.value.rounds > 1 ? `・${plan.value.rounds} 輪` : ""}`);
+const pomBusy = ref(false);
+const pomProblem = ref("");
+async function pom(action: Parameters<typeof live.pomodoro>[0]) {
+  pomBusy.value = true;
+  pomProblem.value = "";
+  try {
+    await live.pomodoro(action);
+  } catch (e) {
+    pomProblem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    pomBusy.value = false;
+  }
+}
+
+/** 現在可以做: one line per thing waiting, the most pressing first. */
+const todoLines = computed(() => {
+  const out: { icon: string; to: string; text: string; note?: string; urgent?: boolean }[] = [];
+  for (const p of nav.incoming.value.slice(0, 2)) {
+    out.push({ icon: "⚔️", to: "/world", text: `${p.by.name} 的 ${p.party} 隻要打「${p.where.label}」`, note: `${noteTime(p.arriveAt)} 到`, urgent: true });
+  }
+  const v = nav.visitor.value;
+  if (v) out.push({ icon: "🚪", to: "/camp", text: "有訪客在營地門口", note: `${noteTime(v.leaves)} 前回答`, urgent: true });
+  if (nav.questsReady.value) out.push({ icon: "📜", to: "/quests", text: `${nav.questsReady.value} 個任務可以領獎勵` });
+  if (nav.overdue.value) out.push({ icon: "📝", to: "/notes", text: `${nav.overdue.value} 件待辦過期了`, urgent: true });
+  else if (nextReminder.value) out.push({ icon: "📝", to: "/notes", text: nextReminder.value.text.split("\n")[0]!.slice(0, 24) || "提醒", note: `${noteTime(nextReminder.value.remindAt!)} 提醒` });
+  if (nav.unread.value) out.push({ icon: "💬", to: "/friends", text: `${nav.unread.value} 則新訊息` });
+  if (nav.friendAsks.value) out.push({ icon: "🙋", to: "/friends", text: `${nav.friendAsks.value} 人想加你好友` });
+  if (nav.guildInvites.value) out.push({ icon: "🏰", to: "/guild", text: `${nav.guildInvites.value} 個公會邀請你` });
+  if (nav.merchant.value) out.push({ icon: "🛒", to: "/feed", text: "流浪商人在營地", note: `${noteTime(nav.merchant.value.leavesAt)} 走` });
+  if (nav.talentPoints.value) out.push({ icon: "🌟", to: "/talents", text: `還有 ${nav.talentPoints.value} 個天賦點沒點` });
+  return out;
+});
 // 公告 from 後台: shown until closed here (remembered on this phone only)
 const closed = ref<string[]>([]);
 try {
@@ -88,14 +125,34 @@ const hello = computed(() => {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <img :src="`/sprites/${race}/icon.png`" class="pixel" width="36" height="36" alt="" />
-      <div style="flex: 1">
-        <h1>{{ hello }}，{{ user?.displayName }}</h1>
-        <div class="sub">哥布林營地</div>
+    <AppHeader :title="`${hello}，${user?.displayName ?? ''}`" :sub="view ? `在家 ${atHome} 隻${lastRaid ? `・突襲${lastRaid.winner === 'camp' ? '守住了' : '被打敗了'}（${noteTime(lastRaid.at)}）` : ''}` : '哥布林營地'">
+      <template #lead><img :src="`/sprites/${race}/icon.png`" class="pixel" width="36" height="36" alt="" /></template>
+      <template #actions><NuxtLink to="/settings" aria-label="設定">⚙️</NuxtLink></template>
+    </AppHeader>
+
+    <!-- the pomodoro first: started right here; the whole page for the rest -->
+    <section class="card pom" :class="{ running: run }">
+      <NuxtLink to="/pomodoro" class="pom-head">
+        <span class="icon">🍅</span>
+        <b class="grow">番茄鐘</b>
+        <small class="more">完整頁面 ›</small>
+      </NuxtLink>
+      <div class="pom-body">
+        <NuxtLink to="/pomodoro" class="big">{{ run ? clockText : `${String(plan.focusMinutes).padStart(2, "0")}:00` }}</NuxtLink>
+        <div class="pom-side">
+          <template v-if="run">
+            <small>{{ pomodoroPartName(run.part, run.state.plan.rounds) }}{{ run.paused ? "・暫停" : "" }}</small>
+            <button v-if="run.paused" class="btn primary" :disabled="pomBusy" @click="pom({ action: 'resume' })">繼續</button>
+            <button v-else class="btn" :disabled="pomBusy" @click="pom({ action: 'pause' })">暫停</button>
+          </template>
+          <template v-else>
+            <button class="btn primary start" :disabled="pomBusy" @click="pom({ action: 'start', plan: { ...plan } })">開始專注</button>
+            <NuxtLink to="/pomodoro" class="plan">{{ planName }}・換 ›</NuxtLink>
+          </template>
+        </div>
       </div>
-      <NuxtLink to="/settings" class="icon-btn">設定</NuxtLink>
-    </header>
+      <small v-if="pomProblem" class="accent">{{ pomProblem }}</small>
+    </section>
 
     <div v-for="a in notices" :key="a.id" class="card notice">
       <span class="icon">📣</span>
@@ -124,92 +181,53 @@ const hello = computed(() => {
       <small v-if="answerProblem" class="accent">{{ answerProblem }}</small>
     </div>
 
-    <div class="grid">
-      <NuxtLink to="/notes" class="card">
-        <span class="icon">📝</span>
-        <b>便利貼</b>
-        <small>{{ todo.length ? `${todo.length} 件待辦` : "沒有待辦" }}</small>
-        <small v-if="nextReminder" class="accent">下個提醒 {{ noteTime(nextReminder.remindAt!) }}</small>
+    <h2 class="section">現在可以做</h2>
+    <div class="card todo">
+      <NuxtLink v-for="(t, k) in todoLines" :key="k" :to="t.to" class="todo-row">
+        <span class="icon">{{ t.icon }}</span>
+        <span class="grow">{{ t.text }}<small v-if="t.note" :class="{ accent: t.urgent }">{{ t.note }}</small></span>
+        <span class="go">›</span>
       </NuxtLink>
-
-      <NuxtLink to="/pomodoro" class="card" :class="{ running: run }">
-        <span class="icon">🍅</span>
-        <b>番茄鐘</b>
-        <template v-if="run">
-          <small>{{ pomodoroPartName(run.part, run.state.plan.rounds) }}{{ run.paused ? "・暫停" : "" }}</small>
-          <span class="big">{{ clockText }}</span>
-        </template>
-        <small v-else>開始專注・和 Mac 同步</small>
-      </NuxtLink>
-
-      <NuxtLink to="/camp" class="card">
-        <span class="icon">🛖</span>
-        <b>營地</b>
-        <small>{{ view ? `在家 ${atHome} 隻${noun}` : "讀取中…" }}</small>
-        <small v-if="farmLine">{{ farmLine }}</small>
-        <small v-if="lastRaid">魔獸來襲 {{ noteTime(lastRaid.at) }}・{{ lastRaid.winner === "camp" ? "守住了" : "被打敗了" }}</small>
-      </NuxtLink>
-
-      <NuxtLink to="/world" class="card">
-        <span class="icon">🗺️</span>
-        <b>大世界</b>
-        <small>真實地圖・出征・佔地</small>
-      </NuxtLink>
-
-      <NuxtLink to="/friends" class="card">
-        <span class="icon">💬</span>
-        <b>好友</b>
-        <small v-if="unread" class="accent">{{ unread }} 則新訊息</small>
-        <small v-else-if="friends?.incoming.length" class="accent">{{ friends.incoming.length }} 人想加你好友</small>
-        <small v-else>{{ friends ? `${friends.friends.length} 位好友` : "…" }}</small>
-      </NuxtLink>
-
-      <NuxtLink to="/guild" class="card">
-        <span class="icon">🏰</span>
-        <b>公會</b>
-        <template v-if="guild?.guild">
-          <small>{{ guild.guild.name }}・Lv {{ guild.guild.level }}</small>
-          <small>{{ guildOnline }}／{{ guild.guild.members.length }} 人在線</small>
-        </template>
-        <small v-else-if="guild?.invites.length" class="accent">{{ guild.invites.length }} 個公會邀請你</small>
-        <small v-else>建立公會・邀請同事</small>
-      </NuxtLink>
-
-      <NuxtLink to="/claude" class="card">
-        <span class="icon">🤖</span>
-        <b>Claude</b>
-        <small>{{ waiting.length ? `${waiting.length} 個在等你` : "離開電腦時在這裡回答" }}</small>
-      </NuxtLink>
+      <p v-if="!todoLines.length" class="calm">沒有要處理的事，去營地看看大家吧 🎉</p>
     </div>
-
-    <NuxtLink to="/leaderboard" class="wide-link">🏆 排行榜 ›</NuxtLink>
-    <NuxtLink to="/feedback" class="wide-link">📣 回報問題・建議 ›</NuxtLink>
   </main>
 </template>
 
 <style scoped>
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .card {
-  display: grid; align-content: start; gap: 3px; min-height: 108px; padding: 12px; border-radius: 16px; background: #fffdf6; color: var(--ink);
-  text-decoration: none; border: 3px solid #1f1f1f; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  display: grid; align-content: start; gap: 3px; padding: 12px; border-radius: 16px; background: #fffdf6; color: var(--ink);
+  text-decoration: none; border: 3px solid #1f1f1f; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35); margin-bottom: 12px;
 }
-.card .icon { font-size: 26px; line-height: 1.1; }
-.notice { display: flex; gap: 10px; min-height: 0; margin-bottom: 12px; background: #fff6d6; align-items: flex-start; }
-.notice .grow { display: grid; gap: 2px; text-decoration: none; color: inherit; flex: 1; min-width: 0; }
+.card .icon { font-size: 22px; line-height: 1.1; }
+.card small { color: #666; font-size: 12px; line-height: 1.4; }
+.card .accent, .accent { color: #c0392b; font-weight: 700; }
+.grow { flex: 1; min-width: 0; }
+.notice { display: flex; gap: 10px; background: #fff6d6; align-items: flex-start; }
+.notice .grow { display: grid; gap: 2px; text-decoration: none; color: inherit; }
 .notice small { white-space: pre-line; overflow-wrap: anywhere; }
 .notice .close { border: 0; background: none; font-size: 22px; line-height: 1; padding: 0 4px; color: #8a6a00; cursor: pointer; }
-.card b { font-size: 16px; }
-.card small { color: #666; font-size: 12px; line-height: 1.4; }
-.card .accent { color: #c0392b; font-weight: 700; }
-.card.running { background: #fde7df; }
-.big { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
-.claude-wait { min-height: 0; margin-bottom: 10px; background: #ffe9b8; border-color: #b36b00; gap: 8px; }
+.pom { background: #fdf0e9; gap: 8px; }
+.pom.running { background: #fde7df; }
+.pom-head { display: flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; }
+.pom-head b { font-size: 16px; }
+.pom-head .more { color: #8a3b22; font-weight: 700; }
+.pom-body { display: flex; align-items: center; gap: 14px; }
+.big { font-size: 44px; font-weight: 900; letter-spacing: -1px; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; color: inherit; text-decoration: none; }
+.pom-side { flex: 1; display: grid; gap: 6px; justify-items: stretch; text-align: center; }
+.pom-side .start { min-height: 48px; font-size: 16px; font-weight: 800; border: 2px solid #1f1f1f; }
+.pom-side .plan { font-size: 12px; color: #6b4a3a; text-decoration: none; }
+.claude-wait { background: #ffe9b8; border-color: #b36b00; gap: 8px; }
 .wait-head { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
-.claude-wait .grow { flex: 1; min-width: 0; display: grid; }
+.claude-wait .grow { display: grid; }
 .claude-wait .grow small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wait-buttons { display: flex; gap: 8px; }
-.wait-buttons .btn { flex: 1; }
+.wait-buttons .btn { flex: 1; min-height: 44px; }
 .wait-reply { text-decoration: none; }
-.go { font-weight: 800; color: #8a4b00; }
-.wide-link { display: block; margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.12); color: #fff; text-decoration: none; font-weight: 700; text-align: center; }
+.go { font-weight: 800; color: #999; }
+.section { margin: 4px 0 8px; color: #fff; font-size: 14px; opacity: 0.9; }
+.todo { padding: 0; gap: 0; overflow: hidden; }
+.todo-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 14px; color: inherit; text-decoration: none; border-top: 1px solid rgba(0, 0, 0, 0.1); }
+.todo-row:first-child { border-top: 0; }
+.todo-row .grow { display: grid; font-size: 15px; }
+.calm { margin: 0; padding: 16px; color: #666; text-align: center; }
 </style>

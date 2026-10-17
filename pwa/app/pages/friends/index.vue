@@ -4,6 +4,8 @@ import { ApiError, api } from "~/utils/api";
 
 // 好友: my friend code to give out, adding someone by theirs, asks waiting for a yes, and the friends with their last message.
 const ok = await useSignedIn();
+// (the code and adding by code fold away once there are friends: 夥伴 opens on the list)
+const adding = ref(false);
 const live = useLive();
 const f = computed(() => live.state.friends);
 const code = ref("");
@@ -57,27 +59,26 @@ async function share() {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <div style="flex: 1">
-        <h1>好友</h1>
-        <div class="sub">傳訊息、一起打大世界</div>
-      </div>
-    </header>
+    <PalsHead>
+      <template #actions><button type="button" @click="adding = !adding">{{ adding ? "收起" : "＋ 加好友" }}</button></template>
+    </PalsHead>
 
-    <section class="panel mine">
-      <div class="grow">
-        <small>我的好友代碼</small>
-        <b class="code">{{ f?.code ?? "…" }}</b>
-      </div>
-      <button class="btn" @click="share">{{ copied ? "✓ 複製了" : "分享" }}</button>
-    </section>
+    <template v-if="adding || (f && !f.friends.length)">
+      <section class="panel mine">
+        <div class="grow">
+          <small>我的好友代碼</small>
+          <b class="code">{{ f?.code ?? "…" }}</b>
+        </div>
+        <button class="btn" @click="share">{{ copied ? "✓ 複製了" : "分享" }}</button>
+      </section>
 
-    <form class="add" @submit.prevent="ask">
-      <input v-model="code" placeholder="對方的代碼，如 GOB-7K2QXM" autocapitalize="characters" autocomplete="off" />
-      <button class="btn primary" :disabled="busy || !code.trim()">加好友</button>
-    </form>
+      <form class="add" @submit.prevent="ask">
+        <input v-model="code" placeholder="對方的代碼，如 GOB-7K2QXM" autocapitalize="characters" autocomplete="off" />
+        <button class="btn primary" :disabled="busy || !code.trim()">加好友</button>
+      </form>
+      <p class="hint">在大世界的地圖上點別人的領地，也可以直接加好友。</p>
+    </template>
     <p v-if="message" class="note">{{ message }}</p>
-    <p class="hint">在大世界的地圖上點別人的領地，也可以直接加好友。</p>
 
     <section v-if="f?.incoming.length" class="panel">
       <h2>想加你好友</h2>

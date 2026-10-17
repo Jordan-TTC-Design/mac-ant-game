@@ -69,11 +69,9 @@ async function send() {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
-      <h1>回報</h1>
-      <button v-if="!writing" class="icon-btn" @click="writing = true">＋ 回報</button>
-    </header>
+    <AppHeader title="回報" back="/settings" back-label="設定">
+      <template v-if="!writing" #actions><button type="button" @click="writing = true">＋ 回報</button></template>
+    </AppHeader>
 
     <section v-if="writing" class="panel">
       <h2>回報問題或建議</h2>

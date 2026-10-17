@@ -68,12 +68,7 @@ const planText = (p: PomodoroPlan) =>
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <div style="flex: 1">
-        <h1>番茄鐘</h1>
-        <div class="sub">和 Mac 同步：這裡開始，Mac 上也會開始</div>
-      </div>
-    </header>
+    <AppHeader title="番茄鐘" sub="和 Mac 同步：這裡開始，Mac 上也會開始" back="/" back-label="今天" />
 
     <section class="timer" :class="{ rest: isRest, idle: !run }">
       <img :src="`/sprites/${race}/icon.png`" class="pixel goblin" alt="" />

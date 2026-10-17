@@ -74,14 +74,9 @@ async function buyOutfit(id: string, name: string) {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/guild" class="back">‹</NuxtLink>
-      <div style="flex: 1">
-        <h1>公會商人</h1>
-        <div class="sub">每週來據點兩天，帶來別處買不到的東西</div>
-      </div>
-      <span class="points">貢獻 {{ points.toLocaleString() }}</span>
-    </header>
+    <AppHeader title="公會商人" sub="每週來據點兩天，帶來別處買不到的東西" back="/guild" back-label="公會">
+      <template #actions><span class="points">貢獻 {{ points.toLocaleString() }}</span></template>
+    </AppHeader>
     <p v-if="message" class="note">{{ message }}</p>
 
     <template v-if="guild && merchant">

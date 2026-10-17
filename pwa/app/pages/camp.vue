@@ -253,7 +253,6 @@ async function answerVisitor(yes: boolean) {
 <template>
   <main v-if="ok" class="page">
     <header class="topbar">
-      <NuxtLink to="/" class="icon-btn">← 首頁</NuxtLink>
       <div style="flex: 1">
         <h1>{{ view ? `${race?.name ?? ""}${race?.nest ?? "營地"}` : "營地" }}</h1>
         <div v-if="statusLine" class="sub">{{ statusLine }}</div>

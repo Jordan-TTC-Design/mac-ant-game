@@ -44,13 +44,7 @@ const logLine = (e: GuildDecorLogEntry) =>
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/guild" class="back">‹</NuxtLink>
-      <div style="flex: 1">
-        <h1>公會設定</h1>
-        <div v-if="guild" class="sub">{{ guild.name }}</div>
-      </div>
-    </header>
+    <AppHeader title="公會設定" :sub="guild?.name" back="/guild" back-label="公會" />
     <p v-if="message" class="note">{{ message }}</p>
 
     <template v-if="guild">
