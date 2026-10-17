@@ -45,4 +45,16 @@ describe("the economy dashboard", () => {
     const events = (await t.call("GET", "/camp/events?since=0", undefined, me)).body.events as { kind: string }[];
     expect(events.some((e) => e.kind === "flow")).toBe(false);
   });
+
+  it("is shown to admins only, at /api/admin/economy", async () => {
+    const pw = await signUp(t, "boss@example.com");
+    const boss = bearer((await logIn(t, "boss@example.com", pw, mac(2))).body.token);
+    const pw2 = await signUp(t, "a@example.com");
+    const other = bearer((await logIn(t, "a@example.com", pw2, mac(3))).body.token);
+    expect((await t.call("GET", "/admin/economy?days=7", undefined, other)).status).toBe(403);
+    const res = await t.call("GET", "/admin/economy?days=7", undefined, boss);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ days: 7, players: { camps: 0 } });
+    expect((await t.call("GET", "/admin/economy?days=99", undefined, boss)).status).toBe(400);
+  });
 });

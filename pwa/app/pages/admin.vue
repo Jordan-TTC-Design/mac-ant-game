@@ -11,6 +11,7 @@ const PAGES = [
   { to: "/admin/invites", name: "邀請碼" },
   { to: "/admin/health", name: "伺服器" },
   { to: "/admin/backups", name: "備份" },
+  { to: "/admin/economy", name: "經濟" },
   { to: "/admin/log", name: "管理紀錄" },
 ];
 const here = (to: string) => (to === "/admin" ? route.path === "/admin" : route.path.startsWith(to));

@@ -24,6 +24,7 @@ import { apiError, readJson } from "../http.ts";
 import { hashSecret, newInviteCode, normalizeCode } from "../lib/tokens.ts";
 import { bootstrapAdmins } from "./access.ts";
 import { adminAnnouncementRoutes } from "./announcements.ts";
+import { adminEconomyRoutes } from "./economy.ts";
 import { adminUserRoutes } from "./users.ts";
 
 const DAY = 86_400_000;
@@ -150,6 +151,7 @@ export function adminRoutes(deps: AppDeps) {
 
   adminUserRoutes(app, deps, log);
   adminAnnouncementRoutes(app, deps, log);
+  adminEconomyRoutes(app, deps, log);
 
   /** Invite codes made here (shown once, only their hashes are kept), and how the ones made so far were used. */
   app.post("/invites", async (c) => {
