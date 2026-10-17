@@ -150,3 +150,140 @@ export const DETAIL_LAIRS: Partial<Record<TerrainDetail, readonly string[]>> = {
   railway: ["dark_elf_outpost", "harpy_cliff"],
 };
 export const DETAIL_LAIR_WEIGHT = 4;
+
+// ── More buildings for held cells (WORLD.md §29.3) ─────────────────────────────────────────────────────────────────
+
+/** By level 1…3, and level 4 going on as from 2 to 3 (as holdings.ts CELL_BUILDINGS; the same costs, CELL_BUILDING_COSTS). */
+type ByLevel = readonly [number, number, number, number];
+const lv = (a: number, b: number, c: number): ByLevel => [a, b, c, Math.round((c + (c - b)) * 1000) / 1000];
+
+/**
+ * A building a 細分地形 (or any cell: "any") offers, besides the two of its terrain. The same shape as holdings.ts
+ * CellBuildingRule (makes, finds, fort, travel, room, party), and some ways of its own: `wild` wild monsters raid the cell
+ * this share less often (holdings.ts cell raids), `heal` its garrison heals this share faster, `xp` fights set out from it
+ * give this share more, `sage` / `breed` the 聰明 breed / its 細分地形's breed are born there this many times as often,
+ * `wear` the gear of parties setting out from it wears this share less.
+ */
+export interface DetailBuildingRule {
+  kind: string;
+  detail: TerrainDetail | "any";
+  name: string;
+  blurb: string;
+  makes?: Record<string, ByLevel>;
+  finds?: Record<string, ByLevel>;
+  fort?: ByLevel;
+  travel?: ByLevel;
+  room?: ByLevel;
+  party?: ByLevel;
+  wild?: ByLevel;
+  heal?: ByLevel;
+  xp?: ByLevel;
+  sage?: ByLevel;
+  breed?: ByLevel;
+  wear?: ByLevel;
+}
+
+const b = (kind: string, detail: TerrainDetail | "any", name: string, blurb: string, ways: Omit<DetailBuildingRule, "kind" | "detail" | "name" | "blurb">): DetailBuildingRule => ({ kind, detail, name, blurb, ...ways });
+
+export const DETAIL_BUILDINGS: readonly DetailBuildingRule[] = [
+  b("mine", "mountain", "礦坑", "每次產出多給石頭和廢鐵，偶爾碎晶", { makes: { stone: lv(3, 6, 10), scrap_iron: lv(1, 2, 3) }, finds: { crystal_shard: lv(0.05, 0.08, 0.12) } }),
+  b("hillfort", "mountain", "山寨", "守這一格的居民血量變多", { fort: lv(0.2, 0.3, 0.4) }),
+  b("watermill", "river", "水車", "每次產出多給乾糧麵包", { makes: { ration_bread: lv(1, 2, 3) } }),
+  b("ferry", "river", "渡口", "從這一格出發的隊伍走得比較快", { travel: lv(0.85, 0.75, 0.65) }),
+  b("farmstead", "farmland", "農莊", "每次產出多給胡蘿蔔和麵包", { makes: { food_carrot: lv(2, 4, 6), ration_bread: lv(1, 2, 3) } }),
+  b("granary", "farmland", "穀倉", "這一格可以多住一些", { room: lv(5, 10, 15) }),
+  b("ossuary", "cemetery", "靈堂", "每次產出多給骨片和靈質", { makes: { bone_shard: lv(2, 3, 5), ectoplasm: lv(0, 1, 1) } }),
+  b("bonetower", "cemetery", "骨塔", "守這一格的居民血量變多", { fort: lv(0.15, 0.25, 0.35) }),
+  b("frogpond", "wetland", "蛙池", "每次產出多給蛙皮和黏液", { makes: { frog_skin: lv(1, 2, 3), slime_goo: lv(1, 2, 3) } }),
+  b("reedmaze", "wetland", "蘆葦迷陣", "野生魔獸比較少來打這一格", { wild: lv(0.3, 0.5, 0.7) }),
+  b("academy", "campus", "學院", "從這一格出發打仗，經驗變多", { xp: lv(0.1, 0.2, 0.3) }),
+  b("library", "campus", "圖書館", "這一格生出聰明種的機會變大", { sage: lv(2, 3, 4) }),
+  b("foundry", "industrial", "鍛造廠", "每次產出多給廢鐵和皮革條", { makes: { scrap_iron: lv(3, 5, 8), leather_strap: lv(0, 1, 1) } }),
+  b("repairshop", "industrial", "修理廠", "從這一格出發的隊伍，裝備磨損變少", { wear: lv(0.2, 0.35, 0.5) }),
+  b("shellhut", "sand", "拾貝屋", "每次產出多給蟹殼，偶爾珍珠", { makes: { crab_shell: lv(1, 2, 3) }, finds: { river_pearl: lv(0.05, 0.08, 0.12) } }),
+  b("sandfort", "sand", "沙堡哨", "守這一格的居民血量變多", { fort: lv(0.15, 0.25, 0.35) }),
+  b("harbour", "coast", "漁港", "每次產出多給魚乾和蟹螯", { makes: { ration_fish: lv(2, 3, 5), crab_claw: lv(0, 1, 1) } }),
+  b("lighthouse", "coast", "燈塔", "從這一格出發的隊伍走得比較快", { travel: lv(0.85, 0.75, 0.65) }),
+  b("bathhouse", "hotspring", "溫泉旅館", "守這一格的居民回血更快", { heal: lv(0.5, 1, 1.5) }),
+  b("geotherm", "hotspring", "地熱工坊", "偶爾給碎晶和琥珀", { finds: { crystal_shard: lv(0.1, 0.15, 0.22), amber: lv(0.05, 0.08, 0.12) } }),
+  b("shrine", "temple", "香火廟", "野生魔獸比較少來打這一格", { wild: lv(0.3, 0.5, 0.7) }),
+  b("blessing", "temple", "祈福台", "這一格生出地形稀有種的機會變大", { breed: lv(2, 3, 4) }),
+  b("fieldhospital", "hospital", "野戰醫院", "守這一格的居民回血更快", { heal: lv(0.5, 1, 1.5) }),
+  b("pharmacy", "hospital", "藥房", "每次產出多給草藥繃帶", { makes: { item_bandage: lv(1, 1, 2) } }),
+  b("stronghold", "military", "要塞堡壘", "守這一格的居民血量變多很多", { fort: lv(0.3, 0.45, 0.6) }),
+  b("armory", "military", "軍械庫", "每次產出多給鐵甲片和鋼弩箭", { makes: { guard_plate: lv(0, 1, 1), steel_bolt: lv(1, 2, 3) } }),
+  b("station", "railway", "車站", "從這一格出發的隊伍走得快很多", { travel: lv(0.8, 0.7, 0.6) }),
+  b("freightyard", "railway", "貨運站", "從這一格出發的隊伍可以多帶幾隻", { party: lv(2, 3, 4) }),
+  // anywhere
+  b("storehouse", "any", "倉庫", "這一格可以多住一些", { room: lv(3, 6, 10) }),
+  b("outpost", "any", "哨站", "野生魔獸比較少來打這一格", { wild: lv(0.2, 0.35, 0.5) }),
+  b("altar", "any", "祭壇", "這一格生出地形稀有種的機會變大", { breed: lv(1.5, 2, 2.5) }),
+];
+
+/** The buildings a cell of this 細分地形 offers besides its terrain's two (holdings.ts buildingsFor): its own two, and the three of anywhere. */
+export function detailBuildingsFor(detail: TerrainDetail | null | undefined): DetailBuildingRule[] {
+  return DETAIL_BUILDINGS.filter((r) => r.detail === "any" || r.detail === detail);
+}
+
+export function detailBuilding(kind: string): DetailBuildingRule | undefined {
+  return DETAIL_BUILDINGS.find((r) => r.kind === kind);
+}
+
+/** Building places a cell has: one, a town or another hub two. */
+export function buildingSlots(hub: boolean): number {
+  return hub ? 2 : 1;
+}
+
+// ── Hubs beside the town (WORLD.md §29.4) ──────────────────────────────────────────────────────────────────────────
+
+export type HubKind = "town" | "fortress" | "workstead" | "sanctuary";
+
+/**
+ * A region's centre: the town as it is, or a fortress, a workshop town or a sanctuary (the undead's: 墓城). They share the
+ * towns' places (holdings.ts TOWN_CELLS_EACH: one hub for every so many cells of a region) and their cost (TOWN_COST); a cell
+ * is one at most. Numbers: `births` how fast its nest is (× the town's), and what it does — `room` × a cell's, `fort`
+ * its garrison's hit points, `wild` wild raids on its whole region (− share), `party` parties from it, `regionYield` every
+ * cell of its region's yields (+ share), `yield` its own (material → each yield), `regionHeal` its region's garrisons' heal
+ * (+ share), `rise` the share of a won fight's fallen in its region who get up again, `vsUndead` / `undeadDefend` its
+ * defenders' against the undead / undead defenders' there.
+ */
+export interface HubRule {
+  kind: HubKind;
+  name: string;
+  undeadName?: string;
+  blurb: string;
+  births: number;
+  room?: number;
+  fort?: number;
+  wild?: number;
+  party?: number;
+  regionYield?: number;
+  yield?: Record<string, number>;
+  regionHeal?: number;
+  rise?: number;
+  vsUndead?: number;
+  undeadDefend?: number;
+}
+
+export const HUBS: readonly HubRule[] = [
+  { kind: "town", name: "城鎮", blurb: "住很多、生得跟主營一樣快，有市場", births: 1 },
+  { kind: "fortress", name: "要塞", blurb: "守軍多、很耐打；整區被野生魔獸打的機會減半；從這出征可以多帶 3 隻", births: 0.25, room: 1.5, fort: 0.4, wild: 0.5, party: 3 },
+  { kind: "workstead", name: "工坊鎮", blurb: "整區的領地產出 +30%，自己也有一大份產出", births: 0.25, regionYield: 0.3, yield: { scrap_iron: 6, log: 8, stone: 6, leather_strap: 1 } },
+  { kind: "sanctuary", name: "聖地", undeadName: "墓城", blurb: "整區守軍回血加倍，打贏時倒下的有機會站起來；對死靈特別強（死靈的墓城反過來）", births: 0.5, regionHeal: 1, rise: 0.2, vsUndead: 0.2 },
+];
+
+export function hubRule(kind: string): HubRule | undefined {
+  return HUBS.find((h) => h.kind === kind);
+}
+
+/** A hub's name for a race (the undead's sanctuary is a 墓城). */
+export function hubName(kind: HubKind, race: string): string {
+  const h = hubRule(kind)!;
+  return race === "undead" && h.undeadName ? h.undeadName : h.name;
+}
+
+/** What a sanctuary does for the undead: its defenders are the strong ones there, not those against the undead. */
+export function hubForRace(kind: HubKind, race: string): HubRule {
+  const h = hubRule(kind)!;
+  return kind === "sanctuary" && race === "undead" ? { ...h, vsUndead: 0, undeadDefend: 0.2 } : h;
+}
