@@ -44,6 +44,8 @@ export const expeditionInput = z
     guard: z.boolean().default(false),
     /** Food taken along (supplies.ts): rations let more go, the rest make the party stronger. */
     supplies: z.record(z.string().max(40), z.number().int().min(0).max(60)).optional(),
+    /** 劫掠 (talents.ts plunder): against another camp's cell, take from its store and leave (the cell is not taken). */
+    plunder: z.boolean().default(false),
   })
   .refine((v) => v.residents || v.count, "residents or count");
 export type ExpeditionInput = z.infer<typeof expeditionInput>;
@@ -162,7 +164,7 @@ export interface ExpeditionSummary {
   outcome: null | {
     won: boolean;
     /** cleared: a lair beaten; taken: a player's cell won; settled: moved in; held: the defenders held; guarding: staying on a friend's cell; back: nothing to do there. */
-    cell: "cleared" | "taken" | "settled" | "held" | "guarding" | "back" | "camping";
+    cell: "cleared" | "taken" | "settled" | "held" | "guarding" | "back" | "camping" | "plundered";
     against: string;
     loot: Record<string, number>;
     xp: number;
@@ -177,6 +179,10 @@ export interface ExpeditionSummary {
     where?: { kind: "home" | "town" | "cell"; label: string; landmark?: string };
     /** A cell taken: where those of its garrison still standing fell back to (as the holder names it). */
     fled?: { count: number; how: "cell" | "free" | "home"; label: string };
+    /** 伏擊: shot at on the way by camps with the talent whose cells it passed (who, and how many of the party fell). */
+    ambushed?: { by: string; fallen: number }[];
+    /** 戰場復甦: this many of the fallen rose and joined the camp that won. */
+    raised?: number;
   };
   /** Whether this camp was the one attacked (a report of someone else's expedition against it). */
   defending?: boolean;

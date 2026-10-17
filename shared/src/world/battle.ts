@@ -95,6 +95,8 @@ export interface FightBoosts {
   vigor?: number;
   /** 夜襲 (talents.ts nightRaid): the party set out at night, unseen (the camp it goes for has no warning). */
   hidden?: number;
+  /** 劫掠 (talents.ts plunder): the party raids, takes from the store and leaves. */
+  plunder?: number;
 }
 
 /** The foes a party with 黏黏彈 meets: a quarter slower. */

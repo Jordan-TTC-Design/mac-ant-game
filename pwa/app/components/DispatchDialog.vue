@@ -45,7 +45,7 @@ const props = defineProps<{
   /** 再派一次: the last attack on this cell, to start from (those still there; the strongest fill in for the fallen). */
   again?: LastAttack | null;
 }>();
-const emit = defineEmits<{ close: []; sent: [party: number[], settle: boolean, from: string, supplies: Record<string, number>]; route: [way: RoutePreview | null] }>();
+const emit = defineEmits<{ close: []; sent: [party: number[], settle: boolean, from: string, supplies: Record<string, number>, plunder: boolean]; route: [way: RoutePreview | null] }>();
 
 type Resident = CampView["residents"][number];
 const camp = ref<CampView | null>(null);
@@ -259,6 +259,9 @@ const moonGate = computed(() => {
   const start = props.me.cells.find((c) => c.cell === startCell.value), to = props.me.cells.find((c) => c.cell === props.target.cell);
   return props.kind === "move" && !!start?.town && !!to?.town && startCell.value !== props.me.homeCell && (props.me.moonGatesLeft ?? 0) > 0;
 });
+/** 劫掠: against another camp's cell, with the talent. */
+const canPlunder = computed(() => props.kind === "attack" && !!props.target.owner && !props.me.cells.some((c) => c.cell === props.target.cell) && hasAbility(tb.value, "plunder"));
+const plunder = ref(false);
 /** 夜襲: setting out to attack at night, where it sets out from. */
 const nightRaid = computed(() => props.kind === "attack" && hasAbility(tb.value, "nightRaid") && !!startCell.value && nightAt(startCell.value, new Date()));
 const minutesFor = (meters: number) => {
@@ -402,10 +405,11 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
           <div v-if="kind === 'attack' && !target.boss" class="after">
             <span>打贏後</span>
             <div class="seg">
-              <button :class="{ on: settle }" @click="chooseSettle(true)">留下來佔領</button>
-              <button :class="{ on: !settle }" @click="chooseSettle(false)">直接回家</button>
+              <button :class="{ on: settle && !plunder }" @click="plunder = false; chooseSettle(true)">留下來佔領</button>
+              <button :class="{ on: !settle && !plunder }" @click="plunder = false; chooseSettle(false)">直接回家</button>
+              <button v-if="canPlunder" :class="{ on: plunder }" @click="plunder = true">🏴‍☠️ 劫掠</button>
             </div>
-            <small class="muted">{{ settle ? `活下來的至少 ${min} 隻才佔得住` : "撿了戰利品就回來" }}・下次會記得</small>
+            <small class="muted">{{ plunder ? `搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}）就走，不佔地` : settle ? `活下來的至少 ${min} 隻才佔得住` : "撿了戰利品就回來" }}・下次會記得</small>
           </div>
           <p v-if="kind === 'settle' && party.length < min" class="warn">至少要 {{ min }} 隻才守得住一格。</p>
           <p v-if="kind === 'guard'" class="muted small">牠們會住在那裡，巢穴回來搶、有人來打時一起守；戰死的裝備會回你的倉庫。你或對方隨時可以叫牠們回來。一格最多 {{ GUESTS_MAX }} 隻好友的居民（現在有 {{ target.guests ?? 0 }} 隻）。</p>
@@ -417,7 +421,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
         <button
           class="btn primary"
           :disabled="!ok || (capped && !!plan.problem)"
-          @click="emit('sent', party.map((a) => a.r.id), kind === 'move' ? false : kind === 'settle' ? true : settle, from, capped ? plan.spent : {})"
+          @click="emit('sent', party.map((a) => a.r.id), kind === 'move' ? false : kind === 'settle' ? true : settle && !plunder, from, capped ? plan.spent : {}, plunder && canPlunder)"
         >{{ go }}（{{ party.length }} 隻）</button>
       </footer>
     </div>

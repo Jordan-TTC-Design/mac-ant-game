@@ -867,6 +867,61 @@ describe("天賦樹頂端的新能力", () => {
     expect(events.some((e) => e.data.incoming)).toBe(false);
   });
 
+  const RANGER = { "e_ranger.swift": 3, "e_ranger.aim": 1, "e_ranger.paths": 3, "e_ranger.hunter": 3, "e_ranger.wind": 2, "e_ranger.trophy": 1, "e_ranger.volley": 3, "e_ranger.ambush": 1 };
+  const LEGION = { "u_legion.rise": 3, "u_legion.bones": 2, "u_legion.march": 3, "u_legion.graves": 3, "u_legion.horde": 2, "u_legion.tide": 3, "u_legion.raise": 1 };
+  const RAID = { "g_raid.sharp": 3, "g_raid.greed": 3, "g_raid.warband": 3, "g_raid.ambush": 2, "g_raid.pillage": 2, "g_raid.warpaint": 3, "g_raid.plunder": 1 };
+
+  it("伏擊: a party walking past its cells is shot at first", async () => {
+    const e = await withTalents("e@example.com", "elf", DAAN, RANGER);
+    expect(e).toBeTruthy();
+    const g = await account("g@example.com");
+    await grow(g);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, g);
+    await veteran("g@example.com");
+    const res = await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 20 }, g);
+    expect(res.status).toBe(201);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, g)).body as ExpeditionReport;
+    expect(report.outcome!.ambushed![0]!.fallen).toBeGreaterThan(0);
+    expect(report.party - report.outcome!.ambushed![0]!.fallen).toBeGreaterThan(0); // (somebody always gets there)
+  });
+
+  it("戰場復甦: some of the fallen of a won fight rise and join", async () => {
+    const u = await withTalents("u@example.com", "undead", DAAN, LEGION);
+    const before = (await camp(u)).residents.length;
+    const lair = (await map(u, DAAN, 1000)).filter((c) => c.lair && c.cell !== cellAt(DAAN)).sort((x, y) => x.lair!.power - y.lair!.power)[0]!;
+    const res = await t.call("POST", "/world/expeditions", { to: lair.cell, count: 25 }, u);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, u)).body as ExpeditionReport;
+    expect(report.outcome!.won).toBe(true);
+    expect(report.outcome!.raised).toBeGreaterThan(0);
+    expect((await camp(u)).residents.length).toBeGreaterThanOrEqual(before - report.outcome!.fallen + report.outcome!.raised!);
+  });
+
+  it("劫掠: takes from the store and leaves; the cell stays, nobody turtles", async () => {
+    const b = await account("b@example.com");
+    await grow(b);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, b);
+    const g = await withTalents("g@example.com", "goblin", DAAN, RAID);
+    const cell = neighbors(neighbors(cellAt(XINYI))[3]!)[3]!;
+    const bId = await id("b@example.com");
+    await database.sql`insert into world_cells (cell, owner, held_since) values (${cell}, ${bId}, now()) on conflict (cell) do update set owner = excluded.owner`;
+    await database.sql`update camp_residents set place = ${`cell:${cell}`} where id in (select id from camp_residents where user_id = ${bId} and place = 'home' limit 5)`;
+    await database.sql`update camps set materials = '{"rat_fang": 100, "log": 1000}'::jsonb where user_id = ${bId}`;
+    expect((await t.call("POST", "/world/expeditions", { to: cell, count: 5, plunder: true }, b)).status).toBeGreaterThanOrEqual(400); // (not one's own)
+    const res = await t.call("POST", "/world/expeditions", { to: cell, count: 25, plunder: true }, g);
+    expect(res.status).toBe(201);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, g)).body as ExpeditionReport;
+    expect(report.outcome!.cell).toBe("plundered");
+    // (8% of each, up to 30: the camp's store grew a little on the way from its raids and sites)
+    expect(report.outcome!.loot.log).toBe(30);
+    expect(report.outcome!.loot.rat_fang).toBeGreaterThanOrEqual(8);
+    expect((await camp(g)).materials.log).toBeGreaterThanOrEqual(30);
+    expect((await me(g)).cells.map((c) => c.cell)).not.toContain(cell); // (it takes and leaves: the cell is not the raider's)
+    expect((await me(b)).shielded).toBe(false); // (a raid is no defeat)
+  });
+
   it("腐化大地: others' cells next to its own yield less", async () => {
     const u = await withTalents("u@example.com", "undead", DAAN, CRYPT);
     expect(u).toBeTruthy();

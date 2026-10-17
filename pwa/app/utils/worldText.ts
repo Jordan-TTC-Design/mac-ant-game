@@ -5,7 +5,7 @@ export function outcomeText(r: Pick<ExpeditionSummary, "outcome" | "defending">)
   const o = r.outcome;
   if (!o) return "在路上";
   const what = o.where?.kind === "home" ? "營地" : o.where?.kind === "town" ? "城鎮" : "領地";
-  if (r.defending) return o.won ? (o.where?.kind === "home" ? "營地被打敗了" : `${what}被搶走了`) : `守住了${what}`;
+  if (r.defending) return o.won ? (o.cell === "plundered" ? `${what}被劫掠了` : o.where?.kind === "home" ? "營地被打敗了" : `${what}被搶走了`) : `守住了${what}`;
   const fought = o.killed > 0 || o.fallen > 0;
   switch (o.cell) {
     case "cleared": return o.where?.kind === "home" ? "打贏了，對方營地被打敗" : o.where ? `打贏了，對方的${what}沒了` : "打贏了，巢穴清掉了";
@@ -13,6 +13,7 @@ export function outcomeText(r: Pick<ExpeditionSummary, "outcome" | "defending">)
     case "settled": return fought ? "打贏了，佔領下來" : "住下了";
     case "held": return o.damage ? `打了 ${o.damage} 點傷害` : "沒打下來";
     case "camping": return "到了，有些在旁邊扎營";
+    case "plundered": return "劫掠成功，搶了就走";
     default: return "回來了";
   }
 }

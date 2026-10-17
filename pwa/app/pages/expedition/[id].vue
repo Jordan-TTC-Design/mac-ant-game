@@ -112,6 +112,9 @@ const sheet = (f: { race?: string; breed?: string }) => `/sprites/${f.race ?? "g
           <NuxtLink :to="`/world?cell=${report.to}`" class="btn small">在地圖上看</NuxtLink>
         </p>
         <p v-if="report.defending && fledText(report)" class="fled">↩︎ {{ fledText(report) }}</p>
+        <p v-for="a in report.outcome?.ambushed ?? []" :key="a.by" class="fled">🎯 途中被{{ a.by }}伏擊，倒下 {{ a.fallen }} 隻</p>
+        <p v-if="report.outcome?.raised" class="fled">🧟 戰場復甦：{{ report.outcome.raised }} 隻爬起來加入營地</p>
+        <p v-if="report.defending && report.outcome?.cell === 'plundered' && Object.keys(report.outcome.loot).length" class="fled">🏴‍☠️ 被搶走：{{ Object.entries(report.outcome.loot).map(([m, n]) => `${materialName(m)} ${n}`).join("、") }}</p>
         <template v-if="report.boss">
           <p>對{{ report.boss.name }}造成 <b>{{ report.outcome?.damage ?? report.boss.hpBefore - report.boss.hpAfter }}</b> 點傷害（{{ report.boss.hpBefore }} → {{ report.boss.hpAfter }} / {{ report.boss.maxHp }}）{{ report.boss.defeated ? "，打倒了！大家分到的東西會在下次打開營地時收進倉庫。" : "" }}</p>
         </template>

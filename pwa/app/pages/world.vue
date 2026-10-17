@@ -193,14 +193,14 @@ async function recalled(text: string) {
 
 // the dispatch dialog
 const dispatch = ref<"attack" | "settle" | "move" | "guard" | null>(null);
-async function sent(party: number[], settle: boolean, from: string, supplies: Record<string, number>) {
+async function sent(party: number[], settle: boolean, from: string, supplies: Record<string, number>, plunder = false) {
   const to = selected.value!;
   const guard = dispatch.value === "guard";
   if (dispatch.value === "attack") saveLastAttack(to, { from, party, supplies, settle });
   again.value = null;
   dispatch.value = null;
   launchFrom.value = null;
-  await doIt(() => world.send(to, party, settle, from, supplies, guard), `出發了！${party.length} 隻上路。`);
+  await doIt(() => world.send(to, party, settle, from, supplies, guard, plunder), plunder ? `出發劫掠！${party.length} 隻上路。` : `出發了！${party.length} 隻上路。`);
 }
 // 再派一次: the last attack on the cell picked, sent again (who went, from where, the food) in one tap
 const again = ref<LastAttack | null>(null);

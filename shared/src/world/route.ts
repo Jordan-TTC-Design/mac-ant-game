@@ -187,3 +187,17 @@ export function alongRoute(points: LatLng[], share: number): LatLng {
   }
   return points[points.length - 1]!;
 }
+
+/** Every cell a party walks over between `waypoints` (as stored on an expedition: its turns, or just start and end), in order. */
+export function cellsAlong(waypoints: readonly CellId[]): CellId[] {
+  const out: CellId[] = [];
+  for (let i = 1; i < waypoints.length; i++) {
+    const a = cellCenter(waypoints[i - 1]!), b = cellCenter(waypoints[i]!);
+    const steps = Math.max(1, Math.ceil(cellDistance(waypoints[i - 1]!, waypoints[i]!) / 50)); // (every 50 m: no cell is stepped over)
+    for (let k = 0; k <= steps; k++) {
+      const c = cellAt({ lat: a.lat + ((b.lat - a.lat) * k) / steps, lng: a.lng + ((b.lng - a.lng) * k) / steps });
+      if (out.at(-1) !== c && !out.includes(c)) out.push(c);
+    }
+  }
+  return out;
+}

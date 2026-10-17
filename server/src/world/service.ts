@@ -5,10 +5,11 @@
  */
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { PushSubscriptionJSON, WorldPush } from "@goblincamp/shared";
-import { advance, fightBoosts, gearRule, RACE_RANGE, raceRules, residentAsFighter, taipeiDay, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
+import { advance, fightBoosts, gearRule, RACE_RANGE, raceRules, residentAsFighter, residentFor, taipeiDay, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
 import {
   afterDefeat,
   shieldLapsed,
+  cellsAlong,
   hasAbility,
   nightAt,
   TALENT_ABILITIES,
@@ -904,7 +905,7 @@ function homeMoveAt(player: Pick<PlayerRow, "homeMovedAt">): Date | null {
 export async function sendExpedition(
   tx: Tx,
   userId: string,
-  input: { from: string; to: string; residents?: number[]; count?: number; settle: boolean; guard?: boolean; supplies?: Record<string, number> },
+  input: { from: string; to: string; residents?: number[]; count?: number; settle: boolean; guard?: boolean; supplies?: Record<string, number>; plunder?: boolean },
   now: Date,
 ): Promise<ExpeditionSummary> {
   const camp = await lockCamp(tx, userId);
@@ -994,6 +995,12 @@ export async function sendExpedition(
   // 夜襲: setting out to attack at night, quicker and unseen
   const night = !moving && hasAbility(mt, "nightRaid") && nightAt(fromCell!, now);
   if (night) carried = { ...(carried ?? {}), hidden: 1 };
+  // 劫掠: only against another camp's cell, with the talent; it takes and leaves
+  if (input.plunder) {
+    if (moving || !target?.owner || target.owner === userId) throw new WorldError(400, "invalid_input", "劫掠只能打其他玩家的領地。");
+    if (!hasAbility(mt, "plunder")) throw new WorldError(403, "not_allowed", "要先點天賦「劫掠」。");
+    carried = { ...(carried ?? {}), plunder: 1 };
+  }
   const walked = walkMinutes(way.route.meters, slowest) * fromBonus.travel * (1 - (mt.travel ?? 0)) * (inRegion ? REGION_TRAVEL * (1 - (mt.regionTravel ?? 0)) : 1) * (night ? TALENT_ABILITIES.nightTravel : 1);
   const minutes = gate ? 1 : Math.max(1, Math.round(walked));
   const [row] = await tx
@@ -1009,7 +1016,7 @@ export async function sendExpedition(
       setOutAt: now,
       arriveAt: new Date(now.getTime() + minutes * MINUTE),
       defender: !moving && target?.owner ? target.owner : null,
-      settle: guarding ? false : input.settle,
+      settle: guarding || input.plunder ? false : input.settle,
     })
     .returning();
   await tx.update(campResidents).set({ place: walkingPlace(row!.id) }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, party.map((r) => r.id))));
@@ -1221,7 +1228,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   const at = exp.arriveAt;
   await advanceWorld(tx, camp, now);
 
-  const party = await aliveAt(tx, camp.userId, walkingPlace(exp.id));
+  let party = await aliveAt(tx, camp.userId, walkingPlace(exp.id));
   const tb = await talentBonusOf(tx, camp.userId); // (the party's camp's talents: how hard it hits, what it brings back)
   const moreLoot = (loot: Record<string, number>) => (tb.loot ? Object.fromEntries(Object.entries(loot).map(([m, n]) => [m, Math.ceil(n * (1 + tb.loot))])) : loot);
   const cell = await lockCell(tx, exp.toCell);
@@ -1242,6 +1249,15 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   };
   const outcome = report.outcome!;
   const involved = [camp.userId];
+  // 伏擊: shot at on the way by camps with the talent whose cells it passed (before anything else)
+  if (exp.kind === "attack" && party.length) {
+    const shot = await ambushOn(tx, camp, exp, party, player?.homeCell ?? null, at);
+    if (shot.fallen.length) {
+      party = party.filter((r) => !shot.fallen.includes(r));
+      outcome.ambushed = shot.by;
+      for (const b of shot.byId) if (!involved.includes(b)) involved.push(b);
+    }
+  }
   /** Where the beaten garrison fell back to (retreat), for the defender's news. */
   let fledTo: Fled | null = null;
 
@@ -1422,7 +1438,18 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       outcome.won = result.won;
       outcome.xp = Math.round(result.xp.attacker * (1 + (tb.xp ?? 0)));
       const survivors = party.filter((r) => !fallenA.has(String(r.id)));
-      if (result.won && campCell) {
+      if (result.won && exp.boosts?.plunder) {
+        // 劫掠: take from the store and leave (nothing changes hands, nobody turtles)
+        for (const [id, n] of Object.entries(defenderCamp.materials)) {
+          const take = Math.min(TALENT_ABILITIES.raidCap, Math.floor(n * TALENT_ABILITIES.raidShare));
+          if (take <= 0) continue;
+          defenderCamp.materials = { ...defenderCamp.materials, [id]: n - take };
+          camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + take };
+          outcome.loot[id] = take;
+        }
+        await placeSurvivors(survivors, false);
+        outcome.cell = "plundered";
+      } else if (result.won && campCell) {
         // a camp cannot be taken, only beaten: the attackers walk home and the beaten camp turtles
         await placeSurvivors(survivors, false);
         outcome.cell = "cleared";
@@ -1441,7 +1468,10 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         await shield(tx, camp.userId, now);
         if (defenderPlayer) await tx.update(worldPlayers).set({ xp: defenderPlayer.xp + Math.round(result.xp.defender * (1 + (talentBonus(defenderPlayer.talents).xp ?? 0))) }).where(eq(worldPlayers.userId, defenderCamp.userId));
       }
-      await addEvent(tx, defenderCamp.userId, at, "expedition", { id: exp.id, cell: exp.toCell, defended: true, by: attacker.name, won: !result.won, fallen: fallenD.size, ...(outcome.where ? { where: outcome.where.label } : {}), ...(fledTo ? { fled: fledTo } : {}) });
+      // 戰場復甦: whoever won raises some of the fallen
+      if (result.won && hasAbility(tb, "raiseDead")) outcome.raised = await raiseDead(tx, camp, fallenA.size + fallenD.size, exp.id, at);
+      const defenderRaised = !result.won && hasAbility(talentBonus(defenderPlayer?.talents), "raiseDead") ? await raiseDead(tx, defenderCamp, fallenA.size + fallenD.size, `${exp.id}|d`, at) : 0;
+      await addEvent(tx, defenderCamp.userId, at, "expedition", { id: exp.id, cell: exp.toCell, defended: true, by: attacker.name, won: !result.won, fallen: fallenD.size, ...(outcome.where ? { where: outcome.where.label } : {}), ...(fledTo ? { fled: fledTo } : {}), ...(outcome.cell === "plundered" ? { plundered: outcome.loot } : {}), ...(defenderRaised ? { raised: defenderRaised } : {}) });
       await bumpVersion(tx, defenderCamp);
     }
   } else if (await bossHere(tx, exp.toCell, at, false).then((b) => b && !b.row.defeatedAt)) {
@@ -1475,6 +1505,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     await bury(tx, camp, party.filter((r) => fallenA.has(String(r.id))), at);
     await placeSurvivors(party.filter((r) => !fallenA.has(String(r.id))), false);
     outcome.won = defeated;
+    if (defeated && hasAbility(tb, "raiseDead")) outcome.raised = await raiseDead(tx, camp, battle.fallen.attack.length + battle.fallen.defend.length, exp.id, at);
     outcome.cell = defeated ? "cleared" : "held";
     outcome.against = `${kind.name}（世界魔王）`;
     outcome.fallen = fallenA.size;
@@ -1514,6 +1545,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       outcome.won = result.won;
       outcome.xp = Math.round(result.xp.attacker * (1 + (tb.xp ?? 0)));
       const survivors = party.filter((r) => !fallenA.has(String(r.id)));
+      if (result.won && hasAbility(tb, "raiseDead")) outcome.raised = await raiseDead(tx, camp, fallenA.size + result.battle.fallen.defend.length, exp.id, at);
       if (result.won) {
         // what the lair kept, and what each beaten foe drops (drops.ts)
         let loot = { ...result.loot };
@@ -1577,7 +1609,8 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   ];
   if (report.defender) {
     const fled = fledTo ? `；${fledTo.count} 隻撤退${{ cell: "到最近的領地", free: "到旁邊的空地", home: "回營地" }[fledTo.how]}` : "";
-    news.push({ user: report.defender.id, title: "領地被攻擊了", body: `${attacker.name}來打你的領地：${outcome.won ? `被搶走了，你正在龜縮${fled}` : "守住了！"}`, url });
+    const lost = Object.entries(outcome.loot).slice(0, 3).map(([m, n]) => `${materialName(m)} ${n}`).join("、");
+    news.push({ user: report.defender.id, title: outcome.cell === "plundered" ? "被劫掠了" : "領地被攻擊了", body: `${attacker.name}來打你的領地：${outcome.cell === "plundered" ? `搶走了 ${lost}` : outcome.won ? `被搶走了，你正在龜縮${fled}` : "守住了！"}`, url });
   }
   if (report.boss?.defeated) {
     for (const who of involved) if (who !== camp.userId) news.push({ user: who, title: `世界魔王${report.boss.name}被打倒了`, body: "你出過力，戰利品會收進營地倉庫。", url: "/world" });
@@ -1692,6 +1725,60 @@ export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: st
   await tx.update(worldCells).set({ building, updatedAt: now }).where(eq(worldCells.cell, cell));
   await addEvent(tx, userId, now, "world", { built: { cell, kind, level } });
   await bumpVersion(tx, camp);
+}
+
+/**
+ * 伏擊: the camps with the talent whose cells are next to the way a party walks (not its own camp's, nor its friends') each
+ * shoot AMBUSH per cell of it down, the weakest first, up to AMBUSH_MAX in all; they are buried here. Returns who fell, by whom.
+ */
+async function ambushOn(tx: Tx, camp: CampRow, exp: ExpeditionRow, party: ResidentRow[], homeCell: string | null, at: Date) {
+  const from = exp.fromPlace === "home" ? homeCell : exp.fromPlace;
+  const none = { fallen: [] as ResidentRow[], by: [] as { by: string; fallen: number }[], byId: [] as string[] };
+  if (!from) return none;
+  const path = cellsAlong(exp.route ?? [from, exp.toCell]).filter((c) => c !== from && c !== exp.toCell);
+  if (!path.length) return none;
+  const near = [...new Set(path.flatMap((c) => [c, ...neighbors(c)]))];
+  const rows = await tx
+    .select({ cell: worldCells.cell, owner: worldCells.owner, talents: worldPlayers.talents })
+    .from(worldCells)
+    .innerJoin(worldPlayers, eq(worldPlayers.userId, worldCells.owner))
+    .where(and(inArray(worldCells.cell, near), ne(worldCells.owner, camp.userId)));
+  const byOwner = new Map<string, number>();
+  for (const r of rows) if (r.owner && hasAbility(talentBonus(r.talents), "ambush")) byOwner.set(r.owner, (byOwner.get(r.owner) ?? 0) + 1);
+  let left = [...party];
+  let share = 0;
+  const out = { ...none, fallen: [] as ResidentRow[], by: [] as { by: string; fallen: number }[], byId: [] as string[] };
+  for (const [owner, cells] of byOwner) {
+    if (await areFriends(tx, camp.userId, owner)) continue;
+    const mine = Math.min(TALENT_ABILITIES.ambushMax - share, TALENT_ABILITIES.ambushPerCell * cells);
+    const n = Math.min(left.length - 1, Math.round(party.length * mine)); // (somebody always gets there)
+    if (mine <= 0 || n <= 0) continue;
+    share += mine;
+    const shot = pickParty(camp.race, left, undefined, n, false);
+    left = left.filter((r) => !shot.includes(r));
+    out.fallen.push(...shot);
+    const who = await ownerOf(tx, owner);
+    out.by.push({ by: who.name, fallen: shot.length });
+    out.byId.push(owner);
+    await addEvent(tx, owner, at, "world", { ambush: { party: (await ownerOf(tx, camp.userId)).name, fallen: shot.length, to: exp.toCell } });
+  }
+  if (out.fallen.length) await bury(tx, camp, out.fallen, at);
+  return out;
+}
+
+/** 戰場復甦: some of the `fallen` (both sides) rise and join the camp at home as new residents. Returns how many. */
+async function raiseDead(tx: Tx, camp: CampRow, fallen: number, key: string, at: Date): Promise<number> {
+  const n = Math.min(TALENT_ABILITIES.raiseMax, Math.ceil(fallen * TALENT_ABILITIES.raiseShare));
+  if (n <= 0) return 0;
+  const rules = raceRules(camp.race);
+  const place = { race: camp.race, key: `raise:${key}`, startedAt: camp.startedAt.getTime(), birthMinutes: rules.homeBirthMinutes, cap: rules.homeCap };
+  const born = Array.from({ length: n }, (_, k) => residentFor(place, camp.seed, k, camp.nextId + k, at.getTime()));
+  await tx.insert(campResidents).values(
+    born.map((b) => ({ userId: camp.userId, id: b.id, breed: b.breed, seed: b.seed, bornAt: at, diesAt: b.diesAt === null ? null : new Date(b.diesAt) })),
+  );
+  camp.nextId += n;
+  await tx.update(camps).set({ nextId: camp.nextId }).where(eq(camps.userId, camp.userId));
+  return n;
 }
 
 /** 腐化大地: those of `cells` next to a cell of another camp with the talent (they yield less). */

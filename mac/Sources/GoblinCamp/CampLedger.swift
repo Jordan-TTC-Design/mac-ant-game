@@ -197,6 +197,9 @@ final class CampLedger {
         let fled: Fled?
         /// Which of our cells was attacked (when `defended`) or is about to be (when `incoming`): 營地, 城鎮 2, 領地 3.
         let `where`: String?
+        /// What a 劫掠 took from us (when `defended`); how many of the fallen rose and joined (戰場復甦).
+        let plundered: [String: Int]?
+        let raised: Int?
         /// Another camp's party just set out to attack us (`by`, `party` strong, there at `arriveAt`).
         let incoming: Bool?
         let party: Int?
