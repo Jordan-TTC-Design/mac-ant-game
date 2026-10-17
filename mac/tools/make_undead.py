@@ -394,6 +394,8 @@ def main():
             mg.write_png(os.path.join(root, sheet), breed_sheet(draw, pal))
         import make_specials  # (the special residents, tools/make_specials.py: drawn on these bodies)
         make_specials.write("undead", root)
+        import make_terrain_breeds  # (the terrain breeds, tools/make_terrain_breeds.py: one per terrain detail)
+        make_terrain_breeds.write("undead", root)
         for o in OUTFITS:
             mg.write_png(os.path.join(root, "queen.png" if o["id"] == "dress" else f"queen_{o['id']}.png"), princess_sheet(o))
         mg.write_png(os.path.join(root, "icon.png"), skull_icon())
@@ -411,7 +413,8 @@ def main():
                       "princessNames": ["艾菈瑟", "琉恩", "希兒薇", "月語", "蕾茵", "瑟菈", "伊露", "薇妮", "星歌", "露瑟"]},
             "worker": {"sheet": "worker.png", "pixelScale": 1.5, "walk": walk},
             "breeds": [{"id": i, "name": n, "weight": w, "boost": b, "blurb": blurb, "stats": stats, "sheet": sheet}
-                       for i, n, w, b, blurb, stats, sheet, _d, _p in BREEDS] + make_specials.manifest_entries("undead"),
+                       for i, n, w, b, blurb, stats, sheet, _d, _p in BREEDS] + make_specials.manifest_entries("undead")
+                   + make_terrain_breeds.manifest_entries("undead"),
             "queen": {"sheet": "queen.png", "pixelScale": 2.0, "walk": walk,
                       "poses": {name: [(3 + r) * 4 + f for f in range(count)] for r, (name, _dr, count) in enumerate(mg.POSES)},
                       "outfits": [{"id": o["id"], "name": o["name"], "sheet": "queen.png" if o["id"] == "dress" else f"queen_{o['id']}.png"}

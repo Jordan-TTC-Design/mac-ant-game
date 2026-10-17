@@ -398,6 +398,8 @@ def main():
         mg.write_png(os.path.join(root, sheet), breed_sheet(draw, pal))
     import make_specials  # (the special residents, tools/make_specials.py: drawn on these bodies)
     make_specials.write("elf", root)
+    import make_terrain_breeds  # (the terrain breeds, tools/make_terrain_breeds.py: one per terrain detail)
+    make_terrain_breeds.write("elf", root)
     for o in OUTFITS:
         mg.write_png(os.path.join(root, "queen.png" if o["id"] == "hide" else f"queen_{o['id']}.png"), princess_sheet(o))
     mg.write_png(os.path.join(root, "icon.png"), elf_face())
@@ -426,7 +428,8 @@ def main():
         },
         "worker": {"sheet": "worker.png", "pixelScale": 1.5, "walk": walk},
         "breeds": [{"id": i, "name": n, "weight": w, "boost": b, "blurb": blurb, "stats": stats, "sheet": sheet}
-                   for i, n, w, b, blurb, stats, sheet, _d, _p in BREEDS] + make_specials.manifest_entries("elf"),
+                   for i, n, w, b, blurb, stats, sheet, _d, _p in BREEDS] + make_specials.manifest_entries("elf")
+               + make_terrain_breeds.manifest_entries("elf"),
         "queen": {"sheet": "queen.png", "pixelScale": 2.0, "walk": walk,
                   "poses": {name: [(3 + r) * 4 + f for f in range(count)] for r, (name, _d, count) in enumerate(mg.POSES)},
                   "outfits": [{"id": o["id"], "name": o["name"], "sheet": "queen.png" if o["id"] == "hide" else f"queen_{o['id']}.png"}

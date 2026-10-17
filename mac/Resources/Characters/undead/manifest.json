@@ -317,6 +317,211 @@
       "sheet": "sentinel.png",
       "special": true,
       "level": 20
+    },
+    {
+      "id": "d_mountain",
+      "name": "石棺",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "山地的居民。石頭色的大骨架，扛著十字鎬，比較耐打。不會在營地自己生出來，只從大世界的山地領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 5
+      },
+      "sheet": "d_mountain.png",
+      "terrain": "mountain"
+    },
+    {
+      "id": "d_river",
+      "name": "溺魂",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "河川的居民。青綠色的溺水幽魂，身上掛著水草，走得快一點。不會在營地自己生出來，只從大世界的河川領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "speed": 1.15
+      },
+      "sheet": "d_river.png",
+      "terrain": "river"
+    },
+    {
+      "id": "d_farmland",
+      "name": "稻草",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "農田的居民。戴草帽、塞滿稻草的骷髏，拿著乾草叉，一次搬兩份。不會在營地自己生出來，只從大世界的農田領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "carry": 2
+      },
+      "sheet": "d_farmland.png",
+      "terrain": "farmland"
+    },
+    {
+      "id": "d_cemetery",
+      "name": "夜哭",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "墓地的居民。黑黑的小幽魂，提著燈一路哭，眼睛比較尖。不會在營地自己生出來，只從大世界的墓地領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "sense": 1.25
+      },
+      "sheet": "d_cemetery.png",
+      "terrain": "cemetery"
+    },
+    {
+      "id": "d_wetland",
+      "name": "沼魂",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "濕地的居民。泥綠色的沼澤幽魂，頂著睡蓮、纏著蘆葦，不太需要休息。不會在營地自己生出來，只從大世界的濕地領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "rest": 0.85
+      },
+      "sheet": "d_wetland.png",
+      "terrain": "wetland"
+    },
+    {
+      "id": "d_campus",
+      "name": "書靈",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "校園的居民。戴眼鏡和方帽的書頁色靈火，抱著書，很會叫同伴來幫忙。不會在營地自己生出來，只從大世界的校園領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "recruit": 2
+      },
+      "sheet": "d_campus.png",
+      "terrain": "campus"
+    },
+    {
+      "id": "d_industrial",
+      "name": "鐵骨",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "工業區的居民。鐵灰色的骨頭，拿著扳手，力氣大一點。不會在營地自己生出來，只從大世界的工業區領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.4,
+        "health": 3
+      },
+      "sheet": "d_industrial.png",
+      "terrain": "industrial"
+    },
+    {
+      "id": "d_sand",
+      "name": "沙骸",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "沙灘的居民。沙色的骨頭、包著頭巾，掛著貝殼項鍊，走得快一點。不會在營地自己生出來，只從大世界的沙灘領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "speed": 1.1
+      },
+      "sheet": "d_sand.png",
+      "terrain": "sand"
+    },
+    {
+      "id": "d_coast",
+      "name": "沉船",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "海岸的居民。從沉船爬上來的骷髏，穿條紋衫、披著海草、扛著船錨，看得比較遠。不會在營地自己生出來，只從大世界的海岸領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "sense": 1.2
+      },
+      "sheet": "d_coast.png",
+      "terrain": "coast"
+    },
+    {
+      "id": "d_hotspring",
+      "name": "蒸骨",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "溫泉的居民。泡得粉粉的骨頭頂著毛巾，一直冒蒸氣，休息得少一點。不會在營地自己生出來，只從大世界的溫泉領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "rest": 0.8
+      },
+      "sheet": "d_hotspring.png",
+      "terrain": "hotspring"
+    },
+    {
+      "id": "d_temple",
+      "name": "背誓",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "廟宇區的居民。穿著紅袍、額頭貼著一張破符，打得比較痛。不會在營地自己生出來，只從大世界的廟宇區領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.3,
+        "health": 3
+      },
+      "sheet": "d_temple.png",
+      "terrain": "temple"
+    },
+    {
+      "id": "d_hospital",
+      "name": "縫屍",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "醫院的居民。滿身縫線、纏著繃帶的骷髏，比較耐打。不會在營地自己生出來，只從大世界的醫院領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 4.5
+      },
+      "sheet": "d_hospital.png",
+      "terrain": "hospital"
+    },
+    {
+      "id": "d_military",
+      "name": "骨衛",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "軍事區的居民。戴鋼盔的大骨架，扛著長矛，打得比較痛。不會在營地自己生出來，只從大世界的軍事區領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.35,
+        "health": 3
+      },
+      "sheet": "d_military.png",
+      "terrain": "military"
+    },
+    {
+      "id": "d_railway",
+      "name": "幽軌",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "鐵道的居民。戴著列車長帽的藍色幽魂，提著燈飄得飛快，跑得最快。不會在營地自己生出來，只從大世界的鐵道領地來。",
+      "stats": {
+        "lifespan": 50.0,
+        "might": 1.1,
+        "health": 3,
+        "speed": 1.2
+      },
+      "sheet": "d_railway.png",
+      "terrain": "railway"
     }
   ],
   "queen": {
