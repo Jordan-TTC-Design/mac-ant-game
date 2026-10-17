@@ -94,6 +94,9 @@ import {
   buildingsFor,
   cellBonus,
   cellRaidLosses,
+  meteorAt,
+  seasonAt,
+  seasonEndsAt,
   cellBuildingBlurb,
   cellBuildingName,
   cellBuildingRule,
@@ -1286,7 +1289,9 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
 
   let party = await aliveAt(tx, camp.userId, walkingPlace(exp.id));
   const tb = await talentBonusOf(tx, camp.userId); // (the party's camp's talents: how hard it hits, what it brings back)
-  const moreLoot = (loot: Record<string, number>) => (tb.loot ? Object.fromEntries(Object.entries(loot).map(([m, n]) => [m, Math.ceil(n * (1 + tb.loot))])) : loot);
+  // (talents, and the season on: events.ts)
+  const lootBoost = (tb.loot ?? 0) + (seasonAt(at)?.loot ?? 0);
+  const moreLoot = (loot: Record<string, number>) => (lootBoost ? Object.fromEntries(Object.entries(loot).map(([m, n]) => [m, Math.ceil(n * (1 + lootBoost))])) : loot);
   const cell = await lockCell(tx, exp.toCell);
   const attacker = await ownerOf(tx, camp.userId);
   const player = await lockPlayer(tx, camp.userId);
@@ -1578,11 +1583,19 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   } else {
     const { lair } = lairHere(exp.toCell, cell, at, await terrainOf(tx, exp.toCell));
     if (!lair) {
+      // a meteor lying there: the first party to get here takes it
+      const meteor = await takeMeteor(tx, camp.userId, exp.toCell, at);
+      if (meteor) {
+        for (const [mat, n] of Object.entries(meteor)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
+        await recordFlow(tx, camp.userId, at, "world-meteor", meteor);
+        outcome.meteor = meteor;
+        outcome.loot = { ...meteor };
+      }
       const stay = exp.settle && party.length >= min;
       const stayed = await placeSurvivors(party, stay);
       outcome.won = true;
       outcome.cell = stayed ? "settled" : "back";
-      outcome.against = "空地";
+      outcome.against = meteor ? "流星落下的空地" : "空地";
     } else {
       // (still hurt from an earlier wave: what is left of it, WORLD.md §19)
       const foes = await blightFoes(tx, camp.userId, exp.toCell, woundedLairFighters(lair, cell?.lairWounds, at.getTime()));
@@ -1908,6 +1921,19 @@ async function watchedOver(tx: Tx, owner: string, cell: string, at: Date): Promi
   if (!mine.has(cell)) return false;
   const region = new Set(connectedCells(cell, mine));
   return held.some((c) => region.has(c.cell) && c.building?.kind === "watchtower" && workingLevel(c.building, at.getTime()) >= 1);
+}
+
+/** The meteor lying in `cell` at `at`, taken by `userId` if nobody took it yet: what it gives (null: none, or gone). */
+async function takeMeteor(tx: Tx, userId: string, cell: string, at: Date): Promise<Record<string, number> | null> {
+  const m = meteorAt(WORLD_SEED, cell, at.getTime());
+  if (!m) return null;
+  // (written down as a world_bosses row of its own key: taken once, by whoever got there first)
+  const rows = await tx
+    .insert(worldBosses)
+    .values({ key: m.key, kind: "meteor", cell, hp: 0, maxHp: 0, endsAt: new Date(m.endsAt), defeatedAt: at, defeatedBy: userId })
+    .onConflictDoNothing()
+    .returning({ key: worldBosses.key });
+  return rows.length ? m.loot : null;
 }
 
 /** 月光傳送 moves left today (Taipei's day) for a camp with the talent. */
@@ -2271,6 +2297,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
     partyCap: partyCap(camp.race, level) + (tb.party ?? 0),
     freeCells: freeCellsOf(player),
     ...(hasAbility(tb, "moonGate") ? { moonGatesLeft: await moonGatesLeft(tx, userId, now) } : {}),
+    season: ((s) => (s ? { id: s.id, name: s.name, icon: s.icon, blurb: s.blurb, endsAt: seasonEndsAt(s, now).toISOString() } : null))(seasonAt(now)),
     talents: { picks: player?.talents ?? {}, points: talentPoints(level), resets: player?.talentResets ?? 0, resetCost: talentResetCost(player?.talentResets ?? 0) },
     food: Object.fromEntries(Object.entries(camp.materials).filter(([id, n]) => isFood(id) && n > 0)),
     walking: walking.map((w) => summary(w, userId)),
@@ -2594,6 +2621,12 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
   // the great monsters standing in view (their wounds, if anybody has fought them)
   // (one look at the books for all of them)
   const threats = viewer ? await threatsIn(tx, viewer, rows) : new Map<string, ("ambush" | "blight")[]>();
+  // meteors lying on free cells in view, less those taken (one look at the books for them all)
+  const meteors = new Map(ids.flatMap((cell) => ((m) => (m && !byCell.get(cell)?.owner ? [[cell, m] as const] : []))(meteorAt(WORLD_SEED, cell, now.getTime()))));
+  if (meteors.size) {
+    const taken = await tx.select({ key: worldBosses.key }).from(worldBosses).where(inArray(worldBosses.key, [...meteors.values()].map((m) => m.key)));
+    for (const t of taken) for (const [cell, m] of meteors) if (m.key === t.key) meteors.delete(cell);
+  }
   const bosses = new Map<string, BossView>();
   const sightings = ids.flatMap((cell) => {
     const sighting = bossAt(WORLD_SEED, cell, now.getTime(), bossesOn());
@@ -2631,6 +2664,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       boss,
       ...(blocked.has(cell) ? { blocks: true } : {}),
       ...(threats.has(cell) ? { threats: threats.get(cell) } : {}),
+      ...(meteors.has(cell) && !lair && !boss ? { meteor: { endsAt: new Date(meteors.get(cell)!.endsAt).toISOString(), loot: meteors.get(cell)!.loot } } : {}),
     };
   });
 }

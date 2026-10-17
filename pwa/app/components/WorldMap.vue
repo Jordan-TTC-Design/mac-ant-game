@@ -164,6 +164,7 @@ function markerKey(c: CellView): string {
     c.boss && [c.boss.kind, Math.round((100 * c.boss.hp) / c.boss.maxHp)],
     c.lair && [c.lair.kind, c.lair.level, c.lair.boss, leaderOf(c.lair.foes)],
     c.landmark?.kind,
+    !!c.meteor,
     !!foeSheet.value,
     props.alerts?.includes(c.cell),
   ]);
@@ -191,6 +192,12 @@ function cellMarker(c: CellView): HTMLElement | null {
   } else if (c.lair) {
     const icon = c.lair.kind === "enemy_town" ? "enemy_town" : leaderOf(c.lair.foes);
     el.append(foeElement(icon, c.lair.boss ? 30 : 22), label(`${c.lair.boss ? "👑 " : ""}Lv${c.lair.level}`, c.lair.boss ? "boss" : ""));
+  } else if (c.meteor) {
+    // a meteor lying on a free cell (events.ts): the first party there takes it
+    const star = document.createElement("span");
+    star.className = "map-meteor";
+    star.textContent = "☄️";
+    el.append(star, label("流星", "boss"));
   } else if (!c.landmark && !props.alerts?.includes(c.cell)) {
     return null;
   }
@@ -495,6 +502,8 @@ watch(
 .map :deep(.map-label.mine) { color: #ffe27a; }
 .map :deep(.map-label.theirs) { color: #ff9a8a; }
 .map :deep(.map-label.boss) { color: #ffd84a; }
+.map :deep(.map-meteor) { font-size: 24px; line-height: 1; filter: drop-shadow(0 0 4px #ffe680); animation: meteor-glow 1.6s ease-in-out infinite alternate; }
+@keyframes meteor-glow { from { filter: drop-shadow(0 0 2px #ffe680); } to { filter: drop-shadow(0 0 8px #fff3b0); } }
 .map :deep(.map-landmark) { font-size: 15px; line-height: 1; filter: drop-shadow(0 0 1px #fff); }
 /* (the marker itself is absolutely placed by the map, so the corner mark sits against it) */
 .map :deep(.map-landmark.corner) { position: absolute; top: -8px; right: -12px; font-size: 12px; }

@@ -1016,3 +1016,40 @@ describe("天賦樹頂端的新能力", () => {
     expect((await t.call("GET", `/world/cells/${next}`, undefined, b)).body.blighted).toBeFalsy();
   });
 });
+
+describe("world events (WORLD.md §30)", () => {
+  it("a meteor shows on the map; the first party there takes it, and it is gone", async () => {
+    const a = await account("a@example.com");
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, a);
+    await veteran("a@example.com");
+    // look about for a free cell with a meteor now (they come and go every 4 hours: try a few windows)
+    let star: CellView | undefined;
+    for (let i = 0; i < 12 && !star; i++) {
+      star = (await map(a, DAAN, 1800)).find((c) => c.meteor && !c.owner && Date.parse(c.meteor.endsAt) - t.now().getTime() > 90 * MIN); // (time to get there)
+      if (!star) t.advance(4 * HOUR);
+    }
+    expect(star).toBeTruthy();
+    const res = await t.call("POST", "/world/expeditions", { to: star!.cell, count: 6 }, a);
+    expect(res.status).toBe(201);
+    t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
+    const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, a)).body as ExpeditionReport;
+    expect(Date.parse(res.body.arriveAt)).toBeLessThan(Date.parse(star!.meteor!.endsAt));
+    expect(report.outcome!.meteor).toEqual(star!.meteor!.loot);
+    expect((await camp(a)).materials.crystal_shard ?? 0).toBeGreaterThanOrEqual(star!.meteor!.loot.crystal_shard!);
+    expect((await map(a, cellCenter(star!.cell), 300)).find((c) => c.cell === star!.cell)!.meteor).toBeUndefined();
+    // a second party gets nothing
+    const again = await t.call("POST", "/world/expeditions", { to: star!.cell, count: 6 }, a);
+    t.advance(Date.parse(again.body.arriveAt) - t.now().getTime() + 1000);
+    expect(((await t.call("GET", `/world/expeditions/${again.body.id}`, undefined, a)).body as ExpeditionReport).outcome!.meteor).toBeUndefined();
+  });
+
+  it("the season is on the big world's page", async () => {
+    const a = await account("a@example.com");
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, a);
+    expect((await me(a)).season ?? null).toBeNull(); // (the test clock starts on 1 October)
+    t.advance(Date.parse("2026-10-20T12:00:00+08:00") - t.now().getTime());
+    expect((await me(a)).season?.id).toBe("halloween");
+  });
+});

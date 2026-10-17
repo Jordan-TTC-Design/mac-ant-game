@@ -150,6 +150,8 @@ export interface CellView {
    * past are shot at (伏擊); blight, a cell of the viewer's here would yield less (腐化大地).
    */
   threats?: ("ambush" | "blight")[];
+  /** A meteor lying here, not taken yet (events.ts): the first party to get here takes `loot`; gone at `endsAt`. */
+  meteor?: { endsAt: string; loot: Record<string, number> };
 }
 
 export interface ExpeditionSummary {
@@ -190,6 +192,8 @@ export interface ExpeditionSummary {
     ambushed?: { by: string; fallen: number }[];
     /** 戰場復甦: this many of the fallen rose and joined the camp that won. */
     raised?: number;
+    /** A meteor lying there, taken first (events.ts). */
+    meteor?: Record<string, number>;
   };
   /** Whether this camp was the one attacked (a report of someone else's expedition against it). */
   defending?: boolean;
@@ -281,6 +285,8 @@ export interface WorldMe {
   freeCells?: number;
   /** 月光傳送 (talents.ts moonGate): moves between its towns left today; absent without the talent. */
   moonGatesLeft?: number;
+  /** The season on now (events.ts SEASONS), and when it ends. */
+  season?: { id: string; name: string; icon: string; blurb: string; endsAt: string } | null;
   recent: ExpeditionSummary[];
   /** What happened in the big world lately (a lair coming back for a cell, a great monster's spoils, what the cells gave), newest first. */
   happenings: {
