@@ -32,6 +32,10 @@ async function account(email: string, race = "goblin") {
 async function veteran(email: string) {
   await database.sql`update world_players set xp = 18050 where user_id = (select id from users where email = ${email})`;
 }
+/** A camp at race level 50: the great monsters let it in (bosses.ts BOSS_MIN_RACE_LEVEL). */
+async function legend(email: string) {
+  await database.sql`update world_players set xp = 120050 where user_id = (select id from users where email = ${email})`;
+}
 const me = async (auth: Record<string, string>) => (await t.call("GET", "/world", undefined, auth)).body as WorldMe;
 const camp = async (auth: Record<string, string>) => (await t.call("GET", "/camp", undefined, auth)).body as CampView;
 const map = async (auth: Record<string, string>, at = DAAN, radius = 1200) =>
@@ -461,6 +465,19 @@ describe("the world's great monsters (世界魔王)", () => {
     throw new Error("no boss near");
   }
 
+  it("let in only camps at race level 50", async () => {
+    const a = await account("a@example.com");
+    await grow(a);
+    const boss = bossNear();
+    await t.call("POST", "/world/open", { cell: boss.beside, settlers: 5 }, a);
+    await veteran("a@example.com"); // (level 20)
+    const res = await t.call("POST", "/world/expeditions", { to: boss.cell, count: 10 }, a);
+    expect(res.body.error).toBe("level");
+    expect(res.body.message).toContain("50");
+    await legend("a@example.com");
+    expect((await t.call("POST", "/world/expeditions", { to: boss.cell, count: 10 }, a)).status).toBe(201);
+  });
+
   it("keep their wounds between parties, and share the spoils with everyone who hurt them", async () => {
     const a = await account("a@example.com");
     const b = await account("b@example.com");
@@ -468,8 +485,8 @@ describe("the world's great monsters (世界魔王)", () => {
     const boss = bossNear();
     await t.call("POST", "/world/open", { cell: boss.beside, settlers: 5 }, a);
     await t.call("POST", "/world/open", { cell: neighbors(boss.cell)[3]!, settlers: 5 }, b);
-    await veteran("a@example.com");
-    await veteran("b@example.com");
+    await legend("a@example.com"); // (the great monsters wait for race level 50)
+    await legend("b@example.com");
     const seen = (await map(a, cellCenter(boss.cell), 300)).find((c) => c.cell === boss.cell)!;
     expect(seen.boss?.name).toBe(boss.name);
     expect(seen.boss?.hp).toBe(seen.boss?.maxHp);
@@ -889,7 +906,7 @@ describe("天賦樹頂端的新能力", () => {
   it("戰場復甦: some of the fallen of a won fight rise and join", async () => {
     const u = await withTalents("u@example.com", "undead", DAAN, LEGION);
     const before = (await camp(u)).residents.length;
-    const lair = (await map(u, DAAN, 1000)).filter((c) => c.lair && c.cell !== cellAt(DAAN)).sort((x, y) => x.lair!.power - y.lair!.power)[0]!;
+    const lair = (await map(u, DAAN, 1000)).filter((c) => c.lair && !c.lair.boss && !c.lair.minRaceLevel && c.cell !== cellAt(DAAN)).sort((x, y) => x.lair!.power - y.lair!.power)[0]!;
     const res = await t.call("POST", "/world/expeditions", { to: lair.cell, count: 25 }, u);
     t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
     const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, u)).body as ExpeditionReport;

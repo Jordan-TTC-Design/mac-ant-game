@@ -9,6 +9,7 @@ import { advance, fightBoosts, gearRule, RACE_RANGE, raceRules, residentAsFighte
 import {
   afterDefeat,
   shieldLapsed,
+  BOSS_MIN_RACE_LEVEL,
   cellsAlong,
   hasAbility,
   nightAt,
@@ -260,6 +261,7 @@ export function lairView(lair: Lair, standing?: ReturnType<typeof lairFighters>)
     foes,
     power: Math.round(combatPower(standing ?? lairFighters(lair))),
     ...(lair.boss ? { boss: true } : {}),
+    ...(lair.minRaceLevel ? { minRaceLevel: lair.minRaceLevel } : {}),
   };
 }
 
@@ -948,6 +950,17 @@ export async function sendExpedition(
     if (mine) throw new WorldError(409, "guarding", "你有居民在那一格幫忙守，不能打它。");
   }
   const moving = target?.owner === userId || guarding;
+  // the stronger foes wait for a camp's race level: the middle band of lairs (contents.ts), the great monsters (bosses.ts)
+  if (!moving && !target?.owner) {
+    const level = raceLevel(player.xp);
+    const boss = await bossHere(tx, input.to, now, false);
+    if (boss && !boss.row.defeatedAt) {
+      if (level < BOSS_MIN_RACE_LEVEL) throw new WorldError(403, "level", `世界魔王要種族等級 ${BOSS_MIN_RACE_LEVEL} 才能打。`);
+    } else {
+      const { lair } = lairHere(input.to, target, now, await terrainOf(tx, input.to));
+      if (lair?.minRaceLevel && level < lair.minRaceLevel) throw new WorldError(403, "level", `這個巢穴要種族等級 ${lair.minRaceLevel} 才能打。`);
+    }
+  }
   // a lair holds only so many (world/expedition.ts lairEntry): a count is cut to it, a list longer than it is refused
   let count = input.count;
   if (!moving && !target?.owner) {

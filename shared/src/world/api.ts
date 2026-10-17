@@ -101,6 +101,8 @@ export interface LairView {
   power: number;
   /** A 初期魔王's lair (contents.ts): rare, tough, and it leaves the middle gear's makings. */
   boss?: boolean;
+  /** The race level a camp needs to take it on (the middle band of lairs: contents.ts MID_RACE_LEVELS, MID_BOSS_RACE_LEVEL). */
+  minRaceLevel?: number;
 }
 
 /** A great monster of the world as the map shows it (bosses.ts). */

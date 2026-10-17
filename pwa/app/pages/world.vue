@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, talentBonus, hasAbility, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
+import { BOSS_MIN_RACE_LEVEL, cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, talentBonus, hasAbility, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 import { loadLastAttack, saveLastAttack, type LastAttack } from "~/utils/again";
@@ -562,6 +562,8 @@ async function goToPlace(p: PlaceFound) {
         </span>
         <div class="grow">
           <h2>{{ title }}<small v-if="cell.lair"> {{ cell.lair.level }} 級</small></h2>
+          <p v-if="cell.lair?.minRaceLevel && (s.me?.level ?? 1) < cell.lair.minRaceLevel" class="wall">🔒 需要種族等級 {{ cell.lair.minRaceLevel }} 才能打（你現在 {{ s.me?.level ?? 1 }} 級）</p>
+          <p v-if="cell.boss && (s.me?.level ?? 1) < BOSS_MIN_RACE_LEVEL" class="wall">🔒 世界魔王要種族等級 {{ BOSS_MIN_RACE_LEVEL }} 才能打（你現在 {{ s.me?.level ?? 1 }} 級）</p>
           <p v-if="cell.lair?.boss" class="boss-tag">👑 初期魔王：比一般巢穴強很多，會掉做中等裝備的材料。打輸了傷會留著，可以找朋友接著打。</p>
           <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && (!mine || launchFrom) ? `・從${launchFrom ? launchName : "營地"}走約 ${minutesTo} 分鐘${detourTo ? `（繞路 +${detourTo}）` : ""}` : "" }}</p>
           <p v-if="way && !way.waypoints.length" class="wall">🧱 {{ way.blockedBy?.name ?? "別人" }}的領地擋在路上，從{{ launchFrom ? launchName : "營地" }}過不去</p>
