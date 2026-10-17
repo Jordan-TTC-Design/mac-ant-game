@@ -8,6 +8,9 @@ import { focusView, decorEarned,
   fightBoosts,
   gearRule,
   planRaid,
+  raidCrowd,
+  turnover,
+  taipeiDay,
   raidRaceLevel,
   RAID_PLUNDER,
   RAID_PLUNDERED,
@@ -129,6 +132,8 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const level = await campRaceLevel(tx, camp.userId);
   const bonus = await talentBonusOf(tx, camp.userId);
   const beaten = [...(camp.bossesBeaten ?? [])];
+  // (a camp that holds many cells draws more raiders: raids.ts raidCrowd)
+  const [{ held }] = (await tx.select({ held: sql<number>`count(*)::int` }).from(worldCells).where(eq(worldCells.owner, camp.userId))) as [{ held: number }];
   const salvaged: Record<string, number> = {}; // (for the economy dashboard: what broken gear gave back)
   const plundered: { at: Date; taken: Record<string, number> }[] = [];
   // 營地建設 (buildings.ts): the one going up is done once its time is past; what they do counts from then
@@ -194,7 +199,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     // (how strong the camp is for it: its race level, but no more than its residents' gear stands for: raids.ts raidRaceLevel)
     const gear = alive.reduce((n, r) => n + Object.values(wearers.get(r.id)?.gear ?? {}).reduce((k, item) => k + gearPower(item as GearItem), 0), 0);
     const raidLevelNow = raidRaceLevel(level, alive.length ? gear / alive.length : 0);
-    const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length, raidLevelNow, beaten);
+    const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length, raidLevelNow, beaten, raidCrowd(alive.length, cap, held));
     if (plan) {
       const specials = specialEffects(alive.map((r) => r.breed));
       const help = {
@@ -253,6 +258,24 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     nextRaid++;
   }
   moveTo(now.getTime());
+  // (a full camp turns over: now and then a better newborn takes the oldest common's place: population.ts turnover)
+  // (only on days the camp was open on a Mac: its ranch reports minutes open, and the merchant comes only to a Mac's camp)
+  const macDays = new Set(
+    (
+      await tx
+        .select({ at: campEvents.at })
+        .from(campEvents)
+        .where(and(
+          eq(campEvents.userId, camp.userId),
+          eq(campEvents.kind, "command"),
+          gt(campEvents.at, new Date(camp.advancedTo.getTime() - 86_400_000)),
+          sql`${campEvents.data}->'command'->>'kind' in ('ranch-sync', 'merchant-arrive')`,
+        ))
+    ).map((e) => taipeiDay(e.at)),
+  );
+  const turned = turnover(place, population, camp.seed, camp.advancedTo.getTime(), now.getTime(), (at) => macDays.has(taipeiDay(new Date(at))));
+  born.push(...turned.born);
+  const wentOff = turned.left; // (not of age: they made room, and went off into the world)
   await settleGear();
 
   // what the sites made meanwhile (by the hour, with those at home then); a site built or raised on the way splits it
@@ -299,7 +322,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   }
   const armoryChanged = JSON.stringify(store) !== JSON.stringify(camp.armory);
 
-  const changed = born.length > 0 || agedOut.length > 0 || raids.length > 0 || armoryChanged || Object.keys(made).length > 0 || finished.length > 0 || built.length > 0;
+  const changed = born.length > 0 || agedOut.length > 0 || wentOff.length > 0 || raids.length > 0 || armoryChanged || Object.keys(made).length > 0 || finished.length > 0 || built.length > 0;
   const version = changed ? camp.version + 1 : camp.version;
   const set = {
     advancedTo: now,
@@ -326,10 +349,11 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     const [member] = await tx.select({ guildId: guildMembers.guildId }).from(guildMembers).where(eq(guildMembers.userId, camp.userId));
     if (member) await tx.insert(guildChat).values({ guildId: member.guildId, userId: camp.userId, text: `🎉 種族等級升到 ${level} 級了！`, at: now });
   }
-  if (born.length > 0 || agedOut.length > 0) {
+  if (born.length > 0 || agedOut.length > 0 || wentOff.length > 0) {
     await addEvent(tx, camp.userId, now, "population", {
       born: born.map((r) => ({ id: r.id, breed: r.breed, at: new Date(r.bornAt).toISOString() })),
       died: agedOut.map((r) => ({ id: r.id, at: new Date(r.diedAt!).toISOString() })),
+      ...(wentOff.length ? { left: wentOff.map((r) => ({ id: r.id, at: new Date(r.diedAt!).toISOString() })) } : {}),
     });
   }
   for (const raid of raids) await addEvent(tx, camp.userId, new Date(raid.at), "raid", raid);

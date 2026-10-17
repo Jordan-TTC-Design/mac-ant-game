@@ -112,6 +112,15 @@ export function raidRaceLevel(raceLevel: number, averageGear: number): number {
   return Math.max(1, Math.min(raceLevel, 1 + Math.floor(Math.max(0, averageGear) * 1.5)));
 }
 
+/**
+ * More monsters for a camp that keeps itself full or holds many cells (2026-10-17: so raids thin out a camp that would
+ * otherwise stay full of commons forever): +4 from 90% of its cap, +1 for every 3 held cells (6 at most).
+ */
+export function raidCrowd(home: number, cap: number, heldCells: number): number {
+  return (home >= cap * 0.9 ? 4 : 0) + Math.min(6, Math.floor(Math.max(0, heldCells) / 3));
+}
+export const RAID_MOST_MONSTERS = 24;
+
 /** At most this share of the residents at home fall in one raid (at least one may); the rest come out of it hurt. */
 export const RAID_MAX_FALLEN = 0.05;
 /** A raid the monsters win carries off this share of these. */
@@ -167,11 +176,12 @@ export function nextRaidIndex(race: string, campSeed: number, startedAt: number,
  * passes by). A bigger camp draws bigger raids, and from 60 residents the stronger monsters come too; a higher race level
  * (big world) brings more of them, of later tiers, more often variants, and the level boss not yet beaten (`beaten`).
  */
-export function planRaid(race: string, campSeed: number, startedAt: number, index: number, residents: number, raceLevel = 1, beaten: readonly number[] = []): RaidPlan | null {
+export function planRaid(race: string, campSeed: number, startedAt: number, index: number, residents: number, raceLevel = 1, beaten: readonly number[] = [], extra = 0): RaidPlan | null {
   if (residents < RAID_MIN_RESIDENTS) return null;
   const random = randomFrom(hashString(`${campSeed}|raid|${index}`));
   const kinds = CAMP_MONSTERS.filter((x) => x.from <= raceLevel && (x.tier > 1 || x.level <= (residents >= 60 ? 2 : 1)));
-  const total = Math.min(raceLevel > 1 ? 16 : 12, 2 + Math.floor(residents / 30) + Math.floor(Math.max(0, raceLevel) / 6) + Math.floor(random() * 3));
+  // (`extra`: a crowded camp and many held cells draw more: raidCrowd; at most RAID_MOST_MONSTERS whatever)
+  const total = Math.min(extra ? RAID_MOST_MONSTERS : raceLevel > 1 ? 16 : 12, 2 + Math.floor(residents / 30) + Math.floor(Math.max(0, raceLevel) / 6) + Math.floor(random() * 3) + Math.max(0, extra));
   const counts = new Map<string, number>();
   // (the variants from a draw of their own, so the kinds and counts stay as they were for a camp of race level 1)
   const odd = randomFrom(hashString(`${campSeed}|raid-variant|${index}`));

@@ -138,3 +138,37 @@ export function fall(population: Population, ids: readonly number[], at: number)
 export function aliveAt(population: Population): Resident[] {
   return population.residents.filter((r) => r.diedAt === null);
 }
+
+/**
+ * A full camp turns over (2026-10-17): while it is at its cap, a birth is rolled every TURNOVER_SLOWER birth intervals; a
+ * common one is not born, a better one takes the place of the oldest common at home, who goes off into the world. So a
+ * camp full of commons slowly gets better without anyone being sent away by hand, at a twentieth of the births or so —
+ * and only on the days `allowed` (the server: days the camp was open on a Mac), so a camp left alone does not.
+ */
+export const TURNOVER_SLOWER = 4;
+export const TURNOVER_MOST = 50;
+
+export function turnover(place: Place, population: Population, campSeed: number, from: number, to: number, allowed: (at: number) => boolean = () => true): { born: Resident[]; left: Resident[] } {
+  const born: Resident[] = [];
+  const left: Resident[] = [];
+  const every = place.birthMinutes * MINUTE * TURNOVER_SLOWER;
+  const first = Math.floor((from - place.startedAt) / every) + 1;
+  const last = Math.floor((to - place.startedAt) / every);
+  for (let k = Math.max(first, last - TURNOVER_MOST + 1); k <= last; k++) {
+    const at = place.startedAt + k * every;
+    if (!allowed(at)) continue; // (only on a day the player had the camp open on a Mac: not for a camp left alone)
+    const alive = population.residents.filter((r) => r.bornAt <= at && r.diedAt === null);
+    if (alive.length < place.cap) continue;
+    const baby = residentFor({ ...place, key: `${place.key}-turnover` }, campSeed, k, population.nextId, at);
+    if (baby.breed === "common") continue;
+    const oldest = alive.filter((r) => r.breed === "common").sort((a, b) => a.bornAt - b.bornAt || a.id - b.id)[0];
+    if (!oldest) continue;
+    oldest.diedAt = at;
+    left.push(oldest);
+    population.nextId++;
+    population.residents.push(baby);
+    born.push(baby);
+  }
+  return { born, left };
+}
+

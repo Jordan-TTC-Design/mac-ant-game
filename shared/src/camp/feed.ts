@@ -53,8 +53,8 @@ export function feedEntry(e: CampEvent, noun = "居民"): FeedEntry | null {
     case "migrated":
       return line("🏕️", `從這台 Mac 搬來了 ${d.came ?? d.residents ?? 0} 隻${noun}。`, "camp");
     case "population": {
-      const born = (d.born ?? []).length, died = (d.died ?? []).length;
-      const parts = [born ? `生了 ${born} 隻${noun}` : "", died ? `${died} 隻老死了` : ""].filter(Boolean);
+      const born = (d.born ?? []).length, died = (d.died ?? []).length, left = (d.left ?? []).length;
+      const parts = [born ? `生了 ${born} 隻${noun}` : "", died ? `${died} 隻老死了` : "", left ? `${left} 隻平民讓出位子，出去闖蕩了` : ""].filter(Boolean);
       return parts.length ? line(born ? "🐣" : "🕯️", parts.join("，") + "。", "camp") : null;
     }
     case "raid": {
