@@ -240,7 +240,7 @@ export interface CampSiteView {
 export interface CampEvent {
   seq: number;
   at: string;
-  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "site" | "focus" | "levelup";
+  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "site" | "focus" | "levelup" | "flow";
   data: unknown;
 }
 

@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { focusView, decorEarned,
   advance,
   aliveAt,
@@ -51,6 +51,7 @@ import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps, expeditions, guildChat, guildMembers, users, worldCells, worldPlayers } from "../db/schema.ts";
 import { resolveRaid, type RaidOutcome } from "./raids.ts";
 import { talentBonusOf, talentEffect } from "../world/talents.ts";
+import { recordFlow } from "./flows.ts";
 import { merchantNow } from "./merchant.ts";
 
 export type CampRow = typeof camps.$inferSelect;
@@ -120,6 +121,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const level = await campRaceLevel(tx, camp.userId);
   const bonus = await talentBonusOf(tx, camp.userId);
   const beaten = [...(camp.bossesBeaten ?? [])];
+  const salvaged: Record<string, number> = {}; // (for the economy dashboard: what broken gear gave back)
 
   // gear: who wears what; the store; newborns are handed gear, the dead give theirs back (as on the Mac)
   const store: GearItem[] = camp.armory.map((i) => ({ ...i }));
@@ -190,7 +192,12 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
           broken.push({ resident: w.id, gear: item.id });
           const roll = randomFrom(hashString(`${camp.seed}|broken|${nextRaid}|${w.id}|${slot}`));
           for (const [mat, count] of Object.entries(gearRule(item.id)?.cost ?? {})) {
-            for (let k = 0; k < count; k++) if ((bonus.refine ?? 0) > 0 || roll() < 0.3) materials[mat] = (materials[mat] ?? 0) + 1; // (拼裝改造: all of it)
+            for (let k = 0; k < count; k++) {
+              if ((bonus.refine ?? 0) > 0 || roll() < 0.3) { // (拼裝改造: all of it)
+                materials[mat] = (materials[mat] ?? 0) + 1;
+                salvaged[mat] = (salvaged[mat] ?? 0) + 1;
+              }
+            }
           }
         }
       }
@@ -282,6 +289,10 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     });
   }
   for (const raid of raids) await addEvent(tx, camp.userId, new Date(raid.at), "raid", raid);
+  // (the economy dashboard's flows: what the raids dropped, broken gear gave back, and the sites made)
+  for (const raid of raids) await recordFlow(tx, camp.userId, new Date(raid.at), "raid", raid.loot);
+  await recordFlow(tx, camp.userId, now, "salvage", salvaged);
+  await recordFlow(tx, camp.userId, now, "production", made);
   for (const { site, at } of finished) {
     const part = site.kind === "farm" ? farmParts(camp.race, site.level).at(-1) : undefined;
     await addEvent(tx, camp.userId, at, "site", { site: site.id, kind: site.kind, level: site.level, name: siteName(camp.race, site.kind), part });
@@ -560,7 +571,7 @@ export async function eventsSince(tx: Tx, userId: string, since: number, limit =
   const rows = await tx
     .select()
     .from(campEvents)
-    .where(and(eq(campEvents.userId, userId), gt(campEvents.seq, since)))
+    .where(and(eq(campEvents.userId, userId), gt(campEvents.seq, since), ne(campEvents.kind, "flow"))) // (the dashboard's, not the devices')
     .orderBy(campEvents.seq)
     .limit(limit);
   return rows.map((e) => ({ seq: e.seq, at: e.at.toISOString(), kind: e.kind as CampEvent["kind"], data: e.data }));

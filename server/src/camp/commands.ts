@@ -63,6 +63,7 @@ import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps, guildDonations, guildMembers, guilds } from "../db/schema.ts";
 import { addEvent, campRaceLevel, gearPlaces, HALF_BREED_LIFESPAN, inGearPool, refundFor } from "./service.ts";
 import { questMetrics } from "./quests.ts";
+import { recordChange } from "./flows.ts";
 import { talentBonusOf, talentEffect } from "../world/talents.ts";
 import { merchantArrivals, merchantBought } from "./merchant.ts";
 
@@ -593,6 +594,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       await tx.update(campResidents).set({ gear: Object.keys(w.gear).length ? (w.gear as Record<string, GearItem>) : null }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, w.id)));
     }
   }
+  await recordChange(tx, camp.userId, now, command.kind, camp.materials, materials); // (for the economy dashboard)
   const set: Partial<CampRow> = { ...changes, materials, armory: store, version: camp.version + 1 };
   await tx.update(camps).set(set).where(eq(camps.userId, camp.userId));
   Object.assign(camp, set);

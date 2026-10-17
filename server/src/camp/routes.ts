@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { campCommand, feedEntries, migrateInput, RACE_NOUNS, sanctuaryInput, SANCTUARY_REST_HOURS, startCampInput, type CampEvent, type FeedResponse } from "@goblincamp/shared/camp";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, lt, ne } from "drizzle-orm";
 import { campEvents, camps } from "../db/schema.ts";
 import { advanceWorld } from "../world/service.ts";
 import type { AppDeps, AppEnv } from "../app.ts";
@@ -65,7 +65,7 @@ export function campRoutes(deps: AppDeps) {
       const rows = await tx
         .select({ seq: campEvents.seq, at: campEvents.at, kind: campEvents.kind, data: campEvents.data })
         .from(campEvents)
-        .where(and(eq(campEvents.userId, userId), before ? lt(campEvents.seq, before) : undefined))
+        .where(and(eq(campEvents.userId, userId), ne(campEvents.kind, "flow"), before ? lt(campEvents.seq, before) : undefined))
         .orderBy(desc(campEvents.seq))
         .limit(limit * 5);
       const events = rows.map((r) => ({ seq: r.seq, at: r.at.toISOString(), kind: r.kind as CampEvent["kind"], data: r.data }));
