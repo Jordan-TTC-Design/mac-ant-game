@@ -512,6 +512,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        if let which = env["FRIENDS_SHOW"] { // the 好友 page with made-up friends (no server), in a window; captured if CAMP_SNAPSHOT says where
+            let pane = FriendsPane(api: self.sync.api)
+            self.friendsPane = pane
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 680), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            w.title = "好友頁預覽（假資料，不會連到伺服器）"
+            if env["CAMP_SNAPSHOT"] != nil || env["CAMP_DARK"] != nil { w.appearance = NSAppearance(named: env["CAMP_DARK"] != nil ? .darkAqua : .aqua) }
+            pane.paneView.frame = NSRect(x: 0, y: 0, width: 720, height: 680)
+            pane.paneView.autoresizingMask = [.width, .height]
+            w.contentView = pane.paneView
+            w.center()
+            NSApp.setActivationPolicy(.regular)
+            w.makeKeyAndOrderFront(nil)
+            self.guildPreviewWindow = w
+            pane.debugShow(which)
+            if let prefix = env["CAMP_SNAPSHOT"] {
+                after(1.5) {
+                    let v = w.contentView!.superview ?? w.contentView! // (the whole window, with its own background)
+                    if let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                        v.cacheDisplay(in: v.bounds, to: rep)
+                        let whole = NSImage(size: v.bounds.size)
+                        whole.lockFocus()
+                        (env["CAMP_DARK"] != nil ? NSColor(white: 0.12, alpha: 1) : NSColor.white).setFill()
+                        NSRect(origin: .zero, size: v.bounds.size).fill()
+                        rep.draw(in: NSRect(origin: .zero, size: v.bounds.size))
+                        whole.unlockFocus()
+                        if let tiff = whole.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: "\(prefix)-friends-\(which).png"))
+                        }
+                    }
+                    NSApp.terminate(nil)
+                }
+            }
+        }
         if let json = env["GUILD_SHOW"], let data = try? Data(contentsOf: URL(fileURLWithPath: json)) { // the guild page with made-up data, in a window to play with (no server)
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 760), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             w.title = "公會頁預覽（假資料，不會連到伺服器）"
@@ -2052,7 +2085,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(code, forType: .string)
         }
-        friendCode.toolTip = "點一下複製；朋友用這個代碼加你（好友與使者在之後的版本）"
+        friendCode.toolTip = "點一下複製；朋友用這個代碼加你（主視窗的「好友」頁可以加好友、傳訊息）"
         let devices = ClosureMenuItem(title: "登入中的裝置…") { [weak self] in self?.showDevices() }
         let signIn = ClosureMenuItem(title: "登入或註冊…") { [weak self] in self?.showAccountWindow() }
         let signOut = ClosureMenuItem(title: "登出…") { [weak self] in self?.confirmSignOut() }
@@ -2082,6 +2115,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         items.signOut.isHidden = user == nil
         items.signIn.isHidden = user != nil
         items.signIn.title = sync.status == .needsLogin ? "重新登入…" : "登入或註冊…"
+        if friendsUser != user?.id {
+            friendsUser = user?.id
+            friendsPane = nil
+            friendsUnread = 0
+            if user != nil { ensureFriendsPane().refreshCount() }
+        }
         if mainWindow.isVisible {
             mainWindow.reloadSidebar() // (the big world, quests and what happened come and go with the account)
             if mainWindow.current == .account { accountPane.refresh() }
@@ -2268,6 +2307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.pullPomodoro()
             self?.checkRelayed()
             self?.tellAnnouncements()
+            if self?.sync.user != nil { self?.ensureFriendsPane().refreshCount() }
         }
         applyBooksToCamp()
         booksTimer?.invalidate()
@@ -2966,7 +3006,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guildPane.event(type, event)
         case "friends.changed":
             // (with `from`: a message from that friend)
-            if let from = event["from"] as? String { tellMessage(from: from) }
+            let from = event["from"] as? String
+            if sync.user != nil { ensureFriendsPane().changed(from: from) }
+            if let from { tellMessage(from: from) }
         case "announcements.changed":
             tellAnnouncements()
         case "claude.answer":
@@ -2986,8 +3028,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The last message from each friend already told (by its time), so a second "changed" for the same one says nothing.
     private var toldMessages: [String: String] = [:]
 
-    /// A friend wrote: the princess says who and what (the reply is on the phone, or in the 大世界 window's 好友).
+    /// A friend wrote: the princess says who and what (the reply is in the main window's 好友, or on the phone).
     private func tellMessage(from friend: String) {
+        if NSApp.isActive, mainWindow.isShowing(.friends), friendsPane?.chatWith == friend { return } // (being read right now)
         struct Last: Decodable { let text: String; let at: String; let mine: Bool }
         struct Friend: Decodable { let id: String; let name: String; let unread: Int; let last: Last? }
         struct Friends: Decodable { let friends: [Friend] }
@@ -4163,13 +4206,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let main = MainWindow()
         main.pages = { [weak self] in
             guard let self else { return [] }
-            let online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .guild, .quests, .feed] : []
+            var online: [MainWindow.Page] = self.sync.user != nil && self.serverCamp ? [.world, .guild, .quests, .feed] : []
+            // (好友: messages with friends, FriendsPane; it needs only the account, after the guild when that is there)
+            if self.sync.user != nil { online.insert(.friends, at: online.firstIndex(of: .guild).map { $0 + 1 } ?? 0) }
             let camp: [MainWindow.Page] = self.isWindowMode ? [.camp] : [] // (on the desktop, the camp is not in a window)
             // (回報: bugs and ideas, FeedbackPane; it needs only the account)
             let report: [MainWindow.Page] = self.sync.user != nil ? [.feedback] : []
             return camp + online + [.workshop, .roster, .notes] + report + [.account, .manual]
         }
         main.pane = { [weak self] page in self?.pane(for: page) }
+        main.badge = { [weak self] page in page == .friends ? self?.friendsUnread ?? 0 : 0 }
         main.popped = { [weak self] page in page == .guild && self?.settings.guildPopped == true }
         main.openPopped = { [weak self] _ in
             guard let self else { return }
@@ -4180,6 +4226,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }()
 
     private var feedbackPane: FeedbackPane?
+    private var friendsPane: FriendsPane?
+    /// Whose friends the pane shows (a new one is made when someone else signs in).
+    private var friendsUser: String?
+    /// Unread messages and asks waiting, for the sidebar.
+    private var friendsUnread = 0
+
+    private func ensureFriendsPane() -> FriendsPane {
+        if let friendsPane { return friendsPane }
+        let pane = FriendsPane(api: sync.api)
+        pane.onUnread = { [weak self] n in
+            guard let self, n != self.friendsUnread else { return }
+            self.friendsUnread = n
+            if self.mainWindow.isVisible { self.mainWindow.reloadBadges() }
+        }
+        friendsPane = pane
+        return pane
+    }
 
     private func pane(for page: MainWindow.Page) -> MainPane? {
         switch page {
@@ -4190,6 +4253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .feedback:
             if feedbackPane == nil { feedbackPane = FeedbackPane(api: sync.api) }
             return feedbackPane
+        case .friends:
+            return ensureFriendsPane()
         case .world, .quests, .feed:
             if let pane = webPanes[page] { return pane }
             let pane = WebPane(api: sync.api, path: "/\(page.rawValue)")

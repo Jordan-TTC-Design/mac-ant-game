@@ -336,6 +336,7 @@ Mac 上已經有的便利貼全部上傳，伺服器上已經有的（例如另�
 - 訊息**立刻送到**（使者走進來的動畫之後在 Mac 上做），最多 200 字、一天最多 300 則，對方手機收到推播，打開對話就算已讀。每段對話保留最近 1000 則（`MESSAGES_KEPT`），不限天數，傳新的時候把更舊的刪掉。
 - `GET /api/friends`、`POST /api/friends/asks {code | userId}`、`POST /api/friends/:id/accept`、`DELETE /api/friends/:id`、`POST /api/friends/:id/block`、`GET|POST /api/friends/:id/messages`。有變化時 WebSocket 送 `friends.changed`。
 - 手機網頁多了首頁（每個功能一張卡片）和底部分頁：首頁、便利貼、番茄鐘、營地、好友。
+- **Mac 的「好友」頁**（2026-10-17，`mac/Sources/GoblinCamp/FriendsPane.swift`，主視窗側欄，登入就有）：原生介面，和手機一樣：自己的好友代碼、輸入代碼加好友、答應／婉拒邀請、收回自己送出的邀請、好友列表（最後一句、未讀數）、對話（泡泡、隔 10 分鐘以上標時間、自己最後一則標已讀／送出了、載入更早的訊息、下面固定輸入列，Return 送出，剩 40 字內顯示還能打幾個字）、解除好友、封鎖（都要按兩次）。側欄「好友」旁顯示未讀訊息加等待中的邀請數。正在看那段對話時，公主不再唸那位朋友的新訊息。預覽：`FRIENDS_SHOW=list|chat`（假資料，加 `CAMP_SNAPSHOT=路徑前綴` 存成圖，`CAMP_DARK=1` 深色）。
 
 ## 17. 資料庫備份（2026-09-30）
 

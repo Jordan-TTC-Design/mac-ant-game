@@ -19,13 +19,14 @@ extension MainPane {
 /// small window (or the desktop): this one is for looking things up and doing things.
 final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSToolbarDelegate {
     enum Page: String, CaseIterable {
-        case camp, world, guild, quests, feed, workshop, roster, notes, feedback, account, manual
+        case camp, world, guild, friends, quests, feed, workshop, roster, notes, feedback, account, manual
 
         var title: String {
             switch self {
             case .camp: return "營地"
             case .world: return "大世界"
             case .guild: return "公會"
+            case .friends: return "好友"
             case .quests: return "任務"
             case .feed: return "動態"
             case .workshop: return "工坊"
@@ -45,6 +46,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             case .guild: return 640 // (the panels beside the hall need their room)
             case .world, .quests, .feed: return 360
             case .feedback: return 460
+            case .friends: return 420
             case .account, .manual: return 420
             case .workshop: return 600
             case .notes: return 620
@@ -57,6 +59,7 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             case .camp: return "tent"
             case .world: return "globe.asia.australia"
             case .guild: return "building.columns"
+            case .friends: return "bubble.left.and.bubble.right"
             case .quests: return "checklist"
             case .feed: return "clock.arrow.circlepath"
             case .workshop: return "hammer"
@@ -80,6 +83,8 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
     /// Pages popped out into windows of their own: picking one brings that window forward instead of showing it here.
     var popped: (Page) -> Bool = { _ in false }
     var openPopped: (Page) -> Void = { _ in }
+    /// A number beside a page's name in the sidebar (0: none), e.g. unread messages on 好友.
+    var badge: (Page) -> Int = { _ in 0 }
     private var shown: [Page] = []
     private(set) var current: Page?
     private var currentPane: MainPane?
@@ -160,6 +165,11 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
     }
 
     func close() { window.orderOut(nil); hideCurrent() }
+
+    /// The sidebar's numbers again (what is picked stays picked).
+    func reloadBadges() {
+        sidebar.reloadData(forRowIndexes: IndexSet(integersIn: 0..<shown.count), columnIndexes: [0])
+    }
 
     /// A page went to a window of its own: this window shows another one.
     func pageMoved(_ page: Page) {
@@ -270,7 +280,9 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             return c
         }()
         cell.imageView?.image = NSImage(systemSymbolName: page.symbol, accessibilityDescription: page.title)
-        cell.textField?.stringValue = page.title
+        let n = badge(page)
+        cell.textField?.stringValue = n > 0 ? "\(page.title)（\(n > 99 ? "99+" : String(n))）" : page.title
+        cell.textField?.font = n > 0 ? .boldSystemFont(ofSize: 13) : .systemFont(ofSize: 13)
         return cell
     }
 
