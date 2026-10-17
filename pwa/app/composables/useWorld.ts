@@ -18,10 +18,26 @@ let timer: ReturnType<typeof setInterval> | undefined;
 async function loadMe() {
   state.me = await api<WorldMe>("GET", "world");
 }
-async function loadCells(center = state.center) {
+/** How far round a point one look at the map fetches, and how far the view may move from it before another is needed. */
+const FETCH_RADIUS = 1800;
+const STILL_COVERED = 900;
+/** The last look at the map: where, and when (a fresh one close by needs no other). */
+let fetched: { at: number; center: { lat: number; lng: number } } | null = null;
+const metersApart = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => Math.hypot((a.lat - b.lat) * 110_574, (a.lng - b.lng) * 111_320 * Math.cos((a.lat * Math.PI) / 180));
+
+/**
+ * The map round `center`: fetched, and laid over what is already there (the map never goes blank while the new comes),
+ * keeping only what is near enough to be seen again. Unless `fresh`, a recent look close by covers it: nothing is fetched.
+ */
+async function loadCells(center = state.center, fresh = true) {
   if (!center) return;
   state.center = center;
-  state.cells = await api<CellView[]>("GET", `world/cells?lat=${center.lat.toFixed(6)}&lng=${center.lng.toFixed(6)}&radius=1800`);
+  if (!fresh && fetched && Date.now() - fetched.at < 60_000 && metersApart(fetched.center, center) < STILL_COVERED) return;
+  const got = await api<CellView[]>("GET", `world/cells?lat=${center.lat.toFixed(6)}&lng=${center.lng.toFixed(6)}&radius=${FETCH_RADIUS}`);
+  fetched = { at: Date.now(), center };
+  const byCell = new Map(state.cells.filter((c) => metersApart(c, center) < FETCH_RADIUS + STILL_COVERED).map((c) => [c.cell, c]));
+  for (const c of got) byCell.set(c.cell, c);
+  state.cells = [...byCell.values()];
 }
 /** The next refresh puts the map back on the camp (opening the page starts there, not where it was dragged last time). */
 let backHome = true;
@@ -77,7 +93,8 @@ export function useWorld() {
     open,
     close,
     refresh,
-    moveTo: (center: { lat: number; lng: number }) => loadCells(center).catch(() => {}),
+    /** The map was dragged (or sent) to `center`: fetched only when it has gone past what was looked at lately. */
+    moveTo: (center: { lat: number; lng: number }) => loadCells(center, false).catch(() => {}),
     /** The first time: where the camp stands (nobody is sent; the whole camp is there). */
     openWorld: (cell?: string) => act(() => api("POST", "world/open", cell ? { cell } : {})),
     /** The camp moves to another cell (once a week). */

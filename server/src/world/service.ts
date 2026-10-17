@@ -1130,6 +1130,14 @@ function summary(row: ExpeditionRow, viewer?: string): ExpeditionSummary {
   };
 }
 
+/** Several camps' names and races at once (those not found are left out). */
+async function ownersOf(tx: Tx, userIds: string[]): Promise<Map<string, WorldOwner>> {
+  const ids = [...new Set(userIds)];
+  if (!ids.length) return new Map();
+  const rows = await tx.select({ id: users.id, name: users.displayName, race: camps.race }).from(users).leftJoin(camps, eq(camps.userId, users.id)).where(inArray(users.id, ids));
+  return new Map(rows.map((r) => [r.id, { id: r.id, name: r.name ?? "？", race: r.race ?? "goblin" }]));
+}
+
 async function ownerOf(tx: Tx, userId: string): Promise<WorldOwner> {
   const [row] = await tx.select({ name: users.displayName, race: camps.race }).from(users).leftJoin(camps, eq(camps.userId, users.id)).where(eq(users.id, userId));
   return { id: userId, name: row?.name ?? "？", race: row?.race ?? "goblin" };
@@ -2179,9 +2187,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
   const landmarks = await landmarksFor(tx, ids);
   const rows = ids.length ? await tx.select().from(worldCells).where(inArray(worldCells.cell, ids)) : [];
   const byCell = new Map(rows.map((r) => [r.cell, r]));
-  const ownerIds = [...new Set(rows.map((r) => r.owner).filter((o): o is string => !!o))];
-  const owners = new Map<string, WorldOwner>();
-  for (const id of ownerIds) owners.set(id, await ownerOf(tx, id));
+  const owners = await ownersOf(tx, rows.map((r) => r.owner).filter((o): o is string => !!o));
   const counts = await garrisons(tx, rows.filter((r) => r.owner).map((r) => r.cell));
   const homes = new Set(
     rows.some((r) => r.owner)
@@ -2199,11 +2205,17 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
     ).map((g) => [g.place.slice(6), g.n]),
   );
   // the great monsters standing in view (their wounds, if anybody has fought them)
+  // (one look at the books for all of them)
   const bosses = new Map<string, BossView>();
-  for (const cell of ids) {
+  const sightings = ids.flatMap((cell) => {
     const sighting = bossAt(WORLD_SEED, cell, now.getTime(), bossesOn());
-    if (!sighting || byCell.get(cell)?.owner) continue;
-    const [row] = await tx.select().from(worldBosses).where(eq(worldBosses.key, bossKey(sighting)));
+    return sighting && !byCell.get(cell)?.owner ? [{ cell, sighting }] : [];
+  });
+  const bossRows = new Map(
+    (sightings.length ? await tx.select().from(worldBosses).where(inArray(worldBosses.key, sightings.map((b) => bossKey(b.sighting)))) : []).map((r) => [r.key, r]),
+  );
+  for (const { cell, sighting } of sightings) {
+    const row = bossRows.get(bossKey(sighting));
     if (row?.defeatedAt) continue;
     bosses.set(cell, await bossView(tx, sighting, row));
   }
