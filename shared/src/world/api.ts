@@ -301,7 +301,7 @@ export interface CellHappening {
    * yield: the ground gave; lairBack: the lair came back for it; incoming: another camp's party set out for it; attacked:
    * another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home.
    */
-  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests" | "staffed";
+  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests" | "staffed" | "raided";
   /** Auto staffing: those it sent walking home (with `residents` 0), and the number it keeps it at. */
   back?: number;
   target?: number;

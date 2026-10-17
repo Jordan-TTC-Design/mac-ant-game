@@ -93,6 +93,7 @@ import {
   buildingYield,
   buildingsFor,
   cellBonus,
+  cellRaidLosses,
   cellBuildingBlurb,
   cellBuildingName,
   cellBuildingRule,
@@ -592,6 +593,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   const yieldsByCell: Record<string, Record<string, number>> = {};
   const upkeep: Record<string, number> = {};
   const hungry: string[] = [];
+  /** Held cells wild monsters raided meanwhile: how many of each garrison fell (CELL_RAIDS). */
+  const raided: Record<string, number> = {};
   const [home] = await tx.select({ cell: worldPlayers.homeCell, xp: worldPlayers.xp, talents: worldPlayers.talents }).from(worldPlayers).where(eq(worldPlayers.userId, camp.userId));
   const tb = talentBonus(home?.talents);
   const paying = payingCells(held, home?.cell ?? null, freeCellsOf(home));
@@ -683,6 +686,19 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
         yields[mat] = (yields[mat] ?? 0) + k;
       }
       await tx.update(worldCells).set({ yieldedTo: new Date(since.getTime() + times * YIELD_HOURS * HOUR) }).where(eq(worldCells.cell, cell.cell));
+      // wild monsters raided it meanwhile, more often the higher the level and the more cells held (not the camp's own cell:
+      // the camp's raids are the camp's), killing a few of its garrison
+      if (!isHome) {
+        const random = seeded(WORLD_SEED, cell.cell, since.getTime(), "cell-raid");
+        const { fallen } = cellRaidLosses(raceLevel(home?.xp ?? 0), held.length, n, bonus.fort + (tb.fort ?? 0), times, random);
+        if (fallen > 0) {
+          const there = await aliveAt(tx, camp.userId, cellPlace(cell.cell));
+          const dead = there.map((r) => ({ r, k: random() })).sort((a, b) => a.k - b.k).slice(0, fallen).map((x) => x.r);
+          await bury(tx, camp, dead, now);
+          raided[cell.cell] = dead.length;
+          changed = true;
+        }
+      }
       if (Object.keys(fed).length) {
         yieldsByCell[cell.cell] = fed;
         changed = true;
@@ -693,8 +709,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   if (staffed.length && (await staff(tx, camp, staffed, home?.cell ?? null, now))) changed = true;
   await recordFlow(tx, camp.userId, now, "world-yield", yields);
   await recordFlow(tx, camp.userId, now, "world-upkeep", taken(upkeep));
-  if (Object.keys(yields).length || Object.keys(upkeep).length || hungry.length) {
-    await addEvent(tx, camp.userId, now, "world", { yields, cells: yieldsByCell, ...(Object.keys(upkeep).length ? { upkeep } : {}), ...(hungry.length ? { hungry } : {}) });
+  if (Object.keys(yields).length || Object.keys(upkeep).length || hungry.length || Object.keys(raided).length) {
+    await addEvent(tx, camp.userId, now, "world", { yields, cells: yieldsByCell, ...(Object.keys(upkeep).length ? { upkeep } : {}), ...(hungry.length ? { hungry } : {}), ...(Object.keys(raided).length ? { raided } : {}) });
   }
   // spoils of great monsters this camp helped beat
   const rewards = await tx.select().from(worldRewards).where(and(eq(worldRewards.userId, camp.userId), isNull(worldRewards.claimedAt))).for("update");
@@ -2368,7 +2384,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
         eq(campEvents.userId, userId),
         sql`(${campEvents.data} -> 'cells' ? ${cell} or ${campEvents.data} -> 'lairBack' ->> 'cell' = ${cell} or ${campEvents.data} ->> 'cell' = ${cell}
           or ${campEvents.data} ->> 'nest' = ${cell} or ${campEvents.data} ->> 'town' = ${cell} or ${campEvents.data} ->> 'recalled' = ${cell}
-          or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'guests' ->> 'cell' = ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell} or ${campEvents.data} -> 'staffed' ->> 'cell' = ${cell}
+          or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'raided' ? ${cell} or ${campEvents.data} -> 'guests' ->> 'cell' = ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell} or ${campEvents.data} -> 'staffed' ->> 'cell' = ${cell}
           or (${campEvents.data} ->> 'to' = ${cell} and (${campEvents.data} ? 'arrived' or ${campEvents.data} ? 'incoming')))`,
       ),
     )
@@ -2378,6 +2394,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   for (const e of events) {
     const d = e.data as Record<string, any>;
     const at = e.at.toISOString();
+    if (d.raided?.[cell]) history.push({ at, kind: "raided", fallen: d.raided[cell] });
     if (d.cells?.[cell] || d.hungry?.includes(cell)) history.push({ at, kind: "yield", loot: d.cells?.[cell] ?? {}, hungry: d.hungry?.includes(cell) || undefined });
     else if (d.lairBack) history.push({ at, kind: "lairBack", name: d.lairBack.name, held: d.lairBack.held, fallen: d.lairBack.fallen, killed: d.lairBack.killed, loot: d.lairBack.loot, helped: d.lairBack.helped, guests: d.lairBack.guests });
     else if (d.guests) history.push({ at, kind: "guests", by: d.guests.from, residents: d.guests.count });

@@ -750,3 +750,20 @@ describe("拼裝改造 (哥布林工匠's top talent)", () => {
     expect(c.armory.find((x) => x.id === "bone_knife")).toMatchObject({ refined: true, held: true });
   });
 });
+
+describe("monsters raiding held cells", () => {
+  it("kill a few of a garrison as the days go by, and the cell's history says so", async () => {
+    const a = await ready();
+    await database.sql`update world_players set xp = 120050`; // (Lv50: raids come often)
+    const cell = await settle(a, 25);
+    const before = (await database.sql`select count(*)::int n from camp_residents where place = ${`cell:${cell}`} and died_at is null`)[0]!.n as number;
+    t.advance(2 * 24 * HOUR);
+    const d = (await t.call("GET", `/world/cells/${cell}`, undefined, a)).body as CellDetail;
+    const raids = d.history.filter((h) => h.kind === "raided");
+    expect(raids.length).toBeGreaterThan(0);
+    const fell = raids.reduce((n, h) => n + (h.fallen ?? 0), 0);
+    expect(fell).toBeGreaterThan(0);
+    expect(fell).toBeLessThan(before / 2); // (a few, not the lot)
+    expect(d.garrison).toBeGreaterThan(0);
+  });
+});

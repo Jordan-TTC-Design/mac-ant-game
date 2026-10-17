@@ -151,6 +151,7 @@ const lootText = (loot: Record<string, number> = {}) => Object.entries(loot).sor
 function happening(h: CellHappening): string {
   switch (h.kind) {
     case "yield": return `${h.hungry ? "乾糧不夠，產出減半：" : "產出了 "}${lootText(h.loot) || "（沒有）"}`;
+    case "raided": return `🐺 野生魔獸來襲，倒下 ${h.fallen} 隻（瞭望塔、聖樹、天賦的守備可以少死一些）`;
     case "lairBack": {
       const help = `${h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : ""}${h.guests ? `，好友 ${h.guests} 隻一起守` : ""}`;
       return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}${help}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}${help}）`;

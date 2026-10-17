@@ -133,3 +133,28 @@ describe("towns and their region", () => {
     expect(regionTowns(far, held, new Set([a, far]))).toBe(1);
   });
 });
+
+describe("monsters raiding held cells (CELL_RAIDS)", () => {
+  it("come more often with the race level and the cells held, and kill at most a few of a garrison", async () => {
+    const { cellRaidChance, cellRaidLosses, CELL_RAIDS } = await import("./holdings.ts");
+    const { seeded } = await import("./random.ts");
+    expect(cellRaidChance(1, 1)).toBeCloseTo(CELL_RAIDS.base);
+    expect(cellRaidChance(20, 10)).toBeGreaterThan(cellRaidChance(5, 2));
+    expect(cellRaidChance(50, 100)).toBe(CELL_RAIDS.max);
+    // two days of yields on a cell of 40 at Lv30 with 10 cells: some fall, never more than 5% a raid, and a fort saves some
+    let plain = 0;
+    let fortified = 0;
+    for (let s = 0; s < 200; s++) {
+      const a = cellRaidLosses(30, 10, 40, 0, 16, seeded(s, "a"));
+      expect(a.fallen).toBeLessThanOrEqual(a.raids * Math.ceil(40 * CELL_RAIDS.share));
+      plain += a.fallen;
+      fortified += cellRaidLosses(30, 10, 40, 0.4, 16, seeded(s, "a")).fallen;
+    }
+    expect(plain / 200).toBeGreaterThan(1);
+    expect(plain / 200).toBeLessThan(15);
+    expect(fortified).toBeLessThan(plain);
+    // never the last one; and a cell left alone for a week counts two days only
+    expect(cellRaidLosses(50, 100, 1, 0, 16, seeded(1)).fallen).toBe(0);
+    expect(cellRaidLosses(30, 10, 40, 0, 56, seeded(3)).raids).toBeLessThanOrEqual(CELL_RAIDS.lookback);
+  });
+});

@@ -9,7 +9,7 @@ import { donationPoints } from "../guild.ts";
 import { MATERIALS } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 import { neighbors } from "./grid.ts";
-import { hashString } from "./random.ts";
+import { hashString, type Random } from "./random.ts";
 import { RATIONS } from "./supplies.ts";
 
 export type CellBuildingKind =
@@ -453,4 +453,49 @@ export function buildingYield(bonus: CellBonus, times: number, random: () => num
     for (const [id, p] of Object.entries(bonus.finds)) if (random() < p) out[id] = (out[id] ?? 0) + 1;
   }
   return out;
+}
+
+// --- monsters raiding held cells (2026-10-17) -----------------------------------------------------------------------------
+
+/**
+ * Wild monsters raid held cells too (not only the camp at home): at each yield (every YIELD_HOURS) a cell may be raided, more
+ * likely the higher the race level and the more cells the camp holds, and a raid kills a few of its garrison (at most `share`,
+ * less with the cell's fort). Worked out lazily as a cell yields, only for the last `lookback` yields of a cell left alone.
+ * The user: 「隨著等級提升或是佔領領地變多，魔獸、敵人來襲數量要變多，殺死一些民眾才能保持平衡，而且也不是都只攻擊主營」.
+ */
+export const CELL_RAIDS = {
+  base: 0.04,
+  perLevel: 0.006,
+  perCell: 0.01,
+  /** Chance at a yield, at most. */
+  max: 0.4,
+  /** Share of the garrison a raid kills, at most (fort takes off its share of that, up to fortMax). */
+  share: 0.05,
+  fortMax: 0.6,
+  /** Yields looked back over (16 × 3 hours: two days). */
+  lookback: 16,
+} as const;
+
+/** The chance of a raid on one held cell at a yield. */
+export function cellRaidChance(raceLevel: number, cellsHeld: number): number {
+  return Math.min(CELL_RAIDS.max, CELL_RAIDS.base + CELL_RAIDS.perLevel * Math.max(0, raceLevel - 1) + CELL_RAIDS.perCell * Math.max(0, cellsHeld - 1));
+}
+
+/**
+ * How many of a cell's `garrison` monster raids kill over `yields` yields, and how many raids came. A raid's losses are rounded
+ * by chance (a garrison of 10 loses 0 or 1); the garrison never falls below one.
+ */
+export function cellRaidLosses(raceLevel: number, cellsHeld: number, garrison: number, fort: number, yields: number, random: Random): { raids: number; fallen: number } {
+  const chance = cellRaidChance(raceLevel, cellsHeld);
+  const share = CELL_RAIDS.share * (1 - Math.min(CELL_RAIDS.fortMax, Math.max(0, fort)));
+  let left = garrison;
+  let raids = 0;
+  for (let k = 0; k < Math.min(yields, CELL_RAIDS.lookback); k++) {
+    if (random() >= chance) continue;
+    raids++;
+    const want = left * share;
+    const lost = Math.min(left - 1, Math.floor(want) + (random() < want - Math.floor(want) ? 1 : 0));
+    left -= Math.max(0, lost);
+  }
+  return { raids, fallen: garrison - left };
 }
