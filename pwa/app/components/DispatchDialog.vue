@@ -16,6 +16,8 @@ import {
   RATIONS_PER_EXTRA,
   residentFighter,
   walkMinutes,
+  REGION_TRAVEL,
+  sameRegion,
   GUESTS_MAX,
   WORLD_SEED,
   type CellView,
@@ -239,9 +241,14 @@ watch(
   { immediate: true },
 );
 const noWay = computed(() => !!way.value && way.value.waypoints.length === 0);
+/** Moving into one's own cell joined to where they set out: quick (REGION_TRAVEL), as the server walks it. */
+const inRegion = computed(() => {
+  const start = from.value === "home" ? props.me.homeCell : from.value;
+  return !!start && sameRegion(start, props.target.cell, new Set(props.me.cells.map((c) => c.cell)));
+});
 const minutesFor = (meters: number) => {
   const slowest = Math.min(...party.value.map((a) => fighter(a.r).speed));
-  return Math.max(1, Math.round(walkMinutes(meters, slowest) * (fromCell.value?.travel ?? 1)));
+  return Math.max(1, Math.round(walkMinutes(meters, slowest) * (fromCell.value?.travel ?? 1) * (inRegion.value ? REGION_TRAVEL : 1)));
 };
 const minutes = computed(() => (way.value && !noWay.value && party.value.length ? minutesFor(way.value.meters) : null));
 /** How much longer the way round is than straight there. */

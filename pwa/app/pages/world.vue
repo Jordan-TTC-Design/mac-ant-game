@@ -275,8 +275,14 @@ const inRegion = computed(() => {
   const start = wayFrom.value === "home" ? s.me?.homeCell : wayFrom.value;
   return !!start && !!selected.value && sameRegion(start, selected.value, new Set((s.me?.cells ?? []).map((c) => c.cell)));
 });
-const minutesTo = computed(() => (way.value?.waypoints.length ? Math.max(1, Math.round(walkMinutes(way.value.meters) * (inRegion.value ? REGION_TRAVEL : 1))) : null));
-const detourTo = computed(() => (way.value && way.value.waypoints.length > 2 ? walkMinutes(way.value.meters) - walkMinutes(way.value.straight) : 0));
+/** What setting out from there takes off the walk (its station, inn, dock, town, pairings: the server's cellBonus). */
+const startTravel = computed(() => {
+  const start = wayFrom.value === "home" ? s.me?.homeCell : wayFrom.value;
+  return s.me?.cells.find((c) => c.cell === start)?.travel ?? 1;
+});
+const walkFor = (meters: number) => Math.max(1, Math.round(walkMinutes(meters) * startTravel.value * (inRegion.value ? REGION_TRAVEL : 1)));
+const minutesTo = computed(() => (way.value?.waypoints.length ? walkFor(way.value.meters) : null));
+const detourTo = computed(() => (way.value && way.value.waypoints.length > 2 ? walkFor(way.value.meters) - walkFor(way.value.straight) : 0));
 const lootText = (loot: Record<string, number>) => Object.entries(loot).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 const costList = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 const left = (iso: string) => {
