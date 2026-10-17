@@ -100,4 +100,11 @@ describe("細分地形 (WORLD.md §29)", () => {
     expect(BREED_STATS.elf!.d_mountain!.health).toBeCloseTo(3.5 * 1.4);
     expect(BREED_STATS.goblin!.brute).toEqual({ speed: 0.8, might: 1.6, health: 5 });
   });
+
+  it("bears more 聰明 where a library stands (sageBoost)", () => {
+    const cell = { race: "elf", key: "cell:3:4", startedAt: 0, birthMinutes: 60, cap: 100 };
+    const count = (boost?: number) => Array.from({ length: 3000 }, (_, s) => residentFor({ ...cell, sageBoost: boost }, 5, s, 1, 0)).filter((r) => r.breed === "sage").length;
+    expect(count(1)).toBe(count());
+    expect(count(3)).toBeGreaterThan(count() * 2);
+  });
 });

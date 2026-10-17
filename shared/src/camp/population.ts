@@ -39,6 +39,8 @@ export interface Place {
   detail?: string | null;
   /** × that chance (the 祈福台 and the 祭壇: details.ts DETAIL_BUILDINGS `breed`). */
   breedBoost?: number;
+  /** × the 聰明 breed's weight there (the 圖書館: details.ts DETAIL_BUILDINGS `sage`). */
+  sageBoost?: number;
 }
 
 /** The chance a common born on a 細分地形 is its terrain breed (`d_<detail>`) instead. */
@@ -70,7 +72,8 @@ function seeded(...parts: (string | number)[]): Random {
 export function residentFor(place: Place, campSeed: number, slot: number, id: number, bornAt: number): Resident {
   const rules = raceRules(place.race);
   const random = seeded(campSeed, place.key, "birth", slot);
-  const breed = pickWeighted(random, rules.breeds, (b) => b.weight);
+  const sage = place.sageBoost ?? 1;
+  const breed = pickWeighted(random, rules.breeds, (b) => (b.id === "sage" ? b.weight * sage : b.weight));
   const seed = Math.floor(random() * 4294967296);
   const jitter = 0.9 + 0.2 * random();
   const diesAt = rules.ages ? bornAt + Math.floor(BASE_LIFESPAN_HOURS * HOUR * breed.lifespan * jitter) : null;
