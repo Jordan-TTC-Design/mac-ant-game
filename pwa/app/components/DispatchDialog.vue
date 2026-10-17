@@ -2,6 +2,8 @@
 import { RACE_RANGE, residentAsFighter, type CampView } from "@goblincamp/shared/camp";
 import {
   BOOST_FOODS,
+  cellCenter,
+  TERRAIN_NAMES,
   BOOST_ITEMS,
   lairEntry,
   bossFighters,
@@ -58,11 +60,23 @@ onMounted(async () => {
 
 const min = computed(() => props.me.rules.garrisonMin);
 /** Where a party may set out from: the camp, or a held cell with more living there than it needs (not the target). */
-const starts = computed(() => [
-  { id: "home", label: "營地", n: props.me.atHome },
-  // (not the camp's own cell: everybody at home is there already)
-  ...props.me.cells.filter((c) => c.garrison > min.value && c.cell !== props.target.cell && c.cell !== props.me.homeCell).map((c) => ({ id: c.cell, label: "領地", n: c.garrison })),
-]);
+/** Where a party may set out from, the nearest the target first (with how far, and what ground it is). */
+const starts = computed(() => {
+  const to = cellCenter(props.target.cell);
+  const km = (cell: string | null) => {
+    if (!cell) return Infinity;
+    const at = cellCenter(cell);
+    return Math.hypot((at.lat - to.lat) * 110.574, (at.lng - to.lng) * 111.32 * Math.cos((to.lat * Math.PI) / 180));
+  };
+  const far = (k: number) => (k === Infinity ? "" : k < 1 ? `・${Math.round(k * 1000)} 公尺` : `・${k.toFixed(1)} 公里`);
+  return [
+    { id: "home", label: `營地${far(km(props.me.homeCell))}`, n: props.me.atHome, km: km(props.me.homeCell) },
+    // (not the camp's own cell: everybody at home is there already)
+    ...props.me.cells
+      .filter((c) => c.garrison > min.value && c.cell !== props.target.cell && c.cell !== props.me.homeCell)
+      .map((c) => ({ id: c.cell, label: `${c.town ? "城鎮" : TERRAIN_NAMES[c.terrain]}${far(km(c.cell))}`, n: c.garrison, km: km(c.cell) })),
+  ].sort((a, b) => a.km - b.km);
+});
 const firstStart = props.again?.from ?? props.start;
 const from = ref(firstStart && starts.value.some((o) => o.id === firstStart) ? firstStart : "home");
 const place = computed(() => (from.value === "home" ? "home" : `cell:${from.value}`));
@@ -310,6 +324,7 @@ const ok = computed(() => party.value.length > 0 && (props.kind !== "settle" || 
 
 const breedName = (b: string) => names.value.races[props.race]?.breeds[b] ?? b;
 const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.race]?.sheets[b] ?? "worker"}.png`;
+useModal();
 </script>
 
 <template>

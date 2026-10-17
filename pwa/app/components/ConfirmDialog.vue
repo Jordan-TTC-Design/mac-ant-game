@@ -9,6 +9,7 @@ function onKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener("keydown", onKey));
 onUnmounted(() => window.removeEventListener("keydown", onKey));
+useModal(() => !!current.value);
 </script>
 
 <template>

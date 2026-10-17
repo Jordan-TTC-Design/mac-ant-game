@@ -110,3 +110,21 @@ export function useNav() {
 
   return { state, start, stop, refresh, lastIn, badges, questsReady, visitor, merchant, incoming, talentPoints, overdue, unread, friendAsks, guildInvites, loadQuests, loadWorld };
 }
+
+/**
+ * A dialog over the page: the tab bar and the pomodoro strip step aside while it is open. (On iPhone everything inside the
+ * page's scroller stays under the tab bar whatever its z-index — the scroller is a layer of its own — so a sheet rising from
+ * the bottom would have its last buttons hidden.) Counted, for a dialog opened over another.
+ */
+let modals = 0;
+export function useModal(open: Ref<boolean> | (() => boolean) = () => true) {
+  let mine = false;
+  const set = (on: boolean) => {
+    if (on === mine || typeof document === "undefined") return;
+    mine = on;
+    modals += on ? 1 : -1;
+    document.documentElement.classList.toggle("modal-open", modals > 0);
+  };
+  watch(open, (on) => set(!!on), { immediate: true });
+  onUnmounted(() => set(false));
+}

@@ -37,6 +37,7 @@ const everyone = computed(() =>
 );
 const shown = ref(40);
 const blocked = (r: CampResidentView) => slot.value === "shield" && !!gearRule(r.gear?.weapon?.id ?? "")?.twoHanded;
+useModal();
 </script>
 
 <template>

@@ -47,6 +47,7 @@ async function go() {
     busy.value = false;
   }
 }
+useModal();
 </script>
 
 <template>
