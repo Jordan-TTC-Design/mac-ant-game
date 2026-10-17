@@ -23,8 +23,16 @@ export const RACE_LEVELS_PER_SLOT = 5;
 export const WORKERS_PER_LEVEL = 10;
 /** What the camp picks up with no site at all, per hour (so a new camp can build its first). */
 export const GATHERING: Record<string, number> = { log: 2, stone: 1 };
-/** Hours to build a site (level 1), and to raise it to level 2 and 3. */
-export const SITE_HOURS = [1, 4, 12] as const;
+/** Hours to build a site (level 1), and to raise it to level 2, 3, 4 and 5. */
+export const SITE_HOURS = [1, 4, 12, 24, 48] as const;
+/** The race level (big world) from which a site (not the farm) may be raised to level 4, and to level 5 (DESKTOP.md §10.0). */
+export const SITE_LEVEL_4_AT = 10;
+export const SITE_LEVEL_5_AT = 20;
+/** Levels 4 and 5 make this many times level 3, and cost this many times raising it to 3, with crystal shards on top. */
+const HIGH_LEVELS = [
+  { makes: 1.5, cost: 2, crystal_shard: 3 },
+  { makes: 2, cost: 4, crystal_shard: 10 },
+] as const;
 /** A site taken down gives back this share of all it cost. */
 export const DEMOLISH_REFUND = 0.5;
 
@@ -132,24 +140,38 @@ export function siteName(race: string, kind: SiteKind): string {
   return kind === "farm" ? farmName(race) : version(race, kind).name;
 }
 
-export function siteMaxLevel(kind: SiteKind): number {
-  return kind === "farm" ? FARM_MAX : 3;
+/** How high a site may go: 3 (the farm FARM_MAX), and 4 and 5 from race levels SITE_LEVEL_4_AT and SITE_LEVEL_5_AT. */
+export function siteMaxLevel(kind: SiteKind, raceLevel = 1): number {
+  if (kind === "farm") return FARM_MAX;
+  return 3 + (raceLevel >= SITE_LEVEL_4_AT ? 1 : 0) + (raceLevel >= SITE_LEVEL_5_AT ? 1 : 0);
 }
 
-/** What raising a site from `level` costs and takes (0: building it); null at the top. */
-export function siteNext(kind: SiteKind, level: number): { cost: Record<string, number>; hours: number; name: string } | null {
-  if (level >= siteMaxLevel(kind)) return null;
+/** What raising a site from `level` costs and takes (0: building it), whether or not the race level allows it yet. */
+function siteStep(kind: SiteKind, level: number): { cost: Record<string, number>; hours: number } | null {
   if (kind === "farm") {
-    const next = FARM_LEVELS[level]!;
-    return { cost: next.cost, hours: next.hours, name: "" };
+    const next = FARM_LEVELS[level];
+    return next ? { cost: next.cost, hours: next.hours } : null;
   }
-  return { cost: RULES.get(kind)!.costs[level]!, hours: SITE_HOURS[level]!, name: "" };
+  const costs = RULES.get(kind)!.costs;
+  if (level < 3) return { cost: costs[level]!, hours: SITE_HOURS[level]! };
+  const high = HIGH_LEVELS[level - 3];
+  if (!high) return null;
+  const cost = Object.fromEntries(Object.entries(costs[2]).map(([id, n]) => [id, n * high.cost]));
+  cost.crystal_shard = (cost.crystal_shard ?? 0) + high.crystal_shard;
+  return { cost, hours: SITE_HOURS[level]! };
+}
+
+/** What raising a site from `level` costs and takes (0: building it); null at the top (for this race level). */
+export function siteNext(kind: SiteKind, level: number, raceLevel = 1): { cost: Record<string, number>; hours: number; name: string } | null {
+  if (level >= siteMaxLevel(kind, raceLevel)) return null;
+  const step = siteStep(kind, level);
+  return step && { ...step, name: "" };
 }
 
 /** Everything a site has cost up to `level` (for giving half back when it is taken down). */
 export function siteSpent(kind: SiteKind, level: number): Record<string, number> {
   const out: Record<string, number> = {};
-  for (let l = 0; l < level; l++) for (const [id, n] of Object.entries(siteNext(kind, l)?.cost ?? {})) out[id] = (out[id] ?? 0) + n;
+  for (let l = 0; l < level; l++) for (const [id, n] of Object.entries(siteStep(kind, l)?.cost ?? {})) out[id] = (out[id] ?? 0) + n;
   return out;
 }
 
@@ -169,7 +191,9 @@ export function sitePerHour(race: string, site: Pick<Site, "kind" | "level">): {
   if (site.level <= 0) return { makes: {}, finds: {} };
   if (site.kind === "farm") return { makes: farmPerHour(race, site.level), finds: {} };
   const v = version(race, site.kind);
-  const pick = (m: Record<string, readonly number[]> | undefined) => Object.fromEntries(Object.entries(m ?? {}).map(([id, n]) => [id, n[site.level - 1]!]));
+  // (levels 4 and 5: level 3's, times HIGH_LEVELS)
+  const times = site.level > 3 ? (HIGH_LEVELS[site.level - 4]?.makes ?? HIGH_LEVELS[1].makes) : 1;
+  const pick = (m: Record<string, readonly number[]> | undefined) => Object.fromEntries(Object.entries(m ?? {}).map(([id, n]) => [id, n[Math.min(site.level, 3) - 1]! * times]));
   return { makes: pick(v.makes), finds: pick(v.finds) };
 }
 

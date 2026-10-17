@@ -1,0 +1,61 @@
+{
+  "id": "wild_boar",
+  "name": "山豬",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 110,
+  "speed": 26,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 9,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 2,
+  "appearsAfter": 120,
+  "minAnts": 60,
+  "damage": 2,
+  "attackEvery": 2.0,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "slam",
+  "splits": 0,
+  "pack": [
+    1,
+    2
+  ],
+  "drops": [
+    {
+      "id": "boar_hide",
+      "name": "野豬皮",
+      "chance": 0.7,
+      "min": 1,
+      "max": 2,
+      "color": "#784e34"
+    },
+    {
+      "id": "boar_tusk",
+      "name": "野豬獠牙",
+      "chance": 0.4,
+      "min": 1,
+      "max": 1,
+      "color": "#f6f0dc"
+    },
+    {
+      "id": "sharp_claw",
+      "name": "斷爪",
+      "chance": 0.15,
+      "min": 1,
+      "max": 1,
+      "color": "#8a8a96"
+    },
+    {
+      "id": "golden_fur",
+      "name": "金毛",
+      "chance": 0.05,
+      "min": 1,
+      "max": 1,
+      "color": "#f0c040"
+    }
+  ]
+}

@@ -112,8 +112,14 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({
     requestId,
     kind: z.literal("decor-set"),
-    items: z.array(z.object({ kind: z.string().max(40), x: z.number(), y: z.number(), flip: z.boolean().optional() })).max(200),
+    items: z.array(z.object({ kind: z.string().max(40), x: z.number(), y: z.number(), flip: z.boolean().optional() })).max(400), // (200 things and 160 fence pieces at most: decor.ts decorLimits)
   }),
+  /** Takes in the visitor at the gate (visitors.ts), paying its welcome present; a full camp sends `replace` away for it. */
+  z.object({ requestId, kind: z.literal("visitor-accept"), visit: z.string().max(20), replace: z.number().int().optional() }),
+  /** Sends the visitor at the gate on its way. */
+  z.object({ requestId, kind: z.literal("visitor-decline"), visit: z.string().max(20) }),
+  /** Asks a resident at home to leave the camp for good (its gear goes back to the store). */
+  z.object({ requestId, kind: z.literal("resident-dismiss"), resident: z.number().int() }),
 ]);
 export type CampCommand = z.infer<typeof campCommand>;
 
@@ -174,6 +180,9 @@ export interface CampView {
   decor?: DecorPlaced[];
   /** The player's race level in the big world (1 before it opens): how much decoration room, which decorations and how many (decor.ts). Older servers leave it out. */
   raceLevel?: number;
+  /** Who waits at the gate wanting to move in (visitors.ts; null: nobody), and the level bosses beaten (raids.ts). Older servers leave them out. */
+  visitor?: import("./visitors.ts").CampVisitor | null;
+  bossesBeaten?: number[];
   /** The ranch's animals (ranch.ts). Older servers leave it out. */
   ranch?: { animals: RanchAnimal[] };
   /** The pomodoro's focus rounds done, today and in all, and what they bring today (focus.ts). Older servers leave it out. */
@@ -209,6 +218,8 @@ export interface CampSiteView {
   /** 0: still being built. */
   level: number;
   maxLevel: number;
+  /** The race level that opens the next level, while the race level holds it back (DESKTOP.md §10.0). */
+  opensAt?: number;
   /** The farm: what each level added (菜園, 麥田, …). */
   parts?: string[];
   /** What it makes an hour with every hand at its level (the finds: their chance). */
@@ -223,7 +234,7 @@ export interface CampSiteView {
 export interface CampEvent {
   seq: number;
   at: string;
-  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "site" | "focus";
+  kind: "started" | "migrated" | "population" | "raid" | "command" | "expedition" | "world" | "site" | "focus" | "levelup";
   data: unknown;
 }
 

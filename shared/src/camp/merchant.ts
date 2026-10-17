@@ -11,6 +11,10 @@ export const MERCHANT_STAY_MINUTES = 15;
 export const MERCHANT_VISITS_PER_DAY = 3;
 /** And not two closer together than this. */
 export const MERCHANT_GAP_MINUTES = 60;
+/** The race level (big world) from which he comes once more a day, brings a rare swap, and one rarer still (DESKTOP.md §10.0). */
+export const MERCHANT_MORE_VISITS_AT = 10;
+export const MERCHANT_RARE_AT = 15;
+export const MERCHANT_LEGEND_AT = 25;
 
 export interface MerchantOffer {
   /** What the camp hands over, and what it gets. */
@@ -99,6 +103,24 @@ const OWN_DEALS: Record<string, Deal[]> = {
 /** A visit on a day of much focus (focus.ts FOCUS_RARE_ROUNDS) has this at the end of its id, and one rare find more. */
 export const RARE_VISIT_SUFFIX = "-f";
 
+/**
+ * A visit's id ends in its marks, "-" apart: "f" a day of much focus (a rare find), "r1" a race level of MERCHANT_RARE_AT (one
+ * more rare find), "r2" of MERCHANT_LEGEND_AT (a legendary one too), "t" the 精打細算 talent (one more ordinary swap).
+ */
+export function merchantMarks(raceLevel: number, focusRare: boolean, trade: number): string {
+  return (focusRare ? RARE_VISIT_SUFFIX : "") + (raceLevel >= MERCHANT_LEGEND_AT ? "-r2" : raceLevel >= MERCHANT_RARE_AT ? "-r1" : "") + (trade > 0 ? "-t" : "");
+}
+const marked = (visit: string, mark: string) => visit.split("-").slice(2).includes(mark);
+
+/** The legendary finds (a race level of MERCHANT_LEGEND_AT): what only the world bosses drop, for a great deal of the camp's own. */
+const LEGEND_DEALS: Deal[] = [
+  { give: { crystal_shard: 12, amber: 4, log: 300 }, get: { dragon_scale: 1 }, weight: 1 },
+  { give: { crystal_shard: 10, scrap_iron: 60, stone: 300 }, get: { giant_bone: 1 }, weight: 1 },
+  { give: { crystal_shard: 12, night_dust: 20 }, get: { soul_gem: 1 }, weight: 1 },
+  { give: { crystal_shard: 10, leather_strap: 10, log: 200 }, get: { minotaur_horn: 1 }, weight: 1 },
+  { give: { crystal_shard: 12, food_honey: 20, stone: 200 }, get: { hydra_fang: 1 }, weight: 1 },
+];
+
 /** The rare finds: what world bosses and great lairs drop, for a good deal of the camp's own. */
 const RARE_DEALS: Record<string, Deal[]> = {
   goblin: [
@@ -120,7 +142,7 @@ const RARE_DEALS: Record<string, Deal[]> = {
 export function merchantStock(visit: string, race: string): MerchantOffer[] {
   const r = seeded(visit, "stock");
   const pool = [...(OWN_DEALS[race] ?? OWN_DEALS.goblin!), ...COMMON_DEALS];
-  const count = between(r, 4, 6);
+  const count = between(r, 4, 6) + (marked(visit, "t") ? 1 : 0);
   const picked: MerchantOffer[] = [];
   const left = pool.map((deal) => ({ ...deal }));
   while (picked.length < count && left.length) {
@@ -138,9 +160,15 @@ export function merchantStock(visit: string, race: string): MerchantOffer[] {
     for (const id of Object.keys(offer.give)) offer.give[id] = Math.max(1, Math.round(offer.give[id]! * 0.6));
     offer.sale = true;
   }
-  if (visit.endsWith(RARE_VISIT_SUFFIX)) {
-    const rare = RARE_DEALS[race] ?? RARE_DEALS.goblin!;
-    const deal = rare[between(seeded(visit, "rare"), 0, rare.length - 1)]!;
+  // (rare finds: a day of much focus, and a race level of MERCHANT_RARE_AT: each a different one while there are)
+  const rare = [...(RARE_DEALS[race] ?? RARE_DEALS.goblin!)];
+  const rares = (marked(visit, "f") ? 1 : 0) + (marked(visit, "r1") || marked(visit, "r2") ? 1 : 0);
+  for (let n = 0; n < rares && rare.length; n++) {
+    const [deal] = rare.splice(between(n ? seeded(visit, "rare", n) : seeded(visit, "rare"), 0, rare.length - 1), 1);
+    picked.push({ give: { ...deal!.give }, get: { ...deal!.get }, rare: true });
+  }
+  if (marked(visit, "r2")) {
+    const deal = LEGEND_DEALS[between(seeded(visit, "legend"), 0, LEGEND_DEALS.length - 1)]!;
     picked.push({ give: { ...deal.give }, get: { ...deal.get }, rare: true });
   }
   return picked;

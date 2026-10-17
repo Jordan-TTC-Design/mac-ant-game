@@ -8,6 +8,9 @@ import { focusView, decorEarned,
   fightBoosts,
   gearRule,
   planRaid,
+  specialEffects,
+  visitorAt,
+  levelOpens,
   raidTime,
   SANCTUARY_REST_HOURS,
   redistribute,
@@ -20,6 +23,8 @@ import { focusView, decorEarned,
   farmParts,
   produce,
   siteMaxLevel,
+  SITE_LEVEL_4_AT,
+  SITE_LEVEL_5_AT,
   siteName,
   siteNext,
   sitePerHour,
@@ -42,8 +47,9 @@ import { focusView, decorEarned,
 } from "@goblincamp/shared/camp";
 import { hashString, raceLevel, randomFrom } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
-import { campEvents, campResidents, camps, expeditions, users, worldCells, worldPlayers } from "../db/schema.ts";
+import { campEvents, campResidents, camps, expeditions, guildChat, guildMembers, users, worldCells, worldPlayers } from "../db/schema.ts";
 import { resolveRaid, type RaidOutcome } from "./raids.ts";
+import { talentBonusOf, talentEffect } from "../world/talents.ts";
 import { merchantNow } from "./merchant.ts";
 
 export type CampRow = typeof camps.$inferSelect;
@@ -109,6 +115,10 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const kills = { ...camp.kills };
   const startedAt = camp.startedAt.getTime();
   let nextRaid = camp.nextRaid;
+  // (the race level and talents shape the raids: their tiers, variants and bosses, and what the camp brings to them)
+  const level = await campRaceLevel(tx, camp.userId);
+  const bonus = await talentBonusOf(tx, camp.userId);
+  const beaten = [...(camp.bossesBeaten ?? [])];
 
   // gear: who wears what; the store; newborns are handed gear, the dead give theirs back (as on the Mac)
   const store: GearItem[] = camp.armory.map((i) => ({ ...i }));
@@ -147,9 +157,12 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     await settleGear();
     const alive = aliveAt(population);
     // (聖光模式: no monster comes; the raid's time passes by)
-    const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length);
+    const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length, level, beaten);
     if (plan) {
-      const outcome = resolveRaid(camp.race, camp.seed, plan, alive.map((r) => ({ ...r, gear: wearers.get(r.id)?.gear })), fightBoosts(camp.race, camp.boosts, t));
+      const specials = specialEffects(alive.map((r) => r.breed));
+      const help = { attack: talentEffect(bonus, "campGuard") + specials.raidAttack, weaken: specials.raidWeaken, loot: talentEffect(bonus, "campHeart") };
+      const outcome = resolveRaid(camp.race, camp.seed, plan, alive.map((r) => ({ ...r, gear: wearers.get(r.id)?.gear })), fightBoosts(camp.race, camp.boosts, t), level, help);
+      if (outcome.bossBeaten && plan.boss) beaten.push(plan.boss);
       // wear, and what broke (about a third of what it was made from can be picked out of the wreck)
       const broken: { resident: number; gear: string }[] = [];
       for (const [id, slots] of Object.entries(outcome.wear)) {
@@ -236,8 +249,17 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     sites,
     producedTo: new Date(producedTo),
     productionCarry: carry,
+    bossesBeaten: beaten,
+    celebratedLevel: Math.max(camp.celebratedLevel, level),
   };
   await tx.update(camps).set(set).where(eq(camps.userId, camp.userId));
+  // (the race level went up since: a 🎉 line in the camp's feed, and one in the guild's chat for the others to see)
+  if (level > camp.celebratedLevel && camp.celebratedLevel >= 1) {
+    const opens = Array.from({ length: level - camp.celebratedLevel }, (_, i) => levelOpens(camp.celebratedLevel + 1 + i)).flat();
+    await addEvent(tx, camp.userId, now, "levelup", { level, from: camp.celebratedLevel, opens: opens.join("、") });
+    const [member] = await tx.select({ guildId: guildMembers.guildId }).from(guildMembers).where(eq(guildMembers.userId, camp.userId));
+    if (member) await tx.insert(guildChat).values({ guildId: member.guildId, userId: camp.userId, text: `🎉 種族等級升到 ${level} 級了！`, at: now });
+  }
   if (born.length > 0 || agedOut.length > 0) {
     await addEvent(tx, camp.userId, now, "population", {
       born: born.map((r) => ({ id: r.id, breed: r.breed, at: new Date(r.bornAt).toISOString() })),
@@ -287,6 +309,12 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     merchant: await merchantNow(tx, camp, camp.advancedTo), // (the camp was just advanced to now)
     decor: camp.decor.filter((d) => decorKind(d.kind)), // (kinds taken out of the catalogue since are gone)
     raceLevel: level,
+    visitor: await (async () => {
+      const home = rows.filter((r) => r.place === "home");
+      const v = visitorAt(camp.seed, camp.advancedTo, level, new Set(home.map((r) => r.breed)), talentEffect(await talentBonusOf(tx, camp.userId), "campHost"));
+      return v && !camp.visitors[v.id] ? v : null;
+    })(),
+    bossesBeaten: camp.bossesBeaten,
     ranch: { animals: camp.ranch?.animals ?? [] },
     focus: focusView(camp.focus, camp.advancedTo),
     decorEarned: [...decorEarned(camp.quests ?? {}, camp.race)],
@@ -358,7 +386,7 @@ export function productionView(camp: CampRow, workers: number, level: number): C
     perHour: campPerHour(camp.race, camp.sites, share),
     busy: busy ? { site: busy.id, until: new Date(busy.busyUntil!).toISOString() } : null,
     sites: camp.sites.map((site) => {
-      const next = siteNext(site.kind, site.level);
+      const next = siteNext(site.kind, site.level, level);
       const { makes, finds } = sitePerHour(camp.race, site);
       const after = next ? sitePerHour(camp.race, { kind: site.kind, level: site.level + 1 }) : null;
       return {
@@ -366,7 +394,9 @@ export function productionView(camp: CampRow, workers: number, level: number): C
         kind: site.kind,
         name: siteName(camp.race, site.kind),
         level: site.level,
-        maxLevel: siteMaxLevel(site.kind),
+        maxLevel: siteMaxLevel(site.kind, level),
+        // (the race level that lets it go one higher, while that is still ahead)
+        opensAt: site.kind !== "farm" && site.level >= siteMaxLevel(site.kind, level) && site.level < 5 ? (site.level < 4 ? SITE_LEVEL_4_AT : SITE_LEVEL_5_AT) : undefined,
         parts: site.kind === "farm" ? farmParts(camp.race, site.level) : undefined,
         makes: { ...makes, ...finds },
         busyUntil: site.busyUntil ? new Date(site.busyUntil).toISOString() : null,

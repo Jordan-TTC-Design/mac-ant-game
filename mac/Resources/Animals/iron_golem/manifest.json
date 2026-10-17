@@ -1,0 +1,53 @@
+{
+  "id": "iron_golem",
+  "name": "鐵甲魔像",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 400,
+  "speed": 14,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 11,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 4,
+  "appearsAfter": 240,
+  "minAnts": 120,
+  "damage": 4,
+  "attackEvery": 2.6,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "slam",
+  "splits": 0,
+  "pack": [
+    1,
+    1
+  ],
+  "drops": [
+    {
+      "id": "iron_plate",
+      "name": "魔像鐵板",
+      "chance": 0.75,
+      "min": 1,
+      "max": 2,
+      "color": "#828894"
+    },
+    {
+      "id": "golem_core",
+      "name": "巨人核心",
+      "chance": 0.25,
+      "min": 1,
+      "max": 1,
+      "color": "#5adcfa"
+    },
+    {
+      "id": "shiny_bead",
+      "name": "閃亮黏珠",
+      "chance": 0.04,
+      "min": 1,
+      "max": 1,
+      "color": "#f0d040"
+    }
+  ]
+}

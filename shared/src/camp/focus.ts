@@ -4,7 +4,7 @@
  * the ranch breeds faster, and the merchant brings something rare. The server counts them as the parts end
  * (server/src/pomodoro/routes.ts); the camp's books keep the count.
  */
-import { MERCHANT_VISITS_PER_DAY, taipeiDay } from "./merchant.ts";
+import { MERCHANT_MORE_VISITS_AT, MERCHANT_VISITS_PER_DAY, taipeiDay } from "./merchant.ts";
 
 /** Focus rounds in a day for each good thing (and what it does). */
 export const FOCUS_MERCHANT_ROUNDS = 3; // the merchant comes once more that day
@@ -90,7 +90,7 @@ export function focusLine(rounds: number): string {
   return next ? `今天專注第 ${rounds} 輪，再 ${next - rounds} 輪營地有好事。` : `今天專注第 ${rounds} 輪，辛苦了！`;
 }
 
-/** The merchant's visits allowed today: the usual, and one more after FOCUS_MERCHANT_ROUNDS. */
-export function merchantVisitsToday(focus: CampFocus | null | undefined, now: Date): number {
-  return MERCHANT_VISITS_PER_DAY + (focusToday(focus, now) >= FOCUS_MERCHANT_ROUNDS ? 1 : 0);
+/** The merchant's visits allowed today: the usual, one more after FOCUS_MERCHANT_ROUNDS, and one more from race level MERCHANT_MORE_VISITS_AT. */
+export function merchantVisitsToday(focus: CampFocus | null | undefined, now: Date, raceLevel = 1): number {
+  return MERCHANT_VISITS_PER_DAY + (focusToday(focus, now) >= FOCUS_MERCHANT_ROUNDS ? 1 : 0) + (raceLevel >= MERCHANT_MORE_VISITS_AT ? 1 : 0);
 }

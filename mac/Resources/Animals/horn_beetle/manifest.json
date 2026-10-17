@@ -1,0 +1,61 @@
+{
+  "id": "horn_beetle",
+  "name": "角甲蟲",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 55,
+  "speed": 18,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 3,
+  "radius": 7,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 1,
+  "appearsAfter": 60,
+  "minAnts": 30,
+  "damage": 1,
+  "attackEvery": 2.2,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "slam",
+  "splits": 0,
+  "pack": [
+    1,
+    2
+  ],
+  "drops": [
+    {
+      "id": "beetle_shell",
+      "name": "甲蟲殼",
+      "chance": 0.75,
+      "min": 1,
+      "max": 2,
+      "color": "#34427a"
+    },
+    {
+      "id": "beetle_horn",
+      "name": "獨角仙角",
+      "chance": 0.35,
+      "min": 1,
+      "max": 1,
+      "color": "#5a4632"
+    },
+    {
+      "id": "sharp_claw",
+      "name": "斷爪",
+      "chance": 0.15,
+      "min": 1,
+      "max": 1,
+      "color": "#8a8a96"
+    },
+    {
+      "id": "shiny_bead",
+      "name": "閃亮黏珠",
+      "chance": 0.04,
+      "min": 1,
+      "max": 1,
+      "color": "#f0d040"
+    }
+  ]
+}

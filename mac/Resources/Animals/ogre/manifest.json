@@ -1,0 +1,53 @@
+{
+  "id": "ogre",
+  "name": "食人魔",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 380,
+  "speed": 20,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 11,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 4,
+  "appearsAfter": 240,
+  "minAnts": 120,
+  "damage": 4,
+  "attackEvery": 2.4,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "slam",
+  "splits": 0,
+  "pack": [
+    1,
+    1
+  ],
+  "drops": [
+    {
+      "id": "ogre_hide",
+      "name": "食人魔皮",
+      "chance": 0.7,
+      "min": 1,
+      "max": 2,
+      "color": "#c8aa78"
+    },
+    {
+      "id": "ogre_club",
+      "name": "食人魔棒",
+      "chance": 0.25,
+      "min": 1,
+      "max": 1,
+      "color": "#6e5032"
+    },
+    {
+      "id": "golden_fur",
+      "name": "金毛",
+      "chance": 0.05,
+      "min": 1,
+      "max": 1,
+      "color": "#f0c040"
+    }
+  ]
+}

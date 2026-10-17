@@ -68,6 +68,8 @@ final class Colony {
     var doomed = Set<Int>()
     /// The raid being played: when it began (real seconds), and its monsters' ids.
     var raidPlaying: (began: Double, monsters: Set<Int>)?
+    /// The level boss of the raid being played (its creature) and whether the books say the camp beat it.
+    var raidBoss: (creature: Int, beaten: Bool)?
     /// Something the player did that the books must do (craft, repair, food) while the camp follows the books.
     var onBookCommand: ((BookCommand) -> Void)?
     /// The princess had a child while the camp follows the books: the server adds it (breed id, parents).
@@ -787,7 +789,7 @@ final class Colony {
     /// A monster (or a pack of them) walks in from a screen edge, heading for the camp.
     func spawnMonsters(of kind: AnimalKind? = nil) {
         guard nest != nil, let kind = kind ?? Animals.pick(monsters: true, minutes: playSeconds / 60, ants: peakAnts, biome: scene?.biome.rawValue, night: Colony.isNight,
-                                                                   water: scene.map { !$0.visiblePonds.isEmpty } ?? false) else { return }
+                                                                   water: scene.map { !$0.visiblePonds.isEmpty } ?? false, raceLevel: decorLevel) else { return }
         let count = Int.random(in: kind.monster.pack)
         let before = creatures.count
         for _ in 0..<count { spawnAnimal(of: kind) }
@@ -795,6 +797,8 @@ final class Colony {
             creatures[i].pos.x += CGFloat.random(in: -22...22)
             creatures[i].pos.y += CGFloat.random(in: -22...22)
             creatures[i].stay = Double.random(in: 200...320)
+            // (a higher race level: now and then a variant, as on the server)
+            if Double.random(in: 0..<1) < MonsterVariant.chance(raceLevel: decorLevel) { creatures[i].make(MonsterVariant.allCases.randomElement()!) }
         }
     }
 
@@ -813,8 +817,21 @@ final class Colony {
             wearOnHit(of: best.index, blocked: true)
             return
         }
-        for _ in 0..<max(1, Int(monster.kind.monster.damage.rounded())) { hurt(ant: best.index) }
+        for _ in 0..<max(1, Int(monster.damage.rounded())) { hurt(ant: best.index) }
         wearOnHit(of: best.index, blocked: false)
+        // (a poisonous one hurts again a little later; an icy one leaves the goblin slow for a while)
+        let victim = ants[best.index].id
+        switch monster.variant {
+        case .poison:
+            for delay in [1.5, 3.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self, let i = self.ants.firstIndex(where: { $0.id == victim }), !self.ants[i].isDying, !self.ants[i].isHidden else { return }
+                    if Double.random(in: 0..<1) < 0.5 { self.hurt(ant: i) }
+                }
+            }
+        case .ice: ants[best.index].chilled = 4
+        default: break
+        }
     }
 
     func spawnTree(at point: CGPoint? = nil) {
@@ -1043,7 +1060,10 @@ final class Colony {
             }
         }
         let luck = monster.generation == 0 ? 1.0 : 0.5 // the small ones are worth less
-        let first = dropLoot(Materials.roll(monster.kind.monster.drops + Materials.scraps, luck: luck).map { ($0.id, $0.count) }, at: monster.pos)
+        var rolled = Materials.roll(monster.kind.monster.drops + Materials.scraps, luck: luck).map { ($0.id, $0.count) }
+        if monster.variant == .elite { rolled += Materials.roll(monster.kind.monster.drops, luck: luck).map { ($0.id, $0.count) } } // (an elite: one more roll)
+        if monster.kind.monster.boss, monster.generation == 0 { addFloater("打倒了等級王 \(monster.displayName)！", .rare, at: monster.pos, important: true) }
+        let first = dropLoot(rolled, at: monster.pos)
         for i in ants.indices {
             switch ants[i].mode {
             case .hunting(let target, _), .inNestForHunt(_, let target), .huntNews(let target):
@@ -2503,10 +2523,26 @@ extension Colony {
     /// Plays a raid the server fought: its monsters walk in and fight, those the books say fell die in it, and when it is
     /// over (every monster down, or two and a half minutes) the rest of the fallen go down and the monsters left walk off.
     func playRaid(monsters: [(id: String, count: Int)], fallen: Set<Int>) {
+        playRaid(monsters: monsters.map { ($0.id, $0.count, nil) }, boss: nil, fallen: fallen)
+    }
+
+    /// The same, with the server's variants (精英, 毒, 火, 冰) and the level boss it sent (its race level) and whether it was beaten.
+    func playRaid(monsters: [(id: String, count: Int, variant: MonsterVariant?)], boss: (level: Int, beaten: Bool)?, fallen: Set<Int>) {
         let before = creatures.count
-        for (id, count) in monsters {
+        for (id, count, variant) in monsters {
             guard let kind = Animals.all.first(where: { $0.id == id }) else { continue }
-            for _ in 0..<count { spawnAnimal(of: kind) }
+            for _ in 0..<count {
+                spawnAnimal(of: kind)
+                if let variant, creatures.count > before { creatures[creatures.count - 1].make(variant) }
+            }
+        }
+        raidBoss = nil
+        if let boss, let kind = Animals.all.first(where: { $0.id == Colony.bossID(level: boss.level) }) {
+            spawnAnimal(of: kind)
+            if creatures.count > before, let nest {
+                raidBoss = (creatures[creatures.count - 1].id, boss.beaten)
+                addFloater("等級王 \(kind.name) 來了！", .rare, at: nest, important: true)
+            }
         }
         for i in before..<creatures.count { // a raid comes all at once, spread out a little, and heads for the camp
             creatures[i].pos.x += CGFloat.random(in: -22...22)
@@ -2523,7 +2559,12 @@ extension Colony {
         guard let raid = raidPlaying else { return }
         let left = creatures.indices.filter { raid.monsters.contains(creatures[$0].id) }
         guard left.isEmpty || Date().timeIntervalSinceReferenceDate - raid.began > 150 else { return }
-        for i in left { creatures[i].stay = 0 } // the rest walk off
+        // (the books say the camp beat the boss: down it goes, whatever the fight on screen; else it walks off, to come again)
+        if let boss = raidBoss, let i = creatures.firstIndex(where: { $0.id == boss.creature }) {
+            if boss.beaten { kill(creatureAt: i) } else { addFloater("等級王 \(creatures[i].kind.name) 撤退了，下次突襲還會再來", .uncommon, at: creatures[i].pos, important: true) }
+        }
+        raidBoss = nil
+        for i in creatures.indices where raid.monsters.contains(creatures[i].id) { creatures[i].stay = 0 } // the rest walk off
         for i in ants.indices where doomed.contains(ants[i].id) && !ants[i].isDying {
             ants[i].ageless = false
             ants[i].mode = .dying(remaining: Ant.dyingTime)
@@ -2534,6 +2575,15 @@ extension Colony {
         doomed = []
         raidPlaying = nil
         onAntsChanged?()
+    }
+
+    /// The level boss of race level `level` (the server's campBoss): 史萊姆王 at 10, 巨魔酋長 at 20, 遠古飛龍 from 30 on.
+    static func bossID(level: Int) -> String {
+        switch level / 10 {
+        case ...1: return "slime_king"
+        case 2: return "troll_chief"
+        default: return "elder_wyvern"
+        }
     }
 
     /// Floating words over the camp (what a raid left, and the like).

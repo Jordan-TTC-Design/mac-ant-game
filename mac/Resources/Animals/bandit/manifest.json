@@ -1,0 +1,53 @@
+{
+  "id": "bandit",
+  "name": "山賊",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 160,
+  "speed": 32,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 8,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 3,
+  "appearsAfter": 180,
+  "minAnts": 90,
+  "damage": 3,
+  "attackEvery": 1.6,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "slam",
+  "splits": 0,
+  "pack": [
+    2,
+    4
+  ],
+  "drops": [
+    {
+      "id": "stolen_coin",
+      "name": "贓物銅幣",
+      "chance": 0.7,
+      "min": 1,
+      "max": 3,
+      "color": "#c8a040"
+    },
+    {
+      "id": "bandit_mask",
+      "name": "山賊面巾",
+      "chance": 0.3,
+      "min": 1,
+      "max": 1,
+      "color": "#3c3c46"
+    },
+    {
+      "id": "golden_fur",
+      "name": "金毛",
+      "chance": 0.05,
+      "min": 1,
+      "max": 1,
+      "color": "#f0c040"
+    }
+  ]
+}

@@ -8,6 +8,8 @@ import {
   farmParts,
   siteName,
   siteNext,
+  SITE_LEVEL_4_AT,
+  SITE_LEVEL_5_AT,
   slotsFor,
   type Site,
   FOOD_BOOST_MINUTES,
@@ -21,7 +23,11 @@ import {
   FOCUS_RARE_ROUNDS,
   focusToday,
   merchantVisitsToday,
-  RARE_VISIT_SUFFIX,
+  merchantMarks,
+  breedName,
+  SPECIAL_LIFESPAN,
+  specialResident,
+  visitorAt,
   MERCHANT_STAY_MINUTES,
   merchantGift,
   merchantName,
@@ -56,6 +62,7 @@ import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps, guildDonations, guildMembers, guilds } from "../db/schema.ts";
 import { addEvent, campRaceLevel, gearPlaces, HALF_BREED_LIFESPAN, inGearPool, refundFor } from "./service.ts";
 import { questMetrics } from "./quests.ts";
+import { talentBonusOf, talentEffect } from "../world/talents.ts";
 import { merchantArrivals, merchantBought } from "./merchant.ts";
 
 type CampRow = typeof camps.$inferSelect;
@@ -307,6 +314,66 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       message = "公主的孩子加入營地了。";
       break;
     }
+    case "visitor-accept":
+    case "visitor-decline": {
+      // (the one at the gate now: worked out from the camp's seed and the day, as the view shows it)
+      const level = await campRaceLevel(tx, camp.userId);
+      const host = talentEffect(await talentBonusOf(tx, camp.userId), "campHost");
+      const home = await tx
+        .select({ id: campResidents.id, breed: campResidents.breed, gear: campResidents.gear })
+        .from(campResidents)
+        .where(and(eq(campResidents.userId, camp.userId), eq(campResidents.place, "home"), isNull(campResidents.diedAt)));
+      const visitor = visitorAt(camp.seed, now, level, new Set(home.map((r) => r.breed)), host);
+      if (!visitor || visitor.id !== command.visit || camp.visitors[visitor.id]) return { ok: false, code: "not_found", message: "門口已經沒有人了。" };
+      const who = breedName(camp.race, visitor.breed);
+      if (command.kind === "visitor-decline") {
+        changes.visitors = { ...camp.visitors, [visitor.id]: "no" };
+        extra = { visitor: visitor.breed, answer: "no" };
+        message = `${who}離開了。`;
+        break;
+      }
+      const rules = raceRules(camp.race);
+      let leaving: (typeof home)[number] | undefined;
+      if (home.length >= rules.homeCap) {
+        leaving = home.find((r) => r.id === command.replace);
+        if (!leaving) return { ok: false, code: "no_room", message: `營地住滿了（${rules.homeCap}），要先請一位離開，或選一位換掉。` };
+      }
+      if (!canAfford(materials, visitor.fee)) return { ok: false, code: "not_enough", message: `見面禮不夠：${who}想要 ${cost(visitor.fee)}。` };
+      spend(materials, visitor.fee);
+      if (leaving) {
+        await tx.update(campResidents).set({ diedAt: now, gear: null }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, leaving.id)));
+        changes.armory = [...camp.armory, ...Object.values(leaving.gear ?? {}).map((g) => ({ id: g.id, left: g.left }))];
+      }
+      const special = specialResident(visitor.breed);
+      const lifespan = special ? SPECIAL_LIFESPAN * (rules.breeds.find((b) => b.id === "common")?.lifespan ?? 1) : (rules.breeds.find((b) => b.id === visitor.breed)?.lifespan ?? 1);
+      const jitter = 0.9 + 0.2 * (randomInt(0, 1_000_000) / 1_000_000);
+      resident = camp.nextId;
+      await tx.insert(campResidents).values({
+        userId: camp.userId,
+        id: resident,
+        breed: visitor.breed,
+        seed: randomInt(0, 2 ** 32),
+        bornAt: now,
+        diesAt: rules.ages ? new Date(now.getTime() + Math.floor(BASE_LIFESPAN_HOURS * 3_600_000 * lifespan * jitter)) : null,
+      });
+      changes.nextId = camp.nextId + 1;
+      changes.visitors = { ...camp.visitors, [visitor.id]: "yes" };
+      extra = { visitor: visitor.breed, answer: "yes", fee: visitor.fee, ...(leaving ? { replaced: leaving.id } : {}) };
+      message = `${who}住進營地了。`;
+      break;
+    }
+    case "resident-dismiss": {
+      const [leaving] = await tx
+        .select({ id: campResidents.id, breed: campResidents.breed, gear: campResidents.gear })
+        .from(campResidents)
+        .where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, command.resident), eq(campResidents.place, "home"), isNull(campResidents.diedAt)));
+      if (!leaving) return { ok: false, code: "not_found", message: "營地裡沒有這位居民。" };
+      await tx.update(campResidents).set({ diedAt: now, gear: null }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, leaving.id)));
+      changes.armory = [...camp.armory, ...Object.values(leaving.gear ?? {}).map((g) => ({ id: g.id, left: g.left }))];
+      extra = { dismissed: leaving.id, breed: leaving.breed };
+      message = `${breedName(camp.race, leaving.breed)}離開營地了，裝備收回倉庫。`;
+      break;
+    }
     case "site-build": {
       if (!buildableKinds(camp.race).includes(command.site)) return { ok: false, code: "not_allowed", message: "這個種族不能蓋這個。" };
       const busy = camp.sites.find((x) => x.busyUntil);
@@ -329,8 +396,12 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       const name = siteName(camp.race, target.kind);
       const busy = camp.sites.find((x) => x.busyUntil);
       if (busy) return { ok: false, code: "busy", message: `${siteName(camp.race, busy.kind)}還在蓋，一次只能蓋一個。` };
-      const next = siteNext(target.kind, target.level);
-      if (!next) return { ok: false, code: "at_top", message: `${name}已經是最高級了。` };
+      const level = await campRaceLevel(tx, camp.userId);
+      const next = siteNext(target.kind, target.level, level);
+      if (!next) {
+        const opens = target.kind !== "farm" && target.level < 5 ? (target.level < 4 ? SITE_LEVEL_4_AT : SITE_LEVEL_5_AT) : null;
+        return { ok: false, code: "at_top", message: opens ? `${name}要種族等級 ${opens} 級才能再升。` : `${name}已經是最高級了。` };
+      }
       if (!canAfford(materials, next.cost)) return { ok: false, code: "not_enough", message: `素材不夠：升級${name}要 ${cost(next.cost)}。` };
       spend(materials, next.cost);
       const until = new Date(now.getTime() + next.hours * 3_600_000).toISOString();
@@ -386,14 +457,17 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (latest && now.getTime() - latest.at.getTime() < MERCHANT_STAY_MINUTES * 60_000) {
         return { ok: true, message: `${name}還在營地。`, repeated: true }; // (another Mac of the same account brought it already)
       }
-      if (arrivals.filter((a) => taipeiDay(a.at) === taipeiDay(now)).length >= merchantVisitsToday(camp.focus, now)) {
+      const level = await campRaceLevel(tx, camp.userId);
+      if (arrivals.filter((a) => taipeiDay(a.at) === taipeiDay(now)).length >= merchantVisitsToday(camp.focus, now, level)) {
         return { ok: false, code: "not_allowed", message: `${name}今天已經來過了。` };
       }
       if (latest && now.getTime() - latest.at.getTime() < MERCHANT_GAP_MINUTES * 60_000) {
         return { ok: false, code: "too_soon", message: `${name}剛走不久。` };
       }
       // (a day of much focus: the merchant brings a rare find, marked in the visit's id)
-      const visit = `${camp.userId.slice(0, 8)}-${now.getTime()}${focusToday(camp.focus, now) >= FOCUS_RARE_ROUNDS ? RARE_VISIT_SUFFIX : ""}`;
+      // (and a race level of MERCHANT_RARE_AT, MERCHANT_LEGEND_AT, or the 精打細算 talent: more of them, marked the same way)
+      const trade = talentEffect(await talentBonusOf(tx, camp.userId), "campTrade");
+      const visit = `${camp.userId.slice(0, 8)}-${now.getTime()}${merchantMarks(level, focusToday(camp.focus, now) >= FOCUS_RARE_ROUNDS, trade)}`;
       const gift = merchantGift(visit, campStage(camp.race, camp.peak));
       for (const [id, n] of Object.entries(gift)) materials[id] = (materials[id] ?? 0) + n;
       extra = { visit, gift };

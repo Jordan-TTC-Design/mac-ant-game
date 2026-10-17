@@ -41,6 +41,29 @@ struct MonsterTraits {
     /// How many come together.
     var pack: ClosedRange<Int> = 1...1
     var drops: [DropSpec] = []
+    /// A level boss (shared/src/camp/raids.ts campBoss): never comes on its own, only with a raid from the books.
+    var boss = false
+}
+
+/// A monster's kind of (shared/src/camp/raids.ts MONSTER_VARIANTS): tougher, or hitting harder its own way, and tinted.
+enum MonsterVariant: String, CaseIterable {
+    case elite, poison, fire, ice
+
+    var name: String { ["elite": "精英", "poison": "毒", "fire": "火", "ice": "冰"][rawValue]! }
+    var hp: Double { [1.6, 1.1, 1, 1.25][MonsterVariant.allCases.firstIndex(of: self)!] }
+    var damage: Double { [1.6, 1.25, 1.35, 1.15][MonsterVariant.allCases.firstIndex(of: self)!] }
+    /// The tint laid over its sprite.
+    var tint: NSColor {
+        switch self {
+        case .elite: return NSColor(calibratedRed: 1, green: 0.82, blue: 0.2, alpha: 0.28)
+        case .poison: return NSColor(calibratedRed: 0.35, green: 0.85, blue: 0.3, alpha: 0.42)
+        case .fire: return NSColor(calibratedRed: 1, green: 0.42, blue: 0.12, alpha: 0.42)
+        case .ice: return NSColor(calibratedRed: 0.6, green: 0.85, blue: 1, alpha: 0.48)
+        }
+    }
+
+    /// The chance a monster is one (the same as the server's variantChance): none for a race level of 1.
+    static func chance(raceLevel: Int) -> Double { raceLevel > 1 ? min(0.3, 0.05 + 0.01 * Double(raceLevel)) : 0 }
 }
 
 /// A kind of wild animal (a folder with `manifest.json` and a two-frame walk sheet), and how it behaves in the game.
@@ -65,6 +88,11 @@ final class AnimalKind {
     private let left: [CGImage]
     /// How many frames of the sheet are the walk cycle (the rest are attack poses).
     let walkFrames: Int
+
+    /// The four first monsters stay with tier 1 whatever their level (shared CAMP_MONSTERS).
+    private static let firstFour: Set<String> = ["slime", "giant_rat", "bat", "frog"]
+    /// The race level (big world) from which it comes: its tier's, 1 / 6 / 12 / 18 (DESKTOP.md §10.0).
+    var fromRaceLevel: Int { AnimalKind.firstFour.contains(id) ? 1 : [1, 1, 6, 12, 18][min(4, max(1, monster.level))] }
 
     init(id: String, name: String, hp: Double, speed: Double, meat: Int, aggressive: Bool, weight: Double, radius: Double,
          pixelScale: Double, monster: MonsterTraits = MonsterTraits(), walkFrames: Int? = nil, right: [CGImage], left: [CGImage]) {
@@ -100,11 +128,13 @@ final class AnimalKind {
 enum Animals {
     static let all: [AnimalKind] = loadFolders()
 
-    /// A random kind, weighted by how common each is: the peaceful ones (`monsters: false`) or the monsters.
-    static func pick(monsters: Bool = false, minutes: Double = .infinity, ants: Int = .max, biome: String? = nil, night: Bool = false, water: Bool = true) -> AnimalKind? {
+    /// A random kind, weighted by how common each is: the peaceful ones (`monsters: false`) or the monsters (only the tiers the race
+    /// level has reached; never a level boss).
+    static func pick(monsters: Bool = false, minutes: Double = .infinity, ants: Int = .max, biome: String? = nil, night: Bool = false, water: Bool = true,
+                     raceLevel: Int = 1) -> AnimalKind? {
         let pool = all.filter { kind in
             let m = kind.monster
-            return kind.hostile == monsters && m.appearsAfter <= minutes && m.minAnts <= ants
+            return kind.hostile == monsters && !m.boss && kind.fromRaceLevel <= raceLevel && m.appearsAfter <= minutes && m.minAnts <= ants
                 && (m.biomes.isEmpty || biome == nil || m.biomes.contains(biome!)) && (!m.nightOnly || night) && (!m.needsWater || water)
         }
         let total = pool.reduce(0) { $0 + $1.weight }
@@ -146,6 +176,7 @@ enum Animals {
         let splits: Int?
         let pack: [Int]?
         let drops: [DropSpec]?
+        let boss: Bool?
     }
 
     private static func loadFolders() -> [AnimalKind] {
@@ -189,6 +220,7 @@ enum Animals {
         monster.splits = m.splits ?? 0
         if let pack = m.pack, pack.count == 2, pack[0] <= pack[1] { monster.pack = pack[0]...pack[1] }
         monster.drops = m.drops ?? []
+        monster.boss = m.boss ?? false
         return AnimalKind(id: m.id, name: m.name, hp: m.hp, speed: m.speed, meat: m.meat, aggressive: m.aggressive, weight: m.weight,
                           radius: m.radius, pixelScale: m.pixelScale, monster: monster, walkFrames: m.walkFrames, right: frames, left: frames.map(mirrored))
     }
@@ -260,16 +292,35 @@ struct Creature {
     /// Time inside the hop cycle (hopping monsters only), and how high off the ground it is now, in points.
     private var hopClock = 0.0
     private(set) var lift = 0.0
+    /// Its full health (the kind's, times a variant's), and its variant if any.
+    var maxHp: Double
+    private(set) var variant: MonsterVariant?
 
     init(id: Int, kind: AnimalKind, start: CGPoint, enter: CGPoint, stay: Double) {
         self.id = id
         self.kind = kind
         pos = start
         hp = kind.hp
+        maxHp = kind.hp
         state = .entering(to: enter)
         self.stay = stay
         heading = atan2(enter.y - start.y, enter.x - start.x)
     }
+
+    /// Makes it a variant: tougher (an elite also bigger), its health raised to match.
+    mutating func make(_ v: MonsterVariant) {
+        variant = v
+        maxHp = kind.hp * v.hp
+        hp = maxHp
+        if v == .elite { scale *= 1.25 }
+    }
+
+    /// What it is called (a variant's prefix, 精英野狼).
+    var displayName: String { (variant?.name ?? "") + kind.name }
+    /// A level boss under half its health: it rages (moves and strikes faster).
+    var raging: Bool { kind.monster.boss && generation == 0 && hp < maxHp * 0.5 }
+    /// Health a goblin loses per hit from it.
+    var damage: Double { kind.monster.damage * (variant?.damage ?? 1) * (raging ? 1.25 : 1) }
 
     var info: CreatureInfo { CreatureInfo(id: id, pos: pos, radius: kind.radius, alerted: scouted || reported, hostile: kind.hostile) }
 
@@ -329,7 +380,7 @@ struct Creature {
     /// A monster after the camp: it goes for the nearest goblin that is out walking, or else for the nest, winds up and hits whatever
     /// is in reach, and paces around the nest.
     private mutating func raidStep(dt: Double, walkable: [CGRect], raid: RaidInfo) {
-        cooldown = max(0, cooldown - (engaged > 0 ? dt * 1.5 : dt)) // it strikes back faster when it is being hit
+        cooldown = max(0, cooldown - (engaged > 0 ? dt * 1.5 : dt) * (raging ? 1.5 : 1)) // it strikes back faster when it is being hit (and raging)
         engaged = max(0, engaged - dt)
         let style = kind.monster.attackStyle
         var target: CGPoint?, nearest = 110.0
@@ -371,7 +422,7 @@ struct Creature {
             if kind.monster.flies { lift = 8 + 2 * sin(hopClock * 5); legPhase = Double(Int(hopClock * 9) % 2) }
             return
         }
-        var speed = kind.speed
+        var speed = kind.speed * (raging ? 1.4 : 1)
         if let target {
             speed *= 1.25
             heading = atan2(target.y - pos.y, target.x - pos.x)

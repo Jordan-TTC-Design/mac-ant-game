@@ -1,0 +1,53 @@
+{
+  "id": "basilisk",
+  "name": "蛇蜥",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 320,
+  "speed": 24,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 10,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 4,
+  "appearsAfter": 240,
+  "minAnts": 120,
+  "damage": 4,
+  "attackEvery": 1.8,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "bite",
+  "splits": 0,
+  "pack": [
+    1,
+    1
+  ],
+  "drops": [
+    {
+      "id": "basilisk_scale",
+      "name": "蛇蜥鱗",
+      "chance": 0.7,
+      "min": 1,
+      "max": 2,
+      "color": "#5a8c3c"
+    },
+    {
+      "id": "basilisk_eye",
+      "name": "石化之眼",
+      "chance": 0.25,
+      "min": 1,
+      "max": 1,
+      "color": "#dcbe3c"
+    },
+    {
+      "id": "night_heart",
+      "name": "夜之心",
+      "chance": 0.04,
+      "min": 1,
+      "max": 1,
+      "color": "#d040a0"
+    }
+  ]
+}

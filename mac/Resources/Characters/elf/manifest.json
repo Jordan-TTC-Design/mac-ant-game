@@ -202,6 +202,114 @@
         "health": 7
       },
       "sheet": "half_hum.png"
+    },
+    {
+      "id": "healer",
+      "name": "德魯伊",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 8 級）。拄著發光的法杖，附近的同伴傷好得快。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.0,
+        "sense": 1.2,
+        "rest": 0.9,
+        "might": 1.0,
+        "health": 4,
+        "lifespan": 6.0
+      },
+      "sheet": "healer.png",
+      "special": true,
+      "level": 8
+    },
+    {
+      "id": "champion",
+      "name": "遊俠隊長",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 10 級）。提劍持盾、披著斗篷，突襲時站在最前面，大家的攻擊都強一點。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.05,
+        "sense": 1.1,
+        "rest": 0.9,
+        "might": 2.0,
+        "health": 7,
+        "lifespan": 6.0
+      },
+      "sheet": "champion.png",
+      "special": true,
+      "level": 10
+    },
+    {
+      "id": "artisan",
+      "name": "月工匠",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 12 級）。圍著皮圍裙、拿著鐵鎚，有他在，工地做得多一點。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 0.95,
+        "carry": 2,
+        "rest": 1.0,
+        "might": 1.3,
+        "health": 5,
+        "lifespan": 6.0
+      },
+      "sheet": "artisan.png",
+      "special": true,
+      "level": 12
+    },
+    {
+      "id": "beastmaster",
+      "name": "馴鹿人",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 14 級）。腰上掛著鞭子，身邊跟著一隻小寵物，牧場的動物都聽他的。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.1,
+        "sense": 1.3,
+        "rest": 0.9,
+        "might": 1.3,
+        "health": 4,
+        "lifespan": 6.0
+      },
+      "sheet": "beastmaster.png",
+      "special": true,
+      "level": 14
+    },
+    {
+      "id": "bard",
+      "name": "吟遊詩人",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 16 級）。走到哪裡都在唱、在敲，營地熱熱鬧鬧，小孩生得快一點。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.05,
+        "sense": 1.1,
+        "recruit": 3,
+        "might": 1.0,
+        "health": 4,
+        "lifespan": 6.0
+      },
+      "sheet": "bard.png",
+      "special": true,
+      "level": 16
+    },
+    {
+      "id": "sentinel",
+      "name": "守林人",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 20 級）。戴著頭盔、扛著長矛守在營地邊，魔獸一靠近就被他戳一下。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 0.95,
+        "sense": 1.5,
+        "rest": 0.9,
+        "might": 1.6,
+        "health": 7,
+        "lifespan": 6.0
+      },
+      "sheet": "sentinel.png",
+      "special": true,
+      "level": 20
     }
   ],
   "queen": {

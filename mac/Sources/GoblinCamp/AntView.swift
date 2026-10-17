@@ -774,7 +774,7 @@ final class AntView: NSView {
                 if let c = colony.creatures.first(where: { $0.id == id }) {
                     let p = local(c.pos)
                     let hint = colony.canCatch(c) ? (colony.ranch.pens.isEmpty ? "・圍一圈柵欄就能養" : "・拎起來丟進牧場") : ""
-                    drawPill(c.kind.name + hint, center: NSPoint(x: p.x, y: p.y + CGFloat(c.kind.radius * c.scale) + 16), fontSize: 10)
+                    drawPill(c.displayName + hint, center: NSPoint(x: p.x, y: p.y + CGFloat(c.kind.radius * c.scale) + 16), fontSize: 10)
                 }
             case .beast(let id):
                 if id == 0, let v = colony.ranch.visitor, let line = colony.beastLine(0) {
@@ -1933,7 +1933,33 @@ final class AntView: NSView {
         ctx.interpolationQuality = .none
         let forward = CGFloat(facingRight ? 1 : -1) * attackForward
         let rect = CGRect(x: p.x - w / 2 + forward, y: p.y - h * 0.12 + CGFloat(c.lift) + attackLift, width: w, height: h)
+        if c.variant == .elite { // a gold glow round an elite
+            ctx.saveGState()
+            for (dx, dy) in [(-1.5, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
+                let r = rect.offsetBy(dx: dx, dy: dy)
+                ctx.saveGState()
+                ctx.clip(to: r, mask: image)
+                ctx.setFillColor(NSColor(calibratedRed: 1, green: 0.82, blue: 0.2, alpha: 0.9).cgColor)
+                ctx.fill(r)
+                ctx.restoreGState()
+            }
+            ctx.restoreGState()
+        }
         ctx.draw(image, in: rect)
+        if let variant = c.variant { // the variant's tint
+            ctx.saveGState()
+            ctx.clip(to: rect, mask: image)
+            ctx.setFillColor(variant.tint.cgColor)
+            ctx.fill(rect)
+            ctx.restoreGState()
+        }
+        if c.raging { // a raging boss pulses red
+            ctx.saveGState()
+            ctx.clip(to: rect, mask: image)
+            ctx.setFillColor(NSColor(calibratedRed: 1, green: 0.1, blue: 0.05, alpha: 0.2 + 0.15 * CGFloat(sin(Date().timeIntervalSinceReferenceDate * 8))).cgColor)
+            ctx.fill(rect)
+            ctx.restoreGState()
+        }
         if c.hurt > 0 {
             ctx.saveGState()
             ctx.clip(to: rect, mask: image)
@@ -1941,8 +1967,15 @@ final class AntView: NSView {
             ctx.fill(rect)
             ctx.restoreGState()
         }
-        if kind.hostile, c.hp < kind.hp * (c.generation == 0 ? 1 : 0.4) { // a little health bar once it has been hurt
-            let full = kind.hp * (c.generation == 0 ? 1 : 0.4), bar = w * 0.8
+        if kind.monster.boss, c.generation == 0 { // a level boss: its name and a big health bar all along
+            let bar = max(w, 70)
+            NSColor(calibratedWhite: 0, alpha: 0.6).setFill()
+            NSRect(x: p.x - bar / 2 - 1, y: rect.maxY + 3, width: bar + 2, height: 6).fill()
+            (c.raging ? NSColor(calibratedRed: 1, green: 0.25, blue: 0.1, alpha: 1) : NSColor(calibratedRed: 0.85, green: 0.2, blue: 0.6, alpha: 1)).setFill()
+            NSRect(x: p.x - bar / 2, y: rect.maxY + 4, width: bar * CGFloat(max(0, c.hp / c.maxHp)), height: 4).fill()
+            drawPill("👑 " + c.displayName + (c.raging ? "（狂暴）" : ""), center: NSPoint(x: p.x, y: rect.maxY + 18), fontSize: 11)
+        } else if kind.hostile, c.hp < c.maxHp * (c.generation == 0 ? 1 : 0.4) { // a little health bar once it has been hurt
+            let full = c.maxHp * (c.generation == 0 ? 1 : 0.4), bar = w * 0.8
             NSColor(calibratedWhite: 0, alpha: 0.55).setFill()
             NSRect(x: p.x - bar / 2 - 0.5, y: rect.maxY + 2.5, width: bar + 1, height: 3).fill()
             NSColor(calibratedRed: 0.85, green: 0.2, blue: 0.2, alpha: 1).setFill()

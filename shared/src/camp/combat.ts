@@ -112,6 +112,112 @@ export const MONSTER_DROPS: Record<string, DropRule[]> = {
     { id: "sticky_tongue", chance: 0.25, min: 1, max: 1 },
     { id: "golden_frog_eye", chance: 0.03, min: 1, max: 1 },
   ],
+  // the later tiers (DESKTOP.md §10.0): from their Mac manifests (mac/tools/make_monsters_more.py)
+  horn_beetle: [
+    { id: "beetle_shell", chance: 0.75, min: 1, max: 2 },
+    { id: "beetle_horn", chance: 0.35, min: 1, max: 1 },
+    { id: "sharp_claw", chance: 0.15, min: 1, max: 1 },
+    { id: "shiny_bead", chance: 0.04, min: 1, max: 1 },
+  ],
+  grass_snake: [
+    { id: "snake_skin", chance: 0.75, min: 1, max: 2 },
+    { id: "snake_fang", chance: 0.35, min: 1, max: 1 },
+    { id: "sharp_claw", chance: 0.15, min: 1, max: 1 },
+    { id: "shiny_bead", chance: 0.04, min: 1, max: 1 },
+  ],
+  wolf: [
+    { id: "wolf_pelt", chance: 0.7, min: 1, max: 2 },
+    { id: "wolf_fang", chance: 0.4, min: 1, max: 1 },
+    { id: "sharp_claw", chance: 0.15, min: 1, max: 1 },
+    { id: "golden_fur", chance: 0.05, min: 1, max: 1 },
+  ],
+  wild_boar: [
+    { id: "boar_hide", chance: 0.7, min: 1, max: 2 },
+    { id: "boar_tusk", chance: 0.4, min: 1, max: 1 },
+    { id: "sharp_claw", chance: 0.15, min: 1, max: 1 },
+    { id: "golden_fur", chance: 0.05, min: 1, max: 1 },
+  ],
+  cave_spider: [
+    { id: "spider_silk", chance: 0.75, min: 1, max: 3 },
+    { id: "venom_sac", chance: 0.35, min: 1, max: 1 },
+    { id: "sharp_claw", chance: 0.15, min: 1, max: 1 },
+    { id: "night_heart", chance: 0.04, min: 1, max: 1 },
+  ],
+  mushroom_imp: [
+    { id: "spore_cap", chance: 0.75, min: 1, max: 2 },
+    { id: "glow_spore", chance: 0.35, min: 1, max: 1 },
+    { id: "shiny_bead", chance: 0.04, min: 1, max: 1 },
+  ],
+  raven: [
+    { id: "black_feather", chance: 0.8, min: 1, max: 3 },
+    { id: "raven_eye", chance: 0.25, min: 1, max: 1 },
+    { id: "shiny_bead", chance: 0.04, min: 1, max: 1 },
+  ],
+  mud_crab: [
+    { id: "crab_shell", chance: 0.75, min: 1, max: 2 },
+    { id: "crab_claw", chance: 0.4, min: 1, max: 1 },
+    { id: "sharp_claw", chance: 0.15, min: 1, max: 1 },
+  ],
+  bandit: [
+    { id: "stolen_coin", chance: 0.7, min: 1, max: 3 },
+    { id: "bandit_mask", chance: 0.3, min: 1, max: 1 },
+    { id: "golden_fur", chance: 0.05, min: 1, max: 1 },
+  ],
+  bog_troll: [
+    { id: "troll_moss", chance: 0.7, min: 1, max: 2 },
+    { id: "troll_tooth", chance: 0.35, min: 1, max: 1 },
+    { id: "night_heart", chance: 0.04, min: 1, max: 1 },
+  ],
+  gargoyle: [
+    { id: "stone_wing", chance: 0.7, min: 1, max: 2 },
+    { id: "gargoyle_eye", chance: 0.25, min: 1, max: 1 },
+    { id: "night_heart", chance: 0.04, min: 1, max: 1 },
+  ],
+  fire_salamander: [
+    { id: "salamander_scale", chance: 0.7, min: 1, max: 2 },
+    { id: "ember_gland", chance: 0.3, min: 1, max: 1 },
+    { id: "shiny_bead", chance: 0.04, min: 1, max: 1 },
+  ],
+  giant_hornet: [
+    { id: "hornet_stinger", chance: 0.7, min: 1, max: 2 },
+    { id: "royal_jelly", chance: 0.25, min: 1, max: 1 },
+    { id: "shiny_bead", chance: 0.04, min: 1, max: 1 },
+  ],
+  shadow_wisp: [
+    { id: "shadow_essence", chance: 0.65, min: 1, max: 2 },
+    { id: "wisp_flame", chance: 0.3, min: 1, max: 1 },
+    { id: "night_heart", chance: 0.04, min: 1, max: 1 },
+  ],
+  ogre: [
+    { id: "ogre_hide", chance: 0.7, min: 1, max: 2 },
+    { id: "ogre_club", chance: 0.25, min: 1, max: 1 },
+    { id: "golden_fur", chance: 0.05, min: 1, max: 1 },
+  ],
+  wyvern: [
+    { id: "wyvern_scale", chance: 0.7, min: 1, max: 2 },
+    { id: "wyvern_wing", chance: 0.3, min: 1, max: 1 },
+    { id: "night_heart", chance: 0.04, min: 1, max: 1 },
+  ],
+  iron_golem: [
+    { id: "iron_plate", chance: 0.75, min: 1, max: 2 },
+    { id: "golem_core", chance: 0.25, min: 1, max: 1 },
+    { id: "shiny_bead", chance: 0.04, min: 1, max: 1 },
+  ],
+  banshee: [
+    { id: "ghost_veil", chance: 0.65, min: 1, max: 2 },
+    { id: "banshee_tear", chance: 0.25, min: 1, max: 1 },
+    { id: "night_heart", chance: 0.04, min: 1, max: 1 },
+  ],
+  dire_bear: [
+    { id: "bear_pelt", chance: 0.7, min: 1, max: 2 },
+    { id: "bear_claw", chance: 0.35, min: 1, max: 1 },
+    { id: "golden_fur", chance: 0.05, min: 1, max: 1 },
+  ],
+  basilisk: [
+    { id: "basilisk_scale", chance: 0.7, min: 1, max: 2 },
+    { id: "basilisk_eye", chance: 0.25, min: 1, max: 1 },
+    { id: "night_heart", chance: 0.04, min: 1, max: 1 },
+  ],
 };
 
 /** Odds and ends any monster may leave besides its own drops. */

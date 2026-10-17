@@ -1,0 +1,55 @@
+{
+  "id": "banshee",
+  "name": "女妖",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 260,
+  "speed": 36,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 8,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 4,
+  "appearsAfter": 240,
+  "minAnts": 120,
+  "damage": 4,
+  "attackEvery": 2.0,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "slam",
+  "splits": 0,
+  "pack": [
+    1,
+    2
+  ],
+  "drops": [
+    {
+      "id": "ghost_veil",
+      "name": "幽魂面紗",
+      "chance": 0.65,
+      "min": 1,
+      "max": 2,
+      "color": "#dce6f0"
+    },
+    {
+      "id": "banshee_tear",
+      "name": "女妖之淚",
+      "chance": 0.25,
+      "min": 1,
+      "max": 1,
+      "color": "#aac8f0"
+    },
+    {
+      "id": "night_heart",
+      "name": "夜之心",
+      "chance": 0.04,
+      "min": 1,
+      "max": 1,
+      "color": "#d040a0"
+    }
+  ],
+  "flies": true,
+  "nightOnly": true
+}

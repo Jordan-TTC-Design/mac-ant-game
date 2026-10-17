@@ -205,6 +205,8 @@ struct Ant {
     static let childCatchScale = Double(ProcessInfo.processInfo.environment["CAMP_CHILD_COLD_SCALE"] ?? "") ?? 1
     /// Seconds it still has a cold (a young one may catch one; being minded usually cures it), and the same for how long it was last minded.
     var sick = 0.0
+    /// Seconds left of the chill an ice monster's hit leaves (it walks slower meanwhile).
+    var chilled = 0.0
     private var mindTimer = 0.0
 
     /// Seconds left of the swing it makes when it hits something, and which way (the attack animation).
@@ -338,7 +340,7 @@ struct Ant {
     var lifeFraction: Double { min(1, age / max(traits.lifespan, 1)) }
 
     /// Old ones walk slower.
-    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed * (isChild ? 0.85 : 1) * (sick > 0 ? 0.5 : 1) * foodSpeed * (cheer > 0 ? 1.15 : 1) }
+    private var effectiveSpeed: Double { (lifeFraction > Ant.elderStart ? speed * 0.6 : speed) * gearSpeed * (isChild ? 0.85 : 1) * (sick > 0 ? 0.5 : 1) * (chilled > 0 ? 0.6 : 1) * foodSpeed * (cheer > 0 ? 1.15 : 1) }
     /// Carrots brought home: everyone walks a little faster for a while (set from the world on each update).
     private var foodSpeed = 1.0
 
@@ -420,6 +422,7 @@ struct Ant {
         swing = max(0, swing - dt)
         catchShow = max(0, catchShow - dt)
         sick = max(0, sick - dt)
+        chilled = max(0, chilled - dt)
         cheer = max(0, cheer - dt)
         wet = max(0, wet - dt)
         age += ageDt

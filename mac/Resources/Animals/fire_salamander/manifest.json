@@ -1,0 +1,53 @@
+{
+  "id": "fire_salamander",
+  "name": "火蠑螈",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 150,
+  "speed": 28,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 8,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 3,
+  "appearsAfter": 180,
+  "minAnts": 90,
+  "damage": 3,
+  "attackEvery": 1.6,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "bite",
+  "splits": 0,
+  "pack": [
+    1,
+    2
+  ],
+  "drops": [
+    {
+      "id": "salamander_scale",
+      "name": "火蠑螈鱗",
+      "chance": 0.7,
+      "min": 1,
+      "max": 2,
+      "color": "#dc5a28"
+    },
+    {
+      "id": "ember_gland",
+      "name": "火腺",
+      "chance": 0.3,
+      "min": 1,
+      "max": 1,
+      "color": "#faaa32"
+    },
+    {
+      "id": "shiny_bead",
+      "name": "閃亮黏珠",
+      "chance": 0.04,
+      "min": 1,
+      "max": 1,
+      "color": "#f0d040"
+    }
+  ]
+}

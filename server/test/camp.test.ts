@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { advance, DECOR_KINDS, startHome, type CampView, type RaidReport } from "@goblincamp/shared/camp";
+import { advance, DECOR_KINDS, startHome, visitorAt, type CampView, type RaidReport } from "@goblincamp/shared/camp";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -690,6 +690,44 @@ describe("decorations (DESKTOP.md §5)", () => {
     const res = await cmd(me, { kind: "decor-set", items: [{ kind: lv3.id, x: 0, y: 0 }] });
     expect(res.body.error).toBe("not_allowed");
     expect(res.body.message).toContain("種族等級 3 級");
+  });
+});
+
+describe("visitors and dismissing (DESKTOP.md §10.0)", () => {
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+
+  it("a visitor waits at the gate; taken in for a present, or sent away; a resident can be asked to leave", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    // (look ahead hour by hour for someone at the gate)
+    const seed = (await view(me)).seed;
+    let found = null as ReturnType<typeof visitorAt>;
+    let at = t.now().getTime();
+    for (let h = 0; h < 24 * 7 && !found; h++) {
+      at = t.now().getTime() + h * 3_600_000;
+      found = visitorAt(seed, new Date(at), 1, new Set());
+    }
+    expect(found).not.toBeNull();
+    t.advance(at - t.now().getTime());
+    const v = (await view(me)).visitor!;
+    expect(v).toMatchObject({ id: found!.id, special: false });
+    expect(["scout", "brute", "sage", "golden"]).toContain(v.breed);
+    // no present to give yet
+    expect((await cmd(me, { kind: "visitor-accept", visit: v.id })).body.error).toBe("not_enough");
+    await database.sql`update camps set materials = '{"log": 500, "stone": 500, "ration_jerky": 50, "crystal_shard": 10}'`;
+    const before = (await view(me)).residents.length;
+    const res = await cmd(me, { kind: "visitor-accept", visit: v.id });
+    expect(res.status).toBe(200);
+    const camp = res.body.camp as CampView;
+    expect(camp.residents.length).toBe(before + 1);
+    expect(camp.residents.some((r) => r.breed === v.breed)).toBe(true);
+    expect(camp.visitor).toBeNull();
+    expect((await cmd(me, { kind: "visitor-accept", visit: v.id })).body.error).toBe("not_found"); // (once)
+    // asking someone to leave
+    const leaving = camp.residents[0]!.id;
+    const gone = (await cmd(me, { kind: "resident-dismiss", resident: leaving })).body.camp as CampView;
+    expect(gone.residents.some((r) => r.id === leaving)).toBe(false);
+    expect((await cmd(me, { kind: "resident-dismiss", resident: leaving })).body.error).toBe("not_found");
   });
 });
 

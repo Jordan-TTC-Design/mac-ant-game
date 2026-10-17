@@ -152,8 +152,12 @@ final class CampLedger {
 
     /// A raid the server fought (shared/src/camp: RaidOutcome), as far as the Mac plays it.
     struct Raid: Decodable {
-        struct Monsters: Decodable { let id: String; let count: Int }
+        /// `variant`: 精英／毒／火／冰 (shared raids.ts MONSTER_VARIANTS); older servers leave it out.
+        struct Monsters: Decodable { let id: String; let count: Int; let variant: String? }
         let monsters: [Monsters]
+        /// The level boss that came with it (its race level) and whether the camp beat it.
+        let boss: Int?
+        let bossBeaten: Bool?
         let fallen: [Int]
         let loot: [String: Int]
         let killed: [String: Int]

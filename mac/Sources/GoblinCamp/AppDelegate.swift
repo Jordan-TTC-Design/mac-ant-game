@@ -2308,7 +2308,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var older = raids
         if let last = raids.last, isRecent(last), let raid = last.raid, !colony.campHidden {
             older.removeLast()
-            colony.playRaid(monsters: raid.monsters.map { ($0.id, $0.count) }, fallen: Set(raid.fallen))
+            colony.playRaid(monsters: raid.monsters.map { ($0.id, $0.count, $0.variant.flatMap(MonsterVariant.init(rawValue:))) },
+                            boss: raid.boss.map { ($0, raid.bossBeaten == true) }, fallen: Set(raid.fallen))
             let loot = raid.loot.sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) +\($0.value)" }
             if !loot.isEmpty { after(45) { self.colony.announce(loot.joined(separator: "  ")) } }
         }
@@ -2318,6 +2319,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for e in older { for (id, n) in e.raid?.loot ?? [:] { loot[id, default: 0] += n } }
         let top = loot.sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
         say("魔獸來過 \(older.count) 次" + (fell > 0 ? "，倒下 \(fell) 隻" : "，大家都沒事") + (top.isEmpty ? "。" : "，撿回 \(top)。"))
+        // (a level boss among them: beaten, or gone to come again)
+        for e in older { if let raid = e.raid, let level = raid.boss {
+            let name = Animals.all.first { $0.id == Colony.bossID(level: level) }?.name ?? "等級王"
+            say(raid.bossBeaten == true ? "你不在的時候，大家打倒了等級王\(name)！" : "等級王\(name)來過，被它跑了，下次突襲還會再來。")
+        } }
     }
 
     /// Parties in the big world that got somewhere, and other camps' parties at our cells (the phone sends them; the server fights).

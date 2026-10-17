@@ -1016,6 +1016,8 @@ def main():
     os.makedirs(root, exist_ok=True)
     for _id, _name, _w, _b, _blurb, _stats, sheet, look in BREEDS:
         write_png(os.path.join(root, sheet), build_sheet(False, look))
+    import make_specials  # (the special residents, tools/make_specials.py: drawn on these bodies)
+    make_specials.write("goblin", root)
     for o in OUTFITS:
         write_png(os.path.join(root, "queen.png" if o["id"] == "dress" else f"queen_{o['id']}.png"), build_sheet(True, outfit=o))
     write_png(os.path.join(root, "icon.png"), face_image())
@@ -1036,7 +1038,7 @@ def main():
                      "首領是人類公主；和金皮的孩子是混血哥布林"],
         "worker": {"sheet": "worker.png", "pixelScale": 1.5, "walk": walk},
         "breeds": [{"id": i, "name": n, "weight": w, "boost": b, "blurb": blurb, "stats": stats, "sheet": sheet}
-                   for i, n, w, b, blurb, stats, sheet, _ in BREEDS],
+                   for i, n, w, b, blurb, stats, sheet, _ in BREEDS] + make_specials.manifest_entries("goblin"),
         "queen": {"sheet": "queen.png", "pixelScale": 2.0, "walk": walk,
                   "poses": {name: [(3 + r) * 4 + f for f in range(count)] for r, (name, _d, count) in enumerate(POSES)},
                   "outfits": [{"id": o["id"], "name": o["name"], "sheet": "queen.png" if o["id"] == "dress" else f"queen_{o['id']}.png"}

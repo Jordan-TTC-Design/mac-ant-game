@@ -1,0 +1,61 @@
+{
+  "id": "wolf",
+  "name": "野狼",
+  "frame": 16,
+  "sheet": "walk.png",
+  "hp": 80,
+  "speed": 42,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 8,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 2,
+  "appearsAfter": 120,
+  "minAnts": 60,
+  "damage": 2,
+  "attackEvery": 1.4,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "bite",
+  "splits": 0,
+  "pack": [
+    2,
+    4
+  ],
+  "drops": [
+    {
+      "id": "wolf_pelt",
+      "name": "狼皮",
+      "chance": 0.7,
+      "min": 1,
+      "max": 2,
+      "color": "#80848c"
+    },
+    {
+      "id": "wolf_fang",
+      "name": "狼牙",
+      "chance": 0.4,
+      "min": 1,
+      "max": 1,
+      "color": "#f4efdc"
+    },
+    {
+      "id": "sharp_claw",
+      "name": "斷爪",
+      "chance": 0.15,
+      "min": 1,
+      "max": 1,
+      "color": "#8a8a96"
+    },
+    {
+      "id": "golden_fur",
+      "name": "金毛",
+      "chance": 0.05,
+      "min": 1,
+      "max": 1,
+      "color": "#f0c040"
+    }
+  ]
+}

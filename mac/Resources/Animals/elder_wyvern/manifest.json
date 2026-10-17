@@ -1,0 +1,55 @@
+{
+  "id": "elder_wyvern",
+  "name": "遠古飛龍",
+  "frame": 32,
+  "sheet": "walk.png",
+  "hp": 3040,
+  "speed": 30,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 22,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 4,
+  "appearsAfter": 0,
+  "minAnts": 1000000000,
+  "damage": 7,
+  "attackEvery": 2.2,
+  "hops": false,
+  "walkFrames": 2,
+  "attackStyle": "bite",
+  "splits": 0,
+  "pack": [
+    1,
+    1
+  ],
+  "drops": [
+    {
+      "id": "elder_scale",
+      "name": "遠古龍鱗",
+      "chance": 1.0,
+      "min": 2,
+      "max": 4,
+      "color": "#962828"
+    },
+    {
+      "id": "dragon_heart",
+      "name": "龍心",
+      "chance": 0.5,
+      "min": 1,
+      "max": 1,
+      "color": "#fa5a3c"
+    },
+    {
+      "id": "golden_fur",
+      "name": "金毛",
+      "chance": 0.05,
+      "min": 1,
+      "max": 1,
+      "color": "#f0c040"
+    }
+  ],
+  "boss": true,
+  "flies": true
+}

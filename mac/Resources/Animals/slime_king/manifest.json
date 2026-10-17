@@ -1,0 +1,54 @@
+{
+  "id": "slime_king",
+  "name": "史萊姆王",
+  "frame": 32,
+  "sheet": "walk.png",
+  "hp": 880,
+  "speed": 14,
+  "meat": 0,
+  "aggressive": true,
+  "weight": 2,
+  "radius": 18,
+  "pixelScale": 1.5,
+  "hostile": true,
+  "level": 2,
+  "appearsAfter": 0,
+  "minAnts": 1000000000,
+  "damage": 3,
+  "attackEvery": 2.6,
+  "hops": true,
+  "walkFrames": 4,
+  "attackStyle": "slam",
+  "splits": 4,
+  "pack": [
+    1,
+    1
+  ],
+  "drops": [
+    {
+      "id": "royal_gel",
+      "name": "王者凝膠",
+      "chance": 1.0,
+      "min": 2,
+      "max": 4,
+      "color": "#5ac878"
+    },
+    {
+      "id": "slime_crown",
+      "name": "史萊姆王冠",
+      "chance": 0.5,
+      "min": 1,
+      "max": 1,
+      "color": "#fad23c"
+    },
+    {
+      "id": "shiny_bead",
+      "name": "閃亮黏珠",
+      "chance": 0.04,
+      "min": 1,
+      "max": 1,
+      "color": "#f0d040"
+    }
+  ],
+  "boss": true
+}

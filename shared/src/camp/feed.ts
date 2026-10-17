@@ -8,6 +8,7 @@ import { materialName } from "../world/drops.ts";
 import type { CampEvent } from "./api.ts";
 import { FOCUS_MERCHANT_ROUNDS, FOCUS_RANCH_ROUNDS, FOCUS_RARE_ROUNDS } from "./focus.ts";
 import { RANCH_KINDS } from "./ranch.ts";
+import { campBoss, campFoe, MONSTER_VARIANTS, type MonsterVariant } from "./raids.ts";
 
 /** What a race's residents are called. */
 export const RACE_NOUNS: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
@@ -58,12 +59,18 @@ export function feedEntry(e: CampEvent, noun = "居民"): FeedEntry | null {
     }
     case "raid": {
       const count = (d.monsters ?? []).reduce((n: number, m: { count: number }) => n + m.count, 0);
-      const names = (d.monsters ?? []).map((m: { id: string; count: number }) => `${FOES[m.id]?.name ?? m.id}${m.count > 1 ? ` ×${m.count}` : ""}`).join("、");
+      const names = (d.monsters ?? [])
+        .map((m: { id: string; count: number; variant?: MonsterVariant }) => `${m.variant ? MONSTER_VARIANTS[m.variant].name : ""}${campFoe(m.id)?.name ?? FOES[m.id]?.name ?? m.id}${m.count > 1 ? ` ×${m.count}` : ""}`)
+        .join("、");
       const won = d.winner === "camp";
       const fallen = (d.fallen ?? []).length;
       const loot = list(d.loot ?? {}, 3);
+      const boss = d.boss ? campBoss(d.boss).name : "";
+      if (boss) return line("👑", `等級王${boss}帶著魔獸來襲：${d.bossBeaten ? `打倒了${boss}！` : `${boss}撤退了，下次還會再來`}${fallen ? `，倒下 ${fallen} 隻` : ""}${loot ? `，撿到 ${loot}` : ""}。`, "raid");
       return line("⚔️", `魔獸來襲（${names || `${count} 隻`}）：${won ? "打退了" : "被搶了一陣"}${fallen ? `，倒下 ${fallen} 隻` : ""}${loot ? `，撿到 ${loot}` : ""}。`, "raid");
     }
+    case "levelup":
+      return line("🎉", `種族等級升到 ${d.level} 級！${d.opens ? `${d.opens}。` : ""}`, "camp");
     case "site":
       return line("🏗️", d.kind === "farm" ? `${d.name}升級了（Lv${d.level}）。` : d.level <= 1 ? `${d.name}蓋好了！` : `${d.name}升到 Lv${d.level}。`, "camp");
     case "focus": {
@@ -100,6 +107,11 @@ export function feedEntry(e: CampEvent, noun = "居民"): FeedEntry | null {
           return message ? line("🍖", message, "camp") : null;
         case "guild-donate":
           return message ? line("🏰", message, "camp") : null;
+        case "visitor-accept":
+        case "visitor-decline":
+          return message ? line(d.answer === "yes" ? "🏠" : "👋", message, "camp") : null;
+        case "resident-dismiss":
+          return message ? line("👋", message, "camp") : null;
         default:
           return null; // (gear moved about, the decorations, the story: not worth a line)
       }

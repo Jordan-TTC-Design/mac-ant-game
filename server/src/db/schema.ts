@@ -151,6 +151,11 @@ export const camps = pgTable("camps", {
   quests: jsonb("quests").$type<Record<string, string>>().notNull().default({}),
   /** Decorations the player put down in the camp window (shared/src/camp/decor.ts): kind, offset from the land's anchor, turned. */
   decor: jsonb("decor").$type<{ kind: string; x: number; y: number; flip?: boolean }[]>().notNull().default([]),
+  /** The level bosses beaten (their race levels: shared/src/camp/raids.ts bossDue), the race level last celebrated, and the
+   *  visitors answered (visit id → yes/no; DESKTOP.md §10.0). */
+  bossesBeaten: jsonb("bosses_beaten").$type<number[]>().notNull().default([]),
+  celebratedLevel: integer("celebrated_level").notNull().default(0),
+  visitors: jsonb("visitors").$type<Record<string, "yes" | "no">>().notNull().default({}),
   /** The ranch: the animals kept in the pens the player fenced, and when a Mac last reported (shared/src/camp/ranch.ts). */
   ranch: jsonb("ranch").$type<Ranch>().notNull().default({ animals: [] }),
   /** The pomodoro's focus rounds that ran to the end, per day (shared/src/camp/focus.ts); null until the first. */
