@@ -28,12 +28,16 @@ let backHome = true;
 async function refresh() {
   state.loading = true;
   try {
-    await loadMe();
-    // (no camp in the world yet: start looking from 大安森林公園)
-    if (backHome && state.me?.home) state.center = state.me.home;
-    else if (!state.center) state.center = state.me?.home ?? { lat: 25.0302, lng: 121.5357 };
-    backHome = false;
-    await loadCells();
+    if (!backHome && state.center) {
+      await Promise.all([loadMe(), loadCells()]); // (the map stays where it is: both at once)
+    } else {
+      await loadMe();
+      // (no camp in the world yet: start looking from 大安森林公園)
+      if (backHome && state.me?.home) state.center = state.me.home;
+      else if (!state.center) state.center = state.me?.home ?? { lat: 25.0302, lng: 121.5357 };
+      backHome = false;
+      await loadCells();
+    }
     state.problem = "";
   } catch (e) {
     state.problem = e instanceof ApiError ? e.message : String(e);

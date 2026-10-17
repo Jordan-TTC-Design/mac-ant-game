@@ -163,7 +163,7 @@ final class CampLedger {
         let arrived: Bool?
         let defended: Bool?
         let won: Bool?
-        /// attack, move, guard, recall (walking back from a cell), reroute (the rest of a recall, looking for room)
+        /// attack, move, guard, recall (walking back from a cell), reroute (the rest of a recall, looking for room), retreat (fleeing an overrun cell)
         let kind: String?
         /// cleared, taken, settled, held, back, guarding, camping
         let cell: String?
@@ -175,6 +175,11 @@ final class CampLedger {
         let by: String?
         /// Damage done to a great monster of the world.
         let damage: Int?
+        /// Where the beaten garrison fell back to (when `defended` and lost): to the nearest held cell, a free cell beside it, or home.
+        struct Fled: Decodable { let count: Int; let how: String; let label: String? }
+        let fled: Fled?
+        /// Which of our cells was attacked (when `defended`): 營地, 城鎮 2, 領地 3.
+        let `where`: String?
     }
 
     /// A lair came back for one of the camp's cells in the big world.

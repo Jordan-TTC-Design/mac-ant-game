@@ -143,8 +143,11 @@ export interface CellView {
 
 export interface ExpeditionSummary {
   id: string;
-  /** recall: walking back from a cell (WORLD.md §24); reroute: those of a recall who found no room, walking on to a cell with room. */
-  kind: "attack" | "move" | "guard" | "recall" | "reroute";
+  /**
+   * recall: walking back from a cell (WORLD.md §24); reroute: those of a recall who found no room, walking on to a cell with room;
+   * retreat: those of a cell that was overrun, falling back to a free cell beside it to settle it.
+   */
+  kind: "attack" | "move" | "guard" | "recall" | "reroute" | "retreat";
   from: string;
   to: string;
   party: number;
@@ -165,9 +168,18 @@ export interface ExpeditionSummary {
     killed: number;
     /** Damage done to a great monster. */
     damage?: number;
+    /**
+     * Where it was fought when it was a camp's cell: its home camp, or one of its towns or held cells, named as the holder's
+     * workshop names them (城鎮 2, 領地 3); and the real place standing there. Older reports leave it out.
+     */
+    where?: { kind: "home" | "town" | "cell"; label: string; landmark?: string };
+    /** A cell taken: where those of its garrison still standing fell back to (as the holder names it). */
+    fled?: { count: number; how: "cell" | "free" | "home"; label: string };
   };
   /** Whether this camp was the one attacked (a report of someone else's expedition against it). */
   defending?: boolean;
+  /** Who attacked, when `defending`. */
+  by?: string;
 }
 
 /** `GET /api/world/expeditions/:id`: everything, with the blow-by-blow for playing it back. */

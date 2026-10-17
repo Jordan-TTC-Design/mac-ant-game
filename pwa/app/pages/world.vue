@@ -482,7 +482,7 @@ async function goToPlace(p: PlaceFound) {
       <section v-if="s.me.walking.length" class="panel">
         <h2>在路上</h2>
         <p v-for="w in s.me.walking" :key="w.id" class="line">
-          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ { move: "（搬家）", guard: "（幫守）", recall: "（撤回）", reroute: "（找有空位的領地）" }[w.kind as string] ?? "" }}<br />
+          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ { move: "（搬家）", guard: "（幫守）", recall: "（撤回）", reroute: "（找有空位的領地）", retreat: "（撤退）" }[w.kind as string] ?? "" }}<br />
           <small>{{ left(w.arriveAt) }}</small>
         </p>
       </section>
@@ -506,7 +506,7 @@ async function goToPlace(p: PlaceFound) {
         <h2>戰報</h2>
         <NuxtLink v-for="r in s.me.recent.slice(0, 5)" :key="r.id" :to="`/expedition/${r.id}`" class="report">
           <span :class="wentWell(r) ? 'won' : 'lost'">{{ outcomeText(r) }}</span>
-          <span class="grow">{{ r.outcome?.against }}</span>
+          <span class="grow">{{ r.defending ? `${r.by ?? "有人"}來打${placeText(r) ? `：${placeText(r)}` : ""}` : r.outcome?.against }}</span>
           <small>{{ noteTime(r.arriveAt) }}</small>
         </NuxtLink>
       </section>

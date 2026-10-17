@@ -103,7 +103,15 @@ const sheet = (f: { race?: string; breed?: string }) => `/sprites/${f.race ?? "g
         <h2>
           <span :class="wentWell(report) ? 'won' : 'lost'">{{ outcomeText(report) }}</span>
         </h2>
-        <p>{{ report.attacker?.name }} 派了 {{ report.party }} 隻 → {{ report.outcome?.against }}<br /><small class="muted">{{ noteTime(report.arriveAt) }} 到達</small></p>
+        <p>
+          {{ report.attacker?.name }} 派了 {{ report.party }} 隻 → {{ report.defending && placeText(report) ? placeText(report) : report.outcome?.against }}<br />
+          <small class="muted">{{ noteTime(report.arriveAt) }} 到達</small>
+        </p>
+        <p class="where">
+          <span>📍 {{ placeText(report, report.defender?.name) ?? "在這一格" }}</span>
+          <NuxtLink :to="`/world?cell=${report.to}`" class="btn small">在地圖上看</NuxtLink>
+        </p>
+        <p v-if="report.defending && fledText(report)" class="fled">↩︎ {{ fledText(report) }}</p>
         <template v-if="report.boss">
           <p>對{{ report.boss.name }}造成 <b>{{ report.outcome?.damage ?? report.boss.hpBefore - report.boss.hpAfter }}</b> 點傷害（{{ report.boss.hpBefore }} → {{ report.boss.hpAfter }} / {{ report.boss.maxHp }}）{{ report.boss.defeated ? "，打倒了！大家分到的東西會在下次打開營地時收進倉庫。" : "" }}</p>
         </template>
@@ -146,6 +154,10 @@ p { margin: 6px 0; line-height: 1.55; }
 .muted { color: var(--muted); }
 .won { color: var(--green); }
 .lost { color: var(--red); }
+.where { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #f6f2e4; border-radius: 10px; padding: 8px 10px; }
+.where span { flex: 1; min-width: 0; font-weight: 600; }
+.where .btn.small { padding: 4px 10px; font-size: 13px; }
+.fled { color: var(--muted); }
 .loot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip { background: #f1eee2; border-radius: 8px; padding: 3px 8px; font-size: 13px; }
 .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

@@ -1013,7 +1013,7 @@ function summary(row: ExpeditionRow, viewer?: string): ExpeditionSummary {
     ...(row.route ? { route: row.route } : {}),
     status: row.status,
     outcome: result?.outcome ?? null,
-    ...(viewer && row.defender === viewer && row.userId !== viewer ? { defending: true } : {}),
+    ...(viewer && row.defender === viewer && row.userId !== viewer ? { defending: true, ...(result?.attacker ? { by: result.attacker.name } : {}) } : {}),
   };
 }
 
@@ -1071,6 +1071,8 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   };
   const outcome = report.outcome!;
   const involved = [camp.userId];
+  /** Where the beaten garrison fell back to (retreat), for the defender's news. */
+  let fledTo: Fled | null = null;
 
   /**
    * The survivors stay on the cell (up to its room) or walk back: to the held cell they set out from while it is still the
@@ -1143,6 +1145,22 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       outcome.cell = left.length ? "camping" : "settled";
       outcome.against = `自己的領地（${parts.join("，")}）`;
     }
+  } else if (exp.kind === "retreat") {
+    // fled from an overrun cell to a free one beside it: they settle it while it is still free and they are enough to hold
+    // it (as many as it has room for); the rest, or everyone if not, walk on home
+    const boss = await bossHere(tx, exp.toCell, at, false);
+    const free = !cell?.owner && !lairHere(exp.toCell, cell, at, await terrainOf(tx, exp.toCell)).lair && !(boss && !boss.row.defeatedAt);
+    const staying = free && party.length >= min ? party.slice(0, cap) : [];
+    if (staying.length) {
+      await takeCell(tx, exp.toCell, camp.userId, at);
+      await tx.update(campResidents).set({ place: cellPlace(exp.toCell) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, staying.map((r) => r.id))));
+    }
+    const rest = party.slice(staying.length);
+    if (rest.length && player?.homeCell) await walk(tx, camp, rest, exp.toCell, player.homeCell, "recall", at);
+    else if (rest.length) await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, rest.map((r) => r.id))));
+    outcome.won = staying.length > 0;
+    outcome.cell = staying.length ? "settled" : "back";
+    outcome.against = staying.length ? `附近的空地（住進 ${staying.length} 隻${rest.length ? `，${rest.length} 隻走回營地` : ""}）` : "那一格不能住了，走回營地";
   } else if (exp.kind === "guard") {
     // to a friend's cell: stay as guests while it is still theirs and they are still friends (up to GUESTS_MAX in all)
     const holder = cell?.owner && cell.owner !== camp.userId && (await areFriends(tx, camp.userId, cell.owner)) ? await ownerOf(tx, cell.owner) : null;
@@ -1183,6 +1201,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       const { campCell, guests } = defense;
       const defenders = defense.own;
       report.defender = await ownerOf(tx, defenderCamp.userId);
+      outcome.where = await cellLabel(tx, defenderCamp.userId, cell.cell, defenderPlayer?.homeCell ?? null); // (before the cell may change hands)
       outcome.against = `${report.defender.name}的${campCell ? "營地" : "領地"}`;
       const result = resolveExpedition({
         worldSeed: WORLD_SEED,
@@ -1231,8 +1250,9 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         outcome.cell = "cleared";
         await shield(tx, defenderCamp.userId, now);
       } else if (result.won) {
-        // (those of its garrison who did not stand up to the party flee home: the cell is overrun)
-        await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, defenderCamp.userId), eq(campResidents.place, cellPlace(exp.toCell)), isNull(campResidents.diedAt)));
+        // (the cell is overrun: those of its garrison still standing fall back, walking: see retreat)
+        fledTo = await retreat(tx, defenderCamp, exp.toCell, await aliveAt(tx, defenderCamp.userId, cellPlace(exp.toCell)), at);
+        if (fledTo) outcome.fled = { count: fledTo.count, how: fledTo.how, label: fledTo.label };
         await releaseCell(tx, exp.toCell);
         const stayed = exp.settle && result.canSettle ? await placeSurvivors(survivors, true) : await placeSurvivors(survivors, false);
         outcome.cell = stayed ? "taken" : "cleared";
@@ -1243,7 +1263,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         await shield(tx, camp.userId, now);
         if (defenderPlayer) await tx.update(worldPlayers).set({ xp: defenderPlayer.xp + result.xp.defender }).where(eq(worldPlayers.userId, defenderCamp.userId));
       }
-      await addEvent(tx, defenderCamp.userId, at, "expedition", { id: exp.id, cell: exp.toCell, defended: true, by: attacker.name, won: !result.won, fallen: fallenD.size });
+      await addEvent(tx, defenderCamp.userId, at, "expedition", { id: exp.id, cell: exp.toCell, defended: true, by: attacker.name, won: !result.won, fallen: fallenD.size, ...(outcome.where ? { where: outcome.where.label } : {}), ...(fledTo ? { fled: fledTo } : {}) });
       await bumpVersion(tx, defenderCamp);
     }
   } else if (await bossHere(tx, exp.toCell, at, false).then((b) => b && !b.row.defeatedAt)) {
@@ -1369,13 +1389,14 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
   const news: WorldNews[] = [
     {
       user: camp.userId,
-      title: exp.kind === "recall" || exp.kind === "reroute" ? "撤回的隊伍到了" : "出征的隊伍到了",
+      title: exp.kind === "retreat" ? "撤退的隊伍到了" : exp.kind === "recall" || exp.kind === "reroute" ? "撤回的隊伍到了" : "出征的隊伍到了",
       body: `${headline[outcome.cell]}${outcome.against}${outcome.fallen ? `，倒下 ${outcome.fallen} 隻` : ""}${loot ? `，撿到 ${loot}` : ""}`,
       url,
     },
   ];
   if (report.defender) {
-    news.push({ user: report.defender.id, title: "領地被攻擊了", body: `${attacker.name}來打你的領地：${outcome.won ? "被搶走了，你正在龜縮" : "守住了！"}`, url });
+    const fled = fledTo ? `；${fledTo.count} 隻撤退${{ cell: "到最近的領地", free: "到旁邊的空地", home: "回營地" }[fledTo.how]}` : "";
+    news.push({ user: report.defender.id, title: "領地被攻擊了", body: `${attacker.name}來打你的領地：${outcome.won ? `被搶走了，你正在龜縮${fled}` : "守住了！"}`, url });
   }
   if (report.boss?.defeated) {
     for (const who of involved) if (who !== camp.userId) news.push({ user: who, title: `世界魔王${report.boss.name}被打倒了`, body: "你出過力，戰利品會收進營地倉庫。", url: "/world" });
@@ -1551,7 +1572,7 @@ export async function recall(tx: Tx, userId: string, cell: string, input: { coun
 }
 
 /** Sends residents walking from one cell to another (a recall, or its leftovers looking for room): no fight, no party cap. */
-async function walk(tx: Tx, camp: CampRow, party: ResidentRow[], from: string, to: string, kind: "recall" | "reroute", at: Date): Promise<ExpeditionRow> {
+async function walk(tx: Tx, camp: CampRow, party: ResidentRow[], from: string, to: string, kind: "recall" | "reroute" | "retreat", at: Date): Promise<ExpeditionRow> {
   const boosts = fightBoosts(camp.race, camp.boosts, at.getTime());
   const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
   // (between its own cells: round other camps' land if it can be, straight on if not; nobody is left stranded)
@@ -1564,6 +1585,60 @@ async function walk(tx: Tx, camp: CampRow, party: ResidentRow[], from: string, t
   await tx.update(campResidents).set({ place: walkingPlace(row!.id) }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, party.map((r) => r.id))));
   await addEvent(tx, camp.userId, at, "expedition", { id: row!.id, setOut: true, to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
   return row!;
+}
+
+/** A camp's cell as its holder's workshop names it (camp/service.ts gearPlaces): 營地, or 城鎮 n / 領地 n in the order taken. */
+async function cellLabel(tx: Tx, owner: string, cell: string, homeCell: string | null): Promise<{ kind: "home" | "town" | "cell"; label: string; landmark?: string }> {
+  const landmark = (await landmarksFor(tx, [cell])).get(cell)?.name || undefined;
+  if (cell === homeCell) return { kind: "home", label: "營地", ...(landmark ? { landmark } : {}) };
+  const held = (await tx.select({ cell: worldCells.cell, town: worldCells.town }).from(worldCells).where(eq(worldCells.owner, owner)).orderBy(worldCells.heldSince, worldCells.cell)).filter(
+    (c) => c.cell !== homeCell,
+  );
+  const i = held.findIndex((c) => c.cell === cell);
+  const town = !!held[i]?.town;
+  return { kind: town ? "town" : "cell", label: i < 0 ? "領地" : `${town ? "城鎮" : "領地"} ${i + 1}`, ...(landmark ? { landmark } : {}) };
+}
+
+/**
+ * Those living on a cell that was just overrun fall back, walking (nobody vanishes home at once): to the camp's nearest held
+ * cell with room (those it cannot take look further on, as a recall's do); with none, if they are enough to hold a cell, to a
+ * free cell beside it, to settle it; else home. Before the cell is let go. Null when nobody was left.
+ */
+async function retreat(tx: Tx, camp: CampRow, from: string, fleeing: ResidentRow[], at: Date): Promise<Fled | null> {
+  if (!fleeing.length) return null;
+  const homeCell = await homeCellOf(tx, camp.userId);
+  const next = await nearestRoom(tx, camp, from, [from], at);
+  if (next) {
+    await walk(tx, camp, fleeing, from, next.cell, "recall", at);
+    return { to: next.cell, count: fleeing.length, how: "cell", label: (await cellLabel(tx, camp.userId, next.cell, homeCell)).label };
+  }
+  if (fleeing.length >= garrisonMin(camp.race)) {
+    const free = await freeBeside(tx, from, at);
+    if (free) {
+      await walk(tx, camp, fleeing, from, free, "retreat", at);
+      return { to: free, count: fleeing.length, how: "free", label: "旁邊的空地" };
+    }
+  }
+  if (homeCell) await walk(tx, camp, fleeing, from, homeCell, "recall", at);
+  else await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, fleeing.map((r) => r.id))));
+  return { to: homeCell ?? "home", count: fleeing.length, how: "home", label: "營地" };
+}
+type Fled = { to: string; count: number; how: "cell" | "free" | "home"; label: string };
+
+/** A cell next to `cell` that nobody holds, with no lair standing on it now and no great monster: somewhere to fall back to. */
+async function freeBeside(tx: Tx, cell: string, at: Date): Promise<string | null> {
+  const ids = neighbors(cell);
+  const rows = new Map((await tx.select().from(worldCells).where(inArray(worldCells.cell, ids))).map((r) => [r.cell, r]));
+  const ground = await terrainsFor(tx, ids);
+  for (const id of ids) {
+    const row = rows.get(id);
+    if (row?.owner) continue;
+    if (lairHere(id, row, at, ground.get(id) ?? terrainAt(WORLD_SEED, id)).lair) continue;
+    const boss = await bossHere(tx, id, at, false);
+    if (boss && !boss.row.defeatedAt) continue;
+    return id;
+  }
+  return null;
 }
 
 /** The camp's held cell with room nearest to `near` (not the camp's own, not those in `not`), and how many it has room for. */

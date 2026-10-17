@@ -2325,7 +2325,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for e in parties {
             let loot = (e.loot ?? [:]).sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
             if e.defended == true {
-                say("\(e.by ?? "有人")來打我們的領地，" + (e.won == true ? "守住了！" : "領地被搶走了……") + ((e.fallen ?? 0) > 0 ? "倒下 \(e.fallen!) 隻。" : ""))
+                let fled = e.fled.map { f in "\(f.count) 隻撤退" + (f.how == "cell" ? "到\(f.label ?? "最近的領地")。" : f.how == "free" ? "到旁邊的空地。" : "回營地。") } ?? ""
+                let place = e.where ?? "領地"
+                let lost = place == "營地" ? "營地被打敗了……" : "\(place)被搶走了……"
+                say("\(e.by ?? "有人")來打我們的\(place)，" + (e.won == true ? "守住了！" : lost) + ((e.fallen ?? 0) > 0 ? "倒下 \(e.fallen!) 隻。" : "") + (e.won == true ? "" : fled))
+            } else if e.arrived == true, e.kind == "retreat" {
+                say("撤退的隊伍到了" + (e.cell == "settled" ? "，在\(e.against ?? "附近的空地")。" : "，\(e.against ?? "走回營地")。"))
             } else if e.arrived == true, e.kind == "recall" || e.kind == "reroute" {
                 say("撤回的隊伍到了" + (e.cell == "back" ? "營地。" : "\(e.against ?? "領地")。"))
             } else if e.arrived == true {

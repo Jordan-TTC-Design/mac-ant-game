@@ -38,7 +38,8 @@ const DRAWN = 0.9;
 const box = ref<HTMLDivElement>();
 let map: MapLibre | null = null;
 let ready = false;
-const markers: Marker[] = [];
+/** The icon over each cell that has one, and what it showed (only the ones that change are made again). */
+const markers = new Map<string, { key: string; marker: Marker }>();
 const partyMarkers = new Map<string, Marker>();
 const foeSheet = useFoeSheet();
 
@@ -57,12 +58,11 @@ function cellsGeoJson(): FeatureCollection {
     type: "FeatureCollection",
     features: props.cells.map((c) => ({
       type: "Feature",
+      // (the cell picked and those walked to are feature states: picking one does not send every cell again)
       properties: {
         cell: c.cell,
         state: c.owner ? (c.owner.id === props.mine ? "mine" : "theirs") : c.boss ? "boss" : "free",
-        selected: c.cell === props.selected,
         blocks: !!c.blocks,
-        target: props.walkingTo.includes(c.cell),
       },
       geometry: { type: "Polygon", coordinates: [hexRing(c.lat, c.lng)] },
     })),
@@ -143,43 +143,73 @@ function buildingSvg(kind: "home" | "town", race: string): string {
   return `<svg viewBox="0 -6 24 30" width="40" height="50" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${outline}${body}${details}${flag}</svg>`;
 }
 
-/** The icons over the cells (redrawn when the cells change: a hundred or so at a time). */
+/** What a cell's icon shows, as a key: the icon is made again only when this changes. */
+function markerKey(c: CellView): string {
+  return JSON.stringify([
+    c.owner && [c.owner.id === props.mine, c.owner.race, c.garrison, c.town, c.home, c.nest],
+    c.boss && [c.boss.kind, Math.round((100 * c.boss.hp) / c.boss.maxHp)],
+    c.lair && [c.lair.kind, c.lair.level, c.lair.boss, leaderOf(c.lair.foes)],
+    c.landmark?.kind,
+    !!foeSheet.value,
+  ]);
+}
+
+/** A cell's icon (null: nothing to show there). */
+function cellMarker(c: CellView): HTMLElement | null {
+  const el = document.createElement("div");
+  el.className = "map-cell";
+  if (c.owner && (c.home || c.town)) {
+    const building = document.createElement("span");
+    building.className = "map-building";
+    building.innerHTML = buildingSvg(c.home ? "home" : "town", c.owner.race);
+    el.append(building, label(`${c.garrison}${c.home ? " 營地" : " 城"}`, c.owner.id === props.mine ? "mine" : "theirs"));
+  } else if (c.owner) {
+    const face = document.createElement("img");
+    face.src = `/sprites/${c.owner.race}/icon.png`;
+    face.className = "map-face";
+    el.append(face, label(`${c.garrison}${c.town ? " 城" : c.nest !== "none" ? " 巢" : ""}`, c.owner.id === props.mine ? "mine" : "theirs"));
+  } else if (c.boss) {
+    const hp = document.createElement("span");
+    hp.className = "map-hp";
+    hp.innerHTML = `<i style="width:${Math.max(0, (100 * c.boss.hp) / c.boss.maxHp)}%"></i>`;
+    el.append(foeElement(c.boss.kind, 36), hp);
+  } else if (c.lair) {
+    const icon = c.lair.kind === "enemy_town" ? "enemy_town" : leaderOf(c.lair.foes);
+    el.append(foeElement(icon, c.lair.boss ? 30 : 22), label(`${c.lair.boss ? "👑 " : ""}Lv${c.lair.level}`, c.lair.boss ? "boss" : ""));
+  } else if (!c.landmark) {
+    return null;
+  }
+  // a real place standing in it (a station, a temple…): a small mark in the corner
+  if (c.landmark) {
+    const mark = document.createElement("span");
+    mark.className = el.childElementCount ? "map-landmark corner" : "map-landmark";
+    mark.textContent = landmarkRule(c.landmark.kind)?.icon ?? "📍";
+    el.append(mark);
+  }
+  return el;
+}
+
+/**
+ * The icons over the cells (a few hundred in view): only those whose cell changed are made again, the rest stay where
+ * they are (making them all again on every change made each tap on the map stutter).
+ */
 function drawMarkers() {
   if (!map) return;
-  for (const m of markers) m.remove();
-  markers.length = 0;
+  const seen = new Set<string>();
   for (const c of props.cells) {
-    const el = document.createElement("div");
-    el.className = "map-cell";
-    if (c.owner && (c.home || c.town)) {
-      const building = document.createElement("span");
-      building.className = "map-building";
-      building.innerHTML = buildingSvg(c.home ? "home" : "town", c.owner.race);
-      el.append(building, label(`${c.garrison}${c.home ? " 營地" : " 城"}`, c.owner.id === props.mine ? "mine" : "theirs"));
-    } else if (c.owner) {
-      const face = document.createElement("img");
-      face.src = `/sprites/${c.owner.race}/icon.png`;
-      face.className = "map-face";
-      el.append(face, label(`${c.garrison}${c.town ? " 城" : c.nest !== "none" ? " 巢" : ""}`, c.owner.id === props.mine ? "mine" : "theirs"));
-    } else if (c.boss) {
-      const hp = document.createElement("span");
-      hp.className = "map-hp";
-      hp.innerHTML = `<i style="width:${Math.max(0, (100 * c.boss.hp) / c.boss.maxHp)}%"></i>`;
-      el.append(foeElement(c.boss.kind, 36), hp);
-    } else if (c.lair) {
-      const icon = c.lair.kind === "enemy_town" ? "enemy_town" : leaderOf(c.lair.foes);
-      el.append(foeElement(icon, c.lair.boss ? 30 : 22), label(`${c.lair.boss ? "👑 " : ""}Lv${c.lair.level}`, c.lair.boss ? "boss" : ""));
-    } else if (!c.landmark) {
-      continue;
-    }
-    // a real place standing in it (a station, a temple…): a small mark in the corner
-    if (c.landmark) {
-      const mark = document.createElement("span");
-      mark.className = el.childElementCount ? "map-landmark corner" : "map-landmark";
-      mark.textContent = landmarkRule(c.landmark.kind)?.icon ?? "📍";
-      el.append(mark);
-    }
-    markers.push(new Marker({ element: el, anchor: "center" }).setLngLat([c.lng, c.lat]).addTo(map));
+    const key = markerKey(c);
+    const known = markers.get(c.cell);
+    seen.add(c.cell);
+    if (known?.key === key) continue;
+    known?.marker.remove();
+    markers.delete(c.cell);
+    const el = cellMarker(c);
+    if (el) markers.set(c.cell, { key, marker: new Marker({ element: el, anchor: "center" }).setLngLat([c.lng, c.lat]).addTo(map) });
+  }
+  for (const [cell, { marker }] of markers) {
+    if (seen.has(cell)) continue;
+    marker.remove();
+    markers.delete(cell);
   }
 }
 
@@ -191,12 +221,35 @@ function planGeoJson(): FeatureCollection {
   };
 }
 
-function refresh() {
+/** The cells came anew (or whose they are): their shapes and icons. */
+function refreshCells() {
+  if (!map || !ready) return;
+  (map.getSource("cells") as GeoJSONSource | undefined)?.setData(cellsGeoJson());
+  drawMarkers();
+  marked.clear(); // (the shapes were sent again: mark the picked and walked-to cells afresh)
+  markCells();
+}
+
+/** Cells drawn as picked or walked to now (feature states), so only what changed is told to the map. */
+const marked = new Map<string, { selected: boolean; target: boolean }>();
+function markCells() {
+  if (!map || !ready) return;
+  const want = new Map<string, { selected: boolean; target: boolean }>();
+  for (const cell of props.walkingTo) want.set(cell, { selected: false, target: true });
+  if (props.selected) want.set(props.selected, { selected: true, target: props.walkingTo.includes(props.selected) });
+  for (const cell of marked.keys()) if (!want.has(cell)) map.setFeatureState({ source: "cells", id: cell }, { selected: false, target: false });
+  for (const [cell, state] of want) {
+    const was = marked.get(cell);
+    if (was?.selected !== state.selected || was?.target !== state.target) map.setFeatureState({ source: "cells", id: cell }, state);
+  }
+  marked.clear();
+  for (const [cell, state] of want) marked.set(cell, state);
+}
+
+function refreshRoads() {
   if (!map || !ready) return;
   (map.getSource("plan") as GeoJSONSource | undefined)?.setData(planGeoJson());
-  (map.getSource("cells") as GeoJSONSource | undefined)?.setData(cellsGeoJson());
   (map.getSource("parties") as GeoJSONSource | undefined)?.setData(partiesGeoJson());
-  drawMarkers();
   moveParties();
 }
 
@@ -308,7 +361,7 @@ onMounted(() => {
   if (import.meta.dev) (window as unknown as { worldMap: MapLibre }).worldMap = m; // (to look at it from the console)
   m.touchZoomRotate.disableRotation();
   m.on("load", () => {
-    m.addSource("cells", { type: "geojson", data: cellsGeoJson() });
+    m.addSource("cells", { type: "geojson", data: cellsGeoJson(), promoteId: "cell" });
     m.addSource("parties", { type: "geojson", data: partiesGeoJson() });
     m.addSource("plan", { type: "geojson", data: planGeoJson() });
     m.addLayer({
@@ -325,20 +378,26 @@ onMounted(() => {
       type: "line",
       source: "cells",
       // (no outline for free cells: only the one picked, and held ones; the real map shows through clean)
-      filter: ["any", ["get", "selected"], ["!=", ["get", "state"], "free"]],
       paint: {
-        "line-color": ["case", ["get", "selected"], "#ffffff", ["match", ["get", "state"], "mine", "#ffd84a", "theirs", "#e04a3a", "#ff3a2a"]],
-        "line-width": ["case", ["get", "selected"], 3, 2.5],
+        "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#ffffff", ["match", ["get", "state"], "mine", "#ffd84a", "theirs", "#e04a3a", "#ff3a2a"]],
+        "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 2.5],
+        "line-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 1, ["==", ["get", "state"], "free"], 0, 1],
       },
     });
     // someone else's built-up land: parties must walk round it (shared/src/world/route.ts), so it reads as a wall
     m.addLayer({ id: "cell-wall", type: "fill", source: "cells", filter: ["get", "blocks"], paint: { "fill-color": "#7a1a10", "fill-opacity": 0.32 } });
     m.addLayer({ id: "cell-wall-line", type: "line", source: "cells", filter: ["get", "blocks"], paint: { "line-color": "#5a0f08", "line-width": 4 } });
-    m.addLayer({ id: "cell-target", type: "line", source: "cells", filter: ["get", "target"], paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.5] } });
+    m.addLayer({
+      id: "cell-target",
+      type: "line",
+      source: "cells",
+      paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.5], "line-opacity": ["case", ["boolean", ["feature-state", "target"], false], 1, 0] },
+    });
     m.addLayer({ id: "party-road", type: "line", source: "parties", paint: { "line-color": "#ffffff", "line-width": 3, "line-dasharray": [2, 1.5], "line-opacity": 0.9 } });
     m.addLayer({ id: "plan-road", type: "line", source: "plan", layout: { "line-cap": "round" }, paint: { "line-color": "#f3d36b", "line-width": 4, "line-dasharray": [0.1, 2] } });
     ready = true;
-    refresh();
+    refreshCells();
+    refreshRoads();
     // the credits (OpenStreetMap's licence asks for them) start folded into the little (i), so they do not cover the map
     box.value?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
   });
@@ -355,7 +414,10 @@ onUnmounted(() => {
   map = null;
 });
 
-watch(() => [props.cells, props.selected, props.mine, props.walkingTo, props.parties, props.plan, foeSheet.value], refresh);
+// each kind of change redraws only its own part (a tap on a cell changes only which one is outlined)
+watch(() => [props.cells, props.mine, foeSheet.value], refreshCells);
+watch(() => [props.selected, props.walkingTo], markCells);
+watch(() => [props.parties, props.plan], refreshRoads);
 // the page moves the map (to the camp, to a great monster): fly there if it is not where we are looking already
 watch(
   () => props.center,
