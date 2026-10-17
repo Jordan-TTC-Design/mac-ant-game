@@ -151,6 +151,10 @@ import {
 import type { AppDeps } from "../app.ts";
 import { landmarksFor, terrainOf, terrainsFor } from "./osm.ts";
 import { talentBonusOf } from "./talents.ts";
+import { recordFlow } from "../camp/flows.ts";
+
+/** A cost as a flow: every material taken, negative (camp/flows.ts). */
+const taken = (cost: Record<string, number>) => Object.fromEntries(Object.entries(cost).map(([id, n]) => [id, -n]));
 import type { Tx } from "../auth/session.ts";
 import { addEvent, advanceCamp, lockCamp, toResident, type CampRow, type ResidentRow } from "../camp/service.ts";
 import { campEvents, campResidents, camps, devices, expeditions, friendships, users, worldBosses, worldCells, worldPlayers, worldRewards } from "../db/schema.ts";
@@ -342,7 +346,7 @@ const ARMOUR: GearSlot[] = ["head", "chest", "legs", "feet", "hands"];
  * (about a third of what it was made from is picked out of it, as in a raid). Changes the rows too, so whoever fell gives
  * back what is left of theirs.
  */
-async function wearDown(tx: Tx, camp: CampRow, rows: ResidentRow[], events: BattleEvent[], prefix: string, seed: string) {
+async function wearDown(tx: Tx, camp: CampRow, rows: ResidentRow[], events: BattleEvent[], prefix: string, seed: string, at: Date) {
   const wt = await talentBonusOf(tx, camp.userId);
   const rate = EXPEDITION_WEAR * (1 - Math.min(1, wt.wear ?? 0)); // (talents: less)
   const keepAll = hasAbility(wt, "refine"); // (拼裝改造: a broken piece gives all its materials back)
@@ -365,6 +369,7 @@ async function wearDown(tx: Tx, camp: CampRow, rows: ResidentRow[], events: Batt
     }
   }
   const salvage = randomFrom(hashString(`${seed}|broken`));
+  const salvaged: Record<string, number> = {};
   for (const [r, slots] of wear) {
     const gear = structuredClone(r.gear ?? {}) as Partial<Record<GearSlot, GearItem>>;
     for (const [slot, n] of Object.entries(slots) as [GearSlot, number][]) {
@@ -374,12 +379,16 @@ async function wearDown(tx: Tx, camp: CampRow, rows: ResidentRow[], events: Batt
       if (item.left > 0) continue;
       delete gear[slot];
       for (const [mat, count] of Object.entries(gearRule(item.id)?.cost ?? {})) {
-        for (let k = 0; k < count; k++) if (keepAll || salvage() < 0.3) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + 1 };
+        for (let k = 0; k < count; k++) if (keepAll || salvage() < 0.3) {
+          camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + 1 };
+          salvaged[mat] = (salvaged[mat] ?? 0) + 1;
+        }
       }
     }
     r.gear = Object.keys(gear).length ? (gear as ResidentRow["gear"]) : null;
     await tx.update(campResidents).set({ gear: r.gear }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, r.id)));
   }
+  await recordFlow(tx, camp.userId, at, "world-salvage", salvaged);
 }
 
 async function bumpVersion(tx: Tx, camp: CampRow) {
@@ -673,6 +682,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   }
 
   if (staffed.length && (await staff(tx, camp, staffed, home?.cell ?? null, now))) changed = true;
+  await recordFlow(tx, camp.userId, now, "world-yield", yields);
+  await recordFlow(tx, camp.userId, now, "world-upkeep", taken(upkeep));
   if (Object.keys(yields).length || Object.keys(upkeep).length || hungry.length) {
     await addEvent(tx, camp.userId, now, "world", { yields, cells: yieldsByCell, ...(Object.keys(upkeep).length ? { upkeep } : {}), ...(hungry.length ? { hungry } : {}) });
   }
@@ -681,6 +692,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   let rewardXp = 0;
   for (const r of rewards) {
     for (const [mat, n] of Object.entries(r.data.loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
+    await recordFlow(tx, camp.userId, now, "world-boss", r.data.loot);
     rewardXp += r.data.xp;
     await tx.update(worldRewards).set({ claimedAt: now }).where(eq(worldRewards.id, r.id));
     await addEvent(tx, camp.userId, now, "world", { bossReward: r.data });
@@ -767,6 +779,7 @@ async function lairReturns(
       const dropped = lairDrops(lair, battle.fallen.attack, `${cell.cell}|${t}`);
       for (const [mat, n] of [...Object.entries(kept), ...Object.entries(dropped)]) loot[mat] = (loot[mat] ?? 0) + n;
       for (const [mat, n] of Object.entries(loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
+      await recordFlow(tx, camp.userId, at, "world-loot", loot); // (a lair that came back, beaten off)
       for (const id of battle.fallen.attack) {
         const foe = lair.foes[Number(id.split("#")[1])];
         if (foe) camp.kills = { ...camp.kills, [foe]: (camp.kills[foe] ?? 0) + 1 };
@@ -854,6 +867,7 @@ export async function openWorldFor(tx: Tx, userId: string, input: { cell?: strin
   await tx.insert(worldPlayers).values({ userId, open: true, homeCell: input.cell, openedAt: now, xpCountedTo: now });
   // something to take along on the first expeditions
   for (const [id, n] of Object.entries(OPENING_FOOD)) camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + n };
+  await recordFlow(tx, userId, now, "world-open", OPENING_FOOD);
   await addEvent(tx, userId, now, "world", { opened: true, cell: input.cell });
   await bumpVersion(tx, camp);
 }
@@ -982,6 +996,7 @@ export async function sendExpedition(
     const plan = planSupplies(camp.race, raceLevel(player.xp), party.length, input.supplies ?? {}, camp.materials, fromBonus.party + (talentBonus(player.talents).party ?? 0));
     if (plan.problem) throw new WorldError(409, "too_many", plan.problem);
     for (const [id, n] of Object.entries(plan.spent)) camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) - n };
+    await recordFlow(tx, userId, now, "world-supplies", taken(plan.spent));
     if (Object.keys(plan.boosts).length) carried = plan.boosts;
   }
   const keep = input.from === "home" ? HOME_KEEP : garrisonMin(camp.race);
@@ -1441,8 +1456,8 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       report.fallen = result.battle.fallen;
       const fallenA = new Set(result.battle.fallen.attack);
       const fallenD = new Set(result.battle.fallen.defend);
-      await wearDown(tx, camp, party, result.battle.events, "", `${exp.id}|a`);
-      await wearDown(tx, defenderCamp, defenders, result.battle.events, "d", `${exp.id}|d`);
+      await wearDown(tx, camp, party, result.battle.events, "", `${exp.id}|a`, at);
+      await wearDown(tx, defenderCamp, defenders, result.battle.events, "d", `${exp.id}|d`, at);
       await bury(tx, camp, party.filter((r) => fallenA.has(String(r.id))), at);
       await bury(tx, defenderCamp, defenders.filter((r) => fallenD.has(`d${r.id}`)), at);
       const fellGuests = guests.rows.filter((r) => fallenD.has(guestId(guests.all, r)));
@@ -1464,6 +1479,8 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
           camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + take };
           outcome.loot[id] = take;
         }
+        await recordFlow(tx, camp.userId, at, "world-loot", outcome.loot);
+        await recordFlow(tx, defenderCamp.userId, at, "world-plundered", taken(outcome.loot));
         await placeSurvivors(survivors, false);
         outcome.cell = "plundered";
       } else if (result.won && campCell) {
@@ -1518,7 +1535,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     report.events = battle.events.slice(0, 1500);
     report.fallen = battle.fallen;
     const fallenA = new Set(battle.fallen.attack);
-    await wearDown(tx, camp, party, battle.events, "", `${exp.id}|a`);
+    await wearDown(tx, camp, party, battle.events, "", `${exp.id}|a`, at);
     await bury(tx, camp, party.filter((r) => fallenA.has(String(r.id))), at);
     await placeSurvivors(party.filter((r) => !fallenA.has(String(r.id))), false);
     outcome.won = defeated;
@@ -1555,7 +1572,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       report.events = result.battle.events.slice(0, 1500);
       report.fallen = result.battle.fallen;
       const fallenA = new Set(result.battle.fallen.attack);
-      await wearDown(tx, camp, party, result.battle.events, "", `${exp.id}|a`);
+      await wearDown(tx, camp, party, result.battle.events, "", `${exp.id}|a`, at);
       await bury(tx, camp, party.filter((r) => fallenA.has(String(r.id))), at);
       outcome.fallen = fallenA.size;
       outcome.killed = result.battle.fallen.defend.length;
@@ -1572,6 +1589,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         loot = moreLoot(loot); // (talents)
         outcome.loot = loot;
         for (const [mat, n] of Object.entries(loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
+        await recordFlow(tx, camp.userId, at, "world-loot", loot);
         for (const i of result.battle.fallen.defend.map((f) => Number(f.split("#")[1]))) {
           const foe = lair.foes[i];
           if (foe) camp.kills = { ...camp.kills, [foe]: (camp.kills[foe] ?? 0) + 1 };
@@ -1585,6 +1603,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         const loot = moreLoot(lairDrops(lair, result.battle.fallen.defend, exp.id));
         outcome.loot = loot;
         for (const [mat, n] of Object.entries(loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
+        await recordFlow(tx, camp.userId, at, "world-loot", loot);
         for (const i of result.battle.fallen.defend.map((f) => Number(f.split("#")[1]))) {
           const foe = lair.foes[i];
           if (foe) camp.kills = { ...camp.kills, [foe]: (camp.kills[foe] ?? 0) + 1 };
@@ -1686,6 +1705,7 @@ export async function buildNest(tx: Tx, userId: string, cell: string, now: Date)
   if (row.nestStartedAt) throw new WorldError(409, "exists", "這一格已經有巢穴了。");
   if (!canAfford(camp.materials, NEST_COST)) throw new WorldError(409, "cannot_afford", `素材不夠：巢穴要 ${costText(NEST_COST)}。`);
   camp.materials = spend(camp.materials, NEST_COST);
+  await recordFlow(tx, userId, now, "world-build", taken(NEST_COST));
   await tx.update(worldCells).set({ nestStartedAt: now, nextSlot: 0, advancedTo: null, updatedAt: now }).where(eq(worldCells.cell, cell));
   await addEvent(tx, userId, now, "world", { nest: cell });
   await bumpVersion(tx, camp);
@@ -1708,6 +1728,7 @@ export async function buildTown(tx: Tx, userId: string, cell: string, now: Date)
   }
   if (!canAfford(camp.materials, TOWN_COST)) throw new WorldError(409, "cannot_afford", `素材不夠：城鎮要 ${costText(TOWN_COST)}。`);
   camp.materials = spend(camp.materials, TOWN_COST);
+  await recordFlow(tx, userId, now, "world-build", taken(TOWN_COST));
   // a town has a nest of its own (it raises residents as fast as the home camp)
   await tx.update(worldCells).set({ town: true, nestStartedAt: row.nestStartedAt ?? new Date(now.getTime() - NEST_BUILD_HOURS * HOUR), updatedAt: now }).where(eq(worldCells.cell, cell));
   const player = await lockPlayer(tx, userId);
@@ -1745,6 +1766,7 @@ export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: st
   const cost = CELL_BUILDING_COSTS[level - 1]!;
   if (!canAfford(camp.materials, cost)) throw new WorldError(409, "cannot_afford", `素材不夠：要 ${costText(cost)}。`);
   camp.materials = spend(camp.materials, cost);
+  await recordFlow(tx, userId, now, "world-build", taken(cost));
   const building = { kind: rule.kind, level, busyUntil: new Date(now.getTime() + CELL_BUILDING_HOURS[level - 1]! * HOUR).toISOString() };
   await tx.update(worldCells).set({ building, updatedAt: now }).where(eq(worldCells.cell, cell));
   await addEvent(tx, userId, now, "world", { built: { cell, kind, level } });
@@ -1859,6 +1881,7 @@ export async function tradeAtMarket(tx: Tx, userId: string, cell: string, input:
   if ((camp.materials[input.give] ?? 0) < input.count) throw new WorldError(409, "cannot_afford", `${materialName(input.give)}不夠。`);
   camp.materials = spend(camp.materials, { [input.give]: input.count });
   camp.materials = { ...camp.materials, [input.get]: (camp.materials[input.get] ?? 0) + got };
+  await recordFlow(tx, userId, now, "world-market", input.give === input.get ? {} : { [input.give]: -input.count, [input.get]: got });
   await addEvent(tx, userId, now, "world", { market: { cell, give: input.give, count: input.count, get: input.get, got } });
   await bumpVersion(tx, camp);
   return { got };
@@ -1890,6 +1913,7 @@ export async function resetTalents(tx: Tx, userId: string, now: Date) {
   const price = talentResetCost(player.talentResets);
   if (!canAfford(camp.materials, price)) throw new WorldError(409, "cannot_afford", `素材不夠：重置要 ${costText(price)}。`);
   camp.materials = spend(camp.materials, price);
+  await recordFlow(tx, userId, now, "world-talents", taken(price));
   await tx.update(worldPlayers).set({ talents: {}, talentResets: player.talentResets + 1 }).where(eq(worldPlayers.userId, userId));
   await addEvent(tx, userId, now, "world", { talentsReset: { spent: price } });
   await bumpVersion(tx, camp);

@@ -619,6 +619,9 @@ describe("a town's market", () => {
     expect(after.rat_fang).toBe(before.rat_fang! - 10);
     expect((after.crystal_shard ?? 0) - (before.crystal_shard ?? 0)).toBe(marketQuote("rat_fang", 10, "crystal_shard"));
     expect(marketQuote("rat_fang", 10, "crystal_shard")).toBe(4); // (10 × 4 × 0.6 ÷ 5)
+    // the economy dashboard's flow: what went out and what came in
+    const flows = await database.sql`select data from camp_events where kind = 'flow' and data ->> 'source' = 'world-market'`;
+    expect(flows.at(-1)!.data).toEqual({ source: "world-market", delta: { rat_fang: -10, crystal_shard: 4 } });
     expect((await trade({ give: "rat_fang", count: 1, get: "crystal_shard" })).body.error).toBe("invalid_input"); // (too few for one)
     await trade({ give: "rat_fang", count: 10, get: "scrap_iron" });
     await trade({ give: "rat_fang", count: 10, get: "scrap_iron" });
