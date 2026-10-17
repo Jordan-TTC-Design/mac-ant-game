@@ -40,15 +40,18 @@ describe("each breed has its share", () => {
     const pop = full();
     turnover(place, pop, 3, T0, T0 + 120 * DAY); // (a long time: the undead, who never die of age, would end up all rare breeds)
     const alive = pop.residents.filter((r) => r.diedAt === null);
-    for (const breed of Object.keys(TURNOVER_MAX_SHARE)) expect(alive.filter((r) => r.breed === breed).length, breed).toBeLessThanOrEqual(alive.length * turnoverShare("elf", breed));
+    for (const breed of Object.keys(TURNOVER_MAX_SHARE.elf!)) expect(alive.filter((r) => r.breed === breed).length, breed).toBeLessThanOrEqual(alive.length * turnoverShare("elf", breed));
     expect(alive.filter((r) => r.breed === "common").length).toBeGreaterThanOrEqual(alive.length * 0.69);
   });
 
   it("lets goblins have the most rare ones and the undead the fewest", () => {
-    const most = (race: string) => Object.keys(TURNOVER_MAX_SHARE).reduce((n, b) => n + turnoverShare(race, b), 0);
+    const most = (race: string) => Object.keys(TURNOVER_MAX_SHARE[race]!).reduce((n, b) => n + turnoverShare(race, b), 0);
     expect(most("goblin")).toBeGreaterThan(most("elf"));
     expect(most("elf")).toBeGreaterThan(most("undead"));
     expect(most("undead")).toBeLessThan(0.2);
+    // (goblins: the clever and the golden the rarest)
+    const g = TURNOVER_MAX_SHARE.goblin!;
+    expect(Math.max(g.sage!, g.golden!)).toBeLessThan(Math.min(g.scout!, g.brute!) / 3);
     const pop = full();
     turnover({ ...place, race: "undead" }, pop, 3, T0, T0 + 120 * DAY);
     const alive = pop.residents.filter((r) => r.diedAt === null);

@@ -152,16 +152,18 @@ export const TURNOVER_MOST = 50;
  * a breed already there is not born in a common's place. Together under a third, so commons stay most of a camp (the undead,
  * who never die of age, would otherwise end up all rare breeds).
  */
-export const TURNOVER_MAX_SHARE: Record<string, number> = { scout: 0.12, brute: 0.1, sage: 0.07, golden: 0.02 };
-/**
- * …times this by race (2026-10-17, the user: 不同種族要不同): goblins are many and short-lived, so a rare one matters less
- * and they may have more; the undead never die of age, so what turns over stays for good and they get the least.
- */
-export const TURNOVER_RACE_SHARE: Record<string, number> = { goblin: 1.2, elf: 1, undead: 0.6 };
+export const TURNOVER_MAX_SHARE: Record<string, Record<string, number>> = {
+  // (2026-10-17, the user: 不同種族要不同, and 哥布林應該是金色和聰明最少) goblins are many and short-lived and run to brawn,
+  // not brains: a clever one is as rare as a golden one
+  goblin: { scout: 0.14, brute: 0.14, sage: 0.03, golden: 0.02 },
+  elf: { scout: 0.12, brute: 0.1, sage: 0.07, golden: 0.02 },
+  // the undead never die of age, so what turns over stays for good: the least
+  undead: { scout: 0.07, brute: 0.06, sage: 0.04, golden: 0.012 },
+};
 
 /** How much of those at home a breed may come to by turning over, for this race. */
 export function turnoverShare(race: string, breed: string): number {
-  return (TURNOVER_MAX_SHARE[breed] ?? 0) * (TURNOVER_RACE_SHARE[race] ?? 1);
+  return (TURNOVER_MAX_SHARE[race] ?? TURNOVER_MAX_SHARE.elf!)[breed] ?? 0;
 }
 
 export function turnover(place: Place, population: Population, campSeed: number, from: number, to: number, allowed: (at: number) => boolean = () => true): { born: Resident[]; left: Resident[] } {
