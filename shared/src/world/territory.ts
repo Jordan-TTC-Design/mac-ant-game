@@ -2,6 +2,7 @@
  * The rules of holding land in the big world (WORLD.md §3, §6): when a camp may open the big world, how cells are taken and
  * held, nests on held cells, towns, how long a party walks, and the protection a camp gets after losing.
  */
+import { DETAIL_YIELD, detailEffects, type TerrainDetail } from "./details.ts";
 import { raceRules } from "../camp/races.ts";
 import { cellDistance, type CellId } from "./grid.ts";
 
@@ -203,7 +204,7 @@ export const TERRAIN_YIELD: Record<string, { id: string; min: number; max: numbe
  * What a held cell yields for `times` yields with `garrison` living there: nothing below the race's minimum (nobody to
  * work it), then more the more live there, up to double at the cell's full room; a town twice that again.
  */
-export function cellYield(race: string, terrain: string, garrison: number, times: number, random: () => number, town = false, boost = 0): Record<string, number> {
+export function cellYield(race: string, terrain: string, garrison: number, times: number, random: () => number, town = false, boost = 0, detail: TerrainDetail | null = null): Record<string, number> {
   const min = garrisonMin(race);
   if (garrison < min || times <= 0) return {};
   const scale = Math.min(2, 1 + (garrison - min) / Math.max(1, cellCapacity(race) - min)) * (town ? 2 : 1) * (1 + boost);
@@ -215,5 +216,16 @@ export function cellYield(race: string, terrain: string, garrison: number, times
       if (n > 0) out[y.id] = (out[y.id] ?? 0) + n;
     }
   }
+  // (its 細分地形 adds its own, drawn after all the terrain's so those stay as they were: details.ts)
+  for (let k = 0; detail && k < times; k++) {
+    for (const y of DETAIL_YIELD[detail]) {
+      if (random() >= y.chance) continue;
+      const n = Math.round((y.min + Math.floor(random() * (y.max - y.min + 1))) * scale);
+      if (n > 0) out[y.id] = (out[y.id] ?? 0) + n;
+    }
+  }
+  // (farmland: its food twice over)
+  const food = detailEffects(detail).food;
+  if (food !== 1) for (const id of Object.keys(out)) if (/^(food_|ration_)/.test(id)) out[id] = Math.round(out[id]! * food);
   return out;
 }

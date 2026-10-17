@@ -4,6 +4,7 @@
  * cell, so the same cell always holds the same thing and nothing has to be stored until someone changes it (clears it,
  * takes it). The real map decides the flavour: beasts in parks and woods, barbarians and towns among buildings, and so on.
  */
+import { DETAIL_LAIR_WEIGHT, DETAIL_LAIRS, type TerrainDetail } from "./details.ts";
 import type { CellId } from "./grid.ts";
 import { between, pickWeighted, seeded, type Random } from "./random.ts";
 
@@ -569,9 +570,9 @@ export interface Lair {
 }
 
 /** What is in a free cell (nil = nothing). The same seed and cell always give the same answer. */
-export function lairAt(worldSeed: number, cell: CellId, terrain: Terrain = "open"): Lair | null {
+export function lairAt(worldSeed: number, cell: CellId, terrain: Terrain = "open", detail: TerrainDetail | null = null): Lair | null {
   const random = seeded(worldSeed, cell, "lair");
-  if (random() >= OCCUPIED[terrain]) return rareLairAt(worldSeed, cell, terrain);
+  if (random() >= OCCUPIED[terrain]) return rareLairAt(worldSeed, cell, terrain, detail);
   const candidates = LAIRS.filter((l) => l.tier <= OPEN_TIERS && !l.boss && (l.terrain[terrain] ?? 0) > 0);
   if (candidates.length === 0) return null;
   const kind = pickWeighted(random, candidates, (l) => l.terrain[terrain] ?? 0);
@@ -582,7 +583,10 @@ export function lairAt(worldSeed: number, cell: CellId, terrain: Terrain = "open
  * What a cell that would be empty may hold now and then: a 初期魔王 or a stray lair of the next tier (their own random
  * numbers, so the ordinary lairs are where they always were).
  */
-function rareLairAt(worldSeed: number, cell: CellId, terrain: Terrain): Lair | null {
+function rareLairAt(worldSeed: number, cell: CellId, terrain: Terrain, detail: TerrainDetail | null = null): Lair | null {
+  // (a 細分地形 leans the mid ones to its own kinds: details.ts DETAIL_LAIRS)
+  const leans = new Set(detail ? (DETAIL_LAIRS[detail] ?? []) : []);
+  const weight = (l: LairKind) => (l.terrain[terrain] ?? 0) * (leans.has(l.id) ? DETAIL_LAIR_WEIGHT : 1);
   const random = seeded(worldSeed, cell, "rare-lair");
   const roll = random();
   if (roll < BOSS_LAIR_CHANCE) {
@@ -600,13 +604,13 @@ function rareLairAt(worldSeed: number, cell: CellId, terrain: Terrain): Lair | n
   if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE) {
     const mids = LAIRS.filter((l) => l.tier >= 2 && !l.boss && (l.terrain[terrain] ?? 0) > 0);
     if (mids.length === 0) return null;
-    const kind = pickWeighted(random, mids, (l) => l.terrain[terrain] ?? 0);
+    const kind = pickWeighted(random, mids, weight);
     return { ...makeLair(cell, kind, kind.levels, random), minRaceLevel: MID_RACE_LEVELS[kind.tier as 2 | 3 | 4] };
   }
   if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE + MID_BOSS_CHANCE) {
     const bosses = LAIRS.filter((l) => l.tier >= 2 && l.boss && (l.terrain[terrain] ?? 0) > 0);
     if (bosses.length === 0) return null;
-    const kind = pickWeighted(random, bosses, (l) => l.terrain[terrain] ?? 0);
+    const kind = pickWeighted(random, bosses, weight);
     return { ...makeLair(cell, kind, kind.levels, random), minRaceLevel: MID_BOSS_RACE_LEVEL };
   }
   return null;
