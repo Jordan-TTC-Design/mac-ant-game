@@ -150,7 +150,7 @@ import {
 } from "@goblincamp/shared/world";
 import type { AppDeps } from "../app.ts";
 import { landmarksFor, terrainOf, terrainsFor } from "./osm.ts";
-import { talentBonusOf } from "./talents.ts";
+import { forgetTalents, talentBonusOf } from "./talents.ts";
 import { recordFlow } from "../camp/flows.ts";
 
 /** A cost as a flow: every material taken, negative (camp/flows.ts). */
@@ -1898,6 +1898,7 @@ export async function learnTalents(tx: Tx, userId: string, picks: Record<string,
   const why = talentProblem(camp.race, raceLevel(player.xp), player.talents, next);
   if (why) throw new WorldError(409, "not_allowed", why);
   await tx.update(worldPlayers).set({ talents: next }).where(eq(worldPlayers.userId, userId));
+  forgetTalents(tx, userId);
   await addEvent(tx, userId, now, "world", { talents: { points: Object.values(next).reduce((n, r) => n + r, 0) } });
   await bumpVersion(tx, camp);
 }
@@ -1915,6 +1916,7 @@ export async function resetTalents(tx: Tx, userId: string, now: Date) {
   camp.materials = spend(camp.materials, price);
   await recordFlow(tx, userId, now, "world-talents", taken(price));
   await tx.update(worldPlayers).set({ talents: {}, talentResets: player.talentResets + 1 }).where(eq(worldPlayers.userId, userId));
+  forgetTalents(tx, userId);
   await addEvent(tx, userId, now, "world", { talentsReset: { spent: price } });
   await bumpVersion(tx, camp);
 }
