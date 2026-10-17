@@ -156,6 +156,19 @@ enum Materials {
         DropSpec(id: "hydra_blood", name: "九頭蛇血", chance: 0.3, min: 1, max: 1, color: "#3ac84a"), // 九頭蛇
         DropSpec(id: "minotaur_horn", name: "牛頭人角", chance: 1, min: 1, max: 1, color: "#a07850"), // 牛頭人
         DropSpec(id: "labyrinth_key", name: "迷宮鑰匙", chance: 0.2, min: 1, max: 1, color: "#e0c040"), // 牛頭人
+        DropSpec(id: "harpy_feather", name: "鷹身羽", chance: 1, min: 1, max: 1, color: "#c8a070"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "werewolf_fur", name: "狼人毛", chance: 1, min: 1, max: 1, color: "#6a5a50"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "lizard_scale", name: "蜥蜴人鱗", chance: 1, min: 1, max: 1, color: "#4a8a5a"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "ant_chitin", name: "蟻甲", chance: 1, min: 1, max: 1, color: "#6a3a2a"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "dark_silk", name: "暗絲", chance: 1, min: 1, max: 1, color: "#4a3a6a"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "naga_pearl", name: "娜迦珍珠", chance: 1, min: 1, max: 1, color: "#a0e0f0"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "elemental_core", name: "元素核心", chance: 1, min: 1, max: 1, color: "#f0a0f0"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "ogre_king_belt", name: "食人魔王腰帶", chance: 1, min: 1, max: 1, color: "#a07040"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "harpy_crown", name: "鷹身王冠", chance: 1, min: 1, max: 1, color: "#f0c860"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "alpha_fang", name: "狼王牙", chance: 1, min: 1, max: 1, color: "#f0e8d0"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "vampire_cape", name: "伯爵披風", chance: 1, min: 1, max: 1, color: "#8a1a2a"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "flame_heart", name: "炎魔之心", chance: 1, min: 1, max: 1, color: "#ff6a2a"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "naga_crown", name: "娜迦王冠", chance: 1, min: 1, max: 1, color: "#60c0e0"), // 中級巢穴（WORLD.md §26）
     ]
 
     /// Every material any loaded monster can drop.

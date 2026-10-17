@@ -10,6 +10,8 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
     private let table = NSTableView()
     /// The picked goblin's gear, one row per slot: what it wears, and the stock's pieces for that slot to change to.
     private let gearBox = NSStackView()
+    /// 「請他離開」: the picked one leaves the camp for good (the books' resident-dismiss; signed in only).
+    private let dismiss = NSButton(title: "請他離開", target: nil, action: nil)
     /// What the gear rows were built from (rebuilt only when it changes, so an open menu is not pulled away every second).
     private var gearSignature = ""
     private var rows: [Ant] = []
@@ -103,6 +105,12 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
         content.addSubview(scroll)
         content.addSubview(detail)
         content.addSubview(gearBox)
+        dismiss.bezelStyle = .rounded
+        dismiss.controlSize = .small
+        dismiss.target = self
+        dismiss.action = #selector(askToLeave)
+        dismiss.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(dismiss)
         // the list on the left; the one picked, and its gear, on the right
         NSLayoutConstraint.activate([
             summary.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
@@ -119,7 +127,9 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
             gearBox.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 12),
             gearBox.leadingAnchor.constraint(equalTo: detail.leadingAnchor),
             gearBox.trailingAnchor.constraint(equalTo: detail.trailingAnchor),
-            gearBox.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -12),
+            dismiss.topAnchor.constraint(equalTo: gearBox.bottomAnchor, constant: 12),
+            dismiss.leadingAnchor.constraint(equalTo: detail.leadingAnchor),
+            dismiss.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -12),
         ])
     }
 
@@ -128,7 +138,8 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
     private var breeds: [Breed] { Characters.current.breeds }
 
     private func breedName(of ant: Ant) -> String {
-        breeds[min(ant.breedIndex, breeds.count - 1)].name
+        let breed = breeds[min(ant.breedIndex, breeds.count - 1)]
+        return (breed.special ? "✦" : "") + breed.name
     }
 
     /// Rare breeds first, then the oldest.
@@ -166,14 +177,17 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
     private func updateDetail() {
         guard let id = colony.selectedAntID, let ant = colony.ants.first(where: { $0.id == id }) else {
             detail.stringValue = "點一隻，畫面上會圈出牠，也可以在下面幫牠換裝備。"
+            dismiss.isHidden = true
             updateGear(nil)
             return
         }
         defer { updateGear(ant) }
+        dismiss.isHidden = !colony.followsBooks
         let breed = breeds[min(ant.breedIndex, breeds.count - 1)]
         let t = ant.traits
         let left = max(0, t.lifespan - ant.age)
-        var text = "\(ant.name)（#\(ant.id)）\(ant.female ? "♀" : "♂") \(breed.name)　\(breed.blurb)\n"
+        var text = "\(ant.name)（#\(ant.id)）\(ant.female ? "♀" : "♂") \(breed.special ? "✦ 特殊居民・" : "")\(breed.name)　\(breed.blurb)\n"
+        if let effect = SpecialRoles.effects[breed.id] { text += "作用：\(effect)\n" }
         if !ant.parents.isEmpty { text += "父母：\(ant.parents)\n" }
         if colony.romance.partnerID == ant.id, colony.romance.stage != .single {
             text += (colony.romance.stage == .married ? "配偶：" : colony.romance.stage == .dating ? "交往中：" : "正在追求：") + (colony.princessName.isEmpty ? "公主" : colony.princessName) + "\n"
@@ -249,6 +263,27 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
     }
 
     // MARK: Table
+
+    /// Asks first, then tells the books; the camp follows when they answer.
+    @objc private func askToLeave() {
+        guard let id = colony.selectedAntID, let ant = colony.ants.first(where: { $0.id == id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "確定要請\(ant.name)離開營地嗎？"
+        alert.informativeText = "裝備會收回倉庫。離開之後就不會回來了。"
+        alert.addButton(withTitle: "請他離開")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        dismiss.isEnabled = false
+        colony.sendCampOrder(CampOrder(kind: "resident-dismiss", resident: id)) { [weak self] result in
+            guard let self else { return }
+            self.dismiss.isEnabled = true
+            switch result {
+            case .success(let message): self.colony.announce(message)
+            case .failure(let e): self.detail.stringValue = e.message
+            }
+            self.reload()
+        }
+    }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 

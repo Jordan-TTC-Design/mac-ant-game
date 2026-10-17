@@ -384,9 +384,11 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       const name = siteName(camp.race, command.site);
       if (!canAfford(materials, first.cost)) return { ok: false, code: "not_enough", message: `素材不夠：蓋${name}要 ${cost(first.cost)}。` };
       spend(materials, first.cost);
-      const site: Site = { id: Math.max(0, ...camp.sites.map((x) => x.id)) + 1, kind: command.site, level: 0, busyUntil: new Date(now.getTime() + first.hours * 3_600_000).toISOString() };
+      // (the 巧手 talent: built sooner)
+      const hours = first.hours * (1 - Math.min(0.5, talentEffect(await talentBonusOf(tx, camp.userId), "campBuild")));
+      const site: Site = { id: Math.max(0, ...camp.sites.map((x) => x.id)) + 1, kind: command.site, level: 0, busyUntil: new Date(now.getTime() + hours * 3_600_000).toISOString() };
       changes.sites = [...camp.sites, site];
-      message = `開始蓋${name}，${first.hours} 小時後完成。`;
+      message = `開始蓋${name}，${+hours.toFixed(1)} 小時後完成。`;
       break;
     }
     case "site-upgrade":
@@ -404,10 +406,11 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       }
       if (!canAfford(materials, next.cost)) return { ok: false, code: "not_enough", message: `素材不夠：升級${name}要 ${cost(next.cost)}。` };
       spend(materials, next.cost);
-      const until = new Date(now.getTime() + next.hours * 3_600_000).toISOString();
+      const hours = next.hours * (1 - Math.min(0.5, talentEffect(await talentBonusOf(tx, camp.userId), "campBuild")));
+      const until = new Date(now.getTime() + hours * 3_600_000).toISOString();
       changes.sites = camp.sites.map((x) => (x.id === target.id ? { ...x, busyUntil: until } : x));
       const what = target.kind === "farm" ? farmParts(camp.race, target.level + 1).at(-1) : `${name} Lv${target.level + 1}`;
-      message = `開始蓋${what}，${next.hours} 小時後完成。`;
+      message = `開始蓋${what}，${+hours.toFixed(1)} 小時後完成。`;
       break;
     }
     case "site-demolish": {
@@ -503,7 +506,13 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       // what the herd on the books gave while the camp was open: never more minutes than really passed
       const passed = ranch.syncedAt ? (now.getTime() - Date.parse(ranch.syncedAt)) / 60_000 : 0;
       const minutes = Math.max(0, Math.min(command.minutes, RANCH_MAX_MINUTES, passed));
-      const { gain, carry } = ranchYield(ranch.animals, minutes, now, ranch.carry);
+      const [master] = await tx
+        .select({ id: campResidents.id })
+        .from(campResidents)
+        .where(and(eq(campResidents.userId, camp.userId), eq(campResidents.place, "home"), eq(campResidents.breed, "beastmaster"), isNull(campResidents.diedAt)))
+        .limit(1);
+      const boost = talentEffect(await talentBonusOf(tx, camp.userId), "campRanch") + (master ? 0.15 : 0);
+      const { gain, carry } = ranchYield(ranch.animals, minutes, now, ranch.carry, boost);
       const kept = new Set(next.map((a) => a.id));
       for (const id of command.butchered ?? []) {
         const animal = known.get(id);

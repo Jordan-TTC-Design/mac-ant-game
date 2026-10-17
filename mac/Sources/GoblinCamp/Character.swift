@@ -221,6 +221,8 @@ enum Characters {
         let sheet: String
         let blurb: String?
         let stats: BreedStats?
+        let special: Bool?
+        let level: Int?
     }
 
     /// Where characters are looked for: inside the app bundle, then in the user's Application Support folder.
@@ -262,7 +264,8 @@ enum Characters {
                 let sheet = Manifest.Role(sheet: entry.sheet, pixelScale: manifest.worker.pixelScale, walk: manifest.worker.walk, outfits: nil, poses: nil)
                 guard let sprites = try role(sheet, frame: manifest.frame, folder: folder) else { continue }
                 breeds.append(Breed(id: entry.id, name: entry.name, weight: entry.weight, prosperityBoost: entry.boost ?? 0,
-                                    stats: entry.stats ?? BreedStats(), sprites: sprites, blurb: entry.blurb ?? ""))
+                                    stats: entry.stats ?? BreedStats(), sprites: sprites, blurb: entry.blurb ?? "",
+                                    special: entry.special ?? false, level: entry.level ?? 0))
             }
             if breeds.isEmpty {
                 breeds = [Breed(id: "common", name: "平民", weight: 100, prosperityBoost: 0, stats: BreedStats(), sprites: worker, blurb: "")]

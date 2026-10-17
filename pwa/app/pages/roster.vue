@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Everyone at home, strongest first; tap one to see and change what it wears, slot by slot (from the store, or take it
 // off). What is put on here is pinned (📌): the handing out leaves it be.
-import type { CampResidentView, GearSlot } from "@goblincamp/shared/camp";
+import { breedName as sharedBreedName, specialResident, type CampResidentView, type GearSlot } from "@goblincamp/shared/camp";
+import { ApiError, api } from "~/utils/api";
 
 const ok = await useSignedIn();
 const { user } = useAccount();
@@ -14,7 +15,8 @@ if (ok && user.value) void camp.open(user.value.id);
 const view = computed(() => camp.state.saved?.view ?? null);
 const race = computed(() => view.value?.race ?? "goblin");
 const art = computed(() => names.value.races[race.value]);
-const breedName = (b: string) => art.value?.breeds[b] ?? b;
+// (a special: ✦ and its role's name for the race, shared/src/camp/visitors.ts)
+const breedName = (b: string) => (specialResident(b) ? `✦ ${sharedBreedName(race.value, b)}` : art.value?.breeds[b] ?? b);
 const nameOf = (r: CampResidentView) => r.name || residentNameFromSeed(race.value, r.seed, r.legacySeed);
 
 const filter = ref("");
@@ -38,6 +40,25 @@ const fits = (slot: GearSlot) =>
     .map((item, stock) => ({ item, stock }))
     .filter(({ item }) => gearRule(item.id)?.slot === slot)
     .sort((a, b) => pieceWorth(b.item) - pieceWorth(a.item));
+
+/** Asks a resident to leave for good (its gear goes back to the store). */
+async function dismiss(r: CampResidentView) {
+  const special = specialResident(r.breed);
+  if (!confirm(`請${nameOf(r)}（${breedName(r.breed)}）離開營地？\n\n牠的裝備會收回倉庫，離開了就不會回來。${special ? `\n牠是特殊居民（${special.effect}），要等下次有人來訪才會再有。` : ""}`)) return;
+  busy.value = true;
+  problem.value = "";
+  message.value = "";
+  try {
+    const res = await api<{ message: string }>("POST", "camp/commands", { kind: "resident-dismiss", resident: r.id, requestId: crypto.randomUUID() });
+    message.value = res.message;
+    open.value = null;
+    await camp.refresh();
+  } catch (e) {
+    problem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    busy.value = false;
+  }
+}
 
 async function change(r: CampResidentView, slot: GearSlot, value: string) {
   busy.value = true;
@@ -99,6 +120,8 @@ async function change(r: CampResidentView, slot: GearSlot, value: string) {
               </select>
             </label>
             <p v-if="view.armory.length === 0" class="muted small">倉庫是空的；到工坊做裝備時可以直接選給牠。</p>
+            <p v-if="specialResident(r.breed)" class="muted small">✦ 特殊居民：{{ specialResident(r.breed)!.effect }}</p>
+            <button class="btn dismiss" :disabled="busy" @click="dismiss(r)">請他離開</button>
           </div>
         </li>
       </ul>
@@ -128,4 +151,5 @@ select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 10px; f
 .ok { color: var(--green); font-weight: 600; margin: 8px 2px 0; }
 .warn { color: #b3412c; margin: 8px 2px 0; }
 .more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 10px 0; cursor: pointer; }
+.dismiss { justify-self: start; color: #b3412c; }
 </style>

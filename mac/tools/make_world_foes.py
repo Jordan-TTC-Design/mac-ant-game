@@ -1183,6 +1183,443 @@ ICONS["boar_lord"] = Crowned(ICONS["boar"], (1.25, 0.7, 0.6))
 ICONS["toad_king"] = Crowned(ICONS["frog"], (1.0, 0.95, 0.6))
 
 
+# --- 中級 (2026-10-17, server/WORLD.md §24): the 頂級巢穴 and the 中期魔王 ------------------------------------------------
+OGRE = {"a": (190, 160, 110), "A": (150, 120, 80), "f": (110, 80, 50)}
+ICONS["ogre"] = Icon(sym([
+    "........",
+    "....aaaa",
+    "...aaaaa",
+    "...aeaaa",
+    "...aaaaa",
+    "...atkkk",
+    ".aaaaaaa",
+    "aaaaaaaa",
+    "aaAaaaaa",
+    "aa.aaaaa",
+    "aa.fffff",
+    "...fffff",
+    "...aaaaa",
+    "...aa.aa",
+    "..aaa.aa",
+    "........",
+]), OGRE)
+
+ICONS["ogre_shaman"] = Icon(sym([
+    "..g..b.g",
+    "..gg.bbg",
+    "...aaaaa",
+    "...aeaaa",
+    "...aaaaa",
+    "...akkkk",
+    "..aawwww",
+    ".aaaaaaa",
+    ".aaccccc",
+    ".a.ccccc",
+    "...ccccc",
+    "...ccccc",
+    "...ccccc",
+    "...aa.aa",
+    "..aaa.aa",
+    "........",
+]), dict(OGRE, a=(150, 170, 110), c=(120, 60, 130), g=(80, 170, 90), b=(70, 130, 200)))
+
+HARPY = {"h": (90, 60, 50), "s": (230, 190, 160), "f": (170, 130, 90), "y": (240, 190, 60)}
+ICONS["harpy"] = Icon(sym([
+    "........",
+    "......hh",
+    ".....hhh",
+    ".....hss",
+    "f...hses",
+    "ff..hsss",
+    "fff..sss",
+    "ffff.sss",
+    "fffffsss",
+    ".ffffsss",
+    "..fffsss",
+    "....ffff",
+    ".....yy.",
+    "....yy..",
+    "........",
+    "........",
+]), HARPY)
+
+ICONS["harpy_matron"] = Icon(sym([
+    "....r..r",
+    "....rrhh",
+    ".....hhh",
+    "f....hss",
+    "ff..hses",
+    "fff.hsss",
+    "ffff.sss",
+    "fffffsss",
+    "ffffffss",
+    ".fffffss",
+    "..ffffss",
+    "....ffff",
+    ".....yy.",
+    "....yy..",
+    "........",
+    "........",
+]), dict(HARPY, f=(110, 80, 130), h=(40, 30, 40)))
+
+WOLFMAN = {"a": (110, 96, 90), "A": (80, 68, 64), "y": (250, 214, 70)}
+ICONS["werewolf"] = Icon(sym([
+    "........",
+    "..a.....",
+    "..aa..aa",
+    "..aaaaaa",
+    "..ayaaaa",
+    "..aaaaaa",
+    "...aawkk",
+    "..aaaaaa",
+    ".aaAaaaa",
+    "aaaAAaaa",
+    "aa.aaaaa",
+    "aw.aaaaa",
+    "...aaaaa",
+    "...aa.aa",
+    "..aaa.aa",
+    "........",
+]), WOLFMAN)
+
+LIZARD = {"a": (80, 150, 90), "A": (60, 110, 70), "y": (240, 220, 80)}
+ICONS["lizard_warrior"] = Icon(sym([
+    "........",
+    "....aaaa",
+    "...aaaaa",
+    "...ayaaa",
+    "...aaaaa",
+    "....aakk",
+    "..aaaaaa",
+    ".aaiiiii",
+    ".aaiIIii",
+    ".a.iiiii",
+    "...aaaaa",
+    "...aaaaa",
+    "...aa.aa",
+    "..aaa.aa",
+    "........",
+    "........",
+]), LIZARD)
+
+ICONS["lizard_shaman"] = Icon(sym([
+    "....wwww",
+    "...wwwww",
+    "...wkwww",
+    "...wwwww",
+    "....aaaa",
+    "..aaaaaa",
+    ".acccccc",
+    ".acccccc",
+    ".a.ccccc",
+    "...ccccc",
+    "...ccccc",
+    "...ccccc",
+    "...aa.aa",
+    "..aaa.aa",
+    "........",
+    "........",
+]), dict(LIZARD, c=(60, 120, 150)))
+
+GHOSTLY = {"a": (236, 240, 248), "k": (60, 60, 90)}
+ICONS["ghost"] = Icon(sym([
+    "........",
+    "........",
+    ".....aaa",
+    "....aaaa",
+    "...aaaaa",
+    "...akkaa",
+    "...akkaa",
+    "...aaaaa",
+    "..aaaaaa",
+    "..aaaaak",
+    "..aaaaaa",
+    "..aaaaaa",
+    "..aaaaaa",
+    "..a.aa.a",
+    "........",
+    "........",
+]), GHOSTLY, outline=(90, 100, 130))
+
+ICONS["haunted_armor"] = Icon(sym([
+    "........",
+    "....iiii",
+    "...iiiii",
+    "...ikkkk",
+    "...ikcck",
+    "...iiiii",
+    "..iiiiii",
+    ".iiIiiii",
+    ".iiIIiii",
+    ".i.iiiii",
+    "...iiiii",
+    "...ii.ii",
+    "...ii.ii",
+    "..iii.ii",
+    "........",
+    "........",
+]), {"c": (120, 250, 230)})
+
+ICONS["poltergeist"] = Icon(whole([
+    "................",
+    "..y.........w...",
+    ".yyy..aaaa..ww..",
+    "..y..aaaaaa.....",
+    ".....akkakka....",
+    ".....aaaaaaa....",
+    "....aaakkaaa....",
+    "....aaaaaaaa....",
+    ".....aaaaaa..p..",
+    "..t...aaaa..ppp.",
+    ".ttt...aa....p..",
+    "..t.............",
+    "................",
+    "................",
+    "................",
+    "................",
+]), {"a": (190, 160, 230), "k": (50, 30, 80), "t": (160, 110, 70)}, outline=(80, 60, 110))
+
+ANT = {"a": (120, 50, 40), "A": (80, 30, 24), "e": (250, 214, 70)}
+ICONS["giant_ant"] = Icon(whole([
+    "................",
+    "................",
+    "................",
+    "............k...",
+    "...........k....",
+    "..........aaa...",
+    "..aaa....aaeaa..",
+    ".aaaaa..aaaaa...",
+    "aaaAaaaaaaaa....",
+    ".aaaaa.aaaa.....",
+    "..a.a.a.a.a.....",
+    ".a..a..a..a.....",
+    "................",
+    "................",
+    "................",
+    "................",
+]), ANT)
+
+ICONS["ant_soldier"] = Icon(whole([
+    "................",
+    "................",
+    "............k...",
+    "...........k....",
+    "..........aaaa..",
+    "..aaa....aaeaaa.",
+    ".aaaaa..aaaaarr.",
+    "aaaAAaaaaaaa..r.",
+    "aAaaaaaaaaaa....",
+    ".aaaaa.aaaa.....",
+    "..a.a.a.a.a.....",
+    ".a..a..a..a.....",
+    "a...a..a...a....",
+    "................",
+    "................",
+    "................",
+]), dict(ANT, a=(70, 50, 50), A=(40, 28, 28)))
+
+DARK_ELF = {"h": (230, 230, 240), "s": (110, 100, 140), "c": (60, 40, 80)}
+ICONS["dark_elf_blade"] = Icon(sym([
+    "........",
+    "....hhhh",
+    "...hhhhh",
+    ".s.hsess",
+    "..shssss",
+    "....ssss",
+    "i..ccccc",
+    "i.cccccc",
+    "iscccccc",
+    "is.ccccc",
+    "...ccccc",
+    "...cc.cc",
+    "...cc.cc",
+    "..kkk.kk",
+    "........",
+    "........",
+]), DARK_ELF)
+
+ICONS["dark_elf_sorceress"] = Icon(sym([
+    "........",
+    "....hhhh",
+    "...hhhhh",
+    ".shhsess",
+    "..hhssss",
+    "..hhssss",
+    "..hccccc",
+    "..cccccc",
+    "gscccccc",
+    "gs.ccccc",
+    "...ccccc",
+    "..cccccc",
+    "..cccccc",
+    ".ccccccc",
+    "........",
+    "........",
+]), dict(DARK_ELF, c=(90, 40, 110), g=(200, 120, 250)))
+
+NAGA = {"h": (40, 90, 110), "s": (150, 200, 190), "a": (60, 140, 120), "A": (40, 100, 90)}
+ICONS["naga_warrior"] = Icon(sym([
+    "........",
+    "....hhhh",
+    "...hhhhh",
+    "...hsess",
+    "...hssss",
+    "....ssss",
+    "..iiiiii",
+    ".siiiiii",
+    ".s.iiiii",
+    "...aaaaa",
+    "..aaAaaa",
+    ".aaaaaaa",
+    ".aa..aaa",
+    "aa....aa",
+    "........",
+    "........",
+]), NAGA)
+
+ICONS["naga_priestess"] = Icon(sym([
+    "....y..y",
+    "....hyyy",
+    "...hhhhh",
+    "..hhsess",
+    "..hhssss",
+    "..h.ssss",
+    "..cccccc",
+    ".scccccc",
+    ".s.ccccc",
+    "...aaaaa",
+    "..aaAaaa",
+    ".aaaaaaa",
+    ".aa..aaa",
+    "aa....aa",
+    "........",
+    "........",
+]), dict(NAGA, c=(230, 230, 250)))
+
+ICONS["fire_elemental"] = Icon(sym([
+    "........",
+    ".....r..",
+    "....rr.r",
+    "...rryrr",
+    "...ryyyr",
+    "..rryeyy",
+    "..ryyyyy",
+    "..ryywyy",
+    "..rryyyy",
+    "...ryyyy",
+    "...rryyy",
+    "....rryy",
+    ".....rrr",
+    "......rr",
+    "........",
+    "........",
+]), {"r": (230, 80, 40), "y": (250, 200, 70)}, outline=(110, 30, 20))
+
+ICONS["ice_elemental"] = Icon(sym([
+    "........",
+    "......c.",
+    ".c...ccw",
+    ".cc..cww",
+    "..cCcccw",
+    "..ccecww",
+    "...ccccw",
+    "..CccccC",
+    ".ccCcccw",
+    "..ccccCw",
+    "...ccccc",
+    "...cc.cc",
+    "..cc...c",
+    "........",
+    "........",
+    "........",
+]), {"c": (170, 220, 250), "C": (110, 170, 220)}, outline=(50, 80, 130))
+
+ICONS["storm_elemental"] = Icon(sym([
+    "........",
+    "...aaa..",
+    "..aaaaaa",
+    ".aaaaaaa",
+    "aaAeaaaa",
+    "aaaaaaaa",
+    ".aAAAAaa",
+    "..aaaaaa",
+    "......y.",
+    ".....yy.",
+    "......y.",
+    ".....y..",
+    "....y...",
+    "........",
+    "........",
+    "........",
+]), {"a": (130, 130, 160), "A": (90, 90, 120)})
+
+WYVERN = {"a": (70, 140, 110), "h": (190, 220, 150), "w": (110, 170, 130)}
+ICONS["wyvern_whelp"] = Icon(whole([
+    "................",
+    "................",
+    "................",
+    "..........aa....",
+    ".........aaaa...",
+    "..w......aeaa...",
+    ".ww.....aaaaar..",
+    "www....aaaa.....",
+    ".wwwaaaaaa......",
+    "..waaaaaaa......",
+    "...aahhhaaa.....",
+    "....aaaa..aa....",
+    "....a..a...aa...",
+    "...aa.aa........",
+    "................",
+    "................",
+]), WYVERN)
+
+ICONS["wyvern"] = Icon(whole([
+    "................",
+    "..ww........aa..",
+    ".wwww......aeaa.",
+    "wwwwww....aaaaar",
+    "wwwwwwwaaaaaa...",
+    ".wwwwwaaaaa.....",
+    "..wwwaaaaaaa....",
+    "....ahhhaaaa....",
+    "...aahhhhaaaa...",
+    "...aaaaaa..aaa..",
+    "....a..a.....aa.",
+    "...aa.aa......a.",
+    "................",
+    "................",
+    "................",
+    "................",
+]), dict(WYVERN, a=(50, 110, 90), w=(90, 150, 120)))
+
+VAMPIRE = Icon(sym([
+    "........",
+    "....hhhh",
+    "...hhhhh",
+    "...hsrss",
+    "...hssss",
+    "....ssst",
+    "..kkcccc",
+    ".kkkcwww",
+    ".kkkcwww",
+    ".kkkkkkk",
+    ".kkkkkkk",
+    ".kk.kkkk",
+    "..k.kkkk",
+    "....kk.k",
+    "........",
+    "........",
+]), {"h": (30, 24, 34), "s": (220, 210, 220), "c": (180, 30, 40)})
+
+# the 中期魔王: berserk, crowned versions of their kind (like the 初期魔王)
+ICONS["ogre_king"] = Crowned(ICONS["ogre"], (1.1, 0.8, 0.7))
+ICONS["harpy_queen"] = Crowned(ICONS["harpy_matron"], (1.05, 0.8, 1.1))
+ICONS["werewolf_alpha"] = Crowned(ICONS["werewolf"], (0.8, 0.7, 0.85))
+ICONS["vampire_count"] = Crowned(VAMPIRE, (1.0, 0.9, 1.0))
+ICONS["flame_lord"] = Crowned(ICONS["fire_elemental"], (1.15, 0.6, 0.5))
+ICONS["naga_queen"] = Crowned(ICONS["naga_priestess"], (1.0, 0.9, 1.15))
+
+
 def sheet():
     ids = list(ICONS)
     rows = (len(ids) + COLS - 1) // COLS

@@ -183,6 +183,8 @@ export interface CampView {
   /** Who waits at the gate wanting to move in (visitors.ts; null: nobody), and the level bosses beaten (raids.ts). Older servers leave them out. */
   visitor?: import("./visitors.ts").CampVisitor | null;
   bossesBeaten?: number[];
+  /** The 營地 talents' bonuses (shared/src/world/talents.ts: 0.03 is +3%; trade is a count). Older servers leave it out. */
+  campBonus?: { yield: number; births: number; guard: number; ranch: number; build: number; life: number; host: number; trade: number; heart: number };
   /** The ranch's animals (ranch.ts). Older servers leave it out. */
   ranch?: { animals: RanchAnimal[] };
   /** The pomodoro's focus rounds done, today and in all, and what they bring today (focus.ts). Older servers leave it out. */
@@ -242,7 +244,10 @@ export interface CampEvent {
 export interface RaidReport {
   seq: number;
   at: string;
-  monsters: { id: string; count: number }[];
+  monsters: { id: string; count: number; variant?: import("./raids.ts").MonsterVariant }[];
+  /** A level boss came (its race level), and whether the camp beat it. */
+  boss?: number;
+  bossBeaten?: boolean;
   defenders: number;
   /** The residents who fell (their breed as they were). */
   fallen: { id: number; breed: string; name: string | null }[];

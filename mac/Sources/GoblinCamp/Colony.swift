@@ -168,6 +168,15 @@ final class Colony {
     var booksStage: Int?
     /// The race level as the books have it (nil: signed out or an older server): more decoration room, tiers and limits.
     var booksRaceLevel: Int?
+    /// Who waits at the gate wanting to move in, and the 營地 talents' bonuses, as the books have them (Visitors.swift).
+    var booksVisitor: CampLedger.View.Visitor?
+    var booksCampBonus: CampLedger.View.CampBonus?
+    /// The residents at home as the books have them (for choosing who to swap out for a visitor).
+    var booksHome: [CampLedger.Resident] = []
+    /// A race level just reached (Visitors.swift celebrate): fireworks and cheering until then.
+    var celebratingUntil: Date?
+    /// Sends a camp command to the books (visitor-accept, visitor-decline, resident-dismiss): the answer's message or the error's.
+    var onCampCommand: ((CampOrder, @escaping (Result<String, VisitorError>) -> Void) -> Void)?
     var onDecorChanged: (([DecorPlaced]) -> Void)?
     var holidayTimer = 5.0
     /// What already happened today that happens once (the egg stood up at noon, the year-end draw): "yyyy-MM-dd:what".
@@ -2336,6 +2345,8 @@ final class Colony {
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
         world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") ? 1.2 : 1) * decorLevelHeal
+        let healer = Characters.current.breeds.firstIndex { $0.id == "healer" }
+        world.healers = healer.map { i in ants.filter { $0.breedIndex == i && !$0.isHidden }.map(\.pos) } ?? []
         let raceRules = Characters.current.rules
         world.speedBoost = (1 + 0.15 * boost(.carrot)) * (Colony.isNight ? raceRules.nightSpeed ?? 1 : raceRules.daySpeed ?? 1)
         world.workBoost = 1 + 0.3 * boost(.bread)

@@ -574,6 +574,9 @@ struct AntWorld {
     var crowd = 0.0
     /// Health regained per second inside the nest (faster while the princess is looking after them).
     var healRate = 0.05
+    /// Where the camp's healers (a special resident, Visitors.swift) stand: those near one heal half as fast again.
+    var healers: [CGPoint] = []
+    func healRate(at p: CGPoint) -> Double { healers.contains { hypot($0.x - p.x, $0.y - p.y) < 120 } ? healRate * 1.5 : healRate }
     /// What the food brought home does for everyone out walking (1 = nothing): how fast they walk (carrots), how fast they fell and dig
     /// (bread), and how often a fish bites (grilled fish).
     var speedBoost = 1.0

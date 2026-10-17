@@ -224,6 +224,8 @@ export interface ProduceInput {
   carry: Record<string, number>;
   /** What the store has now. */
   store: Record<string, number>;
+  /** The sites make this much more (the 豐收 talent, a 工匠 at home: 0.1 is +10%; not what is gathered without them). */
+  boost?: number;
 }
 
 export interface ProduceResult {
@@ -251,7 +253,7 @@ export function produce(input: ProduceInput): ProduceResult {
     const rates: Record<string, number> = { ...GATHERING };
     for (const site of input.sites) {
       const { makes, finds } = sitePerHour(input.race, site);
-      for (const [id, n] of Object.entries(makes)) rates[id] = (rates[id] ?? 0) + n * share;
+      for (const [id, n] of Object.entries(makes)) rates[id] = (rates[id] ?? 0) + n * share * (1 + (input.boost ?? 0));
       if (Object.keys(finds).length === 0) continue;
       const roll = seeded(input.seed, "find", firstHour + h, site.id);
       for (const [id, chance] of Object.entries(finds)) if (roll() < chance * share) got[id] = (got[id] ?? 0) + 1;

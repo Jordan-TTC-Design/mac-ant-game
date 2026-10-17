@@ -496,7 +496,7 @@ struct Ant {
             }
 
         case .inNestForHunt(let remaining, let id):
-            health = min(maxHealth, health + dt * world.healRate)
+            health = min(maxHealth, health + dt * world.healRate(at: pos))
             let left = remaining - dt
             if left > 0 {
                 mode = .inNestForHunt(remaining: left, creature: id)
@@ -525,7 +525,7 @@ struct Ant {
             }
 
         case .inNest(let remaining, let thenForage):
-            health = min(maxHealth, health + dt * world.healRate)
+            health = min(maxHealth, health + dt * world.healRate(at: pos))
             let left = remaining - dt
             if left > 0 {
                 mode = .inNest(remaining: left, thenForage: thenForage)

@@ -359,8 +359,10 @@ extension Colony {
         state.dirtyTimer = 0
         guard followsBooks else { // a camp of its own: the same sums here
             var total = state.carry
+            // (a beastmaster at home, and the 牧人 talent: more from the herd)
+            let more = (hasSpecial("beastmaster") ? 1.15 : 1) * (1 + (booksCampBonus?.ranch ?? 0))
             for b in state.beasts where b.grown {
-                for (id, perHour) in RanchRules.kinds[b.kind]?.perHour ?? [:] { total[id, default: 0] += perHour * min(minutes, 60) / 60 }
+                for (id, perHour) in RanchRules.kinds[b.kind]?.perHour ?? [:] { total[id, default: 0] += perHour * more * min(minutes, 60) / 60 }
             }
             var gain: [String: Int] = [:]
             for (id, n) in total { let whole = Int(n + 1e-9); if whole > 0 { gain[id] = whole }; total[id] = n - Double(whole) }

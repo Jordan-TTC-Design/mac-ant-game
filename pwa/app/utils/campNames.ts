@@ -1,4 +1,4 @@
-import { GEAR } from "@goblincamp/shared/camp";
+import { campFoe, GEAR, MONSTER_VARIANTS, type MonsterVariant } from "@goblincamp/shared/camp";
 import { FOES } from "@goblincamp/shared/world";
 
 /** The names the Mac shows, written by scripts/copy-sprites.mjs from the Mac's manifests (public/sprites/names.json). */
@@ -39,4 +39,5 @@ export const FOOD_NAMES: Record<string, string> = {
 };
 
 export const gearName = (id: string) => GEAR.find((g) => g.id === id)?.name ?? id;
-export const monsterName = (id: string) => FOES[id]?.name ?? id;
+/** A raider's name: the camp's own numbers first (the later tiers), then the big world's; a variant puts its word in front. */
+export const monsterName = (id: string, variant?: MonsterVariant) => `${variant ? MONSTER_VARIANTS[variant].name : ""}${campFoe(id)?.name ?? FOES[id]?.name ?? id}`;

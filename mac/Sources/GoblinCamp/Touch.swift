@@ -507,6 +507,8 @@ enum HandTarget: Equatable {
     case creature(Int)
     /// The wandering merchant: a click opens its stall (Merchant.swift).
     case merchant
+    /// Someone at the gate wanting to move in: a click asks them in or sends them away (Visitors.swift).
+    case visitor
     /// An animal in a pen (Ranch.swift); 0 is the wild eagle on a visit.
     case beast(Int)
     /// A beast's soul drifting through an undead camp.
@@ -557,6 +559,7 @@ extension Colony {
             addFloater(Reactions.animal(b.kind), .common, at: CGPoint(x: b.pos.x, y: b.pos.y + 14))
         }
         if target == .merchant { MerchantWindow.shared.show(colony: self) }
+        if target == .visitor { VisitorWindow.shared.show(colony: self) }
     }
 
     func handDragged(to p: CGPoint) {

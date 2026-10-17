@@ -49,3 +49,22 @@ describe("camp raids by race level (DESKTOP.md §10.0)", () => {
     expect(campBoss(40).hp).toBeGreaterThan(campBoss(30).hp);
   });
 });
+
+describe("sites by race level and the 豐收 talent (DESKTOP.md §10.0)", async () => {
+  const { produce, siteMaxLevel, siteNext, sitePerHour, siteSpent } = await import("./sites.ts");
+  it("go to level 4 at race 10 and 5 at race 20, each costing crystal shards and making more", () => {
+    expect(siteMaxLevel("lumber", 9)).toBe(3);
+    expect(siteMaxLevel("lumber", 10)).toBe(4);
+    expect(siteMaxLevel("lumber", 20)).toBe(5);
+    expect(siteMaxLevel("farm", 20)).toBe(siteMaxLevel("farm"));
+    expect(siteNext("lumber", 3, 9)).toBeNull();
+    expect(siteNext("lumber", 3, 10)).toMatchObject({ hours: 24, cost: { log: 300, stone: 160, leather_strap: 2, crystal_shard: 3 } });
+    expect(sitePerHour("goblin", { kind: "lumber", level: 4 }).makes.log).toBeCloseTo(7 * 1.5);
+    expect(sitePerHour("goblin", { kind: "lumber", level: 5 }).makes.log).toBeCloseTo(14);
+    expect(siteSpent("lumber", 5).crystal_shard).toBe(13);
+  });
+  it("make more with a boost", () => {
+    const base = { race: "goblin", seed: 1, sites: [{ id: 1, kind: "lumber" as const, level: 3 }], workers: 100, from: 0, to: 10 * 3_600_000, carry: {}, store: {} };
+    expect(produce({ ...base, boost: 0.1 }).got.log).toBeGreaterThan(produce(base).got.log!);
+  });
+});

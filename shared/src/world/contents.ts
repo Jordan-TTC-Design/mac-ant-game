@@ -47,8 +47,9 @@ export interface LairKind {
   respawnHours: number;
   /** Levels it comes in. */
   levels: [number, number];
-  /** 1 新手, 2 中級, 3 高級: only tiers up to OPEN_TIERS turn up (the world opens up bit by bit, as in RO or MapleStory). */
-  tier: 1 | 2 | 3;
+  /** 1 新手, 2 中級, 3 高級, 4 頂級（and the 中期魔王）: only tiers up to OPEN_TIERS turn up as usual (the world opens up bit by
+   *  bit, as in RO or MapleStory); the others in cells that would be empty, held back by a race level (MID_LAIRS). */
+  tier: 1 | 2 | 3 | 4;
   /**
    * 初期魔王 (server/WORLD.md §21): a big one of its kind (`leader`, always there, first) with a few of its kind round it.
    * Turns up only now and then, in cells that would otherwise be empty (see lairAt), so the lairs already there stay put.
@@ -135,6 +136,34 @@ export const FOES: Record<string, FoeTemplate> = {
   slime_king: { id: "slime_king", name: "狂化史萊姆王", hp: 420, attack: 17, range: 0, speed: 0.5, row: "front", heal: 10, rage: 0.5 },
   boar_lord: { id: "boar_lord", name: "暴怒野豬王", hp: 230, attack: 15, range: 0, speed: 1.0, row: "front", rage: 0.5 },
   toad_king: { id: "toad_king", name: "狂化蛙王", hp: 300, attack: 13, range: 20, speed: 0.8, row: "back", rage: 0.5 },
+  // 中級 (2026-10-17, server/WORLD.md §26): the 頂級巢穴 of race level 15, and the 中期魔王 of 20
+  ogre: { id: "ogre", name: "食人魔", hp: 160, attack: 16, range: 0, speed: 0.7, row: "front" },
+  ogre_shaman: { id: "ogre_shaman", name: "食人魔薩滿", hp: 90, attack: 10, range: 25, speed: 0.8, row: "back", heal: 8 },
+  harpy: { id: "harpy", name: "鷹身女妖", hp: 70, attack: 13, range: 0, speed: 1.7, row: "front" },
+  harpy_matron: { id: "harpy_matron", name: "鷹身族長", hp: 120, attack: 16, range: 0, speed: 1.5, row: "front" },
+  werewolf: { id: "werewolf", name: "狼人", hp: 150, attack: 18, range: 0, speed: 1.4, row: "front", night: 1.5 },
+  lizard_warrior: { id: "lizard_warrior", name: "蜥蜴人戰士", hp: 110, attack: 14, range: 0, speed: 1.1, row: "front" },
+  lizard_shaman: { id: "lizard_shaman", name: "蜥蜴人祭司", hp: 80, attack: 9, range: 25, speed: 0.9, row: "back", heal: 10 },
+  ghost: { id: "ghost", name: "幽魂", hp: 70, attack: 12, range: 0, speed: 1.3, row: "front", night: 1.5 },
+  haunted_armor: { id: "haunted_armor", name: "鬼鎧甲", hp: 180, attack: 14, range: 0, speed: 0.6, row: "front" },
+  poltergeist: { id: "poltergeist", name: "騷靈", hp: 60, attack: 13, range: 30, speed: 1.2, row: "back", night: 1.4 },
+  giant_ant: { id: "giant_ant", name: "巨蟻", hp: 60, attack: 11, range: 0, speed: 1.3, row: "front" },
+  ant_soldier: { id: "ant_soldier", name: "兵蟻", hp: 120, attack: 15, range: 0, speed: 1.0, row: "front" },
+  dark_elf_blade: { id: "dark_elf_blade", name: "黑暗精靈劍士", hp: 100, attack: 17, range: 0, speed: 1.5, row: "front" },
+  dark_elf_sorceress: { id: "dark_elf_sorceress", name: "黑暗精靈術士", hp: 80, attack: 18, range: 35, speed: 1.0, row: "back", night: 1.3 },
+  naga_warrior: { id: "naga_warrior", name: "娜迦戰士", hp: 140, attack: 16, range: 0, speed: 1.0, row: "front" },
+  naga_priestess: { id: "naga_priestess", name: "娜迦祭司", hp: 100, attack: 12, range: 30, speed: 0.9, row: "back", heal: 12 },
+  fire_elemental: { id: "fire_elemental", name: "火元素", hp: 120, attack: 19, range: 0, speed: 1.2, row: "front" },
+  ice_elemental: { id: "ice_elemental", name: "冰元素", hp: 150, attack: 15, range: 0, speed: 0.8, row: "front" },
+  storm_elemental: { id: "storm_elemental", name: "雷元素", hp: 100, attack: 18, range: 30, speed: 1.4, row: "back" },
+  wyvern_whelp: { id: "wyvern_whelp", name: "幼飛龍", hp: 90, attack: 14, range: 0, speed: 1.6, row: "front" },
+  wyvern: { id: "wyvern", name: "雙足飛龍", hp: 220, attack: 22, range: 0, speed: 1.4, row: "front" },
+  ogre_king: { id: "ogre_king", name: "狂化食人魔王", hp: 1100, attack: 30, range: 0, speed: 0.7, row: "front", rage: 0.5 },
+  harpy_queen: { id: "harpy_queen", name: "狂化鷹身女王", hp: 900, attack: 32, range: 0, speed: 1.6, row: "front", rage: 0.5 },
+  werewolf_alpha: { id: "werewolf_alpha", name: "狂化狼人王", hp: 1000, attack: 34, range: 0, speed: 1.4, row: "front", night: 1.5, rage: 0.5 },
+  vampire_count: { id: "vampire_count", name: "吸血鬼伯爵", hp: 1200, attack: 30, range: 20, speed: 1.1, row: "front", heal: 15, night: 1.6, rage: 0.5 },
+  flame_lord: { id: "flame_lord", name: "狂化炎魔", hp: 1300, attack: 36, range: 0, speed: 0.9, row: "front", rage: 0.5 },
+  naga_queen: { id: "naga_queen", name: "娜迦女王", hp: 1150, attack: 30, range: 25, speed: 1.0, row: "back", heal: 12, rage: 0.5 },
 };
 
 const SCRAP = [
@@ -368,6 +397,121 @@ export const LAIRS: LairKind[] = [
     terrain: { road: 3, urban: 1 },
     loot: [...SCRAP, { id: "stolen_coin", min: 2, max: 4, chance: 1 }], respawnHours: 24, levels: [2, 4], tier: 1,
   },
+  // 中級 (2026-10-17, server/WORLD.md §26): tier 4, the 頂級巢穴 (race level 15), and the 中期魔王 (race level 20). They turn up
+  // only in cells that would otherwise be empty (rareLairAt), so the lairs already out there stay put.
+  {
+    id: "ogre_camp", name: "食人魔營地", faction: "monster", group: [3, 5],
+    members: [{ foe: "ogre", weight: 3 }, { foe: "ogre_shaman", weight: 1 }],
+    terrain: { forest: 2, open: 2 },
+    loot: [{ id: "ogre_hide", min: 1, max: 3, chance: 0.9 }, { id: "ogre_club", min: 1, max: 1, chance: 0.4 }, { id: "crystal_shard", min: 1, max: 3, chance: 0.5 }],
+    respawnHours: 18, levels: [8, 14], tier: 4,
+  },
+  {
+    id: "harpy_cliff", name: "鷹身女妖崖", faction: "monster", group: [4, 6],
+    members: [{ foe: "harpy", weight: 4 }, { foe: "harpy_matron", weight: 1 }],
+    terrain: { open: 3, urban: 1 },
+    loot: [{ id: "harpy_feather", min: 2, max: 4, chance: 0.9 }, { id: "crystal_shard", min: 1, max: 2, chance: 0.4 }],
+    respawnHours: 18, levels: [8, 14], tier: 4,
+  },
+  {
+    id: "werewolf_lair", name: "狼人巢", faction: "beast", group: [3, 5],
+    members: [{ foe: "werewolf", weight: 2 }, { foe: "dire_wolf", weight: 1 }],
+    terrain: { forest: 4, park: 1 },
+    loot: [{ id: "werewolf_fur", min: 1, max: 3, chance: 0.9 }, { id: "night_heart", min: 1, max: 1, chance: 0.2 }],
+    respawnHours: 18, levels: [8, 14], tier: 4,
+  },
+  {
+    id: "lizardfolk_village", name: "蜥蜴人部落", faction: "barbarian", group: [5, 8],
+    members: [{ foe: "lizard_warrior", weight: 4 }, { foe: "lizard_shaman", weight: 1 }],
+    terrain: { water: 4 },
+    loot: [{ id: "lizard_scale", min: 2, max: 4, chance: 0.9 }, { id: "river_pearl", min: 1, max: 1, chance: 0.15 }],
+    respawnHours: 18, levels: [8, 14], tier: 4,
+  },
+  {
+    id: "haunted_manor", name: "鬧鬼莊園", faction: "dark", group: [4, 7],
+    members: [{ foe: "ghost", weight: 3 }, { foe: "haunted_armor", weight: 2 }, { foe: "poltergeist", weight: 2 }],
+    terrain: { urban: 3, park: 1 },
+    loot: [{ id: "ectoplasm", min: 2, max: 4, chance: 0.9 }, { id: "cursed_steel", min: 1, max: 2, chance: 0.4 }],
+    respawnHours: 18, levels: [8, 14], tier: 4,
+  },
+  {
+    id: "giant_ant_hill", name: "巨蟻丘", faction: "beast", group: [6, 10],
+    members: [{ foe: "giant_ant", weight: 4 }, { foe: "ant_soldier", weight: 2 }],
+    terrain: { open: 3, park: 2 },
+    loot: [{ id: "ant_chitin", min: 2, max: 5, chance: 0.9 }, { id: "royal_jelly", min: 1, max: 1, chance: 0.25 }],
+    respawnHours: 12, levels: [8, 14], tier: 4,
+  },
+  {
+    id: "dark_elf_outpost", name: "黑暗精靈前哨", faction: "dark", group: [4, 6],
+    members: [{ foe: "dark_elf_blade", weight: 3 }, { foe: "dark_elf_sorceress", weight: 2 }],
+    terrain: { forest: 3, urban: 1 },
+    loot: [{ id: "dark_silk", min: 1, max: 3, chance: 0.9 }, { id: "crystal_shard", min: 1, max: 3, chance: 0.5 }],
+    respawnHours: 24, levels: [10, 16], tier: 4,
+  },
+  {
+    id: "naga_temple", name: "娜迦神殿", faction: "monster", group: [4, 6],
+    members: [{ foe: "naga_warrior", weight: 3 }, { foe: "naga_priestess", weight: 1 }],
+    terrain: { water: 3 },
+    loot: [{ id: "naga_pearl", min: 1, max: 2, chance: 0.8 }, { id: "naiad_tear", min: 1, max: 1, chance: 0.15 }],
+    respawnHours: 24, levels: [10, 16], tier: 4,
+  },
+  {
+    id: "elemental_rift", name: "元素裂隙", faction: "monster", group: [3, 5],
+    members: [{ foe: "fire_elemental", weight: 1 }, { foe: "ice_elemental", weight: 1 }, { foe: "storm_elemental", weight: 1 }],
+    terrain: { open: 2, urban: 1, park: 1 },
+    loot: [{ id: "elemental_core", min: 1, max: 2, chance: 0.8 }, { id: "crystal_shard", min: 2, max: 4, chance: 0.6 }],
+    respawnHours: 24, levels: [10, 16], tier: 4,
+  },
+  {
+    id: "wyvern_nest", name: "飛龍巢", faction: "beast", group: [3, 4],
+    members: [{ foe: "wyvern_whelp", weight: 3 }, { foe: "wyvern", weight: 1 }],
+    terrain: { open: 2, forest: 2 },
+    loot: [{ id: "wyvern_scale", min: 1, max: 3, chance: 0.9 }, { id: "wyvern_wing", min: 1, max: 1, chance: 0.35 }],
+    respawnHours: 24, levels: [10, 16], tier: 4,
+  },
+  // 中期魔王: a big one of its kind with its followers (like the 初期魔王, a grade up)
+  {
+    id: "ogre_king_hall", name: "食人魔王殿", faction: "monster", group: [4, 6], boss: true, leader: "ogre_king",
+    members: [{ foe: "ogre", weight: 3 }, { foe: "ogre_shaman", weight: 1 }],
+    terrain: { forest: 2, open: 2 },
+    loot: [{ id: "ogre_king_belt", min: 1, max: 1, chance: 0.6 }, { id: "ogre_hide", min: 3, max: 5, chance: 1 }, { id: "crystal_shard", min: 3, max: 6, chance: 1 }],
+    respawnHours: 48, levels: [12, 18], tier: 4,
+  },
+  {
+    id: "harpy_queen_peak", name: "鷹身女王峰", faction: "monster", group: [4, 6], boss: true, leader: "harpy_queen",
+    members: [{ foe: "harpy", weight: 3 }, { foe: "harpy_matron", weight: 1 }],
+    terrain: { open: 3 },
+    loot: [{ id: "harpy_crown", min: 1, max: 1, chance: 0.6 }, { id: "harpy_feather", min: 4, max: 8, chance: 1 }, { id: "crystal_shard", min: 3, max: 6, chance: 1 }],
+    respawnHours: 48, levels: [12, 18], tier: 4,
+  },
+  {
+    id: "werewolf_alpha_den", name: "狼人王巢", faction: "beast", group: [3, 5], boss: true, leader: "werewolf_alpha",
+    members: [{ foe: "werewolf", weight: 2 }, { foe: "dire_wolf", weight: 1 }],
+    terrain: { forest: 4 },
+    loot: [{ id: "alpha_fang", min: 1, max: 1, chance: 0.6 }, { id: "werewolf_fur", min: 3, max: 6, chance: 1 }, { id: "night_heart", min: 1, max: 2, chance: 0.5 }],
+    respawnHours: 48, levels: [12, 18], tier: 4,
+  },
+  {
+    id: "vampire_count_castle", name: "吸血鬼伯爵城", faction: "dark", group: [4, 6], boss: true, leader: "vampire_count",
+    members: [{ foe: "vampire_bat", weight: 2 }, { foe: "ghost", weight: 2 }, { foe: "haunted_armor", weight: 1 }],
+    terrain: { urban: 3, park: 1 },
+    loot: [{ id: "vampire_cape", min: 1, max: 1, chance: 0.6 }, { id: "ectoplasm", min: 3, max: 6, chance: 1 }, { id: "night_heart", min: 1, max: 2, chance: 0.6 }],
+    respawnHours: 48, levels: [12, 18], tier: 4,
+  },
+  {
+    id: "flame_lord_rift", name: "炎魔裂隙", faction: "monster", group: [3, 5], boss: true, leader: "flame_lord",
+    members: [{ foe: "fire_elemental", weight: 1 }],
+    terrain: { open: 2, urban: 1 },
+    loot: [{ id: "flame_heart", min: 1, max: 1, chance: 0.6 }, { id: "elemental_core", min: 2, max: 4, chance: 1 }, { id: "crystal_shard", min: 4, max: 8, chance: 1 }],
+    respawnHours: 48, levels: [14, 20], tier: 4,
+  },
+  {
+    id: "naga_queen_temple", name: "娜迦女王神殿", faction: "monster", group: [4, 6], boss: true, leader: "naga_queen",
+    members: [{ foe: "naga_warrior", weight: 2 }, { foe: "naga_priestess", weight: 1 }],
+    terrain: { water: 3 },
+    loot: [{ id: "naga_crown", min: 1, max: 1, chance: 0.6 }, { id: "naga_pearl", min: 2, max: 4, chance: 1 }, { id: "naiad_tear", min: 1, max: 1, chance: 0.4 }],
+    respawnHours: 48, levels: [14, 20], tier: 4,
+  },
 ];
 
 /**
@@ -385,13 +529,25 @@ export const STRAY_LAIRS: { kind: string; levels: [number, number] }[] = [
 /** Of the cells that would be empty: how many hold a 初期魔王, and how many a stray lair of the next tier. */
 export const BOSS_LAIR_CHANCE = 0.02;
 export const STRAY_LAIR_CHANCE = 0.06;
+/**
+ * And then (2026-10-17, server/WORLD.md §26): how many hold a mid lair — of tier 2, 3 or 4 — or a 中期魔王, each needing a
+ * race level to take on: tier 2 from MID_RACE_LEVELS[2], … The bands come after the old ones, so nothing already out moves.
+ */
+export const MID_LAIR_CHANCE = 0.08;
+export const MID_BOSS_CHANCE = 0.015;
+export const MID_RACE_LEVELS: Record<2 | 3 | 4, number> = { 2: 5, 3: 10, 4: 15 };
+export const MID_BOSS_RACE_LEVEL = 20;
 
 /** Every kind that may turn up on this ground now: the usual ones, the 初期魔王 and the strays. */
 export function lairKindsFor(terrain: Terrain): { usual: string[]; rare: string[] } {
   const here = (l: LairKind) => (l.terrain[terrain] ?? 0) > 0;
   return {
     usual: LAIRS.filter((l) => l.tier <= OPEN_TIERS && !l.boss && here(l)).map((l) => l.id),
-    rare: [...LAIRS.filter((l) => l.tier <= OPEN_TIERS && l.boss && here(l)), ...STRAY_LAIRS.map((s) => LAIRS.find((l) => l.id === s.kind)!).filter(here)].map((l) => l.id),
+    rare: [
+      ...new Set(
+        [...LAIRS.filter((l) => (l.tier <= OPEN_TIERS && l.boss) || l.tier >= 2).filter(here), ...STRAY_LAIRS.map((s) => LAIRS.find((l) => l.id === s.kind)!).filter(here)].map((l) => l.id),
+      ),
+    ],
   };
 }
 
@@ -408,6 +564,8 @@ export interface Lair {
   foes: string[];
   /** A 初期魔王's lair (its leader first in `foes`). */
   boss?: boolean;
+  /** The race level a party's camp needs to set out against it (the mid lairs: MID_LAIRS; server/WORLD.md §26). */
+  minRaceLevel?: number;
 }
 
 /** What is in a free cell (nil = nothing). The same seed and cell always give the same answer. */
@@ -438,6 +596,18 @@ function rareLairAt(worldSeed: number, cell: CellId, terrain: Terrain): Lair | n
     if (strays.length === 0) return null;
     const pick = pickWeighted(random, strays, (s) => s.kind.terrain[terrain] ?? 0);
     return makeLair(cell, pick.kind, pick.levels, random);
+  }
+  if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE) {
+    const mids = LAIRS.filter((l) => l.tier >= 2 && !l.boss && (l.terrain[terrain] ?? 0) > 0);
+    if (mids.length === 0) return null;
+    const kind = pickWeighted(random, mids, (l) => l.terrain[terrain] ?? 0);
+    return { ...makeLair(cell, kind, kind.levels, random), minRaceLevel: MID_RACE_LEVELS[kind.tier as 2 | 3 | 4] };
+  }
+  if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE + MID_BOSS_CHANCE) {
+    const bosses = LAIRS.filter((l) => l.tier >= 2 && l.boss && (l.terrain[terrain] ?? 0) > 0);
+    if (bosses.length === 0) return null;
+    const kind = pickWeighted(random, bosses, (l) => l.terrain[terrain] ?? 0);
+    return { ...makeLair(cell, kind, kind.levels, random), minRaceLevel: MID_BOSS_RACE_LEVEL };
   }
   return null;
 }

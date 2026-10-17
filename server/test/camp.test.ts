@@ -712,7 +712,8 @@ describe("visitors and dismissing (DESKTOP.md §10.0)", () => {
     const v = (await view(me)).visitor!;
     expect(v).toMatchObject({ id: found!.id, special: false });
     expect(["scout", "brute", "sage", "golden"]).toContain(v.breed);
-    // no present to give yet
+    // no present to give yet (a new camp's own logs and stones could pay a plain one's)
+    await database.sql`update camps set materials = '{}'`;
     expect((await cmd(me, { kind: "visitor-accept", visit: v.id })).body.error).toBe("not_enough");
     await database.sql`update camps set materials = '{"log": 500, "stone": 500, "ration_jerky": 50, "crystal_shard": 10}'`;
     const before = (await view(me)).residents.length;

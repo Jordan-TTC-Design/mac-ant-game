@@ -85,6 +85,8 @@ export function bossWindow(at: number): number {
  * server turns them on with WORLD_BOSSES=on.
  */
 export const BOSSES_BY_DEFAULT = false;
+/** The race level a camp needs before its parties may take on a world boss (2026-10-17: the very end of the road). */
+export const BOSS_MIN_RACE_LEVEL = 50;
 
 /** The boss of a region in a window (or none): where it stands and which one, from the seed and the ground there. */
 export function bossIn(worldSeed: number, region: string, window: number, enabled = true): BossSighting | null {

@@ -1,5 +1,17 @@
 <script setup lang="ts">
-import { RANCH_CAP, RANCH_KINDS, raceRules, ranchGrown, type FeedEntry, type FeedResponse } from "@goblincamp/shared/camp";
+import {
+  bossDue,
+  breedName as sharedBreedName,
+  campBoss,
+  RANCH_CAP,
+  RANCH_KINDS,
+  raceRules,
+  ranchGrown,
+  specialResident,
+  type FeedEntry,
+  type FeedResponse,
+  type MonsterVariant,
+} from "@goblincamp/shared/camp";
 import { materialName as sharedMaterialName } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
@@ -36,7 +48,8 @@ const raids = computed(() => camp.state.saved?.raids ?? []);
 const race = computed(() => names.value.races[view.value?.race ?? "goblin"]);
 const rules = computed(() => raceRules(view.value?.race ?? "goblin"));
 const home = computed(() => view.value?.residents.filter((r) => r.place === "home") ?? []);
-const breedName = (breed: string) => race.value?.breeds[breed] ?? breed;
+// (the specials' names by race come from the shared rules: visitors.ts)
+const breedName = (breed: string) => (specialResident(breed) ? sharedBreedName(view.value?.race ?? "goblin", breed) : race.value?.breeds[breed] ?? breed);
 const materialName = (id: string) => names.value.materials[id] ?? sharedMaterialName(id);
 
 const statusLine = computed(() => {
@@ -161,7 +174,50 @@ async function siteCommand(question: string, command: Record<string, unknown>) {
 }
 const showAllRaids = ref(false);
 const openRaid = ref<number | null>(null);
-const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${monsterName(m.id)} ×${m.count}`).join("、");
+const monsters = (list: { id: string; count: number; variant?: MonsterVariant }[]) => list.map((m) => `${monsterName(m.id, m.variant)} ×${m.count}`).join("、");
+
+/** The level boss coming with the raids now (raids.ts bossDue): the lowest ten-levels reached not yet beaten. */
+const boss = computed(() => {
+  const due = bossDue(view.value?.raceLevel ?? 1, view.value?.bossesBeaten ?? []);
+  return due ? campBoss(due) : null;
+});
+const nextBossLevel = computed(() => (Math.floor((view.value?.raceLevel ?? 1) / 10) + 1) * 10);
+
+// who waits at the gate (shared/src/camp/visitors.ts): take them in for their present, or send them away
+const visitor = computed(() => {
+  const v = view.value?.visitor;
+  return v && Date.parse(v.leaves) > now.value ? v : null;
+});
+const visitorSpecial = computed(() => (visitor.value ? specialResident(visitor.value.breed) : undefined));
+const full = computed(() => home.value.length >= rules.value.homeCap);
+const swapping = ref(false);
+const swapFor = ref<number | null>(null);
+const visitorBusy = ref(false);
+const visitorProblem = ref("");
+async function answerVisitor(yes: boolean) {
+  const v = visitor.value;
+  if (!v) return;
+  if (yes && full.value && swapFor.value === null) {
+    swapping.value = true;
+    return;
+  }
+  const who = breedName(v.breed);
+  if (yes && !confirm(`讓${who}住進營地？\n\n見面禮：${costText(v.fee)}${swapFor.value !== null ? `\n#${swapFor.value} 會離開營地（裝備收回倉庫）。` : ""}`)) return;
+  visitorBusy.value = true;
+  visitorProblem.value = "";
+  try {
+    await api("POST", "camp/commands", yes
+      ? { kind: "visitor-accept", visit: v.id, ...(swapFor.value !== null ? { replace: swapFor.value } : {}), requestId: crypto.randomUUID() }
+      : { kind: "visitor-decline", visit: v.id, requestId: crypto.randomUUID() });
+    swapping.value = false;
+    swapFor.value = null;
+    await camp.refresh();
+  } catch (e) {
+    visitorProblem.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    visitorBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -194,6 +250,32 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
         <p class="next">下一隻出生：{{ nextBirth }}<br /><small>每 {{ rules.homeBirthMinutes }} 分鐘生一隻，Mac 關著也會長大</small></p>
       </section>
 
+      <section v-if="visitor" class="panel visitor" :class="{ special: visitorSpecial }">
+        <h2>🚪 有人在門口 <small>等到 {{ noteTime(visitor.leaves) }}</small></h2>
+        <p>
+          <b>{{ visitorSpecial ? "✦ " : "" }}{{ breedName(visitor.breed) }}</b>想住進營地。
+          <template v-if="visitorSpecial"><br /><small class="muted">特殊居民：{{ visitorSpecial.effect }}（營地裡每種只能有一位）</small></template>
+        </p>
+        <p class="small">見面禮：</p>
+        <ul class="chips">
+          <li v-for="[id, n] in Object.entries(visitor.fee)" :key="id" :class="{ short: (view.materials[id] ?? 0) < n }">{{ materialName(id) }} {{ view.materials[id] ?? 0 }}/{{ n }}</li>
+        </ul>
+        <div v-if="swapping" class="swap">
+          <p class="small">營地住滿了（{{ rules.homeCap }}），選一位讓他離開：</p>
+          <select v-model="swapFor">
+            <option :value="null" disabled>選一位居民</option>
+            <option v-for="r in home" :key="r.id" :value="r.id">#{{ r.id }} {{ r.name || "" }} {{ breedName(r.breed) }}</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button class="btn primary" :disabled="visitorBusy || !affordable(visitor.fee) || (swapping && swapFor === null)" @click="answerVisitor(true)">
+            {{ full && !swapping ? "答應（要換掉一位）" : "答應" }}
+          </button>
+          <button class="btn" :disabled="visitorBusy" @click="answerVisitor(false)">拒絕</button>
+        </div>
+        <p v-if="visitorProblem" class="warn">{{ visitorProblem }}</p>
+      </section>
+
       <NuxtLink to="/feed" class="panel feed-card">
         <div class="feed-head">
           <h2>動態</h2>
@@ -224,6 +306,7 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
                   <li>⏱ {{ site.next.hours }} 小時</li>
                 </ul>
               </template>
+              <p v-else-if="!site.next && site.opensAt" class="muted small">種族 {{ site.opensAt }} 級可以再升。</p>
               <p v-else-if="!site.next" class="muted small">已經是最高級了。</p>
               <div class="actions">
                 <button v-if="site.next && !site.busyUntil" class="btn primary" :disabled="siteBusy || !!production.busy || !affordable(site.next.cost)"
@@ -299,6 +382,8 @@ const monsters = (list: { id: string; count: number }[]) => list.map((m) => `${m
 
       <section class="panel">
         <h2>魔獸來襲 <small v-if="raids.length">最近 {{ raids.length }} 次・守住 {{ raids.filter((r) => r.winner === "camp").length }} 次</small></h2>
+        <p v-if="boss" class="boss">👑 等級王<b>{{ boss.name }}</b>（{{ boss.level }} 級）會跟著突襲來，打倒之前每次都會來。</p>
+        <p v-else class="muted small">👑 下一隻等級王：種族 {{ nextBossLevel }} 級。</p>
         <p v-if="raids.length === 0" class="muted">還沒有魔獸來過（營地滿十隻之後，大約每一個半小時來一次）。</p>
         <!-- one line each; tap for the whole of it -->
         <article v-for="r in raids.slice(0, showAllRaids ? raids.length : 3)" :key="r.seq" class="raid" @click="openRaid = openRaid === r.seq ? null : r.seq">
@@ -404,6 +489,11 @@ h2 small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 
 .world-links { display: flex; gap: 6px; }
 .world-links .icon-btn { padding: 6px 10px; font-size: 18px; line-height: 1.2; }
 .feed-card { display: block; text-decoration: none; color: inherit; }
+.visitor { border: 2px solid #d9c27a; background: #fffbea; }
+.visitor.special { border-color: #b98ae0; background: #f8f1ff; }
+.visitor .swap select { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--line); font: inherit; }
+.visitor .warn { color: #b3412c; }
+.boss { font-weight: 600; color: #9a5a00; }
 .feed-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .feed-head h2 { margin: 0 0 6px; }
 .feed-head small { color: var(--muted); font-size: 12px; }

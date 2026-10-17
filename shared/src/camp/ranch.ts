@@ -68,11 +68,12 @@ export function ranchProblem(animals: readonly RanchAnimal[], stage: 1 | 2 | 3):
  * What the full-grown ones give for `minutes` of the camp being open: whole materials, and the fractions carried on.
  * `minutes` should already be capped (RANCH_MAX_MINUTES and the real time since the last report).
  */
-export function ranchYield(animals: readonly RanchAnimal[], minutes: number, now: Date, carry: Record<string, number> = {}): { gain: Record<string, number>; carry: Record<string, number> } {
+export function ranchYield(animals: readonly RanchAnimal[], minutes: number, now: Date, carry: Record<string, number> = {}, boost = 0): { gain: Record<string, number>; carry: Record<string, number> } {
   const total: Record<string, number> = { ...carry };
   for (const a of animals) {
     if (!ranchGrown(a, now)) continue;
-    for (const [id, perHour] of Object.entries(RANCH_KINDS[a.kind]?.perHour ?? {})) total[id] = (total[id] ?? 0) + (perHour * minutes) / 60;
+    // (`boost`: the 牧人 talent and a 馴獸師 at home, DESKTOP.md §10.0)
+    for (const [id, perHour] of Object.entries(RANCH_KINDS[a.kind]?.perHour ?? {})) total[id] = (total[id] ?? 0) + (perHour * minutes * (1 + boost)) / 60;
   }
   const gain: Record<string, number> = {};
   const left: Record<string, number> = {};

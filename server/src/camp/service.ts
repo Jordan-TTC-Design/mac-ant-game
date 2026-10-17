@@ -45,7 +45,7 @@ import { focusView, decorEarned,
   type Resident,
   decorKind,
 } from "@goblincamp/shared/camp";
-import { hashString, raceLevel, randomFrom } from "@goblincamp/shared/world";
+import { hashString, raceLevel, randomFrom, seeded } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps, expeditions, guildChat, guildMembers, users, worldCells, worldPlayers } from "../db/schema.ts";
 import { resolveRaid, type RaidOutcome } from "./raids.ts";
@@ -147,8 +147,21 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     redistribute(camp.race, [...wearers.values(), ...(away ?? [])], store, camp.autoGear);
   };
 
+  // (the 長壽 talent: newborns live longer; 多產 and a 鼓手 at home: now and then twins — on top of the births' own times,
+  // which stay as they are so a talent picked or reset never moves the camp's birth slots)
+  const lifeMore = talentEffect(bonus, "campLife");
+  const cap = raceRules(camp.race).homeCap;
   const moveTo = (time: number) => {
     const step = advance(place, population, camp.seed, time);
+    const twins = talentEffect(bonus, "campBirths") + specialEffects(population.residents.filter((r) => r.diedAt === null).map((r) => r.breed)).births;
+    for (const r of step.born) {
+      if (lifeMore && r.diesAt !== null) r.diesAt = r.bornAt + Math.round((r.diesAt - r.bornAt) * (1 + lifeMore));
+      if (!twins || seeded(camp.seed, "twin", r.id)() >= twins) continue;
+      if (population.residents.filter((x) => x.diedAt === null).length >= cap) continue;
+      const twin: Resident = { ...r, id: population.nextId++, seed: Math.floor(seeded(camp.seed, "twin-seed", r.id)() * 4294967296) };
+      population.residents.push(twin);
+      born.push(twin);
+    }
     born.push(...step.born);
     agedOut.push(...step.died);
   };
@@ -198,7 +211,8 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   let carry = { ...camp.productionCarry };
   const made: Record<string, number> = {};
   const produceTo = (to: number) => {
-    const step = produce({ race: camp.race, seed: camp.seed, sites, workers, from: producedTo, to, carry, store: materials });
+    const boost = talentEffect(bonus, "campYield") + specialEffects(population.residents.filter((r) => r.diedAt === null).map((r) => r.breed)).siteYield;
+    const step = produce({ race: camp.race, seed: camp.seed, sites, workers, from: producedTo, to, carry, store: materials, boost });
     for (const [id, n] of Object.entries(step.got)) {
       materials[id] = (materials[id] ?? 0) + n;
       made[id] = (made[id] ?? 0) + n;
@@ -315,6 +329,10 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       return v && !camp.visitors[v.id] ? v : null;
     })(),
     bossesBeaten: camp.bossesBeaten,
+    campBonus: await (async () => {
+      const b = await talentBonusOf(tx, camp.userId);
+      return { yield: talentEffect(b, "campYield"), births: talentEffect(b, "campBirths"), guard: talentEffect(b, "campGuard"), ranch: talentEffect(b, "campRanch"), build: talentEffect(b, "campBuild"), life: talentEffect(b, "campLife"), host: talentEffect(b, "campHost"), trade: talentEffect(b, "campTrade"), heart: talentEffect(b, "campHeart") };
+    })(),
     ranch: { animals: camp.ranch?.animals ?? [] },
     focus: focusView(camp.focus, camp.advancedTo),
     decorEarned: [...decorEarned(camp.quests ?? {}, camp.race)],
@@ -566,6 +584,7 @@ export async function recentRaids(tx: Tx, userId: string, limit: number): Promis
     seq,
     at: at.toISOString(),
     monsters: data.monsters,
+    ...(data.boss ? { boss: data.boss, bossBeaten: !!data.bossBeaten } : {}),
     defenders: data.defenders.length,
     fallen: data.fallen.map((id) => who.get(id) ?? { id, breed: "common", name: null }),
     killed: data.killed,

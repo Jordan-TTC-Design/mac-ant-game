@@ -237,6 +237,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+        colony.onCampCommand = { [weak self] order, done in // a visitor's answer, or a resident asked to leave (Visitors.swift)
+            guard let self else { return }
+            Task { @MainActor in
+                do {
+                    let answer = try await self.ledger.command(order)
+                    self.applyBooksToCamp()
+                    done(.success(answer.message))
+                } catch {
+                    done(.failure(VisitorError(message: (error as? APIError)?.message ?? error.localizedDescription)))
+                }
+            }
+        }
         colony.onRanchSync = { [weak self] report, done in // the ranch tells the books its herd and how long the camp was open (Ranch.swift)
             guard let self else { return }
             struct Body: Encodable { let kind = "ranch-sync"; let animals: [RanchReport.Animal]; let minutes: Double; let butchered: [Int] }
@@ -2368,6 +2380,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.decorEarned = Set(ledger.view?.decorEarned ?? [])
         colony.booksStage = ledger.view?.stage
         colony.booksRaceLevel = ledger.view?.raceLevel
+        // (someone at the gate whose wait is not over; the talents' bonuses; who lives at home)
+        colony.booksVisitor = ledger.view?.visitor.flatMap { MerchantVisitInfo.date($0.leaves) > Date() ? $0 : nil }
+        colony.booksCampBonus = ledger.view?.campBonus
+        colony.booksHome = ledger.view?.residents.filter { $0.place == "home" && $0.diesAt.map { MerchantVisitInfo.date($0) > Date() } ?? true } ?? []
         colony.applyBooksDecor(ledger.view?.decor)
         colony.applyBooksRanch(ledger.view?.ranch?.animals.map { ($0.id, $0.kind, MerchantVisitInfo.date($0.bornAt), $0.caught == true, $0.name ?? "") })
         updateCount()
@@ -2546,6 +2562,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if try await self.ledger.fetch() != nil {
                     self.booksFetchedAt = Date()
                     self.playRaids(events.filter { $0.raid != nil })
+                    // (a race level reached that this Mac has not cheered yet: fireworks, once per level)
+                    if let up = events.compactMap(\.levelUp).max(by: { $0.level < $1.level }),
+                       up.level > UserDefaults.standard.integer(forKey: "celebratedRaceLevel") {
+                        UserDefaults.standard.set(up.level, forKey: "celebratedRaceLevel")
+                        self.colony.celebrate(level: up.level, opens: up.opens)
+                    }
                     self.tellExpeditions(events.compactMap(\.expedition))
                     for back in events.compactMap(\.lairBack) {
                         self.say(back.held

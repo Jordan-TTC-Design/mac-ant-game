@@ -226,7 +226,12 @@ extension Colony {
             NSApp.terminate(nil)
         }
         let area = walkable.reduce(CGRect.null) { $0.union($1) }
-        fireworks.update(dt: dt, on: Holidays.fireworksNow && !campHidden, area: area.isNull ? .zero : area)
+        let celebrating = (celebratingUntil ?? .distantPast) > Date()
+        fireworks.update(dt: dt, on: (Holidays.fireworksNow || celebrating) && !campHidden, area: area.isNull ? .zero : area)
+        if celebrating, Double.random(in: 0..<1) < dt * 3 { // (a race level reached: everyone out hops and cheers)
+            let out = ants.indices.filter { !ants[$0].isHidden && ants[$0].touch == nil }
+            if let i = out.randomElement() { ants[i].touch = Touch.react(.hop, 1.5, line: ["升級了！", "萬歲！", "好耶～", "我們變強了！"].randomElement(), emote: "🎉") }
+        }
         fireworks.updateLanterns(dt: dt, on: Holidays.lanternsNow && !campHidden, area: area.isNull ? .zero : area)
         if Holidays.today?.id.hasPrefix("children") == true { // 兒童節: the young grow twice as fast today
             for i in ants.indices where ants[i].isChild { ants[i].age += dt * Colony.timeScale }

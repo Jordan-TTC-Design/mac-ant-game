@@ -107,11 +107,18 @@ final class CampLedger {
         let decorEarned: [String]?
         /// 任務 whose reward was taken: some open a 道具's recipe (Items.all `unlock`); older servers leave it out.
         let questsDone: [String]?
+        /// Who waits at the gate wanting to move in (shared/src/camp/visitors.ts; Visitors.swift), the level bosses beaten, and
+        /// the 營地 talents' bonuses (0.03 is +3%); older servers leave them out.
+        struct Visitor: Codable { let id: String; let breed: String; let special: Bool; let arrives: String; let leaves: String; let fee: [String: Int] }
+        let visitor: Visitor?
+        let bossesBeaten: [Int]?
+        struct CampBonus: Codable { let yield: Double; let births: Double; let `guard`: Double; let ranch: Double; let build: Double; let life: Double; let host: Double; let trade: Double; let heart: Double }
+        let campBonus: CampBonus?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, autoGearFar, places, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -146,6 +153,9 @@ final class CampLedger {
             focus = try? c.decodeIfPresent(FocusInfo.self, forKey: .focus)
             decorEarned = try? c.decodeIfPresent([String].self, forKey: .decorEarned)
             questsDone = try? c.decodeIfPresent([String].self, forKey: .questsDone)
+            visitor = try? c.decodeIfPresent(Visitor.self, forKey: .visitor)
+            bossesBeaten = try? c.decodeIfPresent([Int].self, forKey: .bossesBeaten)
+            campBonus = try? c.decodeIfPresent(CampBonus.self, forKey: .campBonus)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }
@@ -227,6 +237,9 @@ final class CampLedger {
         let site: SiteDone?
         /// A focus round done: the day's count so far (shared/src/camp/focus.ts).
         let focusRounds: Int?
+        /// The race level went up (shared/src/camp/visitors.ts levelOpens: what it opened).
+        struct LevelUp: Decodable { let level: Int; let opens: String? }
+        let levelUp: LevelUp?
         private enum CodingKeys: String, CodingKey { case seq, at, kind, data }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -238,6 +251,7 @@ final class CampLedger {
             site = kind == "site" ? try? c.decode(SiteDone.self, forKey: .data) : nil
             struct Focus: Decodable { let rounds: Int }
             focusRounds = kind == "focus" ? (try? c.decode(Focus.self, forKey: .data))?.rounds : nil
+            levelUp = kind == "levelup" ? try? c.decode(LevelUp.self, forKey: .data) : nil
             struct World: Decodable { let bossReward: BossReward?; let yields: [String: Int]?; let lairBack: LairBack? }
             let world = kind == "world" ? try? c.decode(World.self, forKey: .data) : nil
             bossReward = world?.bossReward

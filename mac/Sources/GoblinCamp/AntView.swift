@@ -239,6 +239,7 @@ final class AntView: NSView {
         if let held = colony.hand.press?.target { if case .ant = held { return held } }
         if colony.merchant.visit != nil, colony.merchant.phase != .away,
            CGRect(x: colony.merchant.pos.x - 26, y: colony.merchant.pos.y - 4, width: 52, height: 42).contains(p) { return .merchant }
+        if colony.booksVisitor != nil, let at = colony.visitorPos, CGRect(x: at.x - 16, y: at.y - 6, width: 32, height: 40).contains(p) { return .visitor }
         let breeds = character.breeds
         if !breeds.isEmpty {
             for ant in colony.ants.sorted(by: { $0.pos.y < $1.pos.y }) where colony.canTouch(ant) { // (the nearest is drawn on top)
@@ -745,6 +746,7 @@ final class AntView: NSView {
 
         if isMap { drawDesks() } // (in front of the scribes sitting behind them)
         if isMap, colony.merchant.visit != nil, colony.merchant.phase != .away { drawMerchant() }
+        if isMap, colony.booksVisitor != nil { drawVisitor() }
         if isMap { drawRanchAir() }
         drawHealPulses()
         drawFloaters()
@@ -790,6 +792,11 @@ final class AntView: NSView {
                 if let visit = colony.merchant.visit {
                     let p = local(colony.merchant.pos)
                     drawPill("\(visit.merchant)・點一下交易", center: NSPoint(x: p.x, y: p.y + 46), fontSize: 10)
+                }
+            case .visitor:
+                if let v = colony.booksVisitor, let at = colony.visitorPos {
+                    let p = local(at)
+                    drawPill("\(colony.breedTitle(v.breed))・點一下決定要不要讓他住", center: NSPoint(x: p.x, y: p.y + 52), fontSize: 10)
                 }
             }
         }
@@ -2511,6 +2518,25 @@ extension AntView {
                 drawPill(session.project, center: NSPoint(x: p.x, y: p.y - 9), fontSize: 8)
             }
         }
+    }
+}
+
+// MARK: - Someone at the gate (Visitors.swift)
+
+extension AntView {
+    /// The visitor: their breed's sprite standing beside the way in, turned to the camp, with a bubble.
+    fileprivate func drawVisitor() {
+        guard let v = colony.booksVisitor, let at = colony.visitorPos, let ctx = NSGraphicsContext.current?.cgContext,
+              let role = Characters.current.breeds.first(where: { $0.id == v.breed })?.sprites else { return }
+        let p = local(at)
+        let size = CGFloat(role.frameSize) * role.pixelSize(scale: Settings.shared.antScale)
+        // (a little sway while waiting)
+        let bob = CGFloat(sin(Date().timeIntervalSinceReferenceDate * 2) * 1.2)
+        if let image = role.image(direction: .down, phase: 0) {
+            ctx.draw(image, in: CGRect(x: p.x - size / 2, y: p.y - size * 0.2 + bob, width: size, height: size))
+        }
+        if v.special { drawPill("✦", center: NSPoint(x: p.x + size * 0.3, y: p.y + size * 0.8), fontSize: 9, tint: .systemYellow) }
+        drawPill("想住進來", center: NSPoint(x: p.x, y: p.y + size * 0.9 + 4), fontSize: 9)
     }
 }
 

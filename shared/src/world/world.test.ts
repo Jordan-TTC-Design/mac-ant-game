@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { combatPower, lairFighters, residentFighter, simulateBattle, type Fighter, type Resident } from "./battle.ts";
 import { BOSS_HOURS, BOSS_ROUNDS, bossAt, bossFighters, bossIn, bossKind, bossMaxHp, bossShares, bossWindow, regionOf } from "./bosses.ts";
-import { FOES, LAIRS, lairAt, lairKindsFor, lootFor, OPEN_TIERS, type Lair } from "./contents.ts";
+import { FOES, LAIRS, lairAt, lairKindsFor, lootFor, OPEN_TIERS, type Lair, MID_BOSS_RACE_LEVEL, MID_RACE_LEVELS } from "./contents.ts";
 import { dropsOf, lairDrops, MATERIALS } from "./drops.ts";
 import { WORLD_SEED, expeditionInput } from "./api.ts";
 import { terrainAt } from "./terrain.ts";
@@ -90,7 +90,7 @@ describe("what lives in a cell", () => {
 
   it("puts a 初期魔王 or a stray of the next tier in a few of the cells that would be empty, and leaves the others be", () => {
     const cells = cellsWithin(DAAN.middle, 3000);
-    let bosses = 0, strays = 0, empty = 0;
+    let bosses = 0, strays = 0, empty = 0, mids = 0, midBosses = 0;
     for (const c of cells) {
       const l = lairAt(1, c, "forest");
       if (!l) {
@@ -98,6 +98,13 @@ describe("what lives in a cell", () => {
         continue;
       }
       const kind = LAIRS.find((k) => k.id === l.kind)!;
+      if (l.minRaceLevel) {
+        // (the mid lairs, behind a race level: server/WORLD.md §26)
+        if (kind.boss) midBosses++;
+        else mids++;
+        expect(l.minRaceLevel).toBe(kind.boss ? MID_BOSS_RACE_LEVEL : MID_RACE_LEVELS[kind.tier as 2 | 3 | 4]);
+        continue;
+      }
       if (kind.boss) {
         bosses++;
         expect(l.boss).toBe(true);
@@ -108,7 +115,10 @@ describe("what lives in a cell", () => {
         expect(l.level).toBeLessThanOrEqual(2);
       }
     }
-    const free = empty + bosses + strays;
+    const free = empty + bosses + strays + mids + midBosses;
+    expect(mids / free).toBeGreaterThan(0.03);
+    expect(mids / free).toBeLessThan(0.15);
+    expect(midBosses / free).toBeLessThan(0.04);
     expect(bosses / free).toBeGreaterThan(0.005);
     expect(bosses / free).toBeLessThan(0.05);
     expect(strays / free).toBeGreaterThan(0.02);

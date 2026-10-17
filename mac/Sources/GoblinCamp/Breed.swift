@@ -47,6 +47,9 @@ struct Breed {
     let sprites: SpriteRole?
     /// One line about it, shown in the roster.
     let blurb: String
+    /// A special resident (DESKTOP.md §10.0): only comes as a visitor, from race level `level`.
+    var special = false
+    var level = 0
 
     static let plain = Breed(id: "common", name: "平民", weight: 100, prosperityBoost: 0, stats: BreedStats(), sprites: nil, blurb: "")
 }
