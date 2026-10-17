@@ -94,6 +94,7 @@ import {
   buildingsFor,
   cellBonus,
   cellRaidLosses,
+  type TerrainDetail,
   meteorAt,
   seasonAt,
   seasonEndsAt,
@@ -153,7 +154,7 @@ import {
   type WorldOwner,
 } from "@goblincamp/shared/world";
 import type { AppDeps } from "../app.ts";
-import { landmarksFor, terrainOf, terrainsFor } from "./osm.ts";
+import { detailOf, detailsFor, landmarksFor, terrainOf, terrainsFor } from "./osm.ts";
 import { forgetTalents, talentBonusOf } from "./talents.ts";
 import { recordFlow } from "../camp/flows.ts";
 
@@ -247,9 +248,10 @@ function nestState(cell: Pick<CellRow, "nestStartedAt">, now: Date): "none" | "b
 }
 
 /** The lair in a cell nobody holds, unless it was beaten and has not come back yet. */
-export function lairHere(cell: string, row: Pick<CellRow, "clearedAt" | "owner"> | null | undefined, now: Date, terrain: Terrain): { lair: Lair | null; backAt: Date | null } {
+export function lairHere(cell: string, row: Pick<CellRow, "clearedAt" | "owner"> | null | undefined, now: Date, terrain: Terrain, detail: TerrainDetail | null = null): { lair: Lair | null; backAt: Date | null } {
   if (row?.owner) return { lair: null, backAt: null };
-  const lair = lairAt(WORLD_SEED, cell, terrain);
+  // (its 細分地形 leans the rarer lairs its way: the phone works it out the same, CellView.detail)
+  const lair = lairAt(WORLD_SEED, cell, terrain, detail);
   if (!lair) return { lair: null, backAt: null };
   if (row?.clearedAt) {
     const backAt = new Date(row.clearedAt.getTime() + respawnHours(lair) * HOUR);
@@ -603,6 +605,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   const paying = payingCells(held, home?.cell ?? null, freeCellsOf(home));
   const blighted = await blightedOf(tx, camp.userId, held.map((c) => c.cell), now);
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
+  const details = await detailsFor(tx, held.map((c) => c.cell));
   const around = await surroundings(tx, held.map((c) => c.cell), now);
   let landmarkXp = 0;
   /** Held cells with a target (and how many live there now), for staff() once the cells are worked out. */
@@ -617,7 +620,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     const isHome = cell.cell === home?.cell;
     const bonus = cellBonus(camp.race, isHome ? null : cell.building, now.getTime(), around(cell.cell));
     // a lair beaten here comes back when its time is up and tries to take its ground back
-    const back = await lairReturns(tx, camp, cell, now, home?.cell ?? null, terrain, around(cell.cell));
+    const detail = details.get(cell.cell) ?? null;
+    const back = await lairReturns(tx, camp, cell, now, home?.cell ?? null, terrain, around(cell.cell), detail);
     if (back.fought) changed = true;
     if (back.lost) continue;
     landmarkXp += bonus.xp;
@@ -632,6 +636,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
         startedAt: readyAt.getTime(),
         birthMinutes: nestBirthMinutes(camp.race, cell.town) / (1 + (tb.nest ?? 0)),
         cap: room,
+        detail, // (its 細分地形's rare breed is born there now and then: population.ts)
       };
       const population: Population = { residents: rows.map(toResident), nextId: camp.nextId, nextSlot: cell.nextSlot, peak: rows.length };
       const step = advance(place, population, camp.seed, now.getTime());
@@ -665,7 +670,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     const since = cell.yieldedTo ?? cell.heldSince ?? now;
     const times = Math.floor((now.getTime() - since.getTime()) / (YIELD_HOURS * HOUR));
     if (times > 0) {
-      const got = cellYield(camp.race, terrain, Math.min(n, room), times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town, bonus.yieldBoost + (tb.yield ?? 0));
+      const got = cellYield(camp.race, terrain, Math.min(n, room), times, seeded(WORLD_SEED, cell.cell, since.getTime(), "yield"), cell.town, bonus.yieldBoost + (tb.yield ?? 0), detail);
       if (blighted.has(cell.cell)) for (const k of Object.keys(got)) got[k] = Math.floor(got[k]! * (1 - TALENT_ABILITIES.blightYield)); // (腐化大地 next door)
       // and what its building adds (worked only by a garrison big enough to work the ground)
       if (n >= garrisonMin(camp.race)) {
@@ -768,10 +773,11 @@ async function lairReturns(
   homeCell: string | null,
   terrain: Terrain,
   around: CellSurroundings,
+  detail: TerrainDetail | null = null,
 ): Promise<{ fought: boolean; lost: boolean }> {
   // (the camp's own cell, and every cell of a camp in 聖光模式, are left alone)
   if (cell.cell === homeCell || !cell.clearedAt || camp.sanctuarySince) return { fought: false, lost: false };
-  const lair = lairAt(WORLD_SEED, cell.cell, terrain);
+  const lair = lairAt(WORLD_SEED, cell.cell, terrain, detail);
   if (!lair) return { fought: false, lost: false };
   const every = respawnHours(lair) * HOUR;
   let fought = false;
@@ -1003,7 +1009,7 @@ export async function sendExpedition(
     if (boss && !boss.row.defeatedAt) {
       if (level < BOSS_MIN_RACE_LEVEL) throw new WorldError(403, "level", `世界魔王要種族等級 ${BOSS_MIN_RACE_LEVEL} 才能打。`);
     } else {
-      const { lair } = lairHere(input.to, target, now, await terrainOf(tx, input.to));
+      const { lair } = lairHere(input.to, target, now, await terrainOf(tx, input.to), await detailOf(tx, input.to));
       if (lair?.minRaceLevel && level < lair.minRaceLevel) throw new WorldError(403, "level", `這個巢穴要種族等級 ${lair.minRaceLevel} 才能打。`);
     }
   }
@@ -1159,7 +1165,7 @@ export async function previewRoute(tx: Tx, userId: string, input: { from: string
 /** How many may go into the lair on a free cell (null: no lair there, or a great monster: as many as can go). */
 async function entryOf(tx: Tx, cell: string, row: CellRow | null, now: Date): Promise<number | null> {
   if (await bossHere(tx, cell, now, false).then((b) => b && !b.row.defeatedAt)) return null;
-  const { lair } = lairHere(cell, row, now, await terrainOf(tx, cell));
+  const { lair } = lairHere(cell, row, now, await terrainOf(tx, cell), await detailOf(tx, cell));
   return lair ? lairEntry(lair.foes.length, lair.boss) : null;
 }
 
@@ -1201,7 +1207,7 @@ export async function estimateExpedition(
     const boss = await bossHere(tx, input.to, now, false);
     if (boss && !boss.row.defeatedAt) defenders = bossFighters(bossKind(boss.sighting.kind)!, boss.row.hp);
     else {
-      const { lair } = lairHere(input.to, target ?? null, now, await terrainOf(tx, input.to));
+      const { lair } = lairHere(input.to, target ?? null, now, await terrainOf(tx, input.to), await detailOf(tx, input.to));
       if (lair) defenders = await blightFoes(tx, userId, input.to, woundedLairFighters(lair, target?.lairWounds, now.getTime()));
     }
     total = defenders.length;
@@ -1402,7 +1408,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     // fled from an overrun cell to a free one beside it: they settle it while it is still free and they are enough to hold
     // it (as many as it has room for); the rest, or everyone if not, walk on home
     const boss = await bossHere(tx, exp.toCell, at, false);
-    const free = !cell?.owner && !lairHere(exp.toCell, cell, at, await terrainOf(tx, exp.toCell)).lair && !(boss && !boss.row.defeatedAt);
+    const free = !cell?.owner && !lairHere(exp.toCell, cell, at, await terrainOf(tx, exp.toCell), await detailOf(tx, exp.toCell)).lair && !(boss && !boss.row.defeatedAt);
     const staying = free && party.length >= min ? party.slice(0, cap) : [];
     if (staying.length) {
       await takeCell(tx, exp.toCell, camp.userId, at);
@@ -1581,7 +1587,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     outcome.killed = battle.fallen.defend.length;
     outcome.damage = dealt;
   } else {
-    const { lair } = lairHere(exp.toCell, cell, at, await terrainOf(tx, exp.toCell));
+    const { lair } = lairHere(exp.toCell, cell, at, await terrainOf(tx, exp.toCell), await detailOf(tx, exp.toCell));
     if (!lair) {
       // a meteor lying there: the first party to get here takes it
       const meteor = await takeMeteor(tx, camp.userId, exp.toCell, at);
@@ -2181,10 +2187,11 @@ async function freeBeside(tx: Tx, cell: string, at: Date): Promise<string | null
   const ids = neighbors(cell);
   const rows = new Map((await tx.select().from(worldCells).where(inArray(worldCells.cell, ids))).map((r) => [r.cell, r]));
   const ground = await terrainsFor(tx, ids);
+  const details = await detailsFor(tx, ids);
   for (const id of ids) {
     const row = rows.get(id);
     if (row?.owner) continue;
-    if (lairHere(id, row, at, ground.get(id) ?? terrainAt(WORLD_SEED, id)).lair) continue;
+    if (lairHere(id, row, at, ground.get(id) ?? terrainAt(WORLD_SEED, id), details.get(id) ?? null).lair) continue;
     const boss = await bossHere(tx, id, at, false);
     if (boss && !boss.row.defeatedAt) continue;
     return id;
@@ -2335,6 +2342,7 @@ export async function territoryList(tx: Tx, userId: string, now: Date): Promise<
   const cells = held.map((c) => c.cell);
   const mine = new Set(cells);
   const ground = await terrainsFor(tx, cells);
+  const details = await detailsFor(tx, cells);
   const around = await surroundings(tx, cells, now);
   const counts = await garrisons(tx, cells);
   const camping = await campersBeside(tx, cells);
@@ -2361,6 +2369,7 @@ export async function territoryList(tx: Tx, userId: string, now: Date): Promise<
       lat: at.lat,
       lng: at.lng,
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
+      detail: details.get(c.cell) ?? null,
       home: isHome,
       town: c.town,
       garrison: counts.get(c.cell)?.n ?? 0,
@@ -2461,6 +2470,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     lat: center.lat,
     lng: center.lng,
     terrain,
+    detail: await detailOf(tx, cell),
     home: isHome,
     town: row.town,
     garrison,
@@ -2598,6 +2608,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
   const ids = cellsWithin(point, Math.min(radius, MAX_MAP_RADIUS));
   const blocked = viewer ? await blockedFor(tx, viewer) : new Map<string, string>();
   const ground = await terrainsFor(tx, ids);
+  const details = await detailsFor(tx, ids);
   const landmarks = await landmarksFor(tx, ids);
   const rows = ids.length ? await tx.select().from(worldCells).where(inArray(worldCells.cell, ids)) : [];
   const byCell = new Map(rows.map((r) => [r.cell, r]));
@@ -2644,13 +2655,15 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
     const row = byCell.get(cell);
     const boss = bosses.get(cell) ?? null;
     const terrain = ground.get(cell) ?? terrainAt(WORLD_SEED, cell);
-    const { lair, backAt } = boss ? { lair: null, backAt: null } : lairHere(cell, row, now, terrain);
+    const detail = details.get(cell) ?? null;
+    const { lair, backAt } = boss ? { lair: null, backAt: null } : lairHere(cell, row, now, terrain, detail);
     const center = cellCenter(cell);
     return {
       cell,
       lat: center.lat,
       lng: center.lng,
       terrain,
+      ...(detail ? { detail } : {}),
       owner: row?.owner ? (owners.get(row.owner) ?? null) : null,
       garrison: counts.get(cell)?.n ?? 0,
       nest: row ? nestState(row, now) : "none",

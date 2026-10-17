@@ -5,6 +5,7 @@
 import { z } from "zod";
 import type { BattleEvent } from "./battle.ts";
 import type { Terrain } from "./contents.ts";
+import type { TerrainDetail } from "./details.ts";
 import { isCellId } from "./grid.ts";
 import type { CellBonus, Landmark } from "./holdings.ts";
 
@@ -124,6 +125,8 @@ export interface CellView {
   lat: number;
   lng: number;
   terrain: Terrain;
+  /** Its 細分地形 (details.ts), if any: it changes what the ground gives and which rarer lairs stand there (lairAt). */
+  detail?: TerrainDetail | null;
   owner: WorldOwner | null;
   garrison: number;
   nest: "none" | "building" | "ready";
@@ -329,6 +332,8 @@ export interface CellHappening {
 
 /** `GET /api/world/cells/:cell`: a cell of one's own, looked at from inside (its residents are the camp's, place `cell:<id>`). */
 export interface CellDetail {
+  /** Its 細分地形 (details.ts), if any. */
+  detail?: TerrainDetail | null;
   /** 腐化大地: another camp's cell next to it blights it (it yields less). */
   blighted?: boolean;
   /** The building is at the top its holder's race level allows, but a higher level opens at this race level. */
@@ -426,6 +431,7 @@ export interface TerritoryItem {
   lat: number;
   lng: number;
   terrain: Terrain;
+  detail?: TerrainDetail | null;
   /** The camp's own cell. */
   home: boolean;
   town: boolean;

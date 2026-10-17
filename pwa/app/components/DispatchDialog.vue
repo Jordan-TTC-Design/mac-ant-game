@@ -202,7 +202,7 @@ const foes = computed<Fighter[] | null>(() => {
     return kind ? bossFighters(kind, t.boss.hp).map((f) => ({ ...f, side: "defend" as const })) : null;
   }
   if (!t.lair) return null;
-  const lair = lairAt(WORLD_SEED, t.cell, t.terrain);
+  const lair = lairAt(WORLD_SEED, t.cell, t.terrain, t.detail ?? null); // (the same as the server's: its 細分地形 too)
   if (!lair) return null;
   let list = lairFighters(lair);
   if (t.lairWounds) {

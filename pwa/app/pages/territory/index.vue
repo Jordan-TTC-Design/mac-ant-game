@@ -38,7 +38,7 @@ const items = computed(() => {
 const towns = computed(() => items.value.filter((i) => i.town).length);
 const built = computed(() => items.value.filter((i) => i.building).length);
 
-const title = (i: TerritoryItem) => (i.home ? "營地" : i.landmark ? i.landmark.name : TERRAIN_NAMES[i.terrain]);
+const title = (i: TerritoryItem) => (i.home ? "營地" : i.landmark ? i.landmark.name : groundName(i.terrain, i.detail));
 const link = (i: TerritoryItem) => (i.home ? "/camp" : `/territory/${i.cell}`);
 function inTime(iso: string) {
   const m = Math.max(0, Math.round((Date.parse(iso) - now.value) / 60_000));
@@ -87,7 +87,7 @@ const NEST: Record<TerritoryItem["nest"], string> = { none: "沒有巢", buildin
           <span class="head">
             <b>{{ title(i) }}</b>
             <small v-if="i.landmark && !i.home" class="muted">{{ i.landmark.label }}</small>
-            <small v-else-if="!i.home" class="muted">{{ TERRAIN_NAMES[i.terrain] }}</small>
+            <small v-else-if="!i.home" class="muted">{{ groundName(i.terrain, i.detail) }}</small>
           </span>
           <span class="bar" :aria-label="`住 ${i.garrison} 隻，最多 ${i.capacity}`">
             <i :style="{ width: `${Math.min(100, (100 * i.garrison) / Math.max(1, i.capacity))}%` }" />

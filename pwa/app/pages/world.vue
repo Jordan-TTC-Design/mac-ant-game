@@ -143,7 +143,7 @@ const placeName = computed(() => {
   const c = cell.value;
   if (!c) return "";
   const near = nearby.value?.find((p) => Math.hypot((p.lat - c.lat) * 110_574, (p.lng - c.lng) * 100_000) < 250);
-  return near?.name ?? TERRAIN_NAMES[c.terrain];
+  return near?.name ?? groundName(c.terrain, c.detail);
 });
 /** The camp's place is asked twice, in the card itself (the Mac's window shows no browser dialogs): tap, then 確定. */
 const asking = ref<"open" | "move" | null>(null);
@@ -302,8 +302,8 @@ const title = computed(() => {
   if (c.owner) return mine.value ? (c.cell === s.me?.homeCell ? "你的營地" : "你的領地") : `${c.owner.name}的領地`;
   if (c.boss) return `世界魔王・${c.boss.name}`;
   if (c.lair) return c.lair.name;
-  if (c.meteor) return `☄️ 流星・${TERRAIN_NAMES[c.terrain]}`;
-  return TERRAIN_NAMES[c.terrain];
+  if (c.meteor) return `☄️ 流星・${groundName(c.terrain, c.detail)}`;
+  return groundName(c.terrain, c.detail);
 });
 const canAct = computed(() => !!s.me?.open && (spare.value > 0 || !!launchFrom.value || (s.me.cells.some((c) => c.garrison > s.me!.rules.garrisonMin && c.cell !== s.me!.homeCell))));
 
@@ -567,11 +567,12 @@ async function goToPlace(p: PlaceFound) {
           <p v-if="cell.lair?.minRaceLevel && (s.me?.level ?? 1) < cell.lair.minRaceLevel" class="wall">🔒 需要種族等級 {{ cell.lair.minRaceLevel }} 才能打（你現在 {{ s.me?.level ?? 1 }} 級）</p>
           <p v-if="cell.boss && (s.me?.level ?? 1) < BOSS_MIN_RACE_LEVEL" class="wall">🔒 世界魔王要種族等級 {{ BOSS_MIN_RACE_LEVEL }} 才能打（你現在 {{ s.me?.level ?? 1 }} 級）</p>
           <p v-if="cell.lair?.boss" class="boss-tag">👑 初期魔王：比一般巢穴強很多，會掉做中等裝備的材料。打輸了傷會留著，可以找朋友接著打。</p>
-          <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && (!mine || launchFrom) ? `・從${launchFrom ? launchName : "營地"}走約 ${minutesTo} 分鐘${detourTo ? `（繞路 +${detourTo}）` : ""}` : "" }}</p>
+          <p class="muted">{{ groundName(cell.terrain, cell.detail) }}{{ minutesTo !== null && (!mine || launchFrom) ? `・從${launchFrom ? launchName : "營地"}走約 ${minutesTo} 分鐘${detourTo ? `（繞路 +${detourTo}）` : ""}` : "" }}</p>
           <p v-if="way && !way.waypoints.length" class="wall">🧱 {{ way.blockedBy?.name ?? "別人" }}的領地擋在路上，從{{ launchFrom ? launchName : "營地" }}過不去</p>
           <p v-if="cell.blocks" class="wall">🧱 有蓋東西的領地：你的隊伍不能穿過去，要繞路（打下來就通了）</p>
           <p v-if="cell.threats?.includes('ambush')" class="threat">🎯 精靈的伏擊範圍：隊伍經過這裡會先被射倒一些（拿盾牌的不會）</p>
           <p v-if="cell.threats?.includes('blight')" class="threat">☠️ 死靈的腐化大地：你在這裡的領地產出會變少（城鎮、有聖樹的那一區不會）</p>
+          <p v-if="cell.detail" class="detail">{{ detailLine(cell.detail, race) }}</p>
           <p v-if="cell.meteor" class="meteor">☄️ 流星掉在這裡：先派隊伍到的拿走 {{ lootText(cell.meteor.loot) }}・{{ noteTime(cell.meteor.endsAt) }}消失</p>
           <p v-for="w in comingHere" :key="w.id" class="alert">⚔️ {{ w.by.name }}派了 {{ w.party }} 隻正在路上，{{ left(w.arriveAt) }}</p>
           <p v-if="attackedHere" class="alert">
@@ -759,9 +760,10 @@ p { margin: 6px 0; line-height: 1.55; }
 .wall { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a2a1a; }
 .threat { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #6a3a96; }
 .meteor { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #a07000; }
+.detail { margin: 4px 0 0; font-size: 12px; color: #4a5a3a; }
 .season { margin: 0 16px 10px; padding: 8px 12px; border-radius: 12px; background: #3b2a12; color: #ffd98a; font-size: 13px; }
 /* (the card's text column does not wrap, for the title; these lines must, or they are cut off) */
-.grow .wall, .grow .threat, .grow .alert, .grow .boss-tag, .grow .meteor { white-space: normal; }
+.grow .wall, .grow .threat, .grow .alert, .grow .boss-tag, .grow .meteor, .grow .detail { white-space: normal; }
 .boss-tag { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: #8a5a00; }
 
 /* A wide window (the Mac app, a computer's browser): the map fills the left and stays put; the rest is a column on the right,

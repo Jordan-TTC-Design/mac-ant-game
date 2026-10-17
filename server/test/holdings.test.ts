@@ -767,3 +767,22 @@ describe("monsters raiding held cells", () => {
     expect(d.garrison).toBeGreaterThan(0);
   });
 });
+
+describe("細分地形 on the map and on a held cell (WORLD.md §29)", () => {
+  it("cells carry their detail, the same on the map, the cell's page and the territory list; it adds to the yields", async () => {
+    const a = await ready();
+    const around = await map(a);
+    const withDetail = around.filter((c) => c.detail);
+    expect(withDetail.length).toBeGreaterThan(around.length / 10); // (the stand-in gives a quarter of the cells one)
+    const cell = await settle(a, 20, [], (c) => !!c.detail && !c.lair);
+    const detail = around.find((c) => c.cell === cell)!.detail!;
+    expect(((await t.call("GET", `/world/cells/${cell}`, undefined, a)).body as CellDetail).detail).toBe(detail);
+    expect(((await t.call("GET", "/world/territory", undefined, a)).body as TerritoryList).items.find((c) => c.cell === cell)!.detail).toBe(detail);
+    // a day of yields: what the detail adds shows up (its first yield is a sure one: DETAIL_YIELD chance 1, or close)
+    t.advance(24 * HOUR);
+    const d = (await t.call("GET", `/world/cells/${cell}`, undefined, a)).body as CellDetail;
+    const got = d.history.filter((h) => h.kind === "yield").flatMap((h) => Object.keys(h.loot ?? {}));
+    const { DETAIL_YIELD } = await import("@goblincamp/shared/world");
+    expect(DETAIL_YIELD[detail].some((y) => got.includes(y.id))).toBe(true);
+  });
+});

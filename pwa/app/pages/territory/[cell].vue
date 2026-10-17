@@ -176,7 +176,7 @@ function happening(h: CellHappening): string {
       <NuxtLink to="/territory" class="icon-btn">← 領地</NuxtLink>
       <div style="flex: 1">
         <h1>{{ d?.town ? "城鎮" : "領地" }}</h1>
-        <div v-if="d" class="sub">{{ TERRAIN_NAMES[d.terrain] }}・{{ d.heldSince ? `${noteTime(d.heldSince)}佔下` : "" }}</div>
+        <div v-if="d" class="sub">{{ groundName(d.terrain, d.detail) }}・{{ d.heldSince ? `${noteTime(d.heldSince)}佔下` : "" }}</div>
       </div>
       <NuxtLink :to="`/world?cell=${cellId}`" class="icon-btn" aria-label="在地圖上看" title="在地圖上看">🗺️</NuxtLink>
     </header>

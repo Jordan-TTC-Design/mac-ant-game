@@ -1,4 +1,4 @@
-import type { ExpeditionSummary } from "@goblincamp/shared/world";
+import { DETAIL_HOME_ATTACK, DETAIL_NAMES, DETAIL_YIELD, detailHome, materialName, TERRAIN_NAMES, type ExpeditionSummary, type Terrain, type TerrainDetail } from "@goblincamp/shared/world";
 
 /** A report's headline, from this camp's side (it may have been the one attacked). */
 export function outcomeText(r: Pick<ExpeditionSummary, "outcome" | "defending">): string {
@@ -39,3 +39,15 @@ export function fledText(r: Pick<ExpeditionSummary, "outcome">): string | null {
 
 /** Whether it went well for this camp. */
 export const wentWell = (r: Pick<ExpeditionSummary, "outcome" | "defending">) => (r.defending ? !r.outcome?.won : !!r.outcome?.won || !!r.outcome?.damage);
+
+/** A cell's ground in words: its terrain, and its 細分地形 if it has one (details.ts). */
+export function groundName(terrain: Terrain, detail?: TerrainDetail | null): string {
+  return detail ? `${DETAIL_NAMES[detail].icon} ${DETAIL_NAMES[detail].name}・${TERRAIN_NAMES[terrain]}` : TERRAIN_NAMES[terrain];
+}
+
+/** What a 細分地形 gives a cell held there, in a line for the cell's card. */
+export function detailLine(detail: TerrainDetail, race?: string): string {
+  const gives = DETAIL_YIELD[detail].map((y) => materialName(y.id)).join("、");
+  const home = race && detailHome(detail, race) ? `；你的種族住得慣，守軍攻擊 +${Math.round(DETAIL_HOME_ATTACK * 100)}%` : "";
+  return `${DETAIL_NAMES[detail].icon} ${DETAIL_NAMES[detail].name}：佔下來每 3 小時多產 ${gives}${home}；偶爾生出這裡的稀有種`;
+}
