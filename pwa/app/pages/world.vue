@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, GUESTS_MAX, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 import { loadLastAttack, saveLastAttack, type LastAttack } from "~/utils/again";
@@ -219,8 +219,22 @@ const parties = computed(() =>
     const from = w.from === "home" ? s.me?.homeCell : w.from;
     if (!from) return [];
     return [{ id: w.id, path: (w.route ?? [from, w.to]).map(cellCenter), setOutAt: w.setOutAt, arriveAt: w.arriveAt, race: race.value }];
-  }),
+  }).concat(
+    // other camps' parties coming to attack, in red
+    (s.me?.incoming ?? []).map((w) => ({ id: w.id, path: (w.route ?? [w.from, w.to]).map(cellCenter), setOutAt: w.setOutAt, arriveAt: w.arriveAt, race: w.by.race, hostile: true })),
+  ),
 );
+/** The reports of this camp being attacked in the last day, newest first. */
+const attackedLately = computed(() => (s.me?.recent ?? []).filter((r) => r.defending && now.value - Date.parse(r.arriveAt) < 24 * 3_600_000));
+/** Cells to mark ⚔️ on the map: attacked in the last day, or with a party on its way to attack. */
+const alerts = computed(() => [...new Set([...attackedLately.value.map((r) => r.to), ...(s.me?.incoming ?? []).map((w) => w.to)])]);
+/** The cell picked was attacked lately (its report), or is about to be (the party coming). */
+const attackedHere = computed(() => attackedLately.value.find((r) => r.to === selected.value) ?? null);
+const comingHere = computed(() => (s.me?.incoming ?? []).filter((w) => w.to === selected.value));
+async function goToCell(cell: string) {
+  await world.moveTo(cellCenter(cell));
+  pick(cell);
+}
 const goHome = () => s.me?.home && world.moveTo(s.me.home);
 
 async function goToBoss(b: { cell: string; lat: number; lng: number }) {
@@ -256,7 +270,12 @@ watch(dispatch, (d) => {
 });
 const plan = computed(() => (way.value?.waypoints.length ? way.value.waypoints.map(cellCenter) : null));
 /** About how long the walk is from where it would set out (the slowest goblin and food make it differ a little). */
-const minutesTo = computed(() => (way.value?.waypoints.length ? walkMinutes(way.value.meters) : null));
+/** Moving between one's own joined cells is quick (REGION_TRAVEL). */
+const inRegion = computed(() => {
+  const start = wayFrom.value === "home" ? s.me?.homeCell : wayFrom.value;
+  return !!start && !!selected.value && sameRegion(start, selected.value, new Set((s.me?.cells ?? []).map((c) => c.cell)));
+});
+const minutesTo = computed(() => (way.value?.waypoints.length ? Math.max(1, Math.round(walkMinutes(way.value.meters) * (inRegion.value ? REGION_TRAVEL : 1))) : null));
 const detourTo = computed(() => (way.value && way.value.waypoints.length > 2 ? walkMinutes(way.value.meters) - walkMinutes(way.value.straight) : 0));
 const lootText = (loot: Record<string, number>) => Object.entries(loot).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
 const costList = (cost: Record<string, number>) => Object.entries(cost).map(([id, n]) => `${materialName(id)} ${n}`).join("、");
@@ -387,7 +406,7 @@ async function goToPlace(p: PlaceFound) {
       </section>
       <section v-else-if="!s.me.open" class="panel intro">
         <h2>龜縮中</h2>
-        <p>上一場打輸了，營地和領地現在都不會被打，但也不能出征。準備好了就重新開啟。</p>
+        <p>上一場打輸了，營地和領地現在都不會被打，但也不能出征。準備好了就重新開啟{{ s.me.shieldEndsAt ? `；${noteTime(s.me.shieldEndsAt)}（龜縮滿 24 小時）會自動結束` : "" }}。</p>
         <button class="btn primary" :disabled="busy" @click="openAgain">重新開啟大世界</button>
       </section>
 
@@ -468,6 +487,7 @@ async function goToPlace(p: PlaceFound) {
         :selected="selected"
         :walking-to="s.me.walking.map((w) => w.to)"
         :parties="parties"
+        :alerts="alerts"
         :plan="plan"
         :home="s.me.homeCell ? race : null"
         @select="pick"
@@ -479,10 +499,18 @@ async function goToPlace(p: PlaceFound) {
 
       <div class="w-rest">
 
+      <section v-if="s.me.incoming?.length" class="panel incoming">
+        <h2>⚠️ 敵軍來襲</h2>
+        <button v-for="w in s.me.incoming" :key="w.id" class="line incoming-line" @click="goToCell(w.to)">
+          <b>{{ w.by.name }}</b> 派了 {{ w.party }} 隻 → 你的{{ w.where.kind === "home" ? "營地" : w.where.label }}{{ w.where.landmark ? `・${w.where.landmark}` : "" }}<br />
+          <small>{{ left(w.arriveAt) }}・點一下看那一格（可以派人增援，或撤回）</small>
+        </button>
+      </section>
+
       <section v-if="s.me.walking.length" class="panel">
         <h2>在路上</h2>
         <p v-for="w in s.me.walking" :key="w.id" class="line">
-          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ { move: "（搬家）", guard: "（幫守）", recall: "（撤回）", reroute: "（找有空位的領地）" }[w.kind as string] ?? "" }}<br />
+          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ { move: "（搬家）", guard: "（幫守）", recall: "（撤回）", reroute: "（找有空位的領地）", retreat: "（撤退）" }[w.kind as string] ?? "" }}<br />
           <small>{{ left(w.arriveAt) }}</small>
         </p>
       </section>
@@ -506,7 +534,7 @@ async function goToPlace(p: PlaceFound) {
         <h2>戰報</h2>
         <NuxtLink v-for="r in s.me.recent.slice(0, 5)" :key="r.id" :to="`/expedition/${r.id}`" class="report">
           <span :class="wentWell(r) ? 'won' : 'lost'">{{ outcomeText(r) }}</span>
-          <span class="grow">{{ r.outcome?.against }}</span>
+          <span class="grow">{{ r.defending ? `${r.by ?? "有人"}來打${placeText(r) ? `：${placeText(r)}` : ""}` : r.outcome?.against }}</span>
           <small>{{ noteTime(r.arriveAt) }}</small>
         </NuxtLink>
       </section>
@@ -529,6 +557,11 @@ async function goToPlace(p: PlaceFound) {
           <p class="muted">{{ TERRAIN_NAMES[cell.terrain] }}{{ minutesTo !== null && (!mine || launchFrom) ? `・從${launchFrom ? launchName : "營地"}走約 ${minutesTo} 分鐘${detourTo ? `（繞路 +${detourTo}）` : ""}` : "" }}</p>
           <p v-if="way && !way.waypoints.length" class="wall">🧱 {{ way.blockedBy?.name ?? "別人" }}的領地擋在路上，從{{ launchFrom ? launchName : "營地" }}過不去</p>
           <p v-if="cell.blocks" class="wall">🧱 有蓋東西的領地：你的隊伍不能穿過去，要繞路（打下來就通了）</p>
+          <p v-for="w in comingHere" :key="w.id" class="alert">⚔️ {{ w.by.name }}派了 {{ w.party }} 隻正在路上，{{ left(w.arriveAt) }}</p>
+          <p v-if="attackedHere" class="alert">
+            ⚔️ {{ attackedHere.by ?? "有人" }}{{ noteTime(attackedHere.arriveAt) }}來打過：{{ outcomeText(attackedHere) }}
+            <NuxtLink :to="`/expedition/${attackedHere.id}`">看戰報</NuxtLink>
+          </p>
           <p v-if="cell.landmark" class="landmark">{{ landmarkRule(cell.landmark.kind)?.icon }} {{ cell.landmark.name }}（{{ landmarkRule(cell.landmark.kind)?.name }}）<small>{{ landmarkRule(cell.landmark.kind)?.blurb }}</small></p>
         </div>
       </div>
@@ -617,6 +650,11 @@ async function goToPlace(p: PlaceFound) {
 </template>
 
 <style scoped>
+.incoming { border: 2px solid #e04a3a; background: #fff3f0; }
+.incoming h2 { color: #c0392b; }
+.incoming-line { display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; color: inherit; padding: 6px 0; cursor: pointer; border-top: 1px solid #f3cfc8; }
+.incoming-line:first-of-type { border-top: 0; }
+.alert { color: #c0392b; font-weight: 600; margin: 4px 0; }
 section { margin-top: 14px; }
 h2 { font-size: 16px; margin: 0 0 8px; }
 p { margin: 6px 0; line-height: 1.55; }

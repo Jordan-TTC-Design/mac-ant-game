@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { materialName, TERRAIN_NAMES, type CellBonus, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
+import { REGION_COMBOS, MARKET_RATE, MARKET_TRADES_PER_DAY, marketQuote, marketWorth, materialName, TERRAIN_NAMES, TOWN_FORT, TOWN_TRAVEL, type CellBonus, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
 import type { CampResidentView } from "@goblincamp/shared/camp";
 import { ApiError, api } from "~/utils/api";
 import { noteTime } from "~/utils/time";
@@ -104,6 +104,20 @@ async function act(path: string, body: unknown) {
     busy.value = false;
   }
 }
+// a town's market: some of one material for another, at a loss (holdings.ts marketQuote)
+const give = ref("");
+const giveCount = ref(10);
+const want = ref("");
+/** What the camp has that the market takes, the most first. */
+const tradable = computed(() => Object.entries(store.value).filter(([id, n]) => n > 0 && marketWorth(id) > 0).sort((a, b) => b[1] - a[1]));
+/** Everything the market sells (worth more first, then by name). */
+const wantable = computed(() => Object.keys(names.value.materials).filter((id) => marketWorth(id) > 0 && id !== give.value).sort((a, b) => marketWorth(b) - marketWorth(a) || materialName(a).localeCompare(materialName(b))));
+const quote = computed(() => (give.value && want.value ? marketQuote(give.value, giveCount.value, want.value) : 0));
+async function trade() {
+  await act("market", { give: give.value, count: giveCount.value, get: want.value });
+  if (!actProblem.value) recallNote.value = `換到了 ${materialName(want.value)} ×${quote.value}。`;
+}
+
 /** What the cell gets now, in words. */
 function bonusText(b: CellBonus): string[] {
   const out: string[] = [];
@@ -115,6 +129,7 @@ function bonusText(b: CellBonus): string[] {
   if (b.room) out.push(`最多可以多住 ${b.room} 隻`);
   if (b.party) out.push(`從這裡出發的隊伍可以多 ${b.party} 隻`);
   if (b.xp) out.push(`每天多 ${b.xp} 經驗值`);
+  for (const c of b.combos ?? []) out.push(`🔗 搭配加成：${c}（同一區有搭配的建築，上面已經算進去）`);
   return out;
 }
 
@@ -126,6 +141,7 @@ function happening(h: CellHappening): string {
       const help = `${h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : ""}${h.guests ? `，好友 ${h.guests} 隻一起守` : ""}`;
       return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}${help}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}${help}）`;
     }
+    case "incoming": return `⚔️ ${h.by}派了 ${h.residents} 隻要來打`;
     case "attacked": return h.held ? `${h.by}來打，守住了（倒下 ${h.fallen}）` : `${h.by}來打，被搶走了（倒下 ${h.fallen}）`;
     case "settled": return h.killed ? `打下這一格，住了進來（倒下 ${h.fallen}）` : "有居民搬進來了";
     case "nest": return "開始蓋繁殖巢";
@@ -257,6 +273,38 @@ function happening(h: CellHappening): string {
           </div>
         </template>
         <p v-if="actProblem" class="status error">{{ actProblem }}</p>
+        <details class="combos">
+          <summary>同一區的建築搭配</summary>
+          <p class="muted small">相連的領地裡兩種都蓋好了，兩邊都會多一點：產出每樣 +1、防守 +10%、住人 +5、多帶 1 隻、走路 −10%。</p>
+          <ul><li v-for="c in REGION_COMBOS" :key="c.name"><b>{{ c.name }}</b>：{{ c.blurb }}</li></ul>
+        </details>
+      </section>
+
+      <section v-if="d.town" class="panel">
+        <h2>城鎮</h2>
+        <ul class="bonus">
+          <li>從這裡出發的隊伍走路時間 −{{ Math.round((1 - TOWN_TRAVEL) * 100) }}%</li>
+          <li>城牆：守這一格的血量 +{{ Math.round(TOWN_FORT * 100) }}%</li>
+        </ul>
+        <h3>市場 <small class="muted">今天還能換 {{ d.market?.left ?? 0 }} / {{ MARKET_TRADES_PER_DAY }} 次</small></h3>
+        <p class="muted small">用一種素材換另一種，換到的價值是付出的 {{ Math.round(MARKET_RATE * 100) }}%（稀有素材比較值錢）。</p>
+        <div class="market">
+          <label>付出
+            <select v-model="give">
+              <option value="" disabled>選素材</option>
+              <option v-for="[id, n] in tradable" :key="id" :value="id">{{ materialName(id) }}（有 {{ n }}）</option>
+            </select>
+          </label>
+          <label>數量 <input v-model.number="giveCount" type="number" min="1" :max="store[give] ?? 1" /></label>
+          <label>換成
+            <select v-model="want">
+              <option value="" disabled>選素材</option>
+              <option v-for="id in wantable" :key="id" :value="id">{{ materialName(id) }}</option>
+            </select>
+          </label>
+        </div>
+        <p class="small">{{ give && want ? (quote > 0 ? `可以換到 ${materialName(want)} ×${quote}` : "數量太少，換不到") : "選好要付出和要換的素材" }}</p>
+        <button class="btn primary" :disabled="busy || !quote || (d.market?.left ?? 0) <= 0 || (store[give] ?? 0) < giveCount" @click="trade">換</button>
       </section>
 
       <section class="panel">
@@ -289,6 +337,13 @@ function happening(h: CellHappening): string {
 </template>
 
 <style scoped>
+.combos { margin-top: 10px; font-size: 14px; }
+.combos summary { cursor: pointer; color: var(--muted); }
+.combos ul { margin: 6px 0 0; padding-left: 18px; }
+.market { display: grid; grid-template-columns: 1fr 90px 1fr; gap: 8px; margin: 8px 0; }
+.market label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.market select, .market input { font: inherit; padding: 6px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+@media (max-width: 420px) { .market { grid-template-columns: 1fr; } }
 h2 { font-size: 15px; margin: 0 0 8px; }
 h2 small { font-size: 12px; font-weight: 500; color: var(--muted); }
 p { margin: 6px 0; }

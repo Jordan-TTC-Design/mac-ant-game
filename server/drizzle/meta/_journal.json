@@ -232,6 +232,20 @@
       "when": 1791780849116,
       "tag": "0032_guild_area",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792200171384,
+      "tag": "0033_auto_gear_far",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792202711597,
+      "tag": "0034_guild_places_outfits",
+      "breakpoints": true
     }
   ]
 }

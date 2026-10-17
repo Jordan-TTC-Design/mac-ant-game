@@ -58,7 +58,7 @@ const requestId = z.uuid().optional();
 
 /** `POST /api/camp/commands`: one thing the player does. The server checks it against the books (server/CAMP.md §3.3). */
 export const campCommand = z.discriminatedUnion("kind", [
-  /** The workshop makes a piece; it goes to `to` (a resident at home, by hand: pinned), or else to whoever needs it most. */
+  /** The workshop makes a piece; it goes to `to` (a resident at home, on a held cell or guarding one, by hand: pinned), or else to whoever needs it most. */
   z.object({ requestId, kind: z.literal("craft"), gear: z.string().max(40), to: z.number().int().min(1).optional() }),
   /** Puts a piece from the store (`stock`, its place in the list; `gear` checks it is the one meant) on a resident by hand. */
   z.object({ requestId, kind: z.literal("equip"), resident: z.number().int(), stock: z.number().int().min(0), gear: z.string().max(40) }),
@@ -68,6 +68,8 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("gear-hold"), stock: z.number().int().min(0), gear: z.string().max(40), held: z.boolean() }),
   /** Turns the handing out of the store on or off for the camp. */
   z.object({ requestId, kind: z.literal("auto-gear"), on: z.boolean() }),
+  /** Whether the handing out reaches every held cell too (off: only home and the towns). */
+  z.object({ requestId, kind: z.literal("auto-gear-far"), on: z.boolean() }),
   /** Mends a piece a resident wears (`resident` + `slot`) or one in the store (`stock`, its place in the list). */
   z.object({ requestId, kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
   /** Puts a food (or, for the undead, a soul) down. */
@@ -146,6 +148,10 @@ export interface CampView {
   armory: { id: string; left: number; held?: boolean }[];
   /** Whether the store is handed out by itself (off: only by hand). Older servers leave it out (on). */
   autoGear?: boolean;
+  /** Whether the handing out reaches every held cell too (off: only home and the towns). */
+  autoGearFar?: boolean;
+  /** The places away from home where residents can be handed gear (`cell:<cell>`, `guard:<cell>`), as the workshop names them. */
+  places?: Record<string, { label: string; town: boolean }>;
   /** 任務 whose reward was taken (camp/quests.ts): some open a 道具's recipe. */
   questsDone?: string[];
   boosts: Record<string, string>;
@@ -162,6 +168,8 @@ export interface CampView {
   merchant?: MerchantVisit | null;
   /** The decorations put down (decor.ts). Older servers leave it out. */
   decor?: DecorPlaced[];
+  /** The player's race level in the big world (1 before it opens): how much decoration room, which decorations and how many (decor.ts). Older servers leave it out. */
+  raceLevel?: number;
   /** The ranch's animals (ranch.ts). Older servers leave it out. */
   ranch?: { animals: RanchAnimal[] };
   /** The pomodoro's focus rounds done, today and in all, and what they bring today (focus.ts). Older servers leave it out. */

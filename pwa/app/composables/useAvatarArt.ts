@@ -51,16 +51,21 @@ async function layered(m: AvatarManifest, a: Avatar): Promise<HTMLCanvasElement>
   const who = `${a.race}_${a.sex}`;
   const type = m.bodyType[who] ?? a.race;
   const files = m.files as Record<string, Record<string, string>>;
+  // (clothes worn: the outfit's picture for this body, else the body's own clothes; a hat flattens the hair: manifest render.hats)
+  const clothes = (slot: "top" | "bottom" | "shoes") => files[slot]?.[`${who}_${a[slot] ?? "default"}`] ?? files[slot]?.[`${who}_default`];
+  const hat = a.hat ? files.hat?.[a.hat] : undefined;
+  const hair = (layer: "hair_front" | "hair_back") => (hat && files[`${layer}_flat`]?.[`${who}_${a.hair}`]) || files[layer]?.[`${who}_${a.hair}`];
   const pick: Record<string, string | undefined> = {
-    hair_back: files.hair_back?.[`${who}_${a.hair}`],
+    hair_back: hair("hair_back"),
     body: files.body?.[`${who}_${a.face}`],
-    bottom: files.bottom?.[`${who}_default`],
-    top: files.top?.[`${who}_default`],
-    shoes: files.shoes?.[`${who}_default`],
+    bottom: clothes("bottom"),
+    top: clothes("top"),
+    shoes: clothes("shoes"),
     brows: files.brows?.[`${type}_${a.brows}`],
     eyes: files.eyes?.[`${type}_${a.eyes}`],
     mouth: files.mouth?.[`${type}_${a.mouth}`],
-    hair_front: files.hair_front?.[`${who}_${a.hair}`],
+    hair_front: hair("hair_front"),
+    hat,
     fx: typeof m.files.fx === "string" ? m.files.fx : undefined,
   };
   const out = document.createElement("canvas");
@@ -140,6 +145,12 @@ function outline(g: CanvasRenderingContext2D, w: number, h: number, colour: stri
     px[i + 3] = 255;
   }
   g.putImageData(data, 0, 0);
+}
+
+/** Whether this body has a picture of this piece of clothing (a body that cannot wear it has none). */
+export function outfitFits(m: AvatarManifest, a: Pick<Avatar, "race" | "sex">, slot: string, id: string): boolean {
+  const files = m.files as Record<string, Record<string, string>>;
+  return slot === "hat" ? !!files.hat?.[id] : !!files[slot]?.[`${a.race}_${a.sex}_${id}`];
 }
 
 export function useAvatarArt() {

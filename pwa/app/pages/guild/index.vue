@@ -20,6 +20,10 @@ import {
   hallLayout,
   keepInside,
   shiftHall,
+  guildDecorTile,
+  hallWallAt,
+  keepTileKeys,
+  shiftTileKeys,
   hallPose,
   newDecorUid,
   snapDecor,
@@ -51,22 +55,34 @@ const editing = ref(false);
 const draft = ref<GuildDecorPlaced[]>([]);
 const draftVersion = ref(0);
 const selected = ref<string | null>(null);
-const mode = ref<"decor" | "floor" | "wall" | "area">("decor");
+const mode = ref<"decor" | "floor" | "wall" | "area" | "plot">("decor");
 const brush = ref("oak");
 const draftFloor = ref<HallFloor>({ base: "oak", tiles: {} });
 // the hall's shape (the leader and officers, GUILD.md §4.1): drawn tile by tile, saved with the rest
 const draftArea = ref<HallArea>(DEFAULT_HALL_AREA);
 const shapeBrush = ref<"add" | "erase">("add");
+// the wall brushed a segment at a time, and the members' own places (the leader and officers; GUILD.md §4, §4.3)
+const draftWalls = ref<Record<string, string>>({});
+const wallBrush = ref("stone");
+const draftPlots = ref<Record<string, string>>({});
+/** Whose place the 位置 brush gives (null: rubs places out). */
+const plotBrush = ref<string | null>(null);
+const plotNames = computed(() => Object.fromEntries((guild.value?.members ?? []).map((m) => [m.id, m.name])));
 const hallView = ref<{ nudge: (dx: number, dy: number) => void }>();
 const shownDecor = computed(() => (editing.value ? draft.value : (guild.value?.decor ?? [])));
 const shownFloor = computed(() => (editing.value ? draftFloor.value : (guild.value?.floor ?? { base: "oak", tiles: {} })));
 const shownArea = computed(() => (editing.value ? draftArea.value : (guild.value?.area ?? DEFAULT_HALL_AREA)));
+const shownWalls = computed(() => (editing.value ? draftWalls.value : (guild.value?.walls ?? {})));
 const draftTiles = computed(() => hallAreaTiles(draftArea.value));
 const shapeProblem = computed(() => (editing.value && guild.value ? hallAreaProblem(draftArea.value, guild.value.level) : null));
 function startDecor() {
   draft.value = structuredClone(toRaw(guild.value?.decor ?? []));
   draftFloor.value = structuredClone(toRaw(guild.value?.floor ?? { base: "oak", tiles: {} }));
   draftArea.value = [...(guild.value?.area ?? DEFAULT_HALL_AREA)];
+  draftWalls.value = { ...(guild.value?.walls ?? {}) };
+  draftPlots.value = { ...(guild.value?.plots ?? {}) };
+  wallBrush.value = guild.value?.wall ?? "stone";
+  plotBrush.value = guild.value?.members.find((m) => m.role === "member")?.id ?? guild.value?.members[0]?.id ?? null;
   mode.value = "decor";
   draftVersion.value = guild.value?.decorVersion ?? 0;
   selected.value = null;
@@ -79,6 +95,15 @@ function place(kind: string, x: number, y: number) {
   const at = { x: snapDecor(x), y: snapDecor(y) };
   return guildDecorFits(draftArea.value, k, at.x, at.y) ? at : null;
 }
+/**
+ * Why this member may not touch a piece standing at (x, y) (null: they may): it is in someone else's place (as saved: that is
+ * what the server goes by). The leader and officers may touch any.
+ */
+function theirPlace(d: Pick<GuildDecorPlaced, "kind" | "x" | "y">): string | null {
+  if (role.value !== "member" || !guild.value || !user.value) return null;
+  const who = (guild.value.plots ?? {})[guildDecorTile(guild.value.area, d)];
+  return who && who !== user.value.id && plotNames.value[who] ? `這裡是${plotNames.value[who]}的位置，只有他自己和會長、幹部能動。` : null;
+}
 function addDecor(kind: string) {
   if (phone.value) sheetOpen.value = false;
   const k = guildDecorKind(kind)!;
@@ -86,7 +111,7 @@ function addDecor(kind: string) {
   const { width } = hallAreaSize(draftArea.value);
   const tries = [{ x: width / 2, y: k.wall ? WALL_ROWS : WALL_ROWS + 3 }];
   for (const t of hallLayout(draftArea.value).floorTiles) tries.push(k.wall ? { x: t.x + 0.5, y: t.y } : { x: t.x + 0.5, y: t.y + 1 });
-  const at = tries.map((p) => place(kind, p.x, p.y)).find((p) => p);
+  const at = tries.map((p) => place(kind, p.x, p.y)).find((p) => p && !theirPlace({ kind, ...p }));
   if (!at) {
     message.value = `據點裡沒有放得下${k.name}的地方。`;
     return;
@@ -98,9 +123,14 @@ function addDecor(kind: string) {
 function moveDecor(uid: string, x: number, y: number) {
   const d = draft.value.find((p) => p.uid === uid);
   if (!d || (d.locked && role.value === "member")) return;
-  // (dragged off the floor: it stays where it last fitted)
+  const why = theirPlace(guild.value?.decor.find((p) => p.uid === uid) ?? d);
+  if (why) {
+    message.value = why;
+    return;
+  }
+  // (dragged off the floor, or into someone else's place: it stays where it last fitted)
   const at = place(d.kind, x, y);
-  if (at) Object.assign(d, at);
+  if (at && !theirPlace({ kind: d.kind, ...at })) Object.assign(d, at);
 }
 /** Draws one tile of the hall's shape on, or rubs it out; everything moves with it when it grows up or to the left. */
 function paintShape(x: number, y: number) {
@@ -127,14 +157,37 @@ function paintShape(x: number, y: number) {
   draftArea.value = next.area;
   draft.value = kept.decor;
   draftFloor.value = kept.floor;
+  draftWalls.value = keepTileKeys(shiftTileKeys(draftWalls.value, next.dx, next.dy), (x, y) => hallWallAt(next.area, x, y));
+  draftPlots.value = keepTileKeys(shiftTileKeys(draftPlots.value, next.dx, next.dy), (x, y) => hallAreaHas(next.area, x, y));
   if (next.dx || next.dy) hallView.value?.nudge(next.dx, next.dy);
 }
-const paint = (x: number, y: number) => (mode.value === "area" ? paintShape(x, y) : paintTile(x, y));
-function flipDecor() {
+/** Brushes one column of wall (the base style needs no segment of its own). */
+function paintWall(x: number, y: number) {
+  const key = `${x},${y}`;
+  if (wallBrush.value === guild.value?.wall) delete draftWalls.value[key];
+  else draftWalls.value[key] = wallBrush.value;
+}
+/** Gives one floor tile to the 位置 brush's member, or takes it back. */
+function paintPlot(x: number, y: number) {
+  const key = `${x},${y}`;
+  if (plotBrush.value) draftPlots.value[key] = plotBrush.value;
+  else delete draftPlots.value[key];
+}
+const paint = (x: number, y: number) =>
+  ({ area: paintShape, wall: paintWall, plot: paintPlot, floor: paintTile, decor: paintTile })[mode.value](x, y);
+/** The piece picked, if this member may touch it (else says why). */
+function touchable() {
   const d = draft.value.find((p) => p.uid === selected.value);
+  const why = d && theirPlace(guild.value?.decor.find((p) => p.uid === d.uid) ?? d);
+  if (why) message.value = why;
+  return why ? undefined : d;
+}
+function flipDecor() {
+  const d = touchable();
   if (d) d.flip = !d.flip;
 }
 function removeDecor() {
+  if (!touchable()) return;
   draft.value = draft.value.filter((p) => p.uid !== selected.value);
   selected.value = null;
 }
@@ -157,7 +210,15 @@ const saveDecor = () =>
   act(async () => {
     try {
       const area = JSON.stringify(draftArea.value) === JSON.stringify(guild.value?.area) ? undefined : draftArea.value;
-      live.state.guild = await api<GuildResponse>("PUT", "guild/decor", { version: draftVersion.value, items: draft.value, floor: draftFloor.value, area });
+      const boss = role.value !== "member";
+      live.state.guild = await api<GuildResponse>("PUT", "guild/decor", {
+        version: draftVersion.value,
+        items: draft.value,
+        floor: draftFloor.value,
+        area,
+        // (the walls and places: the leader's and officers' to change; sent by them, kept as they are otherwise)
+        ...(boss ? { walls: draftWalls.value, plots: draftPlots.value } : {}),
+      });
       editing.value = false;
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) editing.value = false; // (someone else saved: start again from theirs)
@@ -351,8 +412,12 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :decor="shownDecor"
         :floor="shownFloor"
         :wall="guild.wall"
+        :walls="shownWalls"
+        :plots="editing ? draftPlots : undefined"
+        :plot-names="plotNames"
         :editing="editing"
-        :painting="editing && mode === 'floor'"
+        :painting="editing && (mode === 'floor' || mode === 'plot')"
+        :wall-painting="editing && mode === 'wall'"
         :shaping="editing && mode === 'area'"
         :selected="selected"
         :hand="hand"
@@ -414,6 +479,9 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :mode="mode"
         :brush="brush"
         :wall="guild.wall"
+        :wall-brush="wallBrush"
+        :members="guild.members"
+        :plot-brush="plotBrush"
         :tiles="draftTiles"
         :tiles-max="guild.rules.tiles"
         :shape-brush="shapeBrush"
@@ -423,6 +491,8 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         @brush="brush = $event"
         @fill-all="fillFloor"
         @wall="setWall"
+        @wall-brush="wallBrush = $event"
+        @plot-brush="plotBrush = $event"
         @add="addDecor"
         @flip="flipDecor"
         @remove="removeDecor"

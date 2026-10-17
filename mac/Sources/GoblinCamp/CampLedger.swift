@@ -43,6 +43,11 @@ final class CampLedger {
         let armory: [GearPiece]
         /// Whether the store is handed out by itself; missing from older servers (on).
         let autoGear: Bool?
+        /// Whether the handing out reaches every held cell too (off: home and the towns); older servers leave it out.
+        let autoGearFar: Bool?
+        /// The places away from home where residents can be handed gear, and what the workshop calls them; older servers leave it out.
+        struct GearPlace: Codable { let label: String; let town: Bool }
+        let places: [String: GearPlace]?
         let boosts: [String: String]
         let foodCooldowns: [String: String]
         let princessName: String
@@ -88,6 +93,8 @@ final class CampLedger {
         let merchant: MerchantVisitInfo?
         /// The decorations put down (Decor.swift); older servers leave it out.
         let decor: [DecorPlaced]?
+        /// The race level in the big world (1 before it opens): the decorations' room, tiers and limits (Decor.swift); older servers leave it out.
+        let raceLevel: Int?
         /// The ranch's animals (Ranch.swift); older servers leave it out.
         struct RanchView: Codable {
             struct Animal: Codable { let id: Int; let kind: String; let bornAt: String; let caught: Bool?; let name: String? }
@@ -101,8 +108,8 @@ final class CampLedger {
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
-            case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, ranch, focus, decorEarned, residents
+            case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, autoGearFar, places, boosts, foodCooldowns
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -120,6 +127,8 @@ final class CampLedger {
             larder = try c.decode([String: Int].self, forKey: .larder)
             armory = try c.decode([GearPiece].self, forKey: .armory)
             autoGear = try? c.decodeIfPresent(Bool.self, forKey: .autoGear)
+            autoGearFar = try? c.decodeIfPresent(Bool.self, forKey: .autoGearFar)
+            places = try? c.decodeIfPresent([String: GearPlace].self, forKey: .places)
             boosts = try c.decode([String: String].self, forKey: .boosts)
             foodCooldowns = try c.decode([String: String].self, forKey: .foodCooldowns)
             princessName = try c.decode(String.self, forKey: .princessName)
@@ -130,6 +139,7 @@ final class CampLedger {
             production = try? c.decodeIfPresent(Production.self, forKey: .production)
             merchant = try? c.decodeIfPresent(MerchantVisitInfo.self, forKey: .merchant)
             decor = try? c.decodeIfPresent([DecorPlaced].self, forKey: .decor)
+            raceLevel = try? c.decodeIfPresent(Int.self, forKey: .raceLevel)
             ranch = try? c.decodeIfPresent(RanchView.self, forKey: .ranch)
             focus = try? c.decodeIfPresent(FocusInfo.self, forKey: .focus)
             decorEarned = try? c.decodeIfPresent([String].self, forKey: .decorEarned)
@@ -153,7 +163,7 @@ final class CampLedger {
         let arrived: Bool?
         let defended: Bool?
         let won: Bool?
-        /// attack, move, guard, recall (walking back from a cell), reroute (the rest of a recall, looking for room)
+        /// attack, move, guard, recall (walking back from a cell), reroute (the rest of a recall, looking for room), retreat (fleeing an overrun cell)
         let kind: String?
         /// cleared, taken, settled, held, back, guarding, camping
         let cell: String?
@@ -165,6 +175,15 @@ final class CampLedger {
         let by: String?
         /// Damage done to a great monster of the world.
         let damage: Int?
+        /// Where the beaten garrison fell back to (when `defended` and lost): to the nearest held cell, a free cell beside it, or home.
+        struct Fled: Decodable { let count: Int; let how: String; let label: String? }
+        let fled: Fled?
+        /// Which of our cells was attacked (when `defended`) or is about to be (when `incoming`): 營地, 城鎮 2, 領地 3.
+        let `where`: String?
+        /// Another camp's party just set out to attack us (`by`, `party` strong, there at `arriveAt`).
+        let incoming: Bool?
+        let party: Int?
+        let arriveAt: String?
     }
 
     /// A lair came back for one of the camp's cells in the big world.
@@ -281,17 +300,28 @@ final class CampLedger {
         Set((view?.residents ?? []).filter { $0.place != "home" }.map(\.id))
     }
 
+    /// Residents away from home who can be handed gear (on a held cell, or guarding a friend's), where, and what that place is called.
+    func awayGearResidents() -> [(resident: BookResident, place: String, label: String, town: Bool)] {
+        guard let view, let places = view.places else { return [] }
+        return view.residents.compactMap { r in
+            guard let place = places[r.place] else { return nil }
+            return (book(r), r.place, place.label, place.town)
+        }
+    }
+
     /// The residents as the camp takes them (`Colony.applyBooks`).
     func bookResidents(now: Date = Date()) -> [BookResident] {
-        residents.map { r in
-            var share: Double?
-            if let dies = r.diesAt.flatMap(ServerTime.parse), let born = ServerTime.parse(r.bornAt), dies > born {
-                share = min(1, max(0, now.timeIntervalSince(born) / dies.timeIntervalSince(born)))
-            }
-            let gear = (r.gear ?? [:]).mapValues(\.item)
-            return BookResident(id: r.id, breed: r.breed, seed: r.legacySeed.flatMap { UInt64($0) } ?? UInt64(r.seed), name: r.name,
-                                parents: r.parents, lifeShare: share, gear: gear)
+        residents.map { book($0, now: now) }
+    }
+
+    private func book(_ r: Resident, now: Date = Date()) -> BookResident {
+        var share: Double?
+        if let dies = r.diesAt.flatMap(ServerTime.parse), let born = ServerTime.parse(r.bornAt), dies > born {
+            share = min(1, max(0, now.timeIntervalSince(born) / dies.timeIntervalSince(born)))
         }
+        let gear = (r.gear ?? [:]).mapValues(\.item)
+        return BookResident(id: r.id, breed: r.breed, seed: r.legacySeed.flatMap { UInt64($0) } ?? UInt64(r.seed), name: r.name,
+                            parents: r.parents, lifeShare: share, gear: gear)
     }
 
     /// What the camp owns, as the books have it.

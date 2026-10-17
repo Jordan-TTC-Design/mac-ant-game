@@ -50,6 +50,48 @@ enum AvatarKit {
         "cyan": "青", "violet": "紫", "green": "綠",
     ]
 
+    /// The clothes (shared/src/guild-outfits.ts GUILD_OUTFITS): bought with one's own contribution, the free ones everyone has.
+    struct Outfit { let id: String; let slot: String; let name: String; let price: Int }
+    static let outfits: [Outfit] = [
+        Outfit(id: "linen_shirt", slot: "top", name: "亞麻上衣", price: 0), Outfit(id: "leather_vest", slot: "top", name: "皮背心", price: 300),
+        Outfit(id: "knight_tabard", slot: "top", name: "騎士罩袍", price: 800), Outfit(id: "mage_robe", slot: "top", name: "法師長袍", price: 1200),
+        Outfit(id: "noble_doublet", slot: "top", name: "貴族短上衣", price: 2000),
+        Outfit(id: "work_trousers", slot: "bottom", name: "工作褲", price: 0), Outfit(id: "leather_pants", slot: "bottom", name: "皮褲", price: 400),
+        Outfit(id: "plaid_kilt", slot: "bottom", name: "格子裙", price: 600), Outfit(id: "silk_skirt", slot: "bottom", name: "絲綢長裙", price: 1000),
+        Outfit(id: "sandals", slot: "shoes", name: "草鞋", price: 0), Outfit(id: "leather_boots", slot: "shoes", name: "皮靴", price: 300),
+        Outfit(id: "pointy_slippers", slot: "shoes", name: "尖頭軟鞋", price: 500), Outfit(id: "iron_greaves", slot: "shoes", name: "鐵護脛", price: 900),
+        Outfit(id: "straw_hat", slot: "hat", name: "草帽", price: 0), Outfit(id: "flower_crown", slot: "hat", name: "花冠", price: 400),
+        Outfit(id: "feather_cap", slot: "hat", name: "羽毛帽", price: 600), Outfit(id: "iron_helm", slot: "hat", name: "鐵頭盔", price: 1000),
+        Outfit(id: "wizard_hat", slot: "hat", name: "巫師帽", price: 1500),
+    ]
+    static let slots = [("top", "上衣"), ("bottom", "下身"), ("shoes", "鞋子"), ("hat", "帽子")]
+
+    /// The same look wearing `id` on `slot` (nil: the body's own clothes, or no hat).
+    static func wearing(_ a: GuildInfo.Avatar, _ slot: String, _ id: String?) -> GuildInfo.Avatar {
+        var out = a
+        switch slot {
+        case "top": out.top = id
+        case "bottom": out.bottom = id
+        case "shoes": out.shoes = id
+        default: out.hat = id
+        }
+        return out
+    }
+
+    static func worn(_ a: GuildInfo.Avatar, _ slot: String) -> String? {
+        switch slot {
+        case "top": return a.top
+        case "bottom": return a.bottom
+        case "shoes": return a.shoes
+        default: return a.hat
+        }
+    }
+
+    /// The clothes of `from` put on `to` (a new body or a roll of the dice keeps what was worn).
+    static func dressed(_ to: GuildInfo.Avatar, like from: GuildInfo.Avatar) -> GuildInfo.Avatar {
+        slots.reduce(to) { wearing($0, $1.0, worn(from, $1.0)) }
+    }
+
     /// The approved look of each race's two avatars.
     static func standard(_ race: String, _ sex: String) -> GuildInfo.Avatar {
         let r = ["goblin", "elf", "undead"].contains(race) ? race : "goblin"
@@ -186,6 +228,8 @@ final class GuildAvatarPanel: GuildPanelController, GuildPanelInit {
     private let preview: AvatarPreview
     private var move = "idle"
     private var busy = false
+    /// The clothes owned and the contribution left (nil: an older server, no clothes to choose).
+    private var wardrobe: GuildInfo.Wardrobe?
 
     private static let moves = [("idle", "站著"), ("walk", "走路"), ("sit", "坐著"), ("type", "打字"), ("wave", "揮手"), ("cheer", "歡呼"), ("doze", "打瞌睡")]
 
@@ -194,6 +238,7 @@ final class GuildAvatarPanel: GuildPanelController, GuildPanelInit {
         let a = ctx.info()?.avatar ?? AvatarKit.standard("goblin", "m")
         look = a
         preview = AvatarPreview(a)
+        wardrobe = ctx.info()?.wardrobe
         view = GuildPanel(title: "我的角色", sub: "在公會據點裡代表你", close: ctx.close)
         render()
     }
@@ -255,14 +300,14 @@ final class GuildAvatarPanel: GuildPanelController, GuildPanelInit {
         let handler = FieldHandler { [weak self, weak sex] in
             guard let self, let sex else { return }
             let s = sex.selectedSegment == 0 ? "m" : "f"
-            if s != self.look.sex { self.look = AvatarKit.standard(self.look.race, s); self.changed() }
+            if s != self.look.sex { self.look = AvatarKit.dressed(AvatarKit.standard(self.look.race, s), like: self.look); self.changed() }
         }
         sex.target = handler
         sex.action = #selector(FieldHandler.fire)
         objc_setAssociatedObject(sex, "handler", handler, .OBJC_ASSOCIATION_RETAIN)
         out.append(GuildUI.row([sex, NSView(), GuildUI.button("🎲 全部隨機") { [weak self] in
             guard let self else { return }
-            self.look = AvatarKit.random(self.look.race, self.look.sex)
+            self.look = AvatarKit.dressed(AvatarKit.random(self.look.race, self.look.sex), like: self.look)
             self.changed()
         }]))
 
@@ -298,11 +343,87 @@ final class GuildAvatarPanel: GuildPanelController, GuildPanelInit {
             out.append(FlowView(width: inner, items: items))
         }
 
+        if let wardrobe { out += clothes(wardrobe, inner) }
+
         out.append(GuildUI.separator())
         let save = GuildUI.button("儲存角色", prominent: true) { [weak self] in self?.save() }
         save.isEnabled = !busy
         out.append(save)
         view.show(out)
+    }
+
+    /// 衣服: each slot's clothes as cards, the avatar wearing each; an owned one is put on (or taken off), the others bought.
+    private func clothes(_ w: GuildInfo.Wardrobe, _ inner: CGFloat) -> [NSView] {
+        let art = GuildArt.shared
+        let idle = art.frameIndex(anim: "idle", dir: "front", t: 0)
+        var out: [NSView] = [GuildUI.separator(), GuildUI.row([GuildUI.heading("衣服"), NSView(), GuildUI.heading("貢獻 \(w.points)")])]
+        for (slot, title) in AvatarKit.slots {
+            out.append(GuildUI.heading(title))
+            let worn = AvatarKit.worn(look, slot)
+            var cells: [CatalogCell] = []
+            let plain = AvatarKit.wearing(look, slot, nil)
+            cells.append(CatalogCell(image: art.avatarFrame(plain, idle), pixels: NSSize(width: art.frameW, height: art.frameH), fit: 56, maxScale: 2,
+                                     name: slot == "hat" ? "不戴" : "原本的", sub: "", on: worn == nil) { [weak self] in
+                guard let self else { return }
+                self.look = AvatarKit.wearing(self.look, slot, nil)
+                self.changed()
+            })
+            for o in AvatarKit.outfits where o.slot == slot {
+                let fits = art.canWear(slot, o.id, race: look.race, sex: look.sex)
+                let owned = w.owned.contains(o.id)
+                let sub = !fits ? "這個身形穿不了" : owned ? (worn == o.id ? "穿著" : "") : "用 \(o.price) 貢獻換"
+                cells.append(CatalogCell(image: art.avatarFrame(AvatarKit.wearing(look, slot, o.id), idle), pixels: NSSize(width: art.frameW, height: art.frameH), fit: 56, maxScale: 2,
+                                         name: o.name, sub: sub, on: worn == o.id, shut: !fits || busy) { [weak self] in
+                    guard let self else { return }
+                    if owned {
+                        self.look = AvatarKit.wearing(self.look, slot, o.id)
+                        self.changed()
+                    } else {
+                        self.buy(o)
+                    }
+                })
+            }
+            out.append(GuildAvatarPanel.grid(cells, width: inner))
+        }
+        return out
+    }
+
+    /// Cards in rows as wide as the panel.
+    private static func grid(_ cells: [CatalogCell], width: CGFloat) -> NSView {
+        let box = TopDownView()
+        let size = CatalogCell.size, gap: CGFloat = 4
+        let cols = max(1, Int((width + gap) / (size.width + gap)))
+        for (i, c) in cells.enumerated() {
+            c.frame.origin = NSPoint(x: CGFloat(i % cols) * (size.width + gap), y: CGFloat(i / cols) * (size.height + gap))
+            box.addSubview(c)
+        }
+        let rows = (cells.count + cols - 1) / cols
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.widthAnchor.constraint(equalToConstant: width).isActive = true
+        box.heightAnchor.constraint(equalToConstant: max(1, CGFloat(rows) * (size.height + gap) - gap)).isActive = true
+        return box
+    }
+
+    /// Buys these clothes with contribution (asked first), then puts them on; the server says why not (too little, had it).
+    private func buy(_ o: AvatarKit.Outfit) {
+        guard let w = wardrobe, !busy else { return }
+        let ask = NSAlert()
+        ask.messageText = "用 \(o.price) 貢獻換「\(o.name)」？"
+        ask.informativeText = "你現在有 \(w.points) 貢獻（捐獻給公會累積的）。換了就是你的，之後隨時可以穿。"
+        ask.addButton(withTitle: "換")
+        ask.addButton(withTitle: "取消")
+        guard ask.runModal() == .alertFirstButtonReturn else { return }
+        struct Body: Encodable { let id: String }
+        struct Got: Decodable { let wardrobe: GuildInfo.Wardrobe }
+        busy = true
+        render()
+        ctx.run({
+            defer { self.busy = false; self.render() }
+            let got = try await self.ctx.api.request("POST", "guild/outfits/buy", body: Body(id: o.id), as: Got.self)
+            self.wardrobe = got.wardrobe
+            self.look = AvatarKit.wearing(self.look, o.slot, o.id)
+            self.preview.avatar = self.look
+        }, done: "換到「\(o.name)」了，記得按「儲存角色」穿上。", then: { self.ctx.reload() })
     }
 
     private func save() {

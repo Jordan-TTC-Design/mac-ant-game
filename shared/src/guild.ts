@@ -4,6 +4,7 @@
  * here are the one copy the server, the Mac and the phone use.
  */
 import { z } from "zod";
+import { guildOutfit, OUTFIT_SLOTS } from "./guild-outfits.ts";
 
 // ── Levels (GUILD.md §4.1) ────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,11 @@ export const avatarSchema = z.object({
   skin: z.string().max(20),
   /** The skeleton's eye flame (other avatars: none). */
   flame: z.string().max(20).optional(),
+  /** Clothes worn (shared/src/guild-outfits.ts; none: the body's own clothes, and no hat). */
+  top: z.string().max(40).optional(),
+  bottom: z.string().max(40).optional(),
+  shoes: z.string().max(40).optional(),
+  hat: z.string().max(40).optional(),
 });
 export type Avatar = z.infer<typeof avatarSchema>;
 
@@ -168,6 +174,19 @@ export function avatarProblem(a: Avatar): string | null {
   if (!o.skin.includes(a.skin)) return "這個種族沒有這種膚色。";
   if (!o.mouth.includes(a.mouth)) return "沒有這種嘴巴。";
   if (o.flame.length ? !a.flame || !o.flame.includes(a.flame) : a.flame !== undefined) return "眼火的顏色不對。";
+  for (const slot of OUTFIT_SLOTS) {
+    const id = a[slot];
+    if (id !== undefined && guildOutfit(id)?.slot !== slot) return "沒有這件衣服。";
+  }
+  return null;
+}
+
+/** Why this account may not wear what this avatar has on (null: it may): clothes it does not own. */
+export function avatarOutfitProblem(a: Avatar, owned: readonly string[]): string | null {
+  for (const slot of OUTFIT_SLOTS) {
+    const id = a[slot];
+    if (id !== undefined && !owned.includes(id)) return `還沒有${guildOutfit(id)?.name ?? "這件衣服"}。`;
+  }
   return null;
 }
 
@@ -289,6 +308,9 @@ export interface GuildView {
   /** Which tiles are the hall's floor (drawn by the leader and officers, up to rules.tiles). */
   area: import("./guild-hall.ts").HallArea;
   wall: string;
+  /** Wall segments brushed another style ("x,y" of the floor tile under them), and the members' own places ("x,y" → id). */
+  walls: import("./guild-decor.ts").HallWalls;
+  plots: import("./guild-decor.ts").HallPlots;
   /** The races among the members (each unlocks its decoration set). */
   races: string[];
   /** Contribution given so far, and what the next level still needs (null: at the top). */
@@ -318,6 +340,8 @@ export interface GuildResponse {
   avatar: Avatar;
   /** Whether `avatar` was chosen (false: the default, never saved). */
   avatarChosen: boolean;
+  /** The clothes this account owns and the contribution it has to buy more (shared/src/guild-outfits.ts). */
+  wardrobe: import("./guild-outfits.ts").GuildWardrobe;
 }
 
 /** The names the avatar maker shows for each option id. */

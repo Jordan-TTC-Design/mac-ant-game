@@ -2324,8 +2324,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func tellExpeditions(_ parties: [CampLedger.Expedition]) {
         for e in parties {
             let loot = (e.loot ?? [:]).sorted { $0.value > $1.value }.prefix(3).map { "\(Materials.info($0.key)?.name ?? $0.key) \($0.value)" }.joined(separator: "、")
-            if e.defended == true {
-                say("\(e.by ?? "有人")來打我們的領地，" + (e.won == true ? "守住了！" : "領地被搶走了……") + ((e.fallen ?? 0) > 0 ? "倒下 \(e.fallen!) 隻。" : ""))
+            if e.incoming == true {
+                let minutes = e.arriveAt.flatMap(ServerTime.parse).map { max(1, Int(($0.timeIntervalSinceNow / 60).rounded())) }
+                say("敵軍來襲！\(e.by ?? "有人")派了 \(e.party ?? 0) 隻來打我們的\(e.where ?? "領地")" + (minutes.map { "，大約 \($0) 分鐘後到。" } ?? "。"))
+            } else if e.defended == true {
+                let fled = e.fled.map { f in "\(f.count) 隻撤退" + (f.how == "cell" ? "到\(f.label ?? "最近的領地")。" : f.how == "free" ? "到旁邊的空地。" : "回營地。") } ?? ""
+                let place = e.where ?? "領地"
+                let lost = place == "營地" ? "營地被打敗了……" : "\(place)被搶走了……"
+                say("\(e.by ?? "有人")來打我們的\(place)，" + (e.won == true ? "守住了！" : lost) + ((e.fallen ?? 0) > 0 ? "倒下 \(e.fallen!) 隻。" : "") + (e.won == true ? "" : fled))
+            } else if e.arrived == true, e.kind == "retreat" {
+                say("撤退的隊伍到了" + (e.cell == "settled" ? "，在\(e.against ?? "附近的空地")。" : "，\(e.against ?? "走回營地")。"))
             } else if e.arrived == true, e.kind == "recall" || e.kind == "reroute" {
                 say("撤回的隊伍到了" + (e.cell == "back" ? "營地。" : "\(e.against ?? "領地")。"))
             } else if e.arrived == true {
@@ -2347,10 +2355,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyBooksToCamp() {
         guard campReady, let stores = ledger.bookStores() else { return }
         colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
+        colony.applyBooksAway(ledger.awayGearResidents(), far: ledger.view?.autoGearFar ?? false)
         colony.booksMerchant = ledger.view?.merchant
         colony.booksFocus = ledger.view?.focus
         colony.decorEarned = Set(ledger.view?.decorEarned ?? [])
         colony.booksStage = ledger.view?.stage
+        colony.booksRaceLevel = ledger.view?.raceLevel
         colony.applyBooksDecor(ledger.view?.decor)
         colony.applyBooksRanch(ledger.view?.ranch?.animals.map { ($0.id, $0.kind, MerchantVisitInfo.date($0.bornAt), $0.caught == true, $0.name ?? "") })
         updateCount()
@@ -2601,6 +2611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .unequip(let resident, let slot): q = .init(kind: "unequip"); q.resident = resident; q.slot = slot
         case .gearHold(let stock, let gear, let held): q = .init(kind: "gear-hold"); q.stock = stock; q.gear = gear; q.held = held
         case .autoGear(let on): q = .init(kind: "auto-gear"); q.on = on
+        case .autoGearFar(let on): q = .init(kind: "auto-gear-far"); q.on = on
         case .repair(let resident, let slot, let stock): q = .init(kind: "repair"); q.resident = resident; q.slot = slot; q.stock = stock
         case .food(let food): q = .init(kind: "food"); q.food = food
         case .princessName(let name): q = .init(kind: "princess-name"); q.name = name
@@ -2611,7 +2622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Commands the workshop and the roster send (their answers show in the workshop).
-    private static let gearCommands: Set<String> = ["craft", "repair", "equip", "unequip", "gear-hold", "auto-gear"]
+    private static let gearCommands: Set<String> = ["craft", "repair", "equip", "unequip", "gear-hold", "auto-gear", "auto-gear-far"]
 
     private func flushCommands() async {
         await ledger.sendPending { [weak self] command, result in
@@ -2620,7 +2631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .success(let answer):
                 self.applyBooksToCamp()
                 if Self.gearCommands.contains(command.kind), !answer.message.isEmpty {
-                    let who = answer.resident.flatMap { id in self.colony.ants.first { $0.id == id }?.name }
+                    let who = answer.resident.flatMap { id in self.colony.gearHolder(id).map { ant in self.colony.placeLabel(of: id).map { "\(ant.name)（\($0)）" } ?? ant.name } }
                     let tell = ["craft", "equip"].contains(command.kind) ? who.map { "交給\($0)。" } ?? "" : ""
                     self.workshopWindow?.show(answer.message + tell)
                     if ["craft", "equip"].contains(command.kind), let id = answer.resident { // ring the new owner

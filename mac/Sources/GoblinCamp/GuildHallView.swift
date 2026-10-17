@@ -33,6 +33,10 @@ final class GuildHallView: NSView {
     var floorBase = "oak" { didSet { groundVersion += 1 } }
     var floorTiles: [String: String] = [:] { didSet { groundVersion += 1 } }
     var wall = "stone" { didSet { groundVersion += 1 } }
+    /// The wall brushed a segment at a time: "x,y" of the floor tile a column stands on → its style (the rest are `wall`).
+    var walls: [String: String] = [:] { didSet { if walls != oldValue { groundVersion += 1 } } }
+    /// The floor given to members ("x,y" → their id), shown while decorating.
+    var plots: [String: String] = [:]
     /// The floor and the wall are drawn once into a picture and put on at every frame (a hall has over a thousand tiles; putting
     /// each one on thirty times a second was what made decorating slow). Made again when any of these change.
     private var groundVersion = 0
@@ -52,8 +56,13 @@ final class GuildHallView: NSView {
             if editing {
                 releaseHand()
             } else {
-                selected = nil
+                selected = []
+                box = nil
+                hover = nil
                 brush = nil
+                wallBrush = nil
+                plotting = false
+                stamp = nil
                 shaping = false
                 if furnishDirty { furnish() } // (the pieces moved meanwhile: the ways are worked out once, now)
             }
@@ -61,19 +70,46 @@ final class GuildHallView: NSView {
     }
     /// The pieces changed while decorating: the hall's ways are looked at again afterwards, not at every drag.
     private var furnishDirty = false
-    var selected: String?
+    /// The pieces picked (one clicked, more with ⇧ or a box dragged round them): they move, turn and go together.
+    var selected = Set<String>() { didSet { if selected != oldValue { needsDisplay = true } } }
     /// A floor style to lay tile by tile (nil: picking pieces).
     var brush: String?
-    var onSelect: ((String?) -> Void)?
+    var onSelect: (() -> Void)?
+    /// A piece dragged to (x, y): the editor moves the others picked with it.
     var onMove: ((String, Double, Double) -> Void)?
+    /// Dragging on empty floor draws a box that picks what it touches (the 🪑 tab; elsewhere a drag there looks round).
+    var boxSelects = false
+    private var box: (from: HallPoint, to: HallPoint, base: Set<String>)?
+    /// A press in the hall began (true) or ended (false): what changes meanwhile is one step to undo.
+    var onStroke: ((Bool) -> Void)?
+    var onUndo: (() -> Void)?
+    var onRedo: (() -> Void)?
+    var canUndo: (() -> (undo: Bool, redo: Bool))?
+    /// Where the held piece would go with its middle at (x, its bottom y), and whether it can (for its picture under the pointer).
+    var stampLook: ((String, Double, Double) -> (x: Double, y: Double, ok: Bool))?
+    /// The pointer over the hall while a piece is held (nil: away, or nothing held).
+    private var hover: HallPoint?
     var onPaint: ((Int, Int) -> Void)?
+    /// A piece to put down like a floor brush (nil: picking pieces): one where clicked, and more along a drag, a piece's
+    /// width apart. `onStamp` puts one at (x, its bottom y) and says whether it went down.
+    var stamp: String? { didSet { if stamp != oldValue { lastStamp = nil; needsDisplay = true } } }
+    var onStamp: ((String, Double, Double) -> Bool)?
+    private var lastStamp: HallPoint?
+    /// A wall style to brush a segment at a time (nil: none): a click or a drag on the wall gives `onWall` the floor tile its
+    /// column stands on.
+    var wallBrush: String?
+    var onWall: ((Int, Int) -> Void)?
+    /// Giving floor to members (the 🏠 tab): a click or a drag gives `onPlot` each floor tile, and the places show strongly.
+    var plotting = false
+    var onPlot: ((Int, Int) -> Void)?
     /// Drawing the hall's shape (the leader and officers): a click or a drag gives every tile under it, off the floor too,
     /// once a stroke; a margin shows round the hall to grow into.
     var shaping = false { didSet { if shaping != oldValue { clampCam(); needsDisplay = true } } }
     var onShape: ((Int, Int) -> Void)?
     private var lastShaped: [Int]?
     private static let shapeMargin: CGFloat = 6
-    var onRemove: ((String) -> Void)?
+    /// Delete pressed: the picked pieces go.
+    var onRemove: (() -> Void)?
     var onEscape: (() -> Void)?
     private var carrying: (uid: String, dx: Double, dy: Double)?
     private var painting = false
@@ -262,6 +298,21 @@ final class GuildHallView: NSView {
         if let ground {
             put(ground.image, 0, 0, Int(CGFloat(layout.width) * T / px), Int(CGFloat(layout.height) * T / px))
         }
+        if editing, !plots.isEmpty { // (the members' places: faint, strong while they are being given)
+            var named: [String: HallPoint] = [:]
+            for (key, who) in plots {
+                let at = key.split(separator: ",").compactMap { Int($0) }
+                guard at.count == 2, let colour = plotColour(who) else { continue }
+                g.setFillColor(colour.withAlphaComponent(plotting ? 0.38 : 0.14).cgColor)
+                g.fill(CGRect(x: CGFloat(at[0]) * T, y: CGFloat(at[1]) * T, width: T, height: T))
+                let p = HallPoint(x: Double(at[0]), y: Double(at[1]))
+                if let was = named[who], (was.y, was.x) <= (p.y, p.x) { continue }
+                named[who] = p
+            }
+            plotNames = named.compactMap { who, p in members.first { $0.id == who }.map { ($0.name, p, plotColour(who)!) } }
+        } else {
+            plotNames = []
+        }
         if editing, shaping { // (every tile in view, to see where the floor can go)
             g.setStrokeColor(NSColor(calibratedRed: 1, green: 0.88, blue: 0.4, alpha: 0.38).cgColor)
             g.setLineWidth(1)
@@ -309,15 +360,59 @@ final class GuildHallView: NSView {
         for item in items { item.paint() }
         for paint in overhead { paint() }
         for paint in labels { paint() }
-        if editing, let uid = selected, let d = decor.first(where: { $0.uid == uid }), let k = art.decorPiece(d.kind) {
-            let box = CGRect(x: CGFloat(d.x) * T - CGFloat(k.w) / 2 * px, y: CGFloat(d.y) * T - CGFloat(k.h) * px, width: CGFloat(k.w) * px, height: CGFloat(k.h) * px).insetBy(dx: -2, dy: -2)
+        for (name, p, colour) in plotNames { // (each member's place: their name on its top left tile)
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: max(9, T * 0.32), weight: .semibold), .foregroundColor: NSColor.white]
+            let s = "🏠 \(name)" as NSString
+            let size = s.size(withAttributes: attrs)
+            let box = NSRect(x: CGFloat(p.x) * T + 2, y: CGFloat(p.y) * T + 2, width: size.width + 8, height: size.height + 2)
+            colour.withAlphaComponent(plotting ? 0.9 : 0.6).setFill()
+            NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3).fill()
+            s.draw(at: NSPoint(x: box.minX + 4, y: box.minY + 1), withAttributes: attrs)
+        }
+        if editing, !selected.isEmpty {
             g.setStrokeColor(NSColor(calibratedRed: 0.91, green: 0.77, blue: 0.28, alpha: 1).cgColor)
             g.setLineWidth(2)
             g.setLineDash(phase: CGFloat((t * 12).truncatingRemainder(dividingBy: 10)), lengths: [6, 4]) // (not t * 12 itself: t is seconds since 1970, and the dasher counts its way to the phase, which took about a second per stroke)
-            g.stroke(box)
+            for d in decor where selected.contains(d.uid) {
+                guard let k = art.decorPiece(d.kind) else { continue }
+                g.stroke(CGRect(x: CGFloat(d.x) * T - CGFloat(k.w) / 2 * px, y: CGFloat(d.y) * T - CGFloat(k.h) * px, width: CGFloat(k.w) * px, height: CGFloat(k.h) * px).insetBy(dx: -2, dy: -2))
+            }
             g.setLineDash(phase: 0, lengths: [])
         }
+        if editing, let b = box { // (the box being dragged)
+            let r = CGRect(x: CGFloat(min(b.from.x, b.to.x)) * T, y: CGFloat(min(b.from.y, b.to.y)) * T, width: CGFloat(abs(b.to.x - b.from.x)) * T, height: CGFloat(abs(b.to.y - b.from.y)) * T)
+            g.setFillColor(NSColor(calibratedRed: 1, green: 0.88, blue: 0.4, alpha: 0.12).cgColor)
+            g.fill(r)
+            g.setStrokeColor(NSColor(calibratedRed: 1, green: 0.88, blue: 0.4, alpha: 0.9).cgColor)
+            g.setLineWidth(1)
+            g.stroke(r)
+        }
+        // the held piece under the pointer: green where it can go, red where it cannot
+        if editing, let kind = stamp, let at = hover, let k = art.decorPiece(kind), let img = art.frame(of: k, at: t),
+           let look = stampLook?(kind, at.x, at.y + Double(k.h) / 32) {
+            let r = CGRect(x: CGFloat(look.x) * T - CGFloat(k.w) / 2 * px, y: CGFloat(look.y) * T - CGFloat(k.h) * px, width: CGFloat(k.w) * px, height: CGFloat(k.h) * px)
+            g.saveGState()
+            g.setAlpha(0.6)
+            put(img, r.minX, r.minY, k.w, k.h)
+            g.restoreGState()
+            let tint = look.ok ? NSColor(calibratedRed: 0.4, green: 0.9, blue: 0.45, alpha: 1) : NSColor(calibratedRed: 1, green: 0.4, blue: 0.35, alpha: 1)
+            g.setFillColor(tint.withAlphaComponent(0.18).cgColor)
+            g.fill(r.insetBy(dx: -2, dy: -2))
+            g.setStrokeColor(tint.cgColor)
+            g.setLineWidth(1.5)
+            g.stroke(r.insetBy(dx: -2, dy: -2))
+        }
         g.restoreGState()
+    }
+
+    /// The members' places to label this frame: a name, where, and the member's colour.
+    private var plotNames: [(String, HallPoint, NSColor)] = []
+
+    /// A colour for each member (by when they joined), the same in the 🏠 tab's cards.
+    static let plotColours: [NSColor] = [(0.95, 0.55, 0.25), (0.35, 0.7, 0.95), (0.55, 0.85, 0.35), (0.9, 0.4, 0.7), (0.95, 0.85, 0.3), (0.6, 0.5, 0.95), (0.3, 0.85, 0.75), (0.95, 0.4, 0.4)]
+        .map { NSColor(calibratedRed: $0.0, green: $0.1, blue: $0.2, alpha: 1) }
+    func plotColour(_ who: String) -> NSColor? {
+        members.firstIndex { $0.id == who }.map { GuildHallView.plotColours[$0 % GuildHallView.plotColours.count] }
     }
 
     /// The floor and the wall of the whole hall as one picture, `tile` points to a tile, `scale` pixels to a point.
@@ -339,10 +434,9 @@ final class GuildHallView: NSView {
         }
         // a wall over every top edge of the floor, then the floor (over the top of a wall that has floor right behind it);
         // off the floor the picture is clear (the darkened floor round the hall shows through)
-        if let w = art.wallPiece(wall) {
-            for t in layout.floorTiles where !layout.floorAt(Int(t.x), Int(t.y) - 1) {
-                put(w, CGFloat(t.x) * T, (CGFloat(t.y) - CGFloat(w.height) / CGFloat(art.tile)) * T, w.width, w.height)
-            }
+        for t in layout.floorTiles where !layout.floorAt(Int(t.x), Int(t.y) - 1) {
+            guard let w = art.wallPiece(walls["\(Int(t.x)),\(Int(t.y))"] ?? wall) ?? art.wallPiece(wall) else { continue }
+            put(w, CGFloat(t.x) * T, (CGFloat(t.y) - CGFloat(w.height) / CGFloat(art.tile)) * T, w.width, w.height)
         }
         for t in layout.floorTiles {
             if let tile = art.floorTile(floorTiles["\(Int(t.x)),\(Int(t.y))"] ?? floorBase) { put(tile, CGFloat(t.x) * T, CGFloat(t.y) * T, art.tile, art.tile) }
@@ -388,7 +482,9 @@ final class GuildHallView: NSView {
         carrying = nil
         painting = false
         guard editing else { return }
+        onStroke?(true)
         let at = tiles(at: p)
+        let shift = event.modifierFlags.contains(.shift)
         if shaping {
             painting = true
             lastShaped = nil
@@ -397,11 +493,44 @@ final class GuildHallView: NSView {
         } else if brush != nil {
             painting = true
             paint(at)
+        } else if wallBrush != nil {
+            painting = true
+            paintWall(at)
+        } else if plotting {
+            painting = true
+            paintPlot(at)
+        } else if stamp != nil {
+            painting = true
+            lastStamp = nil
+            stampAt(at)
         } else if let d = pieceAt(at) {
-            selected = d.uid
-            onSelect?(d.uid)
+            if shift { // (⇧: in or out of the pick, nothing carried)
+                if selected.contains(d.uid) { selected.remove(d.uid) } else { selected.insert(d.uid) }
+                onSelect?()
+                return
+            }
+            if !selected.contains(d.uid) { selected = [d.uid] } // (one of several picked: they all go with it)
+            onSelect?()
             carrying = (d.uid, d.x - at.x, d.y - at.y)
+        } else if boxSelects {
+            box = (at, at, shift ? selected : [])
+            if !shift, !selected.isEmpty { // (a click on nothing puts the pick down)
+                selected = []
+                onSelect?()
+            }
         }
+    }
+
+    /// The pieces whose pictures touch the box from a to b (tiles).
+    private func pieces(in a: HallPoint, _ b: HallPoint) -> Set<String> {
+        let x0 = min(a.x, b.x), x1 = max(a.x, b.x), y0 = min(a.y, b.y), y1 = max(a.y, b.y)
+        var hit = Set<String>()
+        for d in decor {
+            guard let k = art.decorPiece(d.kind) else { continue }
+            let halfW = Double(k.w) / 32, h = Double(k.h) / 16
+            if d.x + halfW >= x0, d.x - halfW <= x1, d.y >= y0, d.y - h <= y1 { hit.insert(d.uid) }
+        }
+        return hit
     }
 
     /// The piece standing at this point of the hall (the one in front, where several overlap).
@@ -443,6 +572,27 @@ final class GuildHallView: NSView {
         needsDisplay = true
     }
 
+    /// Puts the stamp's piece with its middle under the pointer, if the last one is a piece's width (a tile at least) away.
+    private func stampAt(_ p: HallPoint) {
+        guard let kind = stamp, let piece = art.decorPiece(kind) else { return }
+        let w = max(1, Double(piece.w) / 16), h = Double(piece.h) / 16
+        if let last = lastStamp, abs(p.x - last.x) < w, abs(p.y - last.y) < max(1, h * 0.6) { return }
+        if onStamp?(kind, p.x, p.y + h / 2) == true { lastStamp = p }
+    }
+
+    /// The wall column under the point (its rows, or the floor tile it stands on): the floor tile it stands on.
+    private func paintWall(_ p: HallPoint) {
+        let x = Int(floor(p.x)), y = Int(floor(p.y))
+        guard let r = (y...y + Int(guildWallRows)).first(where: { layout.wallAt(x, $0) }) else { return }
+        onWall?(x, r)
+    }
+
+    private func paintPlot(_ p: HallPoint) {
+        let x = Int(floor(p.x)), y = Int(floor(p.y))
+        guard layout.floorAt(x, y) else { return }
+        onPlot?(x, y)
+    }
+
     private func paint(_ p: HallPoint) {
         let x = Int(floor(p.x)), y = Int(floor(p.y))
         guard layout.floorAt(x, y) else { return }
@@ -457,6 +607,15 @@ final class GuildHallView: NSView {
                 let was = lastShaped
                 shape(at)
                 if lastShaped != was { followEdge(p) }
+            } else if wallBrush != nil {
+                paintWall(at)
+            } else if plotting {
+                paintPlot(at)
+            } else if stamp != nil {
+                hover = at
+                let was = lastStamp
+                stampAt(at)
+                if lastStamp != was { followEdge(p) }
             } else {
                 paint(at)
             }
@@ -465,6 +624,18 @@ final class GuildHallView: NSView {
         if editing, let c = carrying {
             let at = tiles(at: convert(event.locationInWindow, from: nil))
             onMove?(c.uid, at.x + c.dx, at.y + c.dy)
+            return
+        }
+        if editing, var b = box {
+            let p = convert(event.locationInWindow, from: nil)
+            b.to = tiles(at: p)
+            box = b
+            let now = b.base.union(pieces(in: b.from, b.to))
+            if now != selected {
+                selected = now
+                onSelect?()
+            }
+            followEdge(p)
             return
         }
         guard var d = drag else { return }
@@ -479,16 +650,14 @@ final class GuildHallView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         defer {
+            if editing, drag != nil { onStroke?(false) }
             drag = nil
             carrying = nil
             painting = false
+            box = nil
         }
         guard let d = drag, !d.panning else { return }
-        if editing {
-            // (a click on nothing puts the selection down)
-            if brush == nil, !shaping, carrying == nil, selected != nil { selected = nil; onSelect?(nil) }
-            return
-        }
+        if editing { return }
         walk(to: tiles(at: convert(event.locationInWindow, from: nil)))
     }
 
@@ -496,7 +665,7 @@ final class GuildHallView: NSView {
 
     override func keyDown(with event: NSEvent) {
         if editing {
-            if event.keyCode == 51 || event.keyCode == 117, let uid = selected { onRemove?(uid) } // delete
+            if event.keyCode == 51 || event.keyCode == 117, !selected.isEmpty { onRemove?() } // delete
             else if event.keyCode == 53 { onEscape?() }
             else if let pad = GuildHallView.pads[event.keyCode] { // (the arrows and W A S D look round)
                 cam.x += pad == "left" ? -2 : pad == "right" ? 2 : 0
@@ -520,6 +689,28 @@ final class GuildHallView: NSView {
         default: super.keyDown(with: event)
         }
     }
+
+    // ⌘Z, ⇧⌘Z and ⌘A come from the 編輯 menu (AppDelegate) down the responder chain
+    @objc func undo(_ sender: Any?) { if editing { onUndo?() } }
+    @objc func redo(_ sender: Any?) { if editing { onRedo?() } }
+    override func selectAll(_ sender: Any?) {
+        guard editing, boxSelects else { return }
+        selected = Set(decor.map(\.uid))
+        onSelect?()
+    }
+
+    /// The pointer is followed while a piece is held, to show it where it would go.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        hover = editing && stamp != nil ? tiles(at: convert(event.locationInWindow, from: nil)) : nil
+    }
+
+    override func mouseExited(with event: NSEvent) { hover = nil }
 
     override func keyUp(with event: NSEvent) {
         if let pad = GuildHallView.pads[event.keyCode] { held.remove(pad) } else { super.keyUp(with: event) }
@@ -653,4 +844,21 @@ final class GuildHallView: NSView {
         sentKey = ""
         send?(["type": "guild.release"])
     }
+}
+
+extension GuildHallView: NSMenuItemValidation {
+    /// 還原 and 重做 light up only while decorating with something to undo or redo (else they go on down the chain, to a text box).
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case Selector(("undo:")): return editing && canUndo?().undo == true
+        case Selector(("redo:")): return editing && canUndo?().redo == true
+        case #selector(selectAll(_:)): return editing && boxSelects
+        default: return true
+        }
+    }
+}
+
+extension HallLayout {
+    /// Whether floor tile (x, y) has wall over it: it is floor and the tile above is not (shared/src/guild-decor.ts hallWallAt).
+    func wallAt(_ x: Int, _ y: Int) -> Bool { floorAt(x, y) && !floorAt(x, y - 1) }
 }

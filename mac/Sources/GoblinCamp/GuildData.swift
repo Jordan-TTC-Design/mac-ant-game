@@ -14,6 +14,11 @@ struct GuildInfo: Decodable {
         var hairColor: String
         var skin: String
         var flame: String?
+        /// The clothes worn (shared/src/guild-outfits.ts; nil: the body's own, and no hat). Older servers leave them out.
+        var top: String?
+        var bottom: String?
+        var shoes: String?
+        var hat: String?
     }
 
     struct Member: Decodable {
@@ -56,6 +61,8 @@ struct GuildInfo: Decodable {
         private enum CodingKeys: String, CodingKey {
             case id, name, badge, level, rules, members, decor, decorVersion, floor, area, wall, races, points, toNext, invited
             case seasonList = "seasons"
+            case wallList = "walls"
+            case plotList = "plots"
         }
         let id: String
         let name: String
@@ -76,6 +83,12 @@ struct GuildInfo: Decodable {
         /// (An older server does not send it.)
         let seasonList: [Season]?
         var seasons: [Season] { seasonList ?? [] }
+        /// The wall brushed a segment at a time ("x,y" of the floor tile the column stands on → style; the rest are `wall`), and
+        /// the floor given to members ("x,y" → their id). Older servers leave them out (nil: and nothing is sent back).
+        let wallList: [String: String]?
+        let plotList: [String: String]?
+        var walls: [String: String] { wallList ?? [:] }
+        var plots: [String: String] { plotList ?? [:] }
         /// The hall's floor: as drawn, or (a server from before shapes) the rectangle of its size.
         var hallArea: [String] {
             if let area { return area }
@@ -126,6 +139,14 @@ struct GuildInfo: Decodable {
     let waitUntil: String?
     let avatar: Avatar
     let avatarChosen: Bool
+    /// The clothes this account has and the contribution it has left to spend (shared/src/guild-outfits.ts); older servers leave it out.
+    let wardrobe: Wardrobe?
+
+    struct Wardrobe: Decodable {
+        let owned: [String]
+        let points: Int
+        let spent: Int
+    }
 }
 
 /// One thing said in the hall (shared/src/guild.ts `GuildChatLine`).

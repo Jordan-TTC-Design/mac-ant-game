@@ -7,12 +7,17 @@ import {
   AVATAR_LABELS,
   avatarOptions,
   defaultAvatar,
+  GUILD_OUTFITS,
+  OUTFIT_SLOTS,
+  OUTFIT_SLOT_NAMES,
   randomAvatar,
+  type GuildOutfit,
+  type OutfitSlot,
   type Avatar,
   type AvatarSex,
   type GuildResponse,
 } from "@goblincamp/shared";
-import type { AvatarManifest } from "~/composables/useAvatarArt";
+import { outfitFits, type AvatarManifest } from "~/composables/useAvatarArt";
 import { ApiError, api } from "~/utils/api";
 
 // 捏臉 (GUILD.md §2): the guild avatar, of the camp's race. Each part can be picked, or rolled at random (all of them, or
@@ -27,6 +32,8 @@ const message = ref("");
 const preview = ref<HTMLCanvasElement>();
 const anim = ref("idle");
 let manifest: AvatarManifest | null = null;
+/** Bumped once the art is in (it says which clothes each body has pictures of). */
+const artReady = ref(0);
 /** The last look that was ready (shown while a new one is being put together). */
 let shown: ImageBitmap | null = null;
 let raf = 0;
@@ -43,6 +50,7 @@ onMounted(async () => {
   void live.loadGuild();
   try {
     manifest = await art.load();
+    artReady.value++;
   } catch {
     message.value = "角色的圖還沒準備好。";
   }
@@ -110,11 +118,42 @@ const parts = computed<{ key: Part; title: string; list: readonly string[]; colo
 function set(part: Part, value: string) {
   look.value = { ...look.value!, [part]: value } as Avatar;
 }
+/** The clothes worn now, kept through a new face or body. */
+const worn = (a: Avatar) => Object.fromEntries(OUTFIT_SLOTS.filter((s) => a[s] !== undefined).map((s) => [s, a[s]]));
 function setSex(sex: AvatarSex) {
-  if (look.value?.sex !== sex) look.value = defaultAvatar(look.value!.race, sex);
+  if (look.value?.sex !== sex) look.value = { ...defaultAvatar(look.value!.race, sex), ...worn(look.value!) };
 }
 function rollAll() {
-  look.value = randomAvatar(look.value!.race, look.value!.sex);
+  look.value = { ...randomAvatar(look.value!.race, look.value!.sex), ...worn(look.value!) };
+}
+
+// the clothes (GUILD.md §2): bought with one's own contribution, worn once owned (saved with the rest of the look)
+const wardrobe = computed(() => g.value?.wardrobe ?? { owned: [], points: 0, spent: 0 });
+const outfitSlots = computed(() => OUTFIT_SLOTS.map((slot) => ({ slot, title: OUTFIT_SLOT_NAMES[slot], list: GUILD_OUTFITS.filter((o) => o.slot === slot) })));
+/** Whether this body has a picture of this piece (unknown until the art is in: then it counts as yes). */
+function fits(o: GuildOutfit): boolean {
+  void artReady.value;
+  return !manifest || !look.value || outfitFits(manifest, look.value, o.slot, o.id);
+}
+function wear(slot: OutfitSlot, id: string | undefined) {
+  const next = { ...look.value! } as Avatar;
+  if (id === undefined) delete next[slot];
+  else next[slot] = id;
+  look.value = next;
+}
+async function buy(o: GuildOutfit) {
+  busy.value = true;
+  message.value = "";
+  try {
+    const res = await api<{ wardrobe: GuildResponse["wardrobe"] }>("POST", "guild/outfits/buy", { id: o.id });
+    if (live.state.guild) live.state.guild = { ...live.state.guild, wardrobe: res.wardrobe };
+    wear(o.slot, o.id);
+    message.value = `買了${o.name}！記得按「儲存角色」穿上。`;
+  } catch (e) {
+    message.value = e instanceof ApiError ? e.message : String(e);
+  } finally {
+    busy.value = false;
+  }
 }
 function rollOne(part: Part) {
   const a = look.value!;
@@ -182,6 +221,48 @@ const sexNames = computed(() => (look.value?.race === "undead" ? { m: "骨系", 
         </div>
       </section>
 
+      <section class="panel part">
+        <div class="part-head">
+          <h2>衣服</h2>
+          <span class="points">貢獻 {{ wardrobe.points }}</span>
+        </div>
+        <p class="dim">捐東西給公會會累積自己的貢獻，可以拿來換衣服；換到的永遠是你的。</p>
+        <div v-for="s in outfitSlots" :key="s.slot" class="slot">
+          <h3>{{ s.title }}</h3>
+          <div class="choices">
+            <button type="button" class="choice" :class="{ on: look[s.slot] === undefined }" @click="wear(s.slot, undefined)">
+              <span>{{ s.slot === "hat" ? "不戴" : "原本的" }}</span>
+            </button>
+            <template v-for="o in s.list" :key="o.id">
+              <button
+                v-if="wardrobe.owned.includes(o.id)"
+                type="button"
+                class="choice"
+                :class="{ on: look[s.slot] === o.id, shut: !fits(o) }"
+                :disabled="!fits(o)"
+                :title="fits(o) ? o.name : '這個身形穿不了'"
+                @click="wear(s.slot, o.id)"
+              >
+                <span>{{ o.name }}</span>
+                <small v-if="!fits(o)">這個身形穿不了</small>
+              </button>
+              <button
+                v-else
+                type="button"
+                class="choice locked"
+                :class="{ shut: !fits(o) || wardrobe.points < o.price }"
+                :disabled="busy || !fits(o)"
+                :title="fits(o) ? `用 ${o.price} 貢獻換${o.name}` : '這個身形穿不了'"
+                @click="buy(o)"
+              >
+                <span>{{ o.name }}</span>
+                <small>{{ fits(o) ? `🔒 ${o.price}` : "這個身形穿不了" }}</small>
+              </button>
+            </template>
+          </div>
+        </div>
+      </section>
+
       <p v-if="message" class="note">{{ message }}</p>
       <button class="btn primary save" :disabled="busy" @click="save">儲存角色</button>
     </template>
@@ -204,4 +285,10 @@ h2 { margin: 0 0 6px; font-size: 16px; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .note { color: #fff3c4; margin: 6px 2px; font-weight: 600; }
 .save { width: 100%; margin: 6px 0 20px; }
+.points { font-weight: 700; font-size: 14px; }
+.dim { margin: 0 0 8px; color: #666; font-size: 12px; }
+.slot h3 { margin: 8px 0 4px; font-size: 13px; }
+.choice.shut { opacity: 0.45; }
+.choice.locked { background: #efe6d2; }
+.choice small { font-size: 11px; color: #777; }
 </style>

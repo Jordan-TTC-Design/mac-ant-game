@@ -42,7 +42,7 @@ import { focusView, decorEarned,
 } from "@goblincamp/shared/camp";
 import { hashString, raceLevel, randomFrom } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
-import { campEvents, campResidents, camps, expeditions, worldCells, worldPlayers } from "../db/schema.ts";
+import { campEvents, campResidents, camps, expeditions, users, worldCells, worldPlayers } from "../db/schema.ts";
 import { resolveRaid, type RaidOutcome } from "./raids.ts";
 import { merchantNow } from "./merchant.ts";
 
@@ -114,7 +114,10 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const store: GearItem[] = camp.armory.map((i) => ({ ...i }));
   const wearers = new Map<number, Wearer>(rows.map((r) => [r.id, { id: r.id, breed: r.breed, gear: structuredClone(r.gear ?? {}) as Wearer["gear"] }]));
   const gearBefore = new Map<number, string>(rows.map((r) => [r.id, JSON.stringify(r.gear ?? {})]));
-  const settleGear = () => {
+  // those away the handing out reaches too (the towns, every held cell with the far switch): read once there is something to hand out
+  let away: Wearer[] | null = null;
+  const awayBefore = new Map<number, string>();
+  const settleGear = async () => {
     for (const r of population.residents) {
       if (r.diedAt === null && !wearers.has(r.id)) wearers.set(r.id, { id: r.id, breed: r.breed, gear: {} });
       const w = wearers.get(r.id);
@@ -123,7 +126,15 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
         wearers.delete(r.id);
       }
     }
-    redistribute(camp.race, [...wearers.values()], store, camp.autoGear);
+    if (!away && camp.autoGear && store.some((i) => !i.held)) {
+      const places = await gearPlaces(tx, camp.userId);
+      const rows = Object.keys(places).some((p) => inGearPool(p, places, camp.autoGearFar))
+        ? await tx.select().from(campResidents).where(and(eq(campResidents.userId, camp.userId), sql`${campResidents.place} like 'cell:%'`, isNull(campResidents.diedAt)))
+        : [];
+      away = rows.filter((r) => inGearPool(r.place, places, camp.autoGearFar)).map((r) => ({ id: r.id, breed: r.breed, gear: structuredClone(r.gear ?? {}) as Wearer["gear"] }));
+      for (const r of rows) awayBefore.set(r.id, JSON.stringify(r.gear ?? {}));
+    }
+    redistribute(camp.race, [...wearers.values(), ...(away ?? [])], store, camp.autoGear);
   };
 
   const moveTo = (time: number) => {
@@ -133,7 +144,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   };
   for (let t = raidTime(camp.race, camp.seed, startedAt, nextRaid); t <= now.getTime(); t = raidTime(camp.race, camp.seed, startedAt, nextRaid)) {
     moveTo(t);
-    settleGear();
+    await settleGear();
     const alive = aliveAt(population);
     // (聖光模式: no monster comes; the raid's time passes by)
     const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length);
@@ -160,12 +171,12 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
       for (const [id, n] of Object.entries(outcome.loot)) materials[id] = (materials[id] ?? 0) + n;
       for (const [id, n] of Object.entries(outcome.killed)) kills[id] = (kills[id] ?? 0) + n;
       raids.push({ ...outcome, broken } as RaidOutcome);
-      settleGear();
+      await settleGear();
     }
     nextRaid++;
   }
   moveTo(now.getTime());
-  settleGear();
+  await settleGear();
 
   // what the sites made meanwhile (by the hour, with those at home then); a site built or raised on the way splits it
   const workers = (at: number) => population.residents.filter((r) => r.bornAt <= at && (r.diedAt === null || r.diedAt > at)).length;
@@ -202,10 +213,10 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   for (const [at, ids] of byTime) {
     await tx.update(campResidents).set({ diedAt: new Date(at), gear: null }).where(and(eq(campResidents.userId, camp.userId), inArray(campResidents.id, ids)));
   }
-  // what the living wear now, where it changed
-  for (const w of wearers.values()) {
+  // what the living wear now, where it changed (at home, and away)
+  for (const w of [...wearers.values(), ...((away ?? []) as Wearer[])]) {
     const now = JSON.stringify(w.gear);
-    if (now === (gearBefore.get(w.id) ?? "{}")) continue;
+    if (now === (gearBefore.get(w.id) ?? awayBefore.get(w.id) ?? "{}")) continue;
     await tx.update(campResidents).set({ gear: Object.keys(w.gear).length ? (w.gear as Record<string, GearItem>) : null }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, w.id)));
   }
   const armoryChanged = JSON.stringify(store) !== JSON.stringify(camp.armory);
@@ -244,6 +255,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
 
 export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
   const rows = await tx.select().from(campResidents).where(and(eq(campResidents.userId, camp.userId), isNull(campResidents.diedAt))).orderBy(campResidents.id);
+  const level = await campRaceLevel(tx, camp.userId);
   return {
     race: camp.race,
     seed: camp.seed,
@@ -258,6 +270,8 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     larder: camp.larder,
     armory: camp.armory,
     autoGear: camp.autoGear,
+    autoGearFar: camp.autoGearFar,
+    places: await gearPlaces(tx, camp.userId),
     questsDone: Object.keys(camp.quests ?? {}),
     boosts: camp.boosts,
     foodCooldowns: camp.foodCooldowns,
@@ -269,9 +283,10 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       since: camp.sanctuarySince?.toISOString() ?? null,
       canTurnOnAt: camp.sanctuaryOffAt ? new Date(camp.sanctuaryOffAt.getTime() + SANCTUARY_REST_HOURS * 3_600_000).toISOString() : null,
     },
-    production: productionView(camp, rows.filter((r) => r.place === "home").length, await campRaceLevel(tx, camp.userId)),
+    production: productionView(camp, rows.filter((r) => r.place === "home").length, level),
     merchant: await merchantNow(tx, camp, camp.advancedTo), // (the camp was just advanced to now)
     decor: camp.decor.filter((d) => decorKind(d.kind)), // (kinds taken out of the catalogue since are gone)
+    raceLevel: level,
     ranch: { animals: camp.ranch?.animals ?? [] },
     focus: focusView(camp.focus, camp.advancedTo),
     decorEarned: [...decorEarned(camp.quests ?? {}, camp.race)],
@@ -290,7 +305,41 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
   };
 }
 
-/** The camp's race level in the big world (1 for a camp that never opened it): it gives more plots for sites. */
+/**
+ * The places away from home where residents can be handed gear, as the workshop names them: the camp's held cells (bar
+ * the home cell, whose residents live at "home"), numbered in the order they were taken, and the cells it guards for
+ * friends. On the road (`exp:`, `bivouac:`) nobody can.
+ */
+export async function gearPlaces(tx: Tx, userId: string): Promise<Record<string, { label: string; town: boolean }>> {
+  const [player] = await tx.select({ homeCell: worldPlayers.homeCell }).from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  if (!player) return {};
+  const held = await tx
+    .select({ cell: worldCells.cell, town: worldCells.town })
+    .from(worldCells)
+    .where(eq(worldCells.owner, userId))
+    .orderBy(worldCells.heldSince, worldCells.cell);
+  const out: Record<string, { label: string; town: boolean }> = {};
+  held
+    .filter((c) => c.cell !== player.homeCell)
+    .forEach((c, i) => (out[`cell:${c.cell}`] = { label: `${c.town ? "城鎮" : "領地"} ${i + 1}`, town: c.town }));
+  const guarding = await tx
+    .selectDistinct({ place: campResidents.place, holder: users.displayName })
+    .from(campResidents)
+    .leftJoin(worldCells, sql`${worldCells.cell} = substring(${campResidents.place} from 7)`)
+    .leftJoin(users, eq(users.id, worldCells.owner))
+    .where(and(eq(campResidents.userId, userId), sql`${campResidents.place} like 'guard:%'`, isNull(campResidents.diedAt)));
+  for (const g of guarding) out[g.place] = { label: `幫${g.holder ?? "朋友"}守`, town: false };
+  return out;
+}
+
+/** Whether the handing out reaches residents at `place`: home and the towns always, the other held cells with the far switch on. */
+export function inGearPool(place: string, places: Record<string, { town: boolean }>, far: boolean): boolean {
+  if (place === "home") return true;
+  if (!place.startsWith("cell:") || !places[place]) return false;
+  return far || places[place].town;
+}
+
+/** The camp's race level in the big world (1 for a camp that never opened it): it gives more plots for sites and more decoration room. */
 export async function campRaceLevel(tx: Tx, userId: string): Promise<number> {
   const [player] = await tx.select({ xp: worldPlayers.xp }).from(worldPlayers).where(eq(worldPlayers.userId, userId));
   return raceLevel(player?.xp ?? 0);

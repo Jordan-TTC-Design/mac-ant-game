@@ -242,6 +242,8 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
             hall.decor = g.decor
             hall.floorBase = g.floor.base
             hall.floorTiles = g.floor.tiles
+            hall.walls = g.walls
+            hall.plots = g.plots
         }
         hall.wall = g.wall
         // (the settings button is the leader's and officers')
@@ -418,7 +420,8 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         return String(format: "%.1f ms a step (hall draw included), %d pieces, %d members", each, hall.decor.count, info?.guild?.members.count ?? 0)
     }
 
-    /// Clicks the first card of the open decorating panel the way a mouse would (a test: says what changed).
+    /// Clicks the first card of the open decorating panel the way a mouse would, then drags across the hall's floor with it in
+    /// hand (a test: says what changed).
     func debugClickFirstCard() -> String {
         let alive = "controller alive: \(controller != nil || editor != nil)"
         if controller != nil { return alive }
@@ -427,14 +430,23 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         func cards(_ v: NSView) -> [CatalogCell] { (v as? CatalogCell).map { [$0] } ?? v.subviews.flatMap(cards) }
         guard let cell = cards(panel).first else { return "no card" }
         let before = hall.decor.count
-        let p = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+        func send(_ type: NSEvent.EventType, _ p: NSPoint) {
             if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
                 window.sendEvent(e)
             }
         }
+        let p = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
+        send(.leftMouseDown, p)
+        send(.leftMouseUp, p)
         let hit = window.contentView?.hitTest(paneView.superview?.convert(p, from: nil) ?? p)
-        return "\(alive); decor \(before) -> \(hall.decor.count); hit view: \(hit.map { String(describing: type(of: $0)) } ?? "nil")"
+        let picked = hall.stamp ?? "nothing"
+        // (then a drag across the floor, a row of tiles to the right of the middle one)
+        let floor = hall.layout.floorTiles, mid = floor[floor.count / 2]
+        let at = { (dx: Double) in self.hall.convert(self.hall.debugViewPoint(x: mid.x + 0.5 + dx, y: mid.y + 0.5), to: nil) }
+        send(.leftMouseDown, at(0))
+        for k in 1...12 { send(.leftMouseDragged, at(Double(k) * 0.5)) }
+        send(.leftMouseUp, at(6))
+        return "\(alive); picked \(picked); decor \(before) -> \(hall.decor.count) after a 6-tile drag; hit view: \(hit.map { String(describing: type(of: $0)) } ?? "nil")"
     }
 
     // MARK: Panels on the page
@@ -487,6 +499,8 @@ final class GuildPane: NSObject, MainPane, NSTextFieldDelegate {
         hall.decor = g.decor
         hall.floorBase = g.floor.base
         hall.floorTiles = g.floor.tiles
+        hall.walls = g.walls
+        hall.plots = g.plots
     }
 
     /// Opens one of the panels, or closes it when it is the one open.

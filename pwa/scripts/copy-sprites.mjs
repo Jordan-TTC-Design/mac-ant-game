@@ -1,4 +1,4 @@
-// Copies the Mac app's art (every race's sprite sheets, the camp looks, the decorations, the big world's foes) and writes the names the phone shows
+// Copies the Mac app's art (every race's sprite sheets, the camp looks, the decorations, the big world's foes, the gear icons) and writes the names the phone shows
 // (breeds, materials), so the phone shows the very same camp. public/sprites and public/camps are not in git.
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -43,6 +43,11 @@ for (const file of readdirSync(join(resources, "Decor"))) if (file.endsWith(".pn
 // the big world's foes (mac/tools/make_world_foes.py): one sheet and where each is in it
 mkdirSync(worldArt, { recursive: true });
 for (const file of ["foes.png", "foes.json"]) copyFileSync(join(resources, "World", file), join(worldArt, file));
+
+// the workshop's gear icons (mac/tools/make_gear_icons.py): one sheet and where each piece is in it
+const gearArt = join(here, "../public/gear");
+mkdirSync(gearArt, { recursive: true });
+for (const file of ["icons.png", "icons.json"]) copyFileSync(join(resources, "Gear", file), join(gearArt, file));
 
 // the ground, trees and odds and ends of the camp's scene (the Mac's Terrain pieces, by biome)
 const terrain = join(here, "../public/terrain");

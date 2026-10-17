@@ -122,6 +122,8 @@ export interface CellView {
   garrison: number;
   nest: "none" | "building" | "ready";
   town: boolean;
+  /** Its holder's home camp stands here (the map draws the camp with the race's flag). */
+  home?: boolean;
   /** A real place standing in it (holdings.ts). */
   landmark?: Landmark | null;
   /** Friends' residents guarding it. */
@@ -141,8 +143,11 @@ export interface CellView {
 
 export interface ExpeditionSummary {
   id: string;
-  /** recall: walking back from a cell (WORLD.md §24); reroute: those of a recall who found no room, walking on to a cell with room. */
-  kind: "attack" | "move" | "guard" | "recall" | "reroute";
+  /**
+   * recall: walking back from a cell (WORLD.md §24); reroute: those of a recall who found no room, walking on to a cell with room;
+   * retreat: those of a cell that was overrun, falling back to a free cell beside it to settle it.
+   */
+  kind: "attack" | "move" | "guard" | "recall" | "reroute" | "retreat";
   from: string;
   to: string;
   party: number;
@@ -163,9 +168,31 @@ export interface ExpeditionSummary {
     killed: number;
     /** Damage done to a great monster. */
     damage?: number;
+    /**
+     * Where it was fought when it was a camp's cell: its home camp, or one of its towns or held cells, named as the holder's
+     * workshop names them (城鎮 2, 領地 3); and the real place standing there. Older reports leave it out.
+     */
+    where?: { kind: "home" | "town" | "cell"; label: string; landmark?: string };
+    /** A cell taken: where those of its garrison still standing fell back to (as the holder names it). */
+    fled?: { count: number; how: "cell" | "free" | "home"; label: string };
   };
   /** Whether this camp was the one attacked (a report of someone else's expedition against it). */
   defending?: boolean;
+  /** Who attacked, when `defending`. */
+  by?: string;
+}
+
+/** Another camp's party on its way to attack: who, how many, to which of this camp's cells (named as its workshop names them), and when. */
+export interface IncomingParty {
+  id: string;
+  by: WorldOwner;
+  from: string;
+  to: string;
+  where: { kind: "home" | "town" | "cell"; label: string; landmark?: string };
+  party: number;
+  setOutAt: string;
+  arriveAt: string;
+  route?: string[];
 }
 
 /** `GET /api/world/expeditions/:id`: everything, with the blow-by-blow for playing it back. */
@@ -188,6 +215,8 @@ export interface WorldMe {
   unlockPeak: number;
   peak: number;
   shielded: boolean;
+  /** When the shield ends by itself (SHIELD_MAX_HOURS after it began); null when not shielded. */
+  shieldEndsAt?: string | null;
   /** Where the camp stands: everybody at home lives and defends there. */
   homeCell: string | null;
   home: { lat: number; lng: number } | null;
@@ -227,6 +256,8 @@ export interface WorldMe {
   /** The food in the store for expeditions (supplies.ts), by id. */
   food: Record<string, number>;
   walking: ExpeditionSummary[];
+  /** Other camps' parties on their way to attack one of this camp's cells (older servers leave it out). */
+  incoming?: IncomingParty[];
   recent: ExpeditionSummary[];
   /** What happened in the big world lately (a lair coming back for a cell, a great monster's spoils, what the cells gave), newest first. */
   happenings: {
@@ -243,8 +274,11 @@ export interface WorldMe {
 /** One thing that happened on a held cell (newest first in `CellDetail.history`). */
 export interface CellHappening {
   at: string;
-  /** yield: the ground gave; lairBack: the lair came back for it; attacked: another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home. */
-  kind: "yield" | "lairBack" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests";
+  /**
+   * yield: the ground gave; lairBack: the lair came back for it; incoming: another camp's party set out for it; attacked:
+   * another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home.
+   */
+  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests";
   loot?: Record<string, number>;
   held?: boolean;
   /** A yield eaten short: there were not rations enough to keep it. */
@@ -263,6 +297,8 @@ export interface CellHappening {
 
 /** `GET /api/world/cells/:cell`: a cell of one's own, looked at from inside (its residents are the camp's, place `cell:<id>`). */
 export interface CellDetail {
+  /** A town's market: how many swaps are left today (MARKET_TRADES_PER_DAY); absent on a cell that is not a town. */
+  market?: { left: number };
   cell: string;
   lat: number;
   lng: number;
@@ -312,6 +348,9 @@ export interface CellDetail {
 
 /** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
 export const buildInput = z.object({ kind: z.string().max(40) });
+
+/** `POST /api/world/cells/:cell/market`: `count` of `give` swapped at the town's market for `get` (holdings.ts marketQuote). */
+export const marketInput = z.object({ give: z.string().max(40), count: z.number().int().min(1).max(10_000), get: z.string().max(40) });
 
 /** `GET /api/world/landmarks?lat=&lng=`: the landmarks around a point (holdings.ts), the nearest first, and who holds each. */
 export interface NearbyLandmark {

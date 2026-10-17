@@ -88,6 +88,8 @@ async function change(r: CampResidentView, slot: GearSlot, value: string) {
           <div v-if="open === r.id" class="slots">
             <label v-for="slot in GEAR_SLOTS" :key="slot" class="slot">
               <span class="label">{{ SLOT_LABELS[slot] }}</span>
+              <GearIcon v-if="r.gear?.[slot]" :id="r.gear[slot]!.id" :size="24" />
+              <span v-else class="no-gear" />
               <select :disabled="busy" :value="'now'" @change="change(r, slot, ($event.target as HTMLSelectElement).value)">
                 <option value="now">{{ r.gear?.[slot] ? `${gearName(r.gear[slot]!.id)} ${durabilityText(r.gear[slot]!)}${r.gear[slot]!.pinned ? " 📌" : ""}` : "（空）" }}</option>
                 <option v-if="r.gear?.[slot]" value="off">脫下，收回倉庫</option>
@@ -106,6 +108,7 @@ async function change(r: CampResidentView, slot: GearSlot, value: string) {
 </template>
 
 <style scoped>
+.no-gear { display: inline-block; width: 24px; flex: none; }
 .tools { display: flex; gap: 8px; margin-top: 12px; }
 .find { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
 select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; max-width: 100%; }

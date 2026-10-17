@@ -10,6 +10,7 @@ import {
   hallStyleOpen,
   type GuildDecorKind,
   type GuildDecorPlaced,
+  type GuildMemberView,
   type GuildRole,
   type GuildSeasonView,
 } from "@goblincamp/shared";
@@ -31,13 +32,18 @@ const props = defineProps<{
   mode: Mode;
   brush: string;
   wall: string;
+  /** The style the wall is brushed with, segment by segment. */
+  wallBrush: string;
+  /** Who the 位置 brush gives tiles to (null: it rubs places out), out of the members. */
+  members: GuildMemberView[];
+  plotBrush: string | null;
   /** Drawing the shape: floor tiles used and allowed, drawing or rubbing out, and what is wrong with the shape (null: nothing). */
   tiles: number;
   tilesMax: number;
   shapeBrush: "add" | "erase";
   shapeProblem: string | null;
 }>();
-type Mode = "decor" | "floor" | "wall" | "area";
+type Mode = "decor" | "floor" | "wall" | "area" | "plot";
 const emit = defineEmits<{
   add: [kind: string];
   flip: [];
@@ -50,6 +56,8 @@ const emit = defineEmits<{
   brush: [id: string];
   fillAll: [];
   wall: [id: string];
+  wallBrush: [id: string];
+  plotBrush: [id: string | null];
 }>();
 const tile = (file: string) => ({ backgroundImage: `url(/guild-hall/${file})` });
 
@@ -105,6 +113,7 @@ function cost(k: GuildDecorKind) {
       <button type="button" class="tab" :class="{ on: mode === 'floor' }" @click="emit('mode', 'floor')">🟫 地板</button>
       <button v-if="role !== 'member'" type="button" class="tab" :class="{ on: mode === 'wall' }" @click="emit('mode', 'wall')">🧱 牆壁</button>
       <button v-if="role !== 'member'" type="button" class="tab" :class="{ on: mode === 'area' }" @click="emit('mode', 'area')">📐 範圍</button>
+      <button v-if="role !== 'member'" type="button" class="tab" :class="{ on: mode === 'plot' }" @click="emit('mode', 'plot')">🏠 位置</button>
     </div>
 
     <template v-if="mode === 'area'">
@@ -139,21 +148,37 @@ function cost(k: GuildDecorKind) {
     </template>
 
     <template v-else-if="mode === 'wall'">
-      <p class="hint">整個據點的牆一起換，馬上生效。</p>
+      <p class="hint">選一種牆，在據點的牆上點一下或拖過去，一段一段換（和裝飾一起存）；或整面換掉（馬上生效）。</p>
       <div class="styles">
         <button
           v-for="w in HALL_WALLS"
           :key="w.id"
           type="button"
           class="style"
-          :class="{ on: wall === w.id, shut: !hallStyleOpen(w, raceSet) }"
+          :class="{ on: wallBrush === w.id, shut: !hallStyleOpen(w, raceSet) }"
           :disabled="!hallStyleOpen(w, raceSet) || busy"
-          @click="emit('wall', w.id)"
+          @click="emit('wallBrush', w.id)"
         >
           <span class="swatch tall pixel" :style="tile(`walls/${w.id}.png`)" />
-          <small>{{ w.name }}</small>
+          <small>{{ w.name }}{{ wall === w.id ? "（整面）" : "" }}</small>
           <small v-if="!hallStyleOpen(w, raceSet)" class="pts">要有{{ RACE_NAMES[w.race ?? ""] }}</small>
         </button>
+      </div>
+      <button type="button" class="btn small" :disabled="busy || wall === wallBrush" @click="emit('wall', wallBrush)">整面換成這種</button>
+    </template>
+
+    <template v-else-if="mode === 'plot'">
+      <p class="hint">選一位成員，在據點裡點一下或拖過去，把地板分給他當自己的位置。分到的位置裡，只有他自己和會長、幹部能擺、能動裝飾。</p>
+      <div class="styles two">
+        <button
+          v-for="m in members"
+          :key="m.id"
+          type="button"
+          class="style"
+          :class="{ on: plotBrush === m.id }"
+          @click="emit('plotBrush', m.id)"
+        >🏠 <small>{{ m.name }}</small></button>
+        <button type="button" class="style" :class="{ on: plotBrush === null }" @click="emit('plotBrush', null)">🧽 <small>收回</small></button>
       </div>
     </template>
 

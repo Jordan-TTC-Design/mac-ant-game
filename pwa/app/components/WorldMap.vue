@@ -7,7 +7,8 @@ import { alongRoute, cellAt, HEX_RADIUS, landmarkRule, type CellView } from "@go
 
 // The big world on the real map (OpenStreetMap, in the game's colours: utils/mapStyle.ts), drawn at a low resolution and
 // scaled up with sharp pixels. Only the cell picked and the held ones are outlined (yours yellow, others' red); each lair
-// shows its strongest monster and level, each held cell its race and how many live there.
+// shows its strongest monster and level, each held cell its race and how many live there; a camp's home and its towns
+// stand as a building (a camp, a castle) flying the race's flag.
 // Drag and pinch to look around; tap a cell.
 const props = defineProps<{
   cells: CellView[];
@@ -16,7 +17,9 @@ const props = defineProps<{
   selected: string | null;
   walkingTo: string[];
   /** Parties on the road (the cell centres it walks between, round other camps' land, and when): a dashed line with the party moving along it. */
-  parties?: { id: string; path: { lat: number; lng: number }[]; setOutAt: string; arriveAt: string; race: string }[];
+  parties?: { id: string; path: { lat: number; lng: number }[]; setOutAt: string; arriveAt: string; race: string; hostile?: boolean }[];
+  /** Cells to mark ⚔️: attacked lately, or about to be. */
+  alerts?: string[];
   /** The race whose face is on the "back to my camp" button (none: no camp yet, no button). */
   home?: string | null;
   /** The way a party would walk to the cell picked (before it is sent): a yellow dotted line. */
@@ -37,7 +40,8 @@ const DRAWN = 0.9;
 const box = ref<HTMLDivElement>();
 let map: MapLibre | null = null;
 let ready = false;
-const markers: Marker[] = [];
+/** The icon over each cell that has one, and what it showed (only the ones that change are made again). */
+const markers = new Map<string, { key: string; marker: Marker }>();
 const partyMarkers = new Map<string, Marker>();
 const foeSheet = useFoeSheet();
 
@@ -56,12 +60,11 @@ function cellsGeoJson(): FeatureCollection {
     type: "FeatureCollection",
     features: props.cells.map((c) => ({
       type: "Feature",
+      // (the cell picked and those walked to are feature states: picking one does not send every cell again)
       properties: {
         cell: c.cell,
         state: c.owner ? (c.owner.id === props.mine ? "mine" : "theirs") : c.boss ? "boss" : "free",
-        selected: c.cell === props.selected,
         blocks: !!c.blocks,
-        target: props.walkingTo.includes(c.cell),
       },
       geometry: { type: "Polygon", coordinates: [hexRing(c.lat, c.lng)] },
     })),
@@ -73,7 +76,7 @@ function partiesGeoJson(): FeatureCollection {
     type: "FeatureCollection",
     features: (props.parties ?? []).map((p) => ({
       type: "Feature",
-      properties: { id: p.id },
+      properties: { id: p.id, hostile: !!p.hostile },
       geometry: { type: "LineString", coordinates: p.path.map((q) => [q.lng, q.lat]) },
     })),
   };
@@ -105,38 +108,118 @@ function label(text: string, cls = ""): HTMLElement {
   return el;
 }
 
-/** The icons over the cells (redrawn when the cells change: a hundred or so at a time). */
+/** Each race's flag, and the walls and roof its buildings are made of. */
+const RACE_LOOK: Record<string, { flag: string; wall: string; roof: string; stone: string }> = {
+  goblin: { flag: "#5fb030", wall: "#8a5a32", roof: "#5e7a2a", stone: "#9a8a70" },
+  elf: { flag: "#3aa0e0", wall: "#e8dcc0", roof: "#3f8f5a", stone: "#e6e0d0" },
+  undead: { flag: "#9a50d0", wall: "#4a4458", roof: "#2a2638", stone: "#5a5468" },
+};
+
+/**
+ * A camp's home (a hut) or a town (a castle) in pixels, 24 by 24 (the flag above), with a flag in the race's colour bearing its face on
+ * top (the flag sways: .map-flag). Outlined by drawing each part a pixel bigger in black first.
+ */
+function buildingSvg(kind: "home" | "town", race: string): string {
+  const look = RACE_LOOK[race] ?? RACE_LOOK.goblin!;
+  const ink = "#1f1f1f";
+  const box = (x: number, y: number, w: number, h: number, fill: string) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`;
+  const parts: [number, number, number, number, string][] =
+    kind === "town"
+      ? [
+          [2, 9, 6, 14, look.stone], [16, 9, 6, 14, look.stone], [7, 13, 10, 10, look.stone], // towers and the wall
+          [2, 7, 2, 2, look.stone], [6, 7, 2, 2, look.stone], [16, 7, 2, 2, look.stone], [20, 7, 2, 2, look.stone], // merlons
+          [8, 11, 2, 2, look.stone], [14, 11, 2, 2, look.stone],
+        ]
+      : [[5, 16, 14, 7, look.wall]];
+  const outline = parts.map(([x, y, w, h]) => box(x - 1, y - 1, w + 2, h + 2, ink)).join("");
+  const body = parts.map(([x, y, w, h, fill]) => box(x, y, w, h, fill)).join("");
+  const details =
+    kind === "town"
+      ? box(10, 17, 4, 6, ink) + box(11, 16, 2, 1, ink) + box(4, 12, 2, 2, ink) + box(18, 12, 2, 2, ink)
+      : `<polygon points="2,17 12,7 22,17" fill="${ink}"/><polygon points="4,16 12,8.5 20,16" fill="${look.roof}"/>` + box(10, 18, 4, 5, ink);
+  const top = kind === "town" ? 11 : 8; // where the pole meets the building
+  const flag = // (on a pole above the building: drawn from y −6)
+    box(11, -6, 1, top + 6, ink) +
+    `<g class="map-flag">${box(12, -6, 9, 7, ink)}${box(12, -5, 8, 5, look.flag)}` +
+    `<image href="/sprites/${race}/icon.png" x="13.5" y="-5" width="5" height="5" style="image-rendering:pixelated"/></g>`;
+  return `<svg viewBox="0 -6 24 30" width="40" height="50" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${outline}${body}${details}${flag}</svg>`;
+}
+
+/** What a cell's icon shows, as a key: the icon is made again only when this changes. */
+function markerKey(c: CellView): string {
+  return JSON.stringify([
+    c.owner && [c.owner.id === props.mine, c.owner.race, c.garrison, c.town, c.home, c.nest],
+    c.boss && [c.boss.kind, Math.round((100 * c.boss.hp) / c.boss.maxHp)],
+    c.lair && [c.lair.kind, c.lair.level, c.lair.boss, leaderOf(c.lair.foes)],
+    c.landmark?.kind,
+    !!foeSheet.value,
+    props.alerts?.includes(c.cell),
+  ]);
+}
+
+/** A cell's icon (null: nothing to show there). */
+function cellMarker(c: CellView): HTMLElement | null {
+  const el = document.createElement("div");
+  el.className = "map-cell";
+  if (c.owner && (c.home || c.town)) {
+    const building = document.createElement("span");
+    building.className = "map-building";
+    building.innerHTML = buildingSvg(c.home ? "home" : "town", c.owner.race);
+    el.append(building, label(`${c.garrison}${c.home ? " 營地" : " 城"}`, c.owner.id === props.mine ? "mine" : "theirs"));
+  } else if (c.owner) {
+    const face = document.createElement("img");
+    face.src = `/sprites/${c.owner.race}/icon.png`;
+    face.className = "map-face";
+    el.append(face, label(`${c.garrison}${c.town ? " 城" : c.nest !== "none" ? " 巢" : ""}`, c.owner.id === props.mine ? "mine" : "theirs"));
+  } else if (c.boss) {
+    const hp = document.createElement("span");
+    hp.className = "map-hp";
+    hp.innerHTML = `<i style="width:${Math.max(0, (100 * c.boss.hp) / c.boss.maxHp)}%"></i>`;
+    el.append(foeElement(c.boss.kind, 36), hp);
+  } else if (c.lair) {
+    const icon = c.lair.kind === "enemy_town" ? "enemy_town" : leaderOf(c.lair.foes);
+    el.append(foeElement(icon, c.lair.boss ? 30 : 22), label(`${c.lair.boss ? "👑 " : ""}Lv${c.lair.level}`, c.lair.boss ? "boss" : ""));
+  } else if (!c.landmark && !props.alerts?.includes(c.cell)) {
+    return null;
+  }
+  // attacked lately, or a party on its way to attack it
+  if (props.alerts?.includes(c.cell)) {
+    const alert = document.createElement("span");
+    alert.className = el.childElementCount ? "map-alert corner" : "map-alert";
+    alert.textContent = "⚔️";
+    el.append(alert);
+  }
+  // a real place standing in it (a station, a temple…): a small mark in the corner
+  if (c.landmark) {
+    const mark = document.createElement("span");
+    mark.className = el.childElementCount ? "map-landmark corner" : "map-landmark";
+    mark.textContent = landmarkRule(c.landmark.kind)?.icon ?? "📍";
+    el.append(mark);
+  }
+  return el;
+}
+
+/**
+ * The icons over the cells (a few hundred in view): only those whose cell changed are made again, the rest stay where
+ * they are (making them all again on every change made each tap on the map stutter).
+ */
 function drawMarkers() {
   if (!map) return;
-  for (const m of markers) m.remove();
-  markers.length = 0;
+  const seen = new Set<string>();
   for (const c of props.cells) {
-    const el = document.createElement("div");
-    el.className = "map-cell";
-    if (c.owner) {
-      const face = document.createElement("img");
-      face.src = `/sprites/${c.owner.race}/icon.png`;
-      face.className = "map-face";
-      el.append(face, label(`${c.garrison}${c.town ? " 城" : c.nest !== "none" ? " 巢" : ""}`, c.owner.id === props.mine ? "mine" : "theirs"));
-    } else if (c.boss) {
-      const hp = document.createElement("span");
-      hp.className = "map-hp";
-      hp.innerHTML = `<i style="width:${Math.max(0, (100 * c.boss.hp) / c.boss.maxHp)}%"></i>`;
-      el.append(foeElement(c.boss.kind, 36), hp);
-    } else if (c.lair) {
-      const icon = c.lair.kind === "enemy_town" ? "enemy_town" : leaderOf(c.lair.foes);
-      el.append(foeElement(icon, c.lair.boss ? 30 : 22), label(`${c.lair.boss ? "👑 " : ""}Lv${c.lair.level}`, c.lair.boss ? "boss" : ""));
-    } else if (!c.landmark) {
-      continue;
-    }
-    // a real place standing in it (a station, a temple…): a small mark in the corner
-    if (c.landmark) {
-      const mark = document.createElement("span");
-      mark.className = el.childElementCount ? "map-landmark corner" : "map-landmark";
-      mark.textContent = landmarkRule(c.landmark.kind)?.icon ?? "📍";
-      el.append(mark);
-    }
-    markers.push(new Marker({ element: el, anchor: "center" }).setLngLat([c.lng, c.lat]).addTo(map));
+    const key = markerKey(c);
+    const known = markers.get(c.cell);
+    seen.add(c.cell);
+    if (known?.key === key) continue;
+    known?.marker.remove();
+    markers.delete(c.cell);
+    const el = cellMarker(c);
+    if (el) markers.set(c.cell, { key, marker: new Marker({ element: el, anchor: "center" }).setLngLat([c.lng, c.lat]).addTo(map) });
+  }
+  for (const [cell, { marker }] of markers) {
+    if (seen.has(cell)) continue;
+    marker.remove();
+    markers.delete(cell);
   }
 }
 
@@ -148,12 +231,35 @@ function planGeoJson(): FeatureCollection {
   };
 }
 
-function refresh() {
+/** The cells came anew (or whose they are): their shapes and icons. */
+function refreshCells() {
+  if (!map || !ready) return;
+  (map.getSource("cells") as GeoJSONSource | undefined)?.setData(cellsGeoJson());
+  drawMarkers();
+  marked.clear(); // (the shapes were sent again: mark the picked and walked-to cells afresh)
+  markCells();
+}
+
+/** Cells drawn as picked or walked to now (feature states), so only what changed is told to the map. */
+const marked = new Map<string, { selected: boolean; target: boolean }>();
+function markCells() {
+  if (!map || !ready) return;
+  const want = new Map<string, { selected: boolean; target: boolean }>();
+  for (const cell of props.walkingTo) want.set(cell, { selected: false, target: true });
+  if (props.selected) want.set(props.selected, { selected: true, target: props.walkingTo.includes(props.selected) });
+  for (const cell of marked.keys()) if (!want.has(cell)) map.setFeatureState({ source: "cells", id: cell }, { selected: false, target: false });
+  for (const [cell, state] of want) {
+    const was = marked.get(cell);
+    if (was?.selected !== state.selected || was?.target !== state.target) map.setFeatureState({ source: "cells", id: cell }, state);
+  }
+  marked.clear();
+  for (const [cell, state] of want) marked.set(cell, state);
+}
+
+function refreshRoads() {
   if (!map || !ready) return;
   (map.getSource("plan") as GeoJSONSource | undefined)?.setData(planGeoJson());
-  (map.getSource("cells") as GeoJSONSource | undefined)?.setData(cellsGeoJson());
   (map.getSource("parties") as GeoJSONSource | undefined)?.setData(partiesGeoJson());
-  drawMarkers();
   moveParties();
 }
 
@@ -175,7 +281,7 @@ function moveParties() {
     }
     const face = document.createElement("img");
     face.src = `/sprites/${p.race}/icon.png`;
-    face.className = "map-face party";
+    face.className = p.hostile ? "map-face party hostile" : "map-face party";
     partyMarkers.set(p.id, new Marker({ element: face }).setLngLat(at).addTo(map));
   }
   for (const [id, m] of partyMarkers) {
@@ -265,7 +371,7 @@ onMounted(() => {
   if (import.meta.dev) (window as unknown as { worldMap: MapLibre }).worldMap = m; // (to look at it from the console)
   m.touchZoomRotate.disableRotation();
   m.on("load", () => {
-    m.addSource("cells", { type: "geojson", data: cellsGeoJson() });
+    m.addSource("cells", { type: "geojson", data: cellsGeoJson(), promoteId: "cell" });
     m.addSource("parties", { type: "geojson", data: partiesGeoJson() });
     m.addSource("plan", { type: "geojson", data: planGeoJson() });
     m.addLayer({
@@ -282,20 +388,32 @@ onMounted(() => {
       type: "line",
       source: "cells",
       // (no outline for free cells: only the one picked, and held ones; the real map shows through clean)
-      filter: ["any", ["get", "selected"], ["!=", ["get", "state"], "free"]],
       paint: {
-        "line-color": ["case", ["get", "selected"], "#ffffff", ["match", ["get", "state"], "mine", "#ffd84a", "theirs", "#e04a3a", "#ff3a2a"]],
-        "line-width": ["case", ["get", "selected"], 3, 2.5],
+        "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#ffffff", ["match", ["get", "state"], "mine", "#ffd84a", "theirs", "#e04a3a", "#ff3a2a"]],
+        "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 2.5],
+        "line-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 1, ["==", ["get", "state"], "free"], 0, 1],
       },
     });
     // someone else's built-up land: parties must walk round it (shared/src/world/route.ts), so it reads as a wall
     m.addLayer({ id: "cell-wall", type: "fill", source: "cells", filter: ["get", "blocks"], paint: { "fill-color": "#7a1a10", "fill-opacity": 0.32 } });
     m.addLayer({ id: "cell-wall-line", type: "line", source: "cells", filter: ["get", "blocks"], paint: { "line-color": "#5a0f08", "line-width": 4 } });
-    m.addLayer({ id: "cell-target", type: "line", source: "cells", filter: ["get", "target"], paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.5] } });
-    m.addLayer({ id: "party-road", type: "line", source: "parties", paint: { "line-color": "#ffffff", "line-width": 3, "line-dasharray": [2, 1.5], "line-opacity": 0.9 } });
+    m.addLayer({
+      id: "cell-target",
+      type: "line",
+      source: "cells",
+      paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [2, 1.5], "line-opacity": ["case", ["boolean", ["feature-state", "target"], false], 1, 0] },
+    });
+    // (parties coming to attack this camp in red)
+    m.addLayer({
+      id: "party-road",
+      type: "line",
+      source: "parties",
+      paint: { "line-color": ["case", ["get", "hostile"], "#ff3a2a", "#ffffff"], "line-width": ["case", ["get", "hostile"], 4, 3], "line-dasharray": [2, 1.5], "line-opacity": 0.9 },
+    });
     m.addLayer({ id: "plan-road", type: "line", source: "plan", layout: { "line-cap": "round" }, paint: { "line-color": "#f3d36b", "line-width": 4, "line-dasharray": [0.1, 2] } });
     ready = true;
-    refresh();
+    refreshCells();
+    refreshRoads();
     // the credits (OpenStreetMap's licence asks for them) start folded into the little (i), so they do not cover the map
     box.value?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
   });
@@ -312,7 +430,10 @@ onUnmounted(() => {
   map = null;
 });
 
-watch(() => [props.cells, props.selected, props.mine, props.walkingTo, props.parties, props.plan, foeSheet.value], refresh);
+// each kind of change redraws only its own part (a tap on a cell changes only which one is outlined)
+watch(() => [props.cells, props.mine, foeSheet.value, props.alerts], refreshCells);
+watch(() => [props.selected, props.walkingTo], markCells);
+watch(() => [props.parties, props.plan], refreshRoads);
 // the page moves the map (to the camp, to a great monster): fly there if it is not where we are looking already
 watch(
   () => props.center,
@@ -343,8 +464,18 @@ watch(
 .map { width: 100%; aspect-ratio: 1 / 1.1; border-radius: 14px; border: 3px solid #1f1f1f; overflow: hidden; background: #cdbf8a; }
 .map :deep(canvas) { image-rendering: pixelated; }
 .map :deep(.map-cell) { display: grid; justify-items: center; pointer-events: none; }
+.map :deep(.map-building) { display: block; width: 40px; height: 50px; margin-top: -10px; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35)); }
+.map :deep(.map-building svg) { display: block; overflow: visible; }
+.map :deep(.map-flag) { transform-box: fill-box; transform-origin: left center; animation: map-flag 1.6s ease-in-out infinite alternate; }
+@keyframes map-flag { from { transform: skewY(-6deg) scaleX(0.94); } to { transform: skewY(5deg) scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .map :deep(.map-flag) { animation: none; } }
 .map :deep(.map-face) { width: 22px; height: 22px; image-rendering: pixelated; pointer-events: none; }
 .map :deep(.map-face.party) { width: 22px; height: 22px; filter: drop-shadow(0 0 2px #fff); }
+.map :deep(.map-face.party.hostile) { filter: drop-shadow(0 0 2px #ff3a2a) drop-shadow(0 0 2px #ff3a2a); }
+.map :deep(.map-alert) { font-size: 15px; line-height: 1; filter: drop-shadow(0 0 2px #fff); animation: map-alert 1s ease-in-out infinite alternate; }
+.map :deep(.map-alert.corner) { position: absolute; top: -10px; left: -12px; font-size: 13px; }
+@keyframes map-alert { from { transform: scale(1); } to { transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .map :deep(.map-alert) { animation: none; } }
 .map :deep(.map-label) { margin-top: -2px; font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; line-height: 1; }
 .map :deep(.map-label.mine) { color: #ffe27a; }
 .map :deep(.map-label.theirs) { color: #ff9a8a; }

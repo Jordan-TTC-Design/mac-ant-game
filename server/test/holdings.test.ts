@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type TerritoryList, type WorldMe } from "@goblincamp/shared/world";
+import { buildingsFor, cellAt, cellBonus, marketQuote, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type TerritoryList, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { usePlaceSource } from "../src/world/search.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
@@ -537,5 +537,98 @@ describe("friends guarding each other's cells", () => {
     expect(events.filter((e) => e.data.guardFell).reduce((n, e) => n + e.data.guardFell!.fallen, 0)).toBe(fellGuests);
     const left = await database.sql`select count(*)::int as n from camp_residents where place like 'fell:%' and gear is not null`;
     expect(left[0]!.n).toBe(0); // (their gear came home when b's camp was worked out)
+  });
+});
+
+describe("gear for residents away from home", () => {
+  const cmd = (auth: Record<string, string>, command: Record<string, unknown>) => t.call("POST", "/camp/commands", command, auth);
+  /** A camp with one settled cell; everyone at home already holds a long sword (so a bone knife is wanted only away). */
+  async function away(email = "a@example.com") {
+    const a = await ready(email);
+    const cell = await settle(a, 20);
+    await database.sql`update camp_residents set gear = '{"weapon": {"id": "long_sword", "left": 200}}'::jsonb where place = 'home' and user_id = (select id from users where email = ${email})`;
+    await give(email, { rat_fang: 40, rat_tail: 10 });
+    return { a, cell };
+  }
+
+  it("names the places, and makes a piece for one living on a held cell", async () => {
+    const { a, cell } = await away();
+    const c = await camp(a);
+    expect(c.places?.[`cell:${cell}`]).toEqual({ label: "領地 1", town: false });
+    const there = c.residents.find((r) => r.place === `cell:${cell}`)!;
+    const res = await cmd(a, { kind: "craft", gear: "bone_knife", to: there.id });
+    expect(res.status).toBe(200);
+    expect((res.body.camp as CampView).residents.find((r) => r.id === there.id)!.gear!.weapon).toMatchObject({ id: "bone_knife", pinned: true });
+    // taken off there, and mended there
+    expect((await cmd(a, { kind: "unequip", resident: there.id, slot: "weapon" })).status).toBe(200);
+    expect((await cmd(a, { kind: "equip", resident: there.id, stock: 0, gear: "bone_knife" })).status).toBe(200);
+    await database.sql`update camp_residents set gear = '{"weapon": {"id": "bone_knife", "left": 10, "pinned": true}}'::jsonb where id = ${there.id}`;
+    const mended = await cmd(a, { kind: "repair", resident: there.id, slot: "weapon" });
+    expect(mended.status).toBe(200);
+    expect((mended.body.camp as CampView).residents.find((r) => r.id === there.id)!.gear!.weapon!.left).toBe(120);
+  });
+
+  it("hands out to the towns always, to the other cells with the far switch on", async () => {
+    const { a, cell } = await away();
+    expect((await cmd(a, { kind: "craft", gear: "bone_knife" })).body.error).toBe("nobody_needs"); // (a plain cell: not reached)
+    await database.sql`update world_cells set town = true where cell = ${cell}`;
+    let res = await cmd(a, { kind: "craft", gear: "bone_knife" });
+    expect(res.status).toBe(200);
+    expect((res.body.camp as CampView).residents.find((r) => r.id === res.body.resident)!.place).toBe(`cell:${cell}`);
+    await database.sql`update world_cells set town = false where cell = ${cell}`;
+    res = await cmd(a, { kind: "auto-gear-far", on: true });
+    expect((res.body.camp as CampView).autoGearFar).toBe(true);
+    res = await cmd(a, { kind: "craft", gear: "bone_knife" });
+    expect(res.status).toBe(200);
+    expect((res.body.camp as CampView).residents.find((r) => r.id === res.body.resident)!.place).toBe(`cell:${cell}`);
+  });
+
+  it("hands the store out to a town as time goes by", async () => {
+    const { a, cell } = await away();
+    await database.sql`update world_cells set town = true where cell = ${cell}`;
+    await database.sql`update camps set armory = '[{"id": "bone_knife", "left": 120}]'::jsonb`;
+    t.advance(10 * MIN);
+    const c = await camp(a);
+    expect(c.armory).toHaveLength(0);
+    expect(c.residents.filter((r) => r.place === `cell:${cell}` && r.gear?.weapon?.id === "bone_knife")).toHaveLength(1);
+  });
+
+  it("shows on the map where a camp's home stands", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const cells = await map(a);
+    expect(cells.find((c) => c.cell === home)!.home).toBe(true);
+    expect(cells.filter((c) => c.home)).toHaveLength(1);
+  });
+});
+
+describe("a town's market", () => {
+  it("swaps materials at a loss, a few times a day for each town", async () => {
+    const a = await ready();
+    const cell = await settle(a, 20);
+    const trade = (body: Record<string, unknown>) => t.call("POST", `/world/cells/${cell}/market`, body, a);
+    expect((await trade({ give: "log", count: 10, get: "stone" })).body.error).toBe("not_town"); // (a plain cell has none)
+    await database.sql`update world_cells set town = true where cell = ${cell}`;
+    await give("a@example.com", { rat_fang: 100 });
+    expect((await detail(a, cell)).body.market).toEqual({ left: 3 });
+    const before = (await camp(a)).materials;
+    const res = await trade({ give: "rat_fang", count: 10, get: "crystal_shard" });
+    expect(res.status).toBe(200);
+    const after = (await camp(a)).materials;
+    expect(after.rat_fang).toBe(before.rat_fang! - 10);
+    expect((after.crystal_shard ?? 0) - (before.crystal_shard ?? 0)).toBe(marketQuote("rat_fang", 10, "crystal_shard"));
+    expect(marketQuote("rat_fang", 10, "crystal_shard")).toBe(4); // (10 × 4 × 0.6 ÷ 5)
+    expect((await trade({ give: "rat_fang", count: 1, get: "crystal_shard" })).body.error).toBe("invalid_input"); // (too few for one)
+    await trade({ give: "rat_fang", count: 10, get: "scrap_iron" });
+    await trade({ give: "rat_fang", count: 10, get: "scrap_iron" });
+    expect((await detail(a, cell)).body.market).toEqual({ left: 0 });
+    expect((await trade({ give: "rat_fang", count: 10, get: "scrap_iron" })).body.error).toBe("market_closed");
+    t.advance(24 * HOUR); // (a new day)
+    expect((await detail(a, cell)).body.market).toEqual({ left: 3 });
+  });
+
+  it("gives a town's defenders walls and its parties a head start", () => {
+    const at = Date.now();
+    expect(cellBonus("goblin", null, at, { town: true })).toMatchObject({ fort: 0.2, travel: 0.75 });
   });
 });

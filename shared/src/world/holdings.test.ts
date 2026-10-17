@@ -23,6 +23,17 @@ describe("buildings on held cells", () => {
     expect(cellBonus("goblin", { kind: "watchtower", level: 1, busyUntil: later }, at).fort).toBe(0);
     expect(cellBonus("goblin", { kind: "watchtower", level: 3 }, at).fort).toBe(0.35);
     expect(cellBonus("goblin", { kind: "dock", level: 2 }, at).travel).toBe(0.75);
+    // a town: a base to set out from, and walls (with a building's own on top)
+    expect(cellBonus("goblin", null, at, { town: true })).toMatchObject({ travel: 0.75, fort: 0.2 });
+    expect(cellBonus("goblin", { kind: "watchtower", level: 3 }, at, { town: true }).fort).toBeCloseTo(0.55);
+    // paired in its region: a sawmill with a workshop makes one more of each; alone, as usual
+    const sawmill = { kind: "sawmill" as const, level: 1 };
+    expect(cellBonus("goblin", sawmill, at, { regionKinds: ["sawmill"] }).makes).toEqual({ log: 3, scrap_wood: 2 });
+    const paired = cellBonus("goblin", sawmill, at, { regionKinds: ["sawmill", "workshop"] });
+    expect(paired.makes).toEqual({ log: 4, scrap_wood: 3 });
+    expect(paired.combos).toEqual(["木工坊"]);
+    expect(cellBonus("goblin", { kind: "watchtower", level: 1 }, at, { regionKinds: ["watchtower", "campfire"] }).fort).toBeCloseTo(0.25);
+    expect(cellBonus("goblin", { kind: "dock", level: 1 }, at, { regionKinds: ["dock", "inn"] }).travel).toBeCloseTo(0.765);
     expect(cellBonus("goblin", null, at)).toEqual({ makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0, yieldBoost: 0 });
   });
 

@@ -164,6 +164,8 @@ final class Colony {
     var onRanchSync: ((RanchReport, @escaping (MerchantAnswer) -> Void) -> Void)?
     /// The camp's look as the books have it (nil: not signed in), and how to keep the decorations on the books.
     var booksStage: Int?
+    /// The race level as the books have it (nil: signed out or an older server): more decoration room, tiers and limits.
+    var booksRaceLevel: Int?
     var onDecorChanged: (([DecorPlaced]) -> Void)?
     var holidayTimer = 5.0
     /// What already happened today that happens once (the egg stood up at noon, the year-end draw): "yyyy-MM-dd:what".
@@ -1512,14 +1514,56 @@ final class Colony {
 
     func canAfford(_ gear: Gear) -> Bool { gear.cost.allSatisfy { materials[$0.0, default: 0] >= $0.1 } }
 
-    /// How many goblins wear this piece now, and how many are in the stock.
-    func wearers(of gear: Gear) -> Int { ants.filter { $0.gear[gear.slot.rawValue] == gear.id }.count }
+    /// How many goblins wear this piece now (at home and away), and how many are in the stock.
+    func wearers(of gear: Gear) -> Int { (ants + awayResidents.map(\.ant)).filter { $0.gear[gear.slot.rawValue] == gear.id }.count }
     func inStock(of gear: Gear) -> Int { armory.filter { $0.id == gear.id }.count }
 
     /// Who the handing out would give this piece to now (nil: nobody needs it, or the handing out is off).
     func autoPick(for gear: Gear) -> Ant? {
-        guard autoGear, let i = neediest(for: GearItem(gear)) else { return nil }
-        return ants[i]
+        guard autoGear else { return nil }
+        let item = GearItem(gear)
+        let home = neediest(for: item).map { ants[$0] }
+        let away = awayResidents.filter { $0.reached && needs($0.ant, item) }.map(\.ant)
+        return ([home].compactMap { $0 } + away).min { comesFirst($0, $1, for: gear) }
+    }
+
+    // MARK: Away from home
+
+    /// A resident away from home that can still be handed gear (signed in: on a held cell, or guarding a friend's one). It
+    /// is not in the camp (it does not walk here): only its name, breed and gear, for the workshop.
+    struct AwayResident {
+        var ant: Ant
+        /// Where it is (`cell:<cell>`, `guard:<cell>`) and what the workshop calls that (城鎮 1, 領地 2, 幫某某守).
+        let place: String
+        let label: String
+        /// Whether the handing out reaches it (a town; any held cell with the far switch on).
+        let reached: Bool
+    }
+    private(set) var awayResidents: [AwayResident] = []
+    /// Whether the handing out reaches every held cell too (off: home and the towns).
+    private(set) var autoGearFar = false
+
+    /// The residents away from home as the books have them, and the far switch.
+    func applyBooksAway(_ list: [(resident: BookResident, place: String, label: String, town: Bool)], far: Bool) {
+        autoGearFar = far
+        let breeds = self.breeds
+        awayResidents = list.map { r, place, label, town in
+            var ant = makeAnt(at: .zero, breedIndex: breeds.firstIndex { $0.id == r.breed } ?? 0, seed: r.seed, id: r.id, name: r.name)
+            for (_, item) in r.gear where item.gear != nil { _ = ant.equip(item) }
+            return AwayResident(ant: ant, place: place, label: label, reached: town || (far && place.hasPrefix("cell:")))
+        }
+    }
+
+    /// Someone who can be handed gear by hand: at home, or away.
+    func gearHolder(_ id: Int) -> Ant? { ants.first { $0.id == id } ?? awayResidents.first { $0.ant.id == id }?.ant }
+
+    /// Where a resident away from home is, for the workshop (城鎮 1, 領地 2…); nil at home.
+    func placeLabel(of id: Int) -> String? { awayResidents.first { $0.ant.id == id }?.label }
+
+    func setAutoGearFar(_ on: Bool) {
+        guard followsBooks else { return }
+        onBookCommand?(.autoGearFar(on))
+        autoGearFar = on
     }
 
     /// Why this piece cannot go on that goblin by hand (nil: it can): a shield has no hand beside a two-handed weapon.
@@ -1532,7 +1576,7 @@ final class Colony {
     /// who gains most from it (see `neediest`); with the handing out off and nobody picked, it goes to the stock.
     func craft(_ gear: Gear, for antID: Int? = nil) -> CraftResult {
         guard canAfford(gear) else { return .missing }
-        if let antID, let ant = ants.first(where: { $0.id == antID }), let why = cannotWear(gear, on: ant) { return .refused(why) }
+        if let antID, let ant = gearHolder(antID), let why = cannotWear(gear, on: ant) { return .refused(why) }
         if followsBooks {
             onBookCommand?(.craft(gear.id, to: antID))
             return .sent(gear: gear)
@@ -1570,6 +1614,11 @@ final class Colony {
     @discardableResult
     func equip(stock index: Int, on antID: Int) -> String? {
         guard armory.indices.contains(index), let gear = armory[index].gear else { return "倉庫裡找不到這件。" }
+        if followsBooks, let away = awayResidents.first(where: { $0.ant.id == antID }) { // (the server does it; the books bring it back)
+            if let why = cannotWear(gear, on: away.ant) { return why }
+            onBookCommand?(.equip(resident: antID, stock: index, gear: gear.id))
+            return nil
+        }
         guard let i = ants.firstIndex(where: { $0.id == antID }) else { return "找不到這位居民。" }
         if let why = cannotWear(gear, on: ants[i]) { return why }
         if followsBooks {
@@ -1589,6 +1638,10 @@ final class Colony {
 
     /// Takes a goblin's piece off by hand: it goes to the stock, held (not handed out again).
     func unequip(antID: Int, slot: GearSlot) {
+        if followsBooks, awayResidents.contains(where: { $0.ant.id == antID && $0.ant.item(in: slot) != nil }) {
+            onBookCommand?(.unequip(resident: antID, slot: slot.rawValue))
+            return
+        }
         guard let i = ants.firstIndex(where: { $0.id == antID }), ants[i].item(in: slot) != nil else { return }
         if followsBooks {
             onBookCommand?(.unequip(resident: antID, slot: slot.rawValue))
@@ -1628,16 +1681,25 @@ final class Colony {
     /// something at least as good, and nobody whose piece there was put on by hand.
     private func neediest(for item: GearItem) -> Int? {
         guard let gear = item.gear else { return nil }
-        func currentPower(_ ant: Ant) -> Double { ant.item(in: gear.slot)?.power ?? 0 }
-        func twoHanded(_ ant: Ant) -> Bool { ant.item(in: .weapon)?.gear?.grip == .two }
-        func placed(_ ant: Ant) -> Bool { ant.gearPinned.contains(gear.slot.rawValue) || (gear.grip == .two && ant.gearPinned.contains(GearSlot.shield.rawValue)) }
-        let candidates = ants.indices.filter { !ants[$0].isDying && currentPower(ants[$0]) < item.power && !(gear.slot == .shield && twoHanded(ants[$0])) && !placed(ants[$0]) }
-        return candidates.min(by: { a, b in
-            let pa = currentPower(ants[a]), pb = currentPower(ants[b])
-            if pa != pb { return pa < pb }
-            func fit(_ ant: Ant) -> Double { gear.slot == .weapon ? ant.traits.might : gear.slot == .shield ? ant.traits.maxHealth : ant.traits.maxHealth * 0.5 + ant.traits.might * 0.5 }
-            return fit(ants[a]) > fit(ants[b])
-        })
+        return ants.indices.filter { !ants[$0].isDying && needs(ants[$0], item) }.min { comesFirst(ants[$0], ants[$1], for: gear) }
+    }
+
+    /// Whether this goblin would take the piece: what it has there is worse, it has a hand free for a shield, and its piece
+    /// there was not put on by hand.
+    private func needs(_ ant: Ant, _ item: GearItem) -> Bool {
+        guard let gear = item.gear else { return false }
+        let twoHanded = ant.item(in: .weapon)?.gear?.grip == .two
+        let placed = ant.gearPinned.contains(gear.slot.rawValue) || (gear.grip == .two && ant.gearPinned.contains(GearSlot.shield.rawValue))
+        return (ant.item(in: gear.slot)?.power ?? 0) < item.power && !(gear.slot == .shield && twoHanded) && !placed
+    }
+
+    /// Of two who would take the piece, whether `a` gets it first: the worse off, then the one it suits (the strong a weapon,
+    /// the sturdy a shield, the rest the average).
+    private func comesFirst(_ a: Ant, _ b: Ant, for gear: Gear) -> Bool {
+        let pa = a.item(in: gear.slot)?.power ?? 0, pb = b.item(in: gear.slot)?.power ?? 0
+        if pa != pb { return pa < pb }
+        func fit(_ ant: Ant) -> Double { gear.slot == .weapon ? ant.traits.might : gear.slot == .shield ? ant.traits.maxHealth : ant.traits.maxHealth * 0.5 + ant.traits.might * 0.5 }
+        return fit(a) > fit(b)
     }
 
     /// Puts a piece on a goblin. What it wore in that slot goes back to the camp's stock (with the wear it has; held when this
@@ -1703,6 +1765,13 @@ final class Colony {
         for ant in ants where !ant.isDying {
             for slot in GearSlot.allCases {
                 if let item = ant.item(in: slot), item.gear != nil, item.fraction < 0.75 { jobs.append(RepairJob(place: .worn(antID: ant.id, slot: slot), item: item, owner: ant.name)) }
+            }
+        }
+        for away in awayResidents {
+            for slot in GearSlot.allCases {
+                if let item = away.ant.item(in: slot), item.gear != nil, item.fraction < 0.75 {
+                    jobs.append(RepairJob(place: .worn(antID: away.ant.id, slot: slot), item: item, owner: "\(away.ant.name)（\(away.label)）"))
+                }
             }
         }
         for (i, item) in armory.enumerated() where item.gear != nil && item.fraction < 0.75 { jobs.append(RepairJob(place: .stock(index: i), item: item, owner: "庫存")) }
@@ -2089,7 +2158,7 @@ final class Colony {
 
         // The clock only starts once the queen has crawled out.
         if !followsBooks, queen?.arrived == true, ants.count < settings.maxAnts {
-            spawnTimer += dt * (1 + boost(.honey) / 3) * (decorHas("growth") ? 1.05 : 1) // honey: a quarter less waiting (the old oak's heart: a little less)
+            spawnTimer += dt * (1 + boost(.honey) / 3) * (decorHas("growth") ? 1.05 : 1) * (decorHas("lv_birth") ? 1.05 : 1) // honey: a quarter less waiting (the old oak's heart, a race level's cradle: a little less)
             if spawnTimer >= settings.spawnInterval * (Characters.current.rules.spawnScale ?? 1) { // (elves come half as often)
                 spawnTimer = 0
                 let jitter = { CGFloat.random(in: -4...4) }
@@ -2189,7 +2258,7 @@ final class Colony {
         }
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
-        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") ? 1.2 : 1)
+        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") ? 1.2 : 1) * decorLevelHeal
         let raceRules = Characters.current.rules
         world.speedBoost = (1 + 0.15 * boost(.carrot)) * (Colony.isNight ? raceRules.nightSpeed ?? 1 : raceRules.daySpeed ?? 1)
         world.workBoost = 1 + 0.3 * boost(.bread)
@@ -2259,6 +2328,7 @@ enum BookCommand {
     case unequip(resident: Int, slot: String)
     case gearHold(stock: Int, gear: String, held: Bool)
     case autoGear(Bool)
+    case autoGearFar(Bool)
     case repair(resident: Int?, slot: String?, stock: Int?)
     case food(String)
     case princessName(String)

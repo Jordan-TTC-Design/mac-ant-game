@@ -145,6 +145,8 @@ export const camps = pgTable("camps", {
   armory: jsonb("armory").$type<{ id: string; left: number; held?: boolean }[]>().notNull().default([]),
   /** Whether the store is handed out by itself (shared/src/camp/gear.ts `redistribute`); off: only by hand. */
   autoGear: boolean("auto_gear").notNull().default(true),
+  /** Whether the handing out reaches every held cell too (off: only home and the towns). */
+  autoGearFar: boolean("auto_gear_far").notNull().default(false),
   /** 任務 claimed (shared/src/camp/quests.ts): quest id → when (ISO). */
   quests: jsonb("quests").$type<Record<string, string>>().notNull().default({}),
   /** Decorations the player put down in the camp window (shared/src/camp/decor.ts): kind, offset from the land's anchor, turned. */
@@ -259,7 +261,7 @@ export const expeditions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["attack", "move", "guard", "recall", "reroute"] }).notNull(),
+    kind: text("kind", { enum: ["attack", "move", "guard", "recall", "reroute", "retreat"] }).notNull(),
     /** "home" or a cell id. */
     fromPlace: text("from_place").notNull(),
     toCell: text("to_cell").notNull(),
@@ -464,6 +466,9 @@ export const guilds = pgTable("guilds", {
   /** The floor (one style and tiles laid with others) and the wall style (GUILD.md §4.3). */
   floor: jsonb("floor").$type<import("@goblincamp/shared").HallFloor>().notNull().default({ base: "oak", tiles: {} }),
   wall: text("wall").notNull().default("stone"),
+  /** Wall segments brushed another style, and the members' own places (shared/src/guild-decor.ts HallWalls, HallPlots). */
+  walls: jsonb("walls").$type<import("@goblincamp/shared").HallWalls>().notNull().default({}),
+  plots: jsonb("plots").$type<import("@goblincamp/shared").HallPlots>().notNull().default({}),
   /** Which tiles are the hall's floor (shared/src/guild-hall.ts HallArea), drawn by the leader and officers; null: from before
    * the shape could be drawn (it is set once, to the starting hall, the first time the guild is looked at). */
   area: jsonb("area").$type<import("@goblincamp/shared").HallArea>(),
@@ -492,6 +497,11 @@ export const guildDecorLog = pgTable(
     /** The hall's shape was drawn anew in this change, and what it was before (null: from before shapes, the level's rectangle). */
     areaChanged: boolean("area_changed").notNull().default(false),
     areaBefore: jsonb("area_before").$type<import("@goblincamp/shared").HallArea>(),
+    /** Wall segments brushed and the members' places changed in this change, and what they were before (null: from before them). */
+    wallsChanged: integer("walls_changed").notNull().default(0),
+    wallsBefore: jsonb("walls_before").$type<import("@goblincamp/shared").HallWalls>(),
+    plotsChanged: boolean("plots_changed").notNull().default(false),
+    plotsBefore: jsonb("plots_before").$type<import("@goblincamp/shared").HallPlots>(),
   },
   (t) => [index("guild_decor_log_guild_idx").on(t.guildId, t.at)],
 );
@@ -530,6 +540,9 @@ export const avatars = pgTable("avatars", {
   userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   avatar: jsonb("avatar").$type<import("@goblincamp/shared").Avatar>(),
   leftGuildAt: timestamp("left_guild_at", { withTimezone: true, precision: 3 }),
+  /** The clothes bought (shared/src/guild-outfits.ts; the free ones are not listed), and the contribution spent on them. */
+  outfits: jsonb("outfits").$type<string[]>().notNull().default([]),
+  spent: integer("spent").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull(),
 });
 

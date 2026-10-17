@@ -150,6 +150,16 @@ export interface PlayerWorldState {
 }
 
 export const SHIELD_COOLDOWN_HOURS = 12;
+/** A shield lasts at most this long (2026-10-17): then the camp is in the world again by itself, open to attack. */
+export const SHIELD_MAX_HOURS = 24;
+
+/** The state once a shield has run its time out by `now` (as it was otherwise). */
+export function shieldLapsed(state: PlayerWorldState, now: Date): PlayerWorldState {
+  if (!state.shieldedSince) return state;
+  const ends = Date.parse(state.shieldedSince) + SHIELD_MAX_HOURS * 3_600_000;
+  if (now.getTime() < ends) return state;
+  return { open: true, shieldedSince: null, lastShieldEnded: new Date(ends).toISOString() };
+}
 
 export function afterDefeat(state: PlayerWorldState, now: Date): PlayerWorldState {
   const last = state.lastShieldEnded ? new Date(state.lastShieldEnded).getTime() : -Infinity;
