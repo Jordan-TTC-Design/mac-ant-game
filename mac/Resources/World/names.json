@@ -1,0 +1,1111 @@
+{
+ "grid": {
+  "rowMeters": 174,
+  "cellMeters": 201,
+  "hexRadius": 116.04740410711479
+ },
+ "walk": {
+  "setOutMinutes": 3,
+  "minutesPerKm": 4,
+  "maxMinutes": 180,
+  "regionTravel": 0.25
+ },
+ "rules": {
+  "bossMinRaceLevel": 50,
+  "guestsMax": 20,
+  "homeMoveDays": 7,
+  "rationsPerExtra": 2,
+  "detailHomeAttack": 0.1,
+  "raidShare": 0.08,
+  "raidCap": 10,
+  "raidTotal": 60
+ },
+ "terrains": {
+  "forest": "森林",
+  "park": "公園",
+  "water": "水邊",
+  "urban": "市區",
+  "open": "空地",
+  "road": "大路邊"
+ },
+ "terrainYield": {
+  "forest": [
+   "scrap_wood",
+   "amber",
+   "ration_berry"
+  ],
+  "park": [
+   "scrap_rag",
+   "scrap_wood",
+   "ration_berry",
+   "food_honey"
+  ],
+  "water": [
+   "frog_skin",
+   "snake_scale",
+   "river_pearl",
+   "ration_fish"
+  ],
+  "urban": [
+   "scrap_iron",
+   "crystal_shard",
+   "ration_bread",
+   "food_cheese"
+  ],
+  "open": [
+   "scrap_rag",
+   "scrap_iron",
+   "food_carrot"
+  ],
+  "road": [
+   "scrap_iron",
+   "stolen_coin",
+   "ration_jerky"
+  ]
+ },
+ "details": {
+  "mountain": {
+   "name": "山地",
+   "icon": "⛰️",
+   "yields": [
+    "stone",
+    "scrap_iron",
+    "crystal_shard"
+   ],
+   "home": [
+    "goblin"
+   ]
+  },
+  "river": {
+   "name": "河川",
+   "icon": "🏞️",
+   "yields": [
+    "ration_fish",
+    "snake_scale",
+    "river_pearl"
+   ],
+   "home": [
+    "elf"
+   ]
+  },
+  "farmland": {
+   "name": "農田",
+   "icon": "🌾",
+   "yields": [
+    "food_carrot",
+    "ration_bread"
+   ],
+   "home": [
+    "elf"
+   ]
+  },
+  "cemetery": {
+   "name": "墓地",
+   "icon": "🪦",
+   "yields": [
+    "bone_shard",
+    "ectoplasm",
+    "night_dust"
+   ],
+   "home": [
+    "undead"
+   ]
+  },
+  "wetland": {
+   "name": "濕地",
+   "icon": "🪷",
+   "yields": [
+    "frog_skin",
+    "slime_goo",
+    "snake_skin"
+   ],
+   "home": [
+    "elf"
+   ]
+  },
+  "campus": {
+   "name": "校園",
+   "icon": "🏫",
+   "yields": [
+    "scrap_wood",
+    "shiny_bead",
+    "shaman_charm"
+   ],
+   "home": [
+    "goblin",
+    "elf",
+    "undead"
+   ]
+  },
+  "industrial": {
+   "name": "工業區",
+   "icon": "🏭",
+   "yields": [
+    "scrap_iron",
+    "leather_strap",
+    "scrap_wood"
+   ],
+   "home": [
+    "goblin"
+   ]
+  },
+  "sand": {
+   "name": "沙灘",
+   "icon": "🏖️",
+   "yields": [
+    "crab_shell",
+    "snail_shell",
+    "river_pearl"
+   ],
+   "home": [
+    "elf"
+   ]
+  },
+  "coast": {
+   "name": "海岸",
+   "icon": "🌊",
+   "yields": [
+    "ration_fish",
+    "crab_claw",
+    "naga_pearl"
+   ],
+   "home": [
+    "elf"
+   ]
+  },
+  "hotspring": {
+   "name": "溫泉",
+   "icon": "♨️",
+   "yields": [
+    "crystal_shard",
+    "amber"
+   ],
+   "home": [
+    "goblin",
+    "elf",
+    "undead"
+   ]
+  },
+  "temple": {
+   "name": "廟宇區",
+   "icon": "⛩️",
+   "yields": [
+    "shaman_charm",
+    "beeswax"
+   ],
+   "home": [
+    "goblin",
+    "elf"
+   ]
+  },
+  "hospital": {
+   "name": "醫院",
+   "icon": "🏥",
+   "yields": [
+    "item_bandage"
+   ],
+   "home": [
+    "goblin",
+    "elf",
+    "undead"
+   ]
+  },
+  "military": {
+   "name": "軍事區",
+   "icon": "🪖",
+   "yields": [
+    "guard_plate",
+    "steel_bolt"
+   ],
+   "home": [
+    "goblin",
+    "elf",
+    "undead"
+   ]
+  },
+  "railway": {
+   "name": "鐵道",
+   "icon": "🚆",
+   "yields": [
+    "scrap_iron"
+   ],
+   "home": [
+    "goblin",
+    "elf",
+    "undead"
+   ]
+  }
+ },
+ "landmarks": [
+  {
+   "kind": "station",
+   "name": "車站",
+   "icon": "🚉",
+   "blurb": "從這裡出發走路時間 −30%"
+  },
+  {
+   "kind": "temple",
+   "name": "廟宇",
+   "icon": "⛩️",
+   "blurb": "守這一格血量 +20%，旁邊自己的格子 +10%"
+  },
+  {
+   "kind": "university",
+   "name": "大學",
+   "icon": "🎓",
+   "blurb": "佔著每天多 20 經驗值"
+  },
+  {
+   "kind": "museum",
+   "name": "古蹟・博物館",
+   "icon": "🏛️",
+   "blurb": "每次產出有機會挖到碎晶、琥珀"
+  },
+  {
+   "kind": "stadium",
+   "name": "體育場",
+   "icon": "🏟️",
+   "blurb": "從這裡出發的隊伍可以多 3 隻"
+  },
+  {
+   "kind": "market",
+   "name": "市場",
+   "icon": "🧺",
+   "blurb": "每次產出多給乾糧麵包和起司"
+  }
+ ],
+ "hubs": [
+  {
+   "kind": "town",
+   "blurb": "住很多、生得跟主營一樣快，有市場",
+   "name": {
+    "goblin": "城鎮",
+    "elf": "城鎮",
+    "undead": "城鎮"
+   }
+  },
+  {
+   "kind": "fortress",
+   "blurb": "守軍多、很耐打；整區被野生魔獸打的機會減半；從這出征可以多帶 3 隻",
+   "name": {
+    "goblin": "要塞",
+    "elf": "要塞",
+    "undead": "要塞"
+   }
+  },
+  {
+   "kind": "workstead",
+   "blurb": "整區的領地產出 +30%，自己也有一大份產出",
+   "name": {
+    "goblin": "工坊鎮",
+    "elf": "工坊鎮",
+    "undead": "工坊鎮"
+   }
+  },
+  {
+   "kind": "sanctuary",
+   "blurb": "整區守軍回血加倍，打贏時倒下的有機會站起來；對死靈特別強（死靈的墓城反過來）",
+   "name": {
+    "goblin": "聖地",
+    "elf": "聖地",
+    "undead": "墓城"
+   }
+  }
+ ],
+ "buildings": {
+  "academy": {
+   "goblin": "學院",
+   "elf": "學院",
+   "undead": "學院"
+  },
+  "altar": {
+   "goblin": "祭壇",
+   "elf": "祭壇",
+   "undead": "祭壇"
+  },
+  "armory": {
+   "goblin": "軍械庫",
+   "elf": "軍械庫",
+   "undead": "軍械庫"
+  },
+  "barracks": {
+   "goblin": "營舍",
+   "elf": "營舍",
+   "undead": "營舍"
+  },
+  "bathhouse": {
+   "goblin": "溫泉旅館",
+   "elf": "溫泉旅館",
+   "undead": "溫泉旅館"
+  },
+  "blessing": {
+   "goblin": "祈福台",
+   "elf": "祈福台",
+   "undead": "祈福台"
+  },
+  "bonetower": {
+   "goblin": "骨塔",
+   "elf": "骨塔",
+   "undead": "骨塔"
+  },
+  "campfire": {
+   "goblin": "營火廣場",
+   "elf": "營火廣場",
+   "undead": "營火廣場"
+  },
+  "dock": {
+   "goblin": "碼頭",
+   "elf": "碼頭",
+   "undead": "碼頭"
+  },
+  "farmstead": {
+   "goblin": "農莊",
+   "elf": "農莊",
+   "undead": "農莊"
+  },
+  "ferry": {
+   "goblin": "渡口",
+   "elf": "渡口",
+   "undead": "渡口"
+  },
+  "field": {
+   "goblin": "田",
+   "elf": "田",
+   "undead": "田"
+  },
+  "fieldhospital": {
+   "goblin": "野戰醫院",
+   "elf": "野戰醫院",
+   "undead": "野戰醫院"
+  },
+  "fishery": {
+   "goblin": "漁場",
+   "elf": "漁場",
+   "undead": "醃肉棚"
+  },
+  "foundry": {
+   "goblin": "鍛造廠",
+   "elf": "鍛造廠",
+   "undead": "鍛造廠"
+  },
+  "freightyard": {
+   "goblin": "貨運站",
+   "elf": "貨運站",
+   "undead": "貨運站"
+  },
+  "frogpond": {
+   "goblin": "蛙池",
+   "elf": "蛙池",
+   "undead": "蛙池"
+  },
+  "geotherm": {
+   "goblin": "地熱工坊",
+   "elf": "地熱工坊",
+   "undead": "地熱工坊"
+  },
+  "granary": {
+   "goblin": "穀倉",
+   "elf": "穀倉",
+   "undead": "穀倉"
+  },
+  "harbour": {
+   "goblin": "漁港",
+   "elf": "漁港",
+   "undead": "漁港"
+  },
+  "hillfort": {
+   "goblin": "山寨",
+   "elf": "山寨",
+   "undead": "山寨"
+  },
+  "inn": {
+   "goblin": "驛站",
+   "elf": "驛站",
+   "undead": "驛站"
+  },
+  "library": {
+   "goblin": "圖書館",
+   "elf": "圖書館",
+   "undead": "圖書館"
+  },
+  "lighthouse": {
+   "goblin": "燈塔",
+   "elf": "燈塔",
+   "undead": "燈塔"
+  },
+  "lodge": {
+   "goblin": "獵人小屋",
+   "elf": "射手小屋",
+   "undead": "獵人小屋"
+  },
+  "mine": {
+   "goblin": "礦坑",
+   "elf": "礦坑",
+   "undead": "礦坑"
+  },
+  "orchard": {
+   "goblin": "採集園",
+   "elf": "採集園",
+   "undead": "採集園"
+  },
+  "ossuary": {
+   "goblin": "靈堂",
+   "elf": "靈堂",
+   "undead": "靈堂"
+  },
+  "outpost": {
+   "goblin": "哨站",
+   "elf": "哨站",
+   "undead": "哨站"
+  },
+  "pharmacy": {
+   "goblin": "藥房",
+   "elf": "藥房",
+   "undead": "藥房"
+  },
+  "reedmaze": {
+   "goblin": "蘆葦迷陣",
+   "elf": "蘆葦迷陣",
+   "undead": "蘆葦迷陣"
+  },
+  "repairshop": {
+   "goblin": "修理廠",
+   "elf": "修理廠",
+   "undead": "修理廠"
+  },
+  "sacred": {
+   "goblin": "聖樹",
+   "elf": "聖樹",
+   "undead": "聖樹"
+  },
+  "sandfort": {
+   "goblin": "沙堡哨",
+   "elf": "沙堡哨",
+   "undead": "沙堡哨"
+  },
+  "sawmill": {
+   "goblin": "伐木營地",
+   "elf": "伐木營地",
+   "undead": "伐木營地"
+  },
+  "shellhut": {
+   "goblin": "拾貝屋",
+   "elf": "拾貝屋",
+   "undead": "拾貝屋"
+  },
+  "shrine": {
+   "goblin": "香火廟",
+   "elf": "香火廟",
+   "undead": "香火廟"
+  },
+  "station": {
+   "goblin": "車站",
+   "elf": "車站",
+   "undead": "車站"
+  },
+  "storehouse": {
+   "goblin": "倉庫",
+   "elf": "倉庫",
+   "undead": "倉庫"
+  },
+  "stronghold": {
+   "goblin": "要塞堡壘",
+   "elf": "要塞堡壘",
+   "undead": "要塞堡壘"
+  },
+  "tollgate": {
+   "goblin": "關卡",
+   "elf": "關卡",
+   "undead": "關卡"
+  },
+  "watchtower": {
+   "goblin": "瞭望塔",
+   "elf": "瞭望塔",
+   "undead": "瞭望塔"
+  },
+  "watermill": {
+   "goblin": "水車",
+   "elf": "水車",
+   "undead": "水車"
+  },
+  "workshop": {
+   "goblin": "工坊",
+   "elf": "工坊",
+   "undead": "工坊"
+  }
+ },
+ "foes": {
+  "slime": {
+   "name": "史萊姆",
+   "hp": 18
+  },
+  "giant_rat": {
+   "name": "巨鼠",
+   "hp": 12
+  },
+  "bat": {
+   "name": "蝙蝠",
+   "hp": 9
+  },
+  "frog": {
+   "name": "巨蛙",
+   "hp": 16
+  },
+  "big_slime": {
+   "name": "大史萊姆",
+   "hp": 45
+  },
+  "wolf": {
+   "name": "野狼",
+   "hp": 22
+  },
+  "alpha_wolf": {
+   "name": "狼王",
+   "hp": 50
+  },
+  "bear": {
+   "name": "洞穴熊",
+   "hp": 90
+  },
+  "boar": {
+   "name": "野豬",
+   "hp": 35
+  },
+  "barbarian": {
+   "name": "野蠻人",
+   "hp": 30
+  },
+  "barbarian_archer": {
+   "name": "野蠻人弓手",
+   "hp": 20
+  },
+  "shaman": {
+   "name": "薩滿",
+   "hp": 22
+  },
+  "skeleton": {
+   "name": "骷髏兵",
+   "hp": 26
+  },
+  "wraith": {
+   "name": "怨靈",
+   "hp": 18
+  },
+  "bone_knight": {
+   "name": "骸骨騎士",
+   "hp": 70
+  },
+  "troll": {
+   "name": "巨魔",
+   "hp": 140
+  },
+  "guard": {
+   "name": "城鎮守衛",
+   "hp": 40
+  },
+  "crossbow": {
+   "name": "弩手",
+   "hp": 24
+  },
+  "captain": {
+   "name": "守備隊長",
+   "hp": 80
+  },
+  "giant_spider": {
+   "name": "巨蜘蛛",
+   "hp": 20
+  },
+  "spider_queen": {
+   "name": "蜘蛛女王",
+   "hp": 60
+  },
+  "treant": {
+   "name": "樹精",
+   "hp": 120
+  },
+  "mushroom_folk": {
+   "name": "蘑菇人",
+   "hp": 24
+  },
+  "spore_mother": {
+   "name": "孢子母",
+   "hp": 30
+  },
+  "kappa": {
+   "name": "河童",
+   "hp": 30
+  },
+  "water_snake": {
+   "name": "水蛇",
+   "hp": 16
+  },
+  "naiad": {
+   "name": "水妖",
+   "hp": 22
+  },
+  "giant_crab": {
+   "name": "巨蟹",
+   "hp": 55
+  },
+  "rat_king": {
+   "name": "鼠王",
+   "hp": 45
+  },
+  "bandit": {
+   "name": "盜賊",
+   "hp": 26
+  },
+  "knife_thrower": {
+   "name": "飛刀手",
+   "hp": 18
+  },
+  "bandit_boss": {
+   "name": "盜賊頭目",
+   "hp": 70
+  },
+  "gargoyle": {
+   "name": "石像鬼",
+   "hp": 45
+  },
+  "killer_bee": {
+   "name": "殺人蜂",
+   "hp": 7
+  },
+  "queen_bee": {
+   "name": "蜂后",
+   "hp": 40
+  },
+  "stone_golem": {
+   "name": "石像巨人",
+   "hp": 180
+  },
+  "vampire_bat": {
+   "name": "吸血蝙蝠",
+   "hp": 20
+  },
+  "rabbit": {
+   "name": "野兔",
+   "hp": 10
+  },
+  "snail": {
+   "name": "蝸牛",
+   "hp": 14
+  },
+  "caterpillar": {
+   "name": "毛毛蟲",
+   "hp": 12
+  },
+  "beetle": {
+   "name": "甲蟲",
+   "hp": 16
+  },
+  "crow": {
+   "name": "烏鴉",
+   "hp": 8
+  },
+  "pigeon": {
+   "name": "野鴿",
+   "hp": 6
+  },
+  "squirrel": {
+   "name": "松鼠",
+   "hp": 8
+  },
+  "hedgehog": {
+   "name": "刺蝟",
+   "hp": 14
+  },
+  "goose": {
+   "name": "野鵝",
+   "hp": 14
+  },
+  "fox": {
+   "name": "狐狸",
+   "hp": 14
+  },
+  "robber": {
+   "name": "攔路強盜",
+   "hp": 16
+  },
+  "orc_grunt": {
+   "name": "強獸人步兵",
+   "hp": 30
+  },
+  "orc_archer": {
+   "name": "強獸人弓手",
+   "hp": 20
+  },
+  "orc_chief": {
+   "name": "強獸人隊長",
+   "hp": 80
+  },
+  "ancient_dragon": {
+   "name": "古龍",
+   "hp": 9000
+  },
+  "lich_king": {
+   "name": "巫妖王",
+   "hp": 7000
+  },
+  "hill_giant": {
+   "name": "山丘巨人",
+   "hp": 11000
+  },
+  "hydra": {
+   "name": "九頭蛇",
+   "hp": 8500
+  },
+  "minotaur": {
+   "name": "牛頭人",
+   "hp": 7500
+  },
+  "drake": {
+   "name": "小飛龍",
+   "hp": 60
+  },
+  "giant_bat": {
+   "name": "嗜血巨蝠",
+   "hp": 230
+  },
+  "dire_wolf": {
+   "name": "狂暴巨狼",
+   "hp": 220
+  },
+  "slime_king": {
+   "name": "狂化史萊姆王",
+   "hp": 420
+  },
+  "boar_lord": {
+   "name": "暴怒野豬王",
+   "hp": 230
+  },
+  "toad_king": {
+   "name": "狂化蛙王",
+   "hp": 300
+  },
+  "ogre": {
+   "name": "食人魔",
+   "hp": 160
+  },
+  "ogre_shaman": {
+   "name": "食人魔薩滿",
+   "hp": 90
+  },
+  "harpy": {
+   "name": "鷹身女妖",
+   "hp": 70
+  },
+  "harpy_matron": {
+   "name": "鷹身族長",
+   "hp": 120
+  },
+  "werewolf": {
+   "name": "狼人",
+   "hp": 150
+  },
+  "lizard_warrior": {
+   "name": "蜥蜴人戰士",
+   "hp": 110
+  },
+  "lizard_shaman": {
+   "name": "蜥蜴人祭司",
+   "hp": 80
+  },
+  "ghost": {
+   "name": "幽魂",
+   "hp": 70
+  },
+  "haunted_armor": {
+   "name": "鬼鎧甲",
+   "hp": 180
+  },
+  "poltergeist": {
+   "name": "騷靈",
+   "hp": 60
+  },
+  "giant_ant": {
+   "name": "巨蟻",
+   "hp": 60
+  },
+  "ant_soldier": {
+   "name": "兵蟻",
+   "hp": 120
+  },
+  "dark_elf_blade": {
+   "name": "黑暗精靈劍士",
+   "hp": 100
+  },
+  "dark_elf_sorceress": {
+   "name": "黑暗精靈術士",
+   "hp": 80
+  },
+  "naga_warrior": {
+   "name": "娜迦戰士",
+   "hp": 140
+  },
+  "naga_priestess": {
+   "name": "娜迦祭司",
+   "hp": 100
+  },
+  "fire_elemental": {
+   "name": "火元素",
+   "hp": 120
+  },
+  "ice_elemental": {
+   "name": "冰元素",
+   "hp": 150
+  },
+  "storm_elemental": {
+   "name": "雷元素",
+   "hp": 100
+  },
+  "wyvern_whelp": {
+   "name": "幼飛龍",
+   "hp": 90
+  },
+  "wyvern": {
+   "name": "雙足飛龍",
+   "hp": 220
+  },
+  "ogre_king": {
+   "name": "狂化食人魔王",
+   "hp": 1100
+  },
+  "harpy_queen": {
+   "name": "狂化鷹身女王",
+   "hp": 900
+  },
+  "werewolf_alpha": {
+   "name": "狂化狼人王",
+   "hp": 1000
+  },
+  "vampire_count": {
+   "name": "吸血鬼伯爵",
+   "hp": 1200
+  },
+  "flame_lord": {
+   "name": "狂化炎魔",
+   "hp": 1300
+  },
+  "naga_queen": {
+   "name": "娜迦女王",
+   "hp": 1150
+  }
+ },
+ "materials": {
+  "ration_bread": "乾糧麵包",
+  "ration_fish": "魚乾",
+  "ration_berry": "莓果乾",
+  "ration_jerky": "肉乾",
+  "food_meat": "烤肉",
+  "food_cheese": "起司",
+  "food_carrot": "胡蘿蔔",
+  "food_honey": "蜂蜜",
+  "scrap_rag": "碎布",
+  "scrap_wood": "木片",
+  "scrap_iron": "廢鐵",
+  "crystal_shard": "碎晶",
+  "log": "木材",
+  "stone": "石頭",
+  "slime_goo": "黏液",
+  "slime_core": "史萊姆核心",
+  "elastic_gel": "彈性凝膠",
+  "shiny_bead": "閃亮黏珠",
+  "rat_fang": "鼠牙",
+  "rat_pelt": "鼠皮",
+  "rat_tail": "鼠尾",
+  "sharp_claw": "斷爪",
+  "golden_fur": "金毛",
+  "bat_wing": "蝙蝠翼",
+  "bat_fang": "蝙蝠牙",
+  "night_dust": "夜光粉",
+  "night_heart": "夜之心",
+  "frog_skin": "蛙皮",
+  "frog_leg": "蛙腿",
+  "sticky_tongue": "黏舌",
+  "golden_frog_eye": "金蛙眼",
+  "wolf_pelt": "狼皮",
+  "wolf_fang": "狼牙",
+  "alpha_mane": "狼王鬃毛",
+  "bear_pelt": "熊皮",
+  "bear_claw": "熊爪",
+  "boar_tusk": "野豬獠牙",
+  "boar_hide": "野豬皮",
+  "war_paint": "戰紋顏料",
+  "feather": "羽毛",
+  "shaman_charm": "薩滿護符",
+  "bone_shard": "碎骨",
+  "ectoplasm": "靈質",
+  "cursed_steel": "詛咒鋼",
+  "troll_hide": "巨魔皮",
+  "troll_tooth": "巨魔牙",
+  "guard_plate": "鐵甲片",
+  "steel_bolt": "鋼弩箭",
+  "captain_badge": "隊長徽章",
+  "spider_silk": "蜘蛛絲",
+  "venom_sac": "毒囊",
+  "queen_silk": "女王絲",
+  "ancient_bark": "古樹皮",
+  "amber": "琥珀",
+  "heartwood": "樹心",
+  "mushroom_cap": "蘑菇傘",
+  "glow_spore": "螢光孢子",
+  "kappa_shell": "河童甲",
+  "river_pearl": "河珍珠",
+  "snake_scale": "蛇鱗",
+  "naiad_tear": "水妖之淚",
+  "crab_shell": "蟹殼",
+  "crab_claw": "蟹螯",
+  "rat_crown": "鼠王冠",
+  "stolen_coin": "贓物銅幣",
+  "leather_strap": "皮帶",
+  "throwing_knife": "飛刀",
+  "gargoyle_stone": "石像鬼石",
+  "bee_stinger": "蜂針",
+  "beeswax": "蜂蠟",
+  "royal_jelly": "蜂王乳",
+  "golem_core": "巨人核心",
+  "vampire_fang": "吸血牙",
+  "rabbit_fur": "兔毛",
+  "rabbit_foot": "幸運兔腳",
+  "snail_shell": "蝸牛殼",
+  "silk_thread": "絲線",
+  "beetle_shell": "甲蟲殼",
+  "beetle_horn": "獨角仙角",
+  "black_feather": "黑羽毛",
+  "shiny_trinket": "亮晶晶的小東西",
+  "acorn": "橡實",
+  "squirrel_tail": "松鼠尾巴",
+  "hedgehog_spine": "刺蝟刺",
+  "goose_feather": "鵝毛",
+  "fox_tail": "狐狸尾巴",
+  "orc_tusk": "強獸人獠牙",
+  "crude_blade": "粗鐵刀刃",
+  "war_banner": "軍團旗幟",
+  "giant_bat_wing": "巨蝠膜",
+  "echo_fang": "回音牙",
+  "dire_pelt": "巨狼皮",
+  "dire_fang": "巨狼獠牙",
+  "royal_gel": "王者凝膠",
+  "slime_crown": "史萊姆王冠",
+  "lord_tusk": "野豬王獠牙",
+  "thick_hide": "厚野豬皮",
+  "toad_skin": "蛙王皮",
+  "toad_gem": "蛙王寶石",
+  "item_bandage": "草藥繃帶",
+  "item_tonic": "蜂王漿",
+  "item_sticky": "黏黏彈",
+  "item_charm": "幸運符",
+  "item_lantern": "夜光燈籠",
+  "dragon_scale": "龍鱗",
+  "dragon_heart": "龍心",
+  "soul_gem": "靈魂寶石",
+  "lich_crown": "巫妖冠",
+  "giant_bone": "巨人骨",
+  "giant_heart": "巨人之心",
+  "hydra_fang": "九頭蛇牙",
+  "hydra_blood": "九頭蛇血",
+  "minotaur_horn": "牛頭人角",
+  "labyrinth_key": "迷宮鑰匙",
+  "harpy_feather": "鷹身羽",
+  "werewolf_fur": "狼人毛",
+  "lizard_scale": "蜥蜴人鱗",
+  "ant_chitin": "蟻甲",
+  "dark_silk": "暗絲",
+  "naga_pearl": "娜迦珍珠",
+  "elemental_core": "元素核心",
+  "ogre_king_belt": "食人魔王腰帶",
+  "harpy_crown": "鷹身王冠",
+  "alpha_fang": "狼王牙",
+  "vampire_cape": "伯爵披風",
+  "flame_heart": "炎魔之心",
+  "naga_crown": "娜迦王冠",
+  "chief_tusk": "酋長獠牙",
+  "war_totem": "戰圖騰",
+  "elder_scale": "遠古龍鱗",
+  "snake_skin": "蛇皮",
+  "snake_fang": "蛇牙",
+  "spore_cap": "孢子傘",
+  "raven_eye": "鴉眼",
+  "bandit_mask": "山賊面巾",
+  "troll_moss": "巨魔苔",
+  "stone_wing": "石翼片",
+  "gargoyle_eye": "石像鬼之眼",
+  "salamander_scale": "火蠑螈鱗",
+  "ember_gland": "火腺",
+  "hornet_stinger": "蜂針",
+  "shadow_essence": "暗影精華",
+  "wisp_flame": "鬼火芯",
+  "ogre_hide": "食人魔皮",
+  "ogre_club": "食人魔棒",
+  "wyvern_scale": "飛龍鱗",
+  "wyvern_wing": "飛龍翼膜",
+  "iron_plate": "魔像鐵板",
+  "ghost_veil": "幽魂面紗",
+  "banshee_tear": "女妖之淚",
+  "basilisk_scale": "蛇蜥鱗",
+  "basilisk_eye": "石化之眼"
+ },
+ "rations": [
+  "ration_bread",
+  "ration_fish",
+  "ration_berry",
+  "ration_jerky"
+ ],
+ "boosts": [
+  {
+   "id": "food_meat",
+   "name": "烤肉",
+   "what": "攻擊 +20%",
+   "item": false
+  },
+  {
+   "id": "food_cheese",
+   "name": "起司",
+   "what": "受到的傷害 −20%",
+   "item": false
+  },
+  {
+   "id": "food_carrot",
+   "name": "胡蘿蔔",
+   "what": "走路快 15%，先出手",
+   "item": false
+  },
+  {
+   "id": "food_honey",
+   "name": "蜂蜜",
+   "what": "血量 +20%",
+   "item": false
+  },
+  {
+   "id": "item_bandage",
+   "name": "草藥繃帶",
+   "what": "受到的傷害 −10%",
+   "item": true
+  },
+  {
+   "id": "item_tonic",
+   "name": "蜂王漿",
+   "what": "攻擊 +10%、血量 +10%",
+   "item": true
+  },
+  {
+   "id": "item_sticky",
+   "name": "黏黏彈",
+   "what": "敵人慢 25%（我方先出手）",
+   "item": true
+  },
+  {
+   "id": "item_charm",
+   "name": "幸運符",
+   "what": "打贏巢穴的掉落 +50%",
+   "item": true
+  },
+  {
+   "id": "item_lantern",
+   "name": "夜光燈籠",
+   "what": "晚上打黑暗生物，牠們不會變強",
+   "item": true
+  }
+ ]
+}

@@ -333,7 +333,7 @@ OpenStreetMap 還沒接上，`shared/src/world/terrain.ts` 先用種子做「一
 ### 還沒做
 
 - OpenStreetMap 的真實地形與像素風圖磚。
-- Mac 原生的世界地圖（現在是 Mac 視窗裡的網頁）。
+- ~~Mac 原生的世界地圖~~（2026-10-17 做了：主視窗的大世界頁改成 Swift 原生，見 DESKTOP.md「大世界（原生）」；派兵視窗問伺服器的 `POST /world/expeditions/plan`。領地頁、戰報重播、天賦、排行榜還是網頁，開在自己的小視窗）。
 - 出征的裝備磨損（營地的魔獸來襲有，大世界先不磨）。
 
 ## 16. 世界魔王（2026-09-28）

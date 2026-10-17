@@ -193,7 +193,8 @@ final class FriendsPane: NSObject, MainPane, NSTextFieldDelegate {
         onUnread?(got.friends.reduce(0) { $0 + $1.unread } + got.incoming.count)
     }
 
-    private func open(_ id: String) {
+    /// Opens the chat with a friend (also from the big world's cell card: 傳訊息).
+    func open(_ id: String) {
         if chatWith != id {
             chat = nil
             field.stringValue = ""

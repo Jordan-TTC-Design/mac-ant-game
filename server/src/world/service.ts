@@ -151,6 +151,7 @@ import {
   type TerritoryList,
   type ExpeditionReport,
   type ExpeditionSummary,
+  type ExpeditionPlan,
   type Lair,
   type LairView,
   type LatLng,
@@ -1296,6 +1297,107 @@ export async function estimateExpedition(
   if (defenders.length === 0) return { win: 1, fallen: 0, killed: 0, facing: 0, total: 0, entry };
   const result = estimateBattle(attackers, slowed(defenders, plan.boosts), 40);
   return { win: result.win, fallen: result.fallen, killed: result.killed, facing: defenders.length, total, entry };
+}
+
+/** Thrown to take back a party sent only to see what sending it would do (planExpedition). */
+class DryRun extends Error {}
+
+/**
+ * Everything the dispatch window shows before a party goes (the Mac's window asks this; the phone works most of it out
+ * itself): who could go and how strong, how the party picked would fare, and the walk. The walk and the refusals come from
+ * sending the party for real inside a savepoint that is then taken back, so they are always the same as sending it.
+ */
+export async function planExpedition(
+  tx: Tx,
+  userId: string,
+  input: { from: string; to: string; kind: "attack" | "settle" | "move" | "guard"; residents?: number[]; supplies?: Record<string, number>; settle: boolean; plunder: boolean },
+  now: Date,
+): Promise<ExpeditionPlan> {
+  const [camp] = await tx.select().from(camps).where(eq(camps.userId, userId));
+  const [player] = await tx.select().from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  if (!camp || !player?.homeCell) throw new WorldError(403, "not_open", "還沒開啟大世界。");
+  const race = camp.race;
+  const capped = input.kind === "attack" || input.kind === "settle";
+  const power = (r: ResidentRow) => Math.round(combatPower([residentFighter(fighterOf(race, r), "attack", traitsOf(race))]));
+  // everybody alive and free, by where they are
+  const alive = await tx
+    .select()
+    .from(campResidents)
+    .where(and(eq(campResidents.userId, userId), isNull(campResidents.diedAt), or(eq(campResidents.place, "home"), sql`${campResidents.place} like 'cell:%'`)))
+    .orderBy(campResidents.id);
+  const byPlace = new Map<string, { r: ResidentRow; power: number }[]>();
+  for (const r of alive) byPlace.set(r.place, [...(byPlace.get(r.place) ?? []), { r, power: power(r) }]);
+  for (const list of byPlace.values()) list.sort((a, b) => b.power - a.power || a.r.id - b.r.id);
+
+  const held = await heldCells(tx, userId);
+  const around = await surroundings(tx, held, now);
+  const tb = talentBonus(player.talents);
+  const level = raceLevel(player.xp);
+  const keepAt = (from: string) => (from === "home" ? HOME_KEEP : garrisonMin(race));
+  const bonusAt = async (from: string) => {
+    const cell = from === "home" ? player.homeCell! : from;
+    const row = from === "home" ? null : (await tx.select({ building: worldCells.building }).from(worldCells).where(eq(worldCells.cell, from)))[0];
+    return cellBonus(race, row?.building ?? null, now.getTime(), around(cell)).party + (tb.party ?? 0);
+  };
+  const startIds = ["home", ...held.filter((c) => c !== player.homeCell && c !== input.to && (byPlace.get(cellPlace(c))?.length ?? 0) > garrisonMin(race))];
+  const starts: ExpeditionPlan["starts"] = [];
+  for (const id of startIds) {
+    const there = byPlace.get(id === "home" ? "home" : cellPlace(id)) ?? [];
+    const best = Math.max(0, Math.min(60, there.length - keepAt(id), capped ? partyCap(race, level) + (await bonusAt(id)) : 60));
+    starts.push({ id, n: there.length, best, power: Math.round(combatPower(there.slice(0, best).map((x) => residentFighter(fighterOf(race, x.r), "attack", traitsOf(race))))) });
+  }
+
+  const from = startIds.includes(input.from) ? input.from : "home";
+  const here = byPlace.get(from === "home" ? "home" : cellPlace(from)) ?? [];
+  const picked = new Set(input.residents ?? []);
+  const party = here.filter((x) => picked.has(x.r.id)).map((x) => x.r);
+  const supplies = capped ? (input.supplies ?? {}) : {};
+  const plan = planSupplies(race, level, party.length, supplies, camp.materials, await bonusAt(from));
+  const way = await previewRoute(tx, userId, { from, to: input.to });
+  const [target] = await tx.select().from(worldCells).where(eq(worldCells.cell, input.to));
+  const fighting = input.kind === "attack";
+  const estimate = fighting && party.length ? await estimateExpedition(tx, userId, { from, to: input.to, residents: party.map((r) => r.id), supplies }, now) : null;
+  const entry = fighting && !target?.owner ? await entryOf(tx, input.to, target ?? null, now) : null;
+  const armed = party.map((r) => residentFighter(fighterOf(race, r), "attack", traitsOf(race), { ...withCarried(fightBoosts(race, camp.boosts, now.getTime()), plan.boosts), ...talentFight(tb, target?.owner ? "player" : "lair") }));
+
+  // the walk, and what would stop it: the party sent for real, then taken back
+  let minutes: number | null = null;
+  let problem: string | null = null;
+  if (party.length) {
+    try {
+      await tx.transaction(async (sp) => {
+        const sent = await sendExpedition(
+          sp,
+          userId,
+          { from, to: input.to, residents: party.map((r) => r.id), settle: input.kind === "settle" || (fighting && input.settle && !input.plunder), guard: input.kind === "guard", supplies, plunder: fighting && input.plunder },
+          now,
+        );
+        minutes = Math.max(1, Math.round((Date.parse(sent.arriveAt) - now.getTime()) / MINUTE));
+        throw new DryRun();
+      });
+    } catch (e) {
+      if (e instanceof WorldError) problem = e.message;
+      else if (!(e instanceof DryRun)) throw e;
+    }
+  }
+  const startCell = from === "home" ? player.homeCell : from;
+  const towns = new Set((await tx.select({ cell: worldCells.cell }).from(worldCells).where(and(eq(worldCells.owner, userId), eq(worldCells.town, true)))).map((c) => c.cell));
+  const moonGate = input.kind === "move" && startCell !== player.homeCell && towns.has(startCell) && towns.has(input.to) && hasAbility(tb, "moonGate") && (await moonGatesLeft(tx, userId, now)) > 0;
+  return {
+    residents: here.map(({ r, power }) => ({ id: r.id, name: r.name, seed: r.seed, legacySeed: r.legacySeed, breed: r.breed, gear: Object.keys(r.gear ?? {}).length, power })),
+    starts,
+    power: Math.round(combatPower(armed)),
+    estimate: estimate && estimate.facing + estimate.total > 0 ? { win: estimate.win, fallen: estimate.fallen, killed: estimate.killed, facing: estimate.facing, total: estimate.total } : null,
+    entry,
+    supplies: { cap: plan.cap, extra: plan.extra, most: plan.most, spent: plan.spent, problem: party.length ? plan.problem : null },
+    minutes,
+    detour: minutes !== null && way.meters > 0 && way.waypoints.length > 2 ? Math.max(0, Math.round(minutes * (1 - way.straight / way.meters))) : 0,
+    moonGate,
+    nightRaid: fighting && hasAbility(tb, "nightRaid") && nightAt(startCell, now),
+    canPlunder: fighting && !!target?.owner && target.owner !== userId && hasAbility(tb, "plunder"),
+    way,
+    problem,
+  };
 }
 
 // --- arriving -----------------------------------------------------------------------------------------------------

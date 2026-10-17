@@ -53,6 +53,46 @@ export type ExpeditionInput = z.infer<typeof expeditionInput>;
 
 export const routeInput = z.object({ from: z.union([z.literal("home"), cell]).default("home"), to: cell });
 
+/**
+ * `POST /api/world/expeditions/plan`: everything the dispatch window shows for a party not sent yet (the Mac's own window
+ * asks this instead of working the rules out itself): who could go from `from` and how strong each is, how the party picked
+ * would fare, how long the walk is, and why it could not go (the same checks as sending it). Nothing is sent.
+ */
+export const planInput = z.object({
+  from: z.union([z.literal("home"), cell]).default("home"),
+  to: cell,
+  kind: z.enum(["attack", "settle", "move", "guard"]),
+  /** The party picked so far (none: only who could go is answered). */
+  residents: z.array(z.number().int().min(1)).max(120).optional(),
+  supplies: z.record(z.string().max(40), z.number().int().min(0).max(60)).optional(),
+  settle: z.boolean().default(false),
+  plunder: z.boolean().default(false),
+});
+
+export interface ExpeditionPlan {
+  /** Everyone at the place it sets out from, strongest first (`power`: each alone, as the dialog lists them). */
+  residents: { id: number; name: string | null; seed: number; legacySeed: string | null; breed: string; gear: number; power: number }[];
+  /** Where it could set out from ("home" or a held cell): how many live there, how many of the strongest could go and their strength. */
+  starts: { id: string; n: number; best: number; power: number }[];
+  /** The party picked, with its food and talents, against this target. */
+  power: number;
+  /** Fought out 40 times (null: nobody picked, or nothing to fight). */
+  estimate: { win: number; fallen: number; killed: number; facing: number; total: number } | null;
+  /** A lair lets only this many in (null: no limit). */
+  entry: number | null;
+  /** The food plan (supplies.ts planSupplies) for the party picked: how many may go, what is eaten, what is short. */
+  supplies: { cap: number; extra: number; most: number; spent: Record<string, number>; problem: string | null };
+  /** How long the walk would take (null: it could not go), and how much of it is the way round. */
+  minutes: number | null;
+  detour: number;
+  moonGate: boolean;
+  nightRaid: boolean;
+  canPlunder: boolean;
+  way: RoutePreview;
+  /** Why sending it now would be refused (the server's own sentence), or null. */
+  problem: string | null;
+}
+
 /** The way a party would walk (POST world/expeditions/route): round other camps' built-up land (route.ts). */
 export interface RoutePreview {
   /** The cells walked between, or empty when there is no way round. */

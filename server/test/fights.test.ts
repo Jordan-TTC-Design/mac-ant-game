@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { cellAt, lairEntry, neighbors, pvpFront, type CellView, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
+import { cellAt, lairEntry, neighbors, pvpFront, type CellView, type ExpeditionPlan, type ExpeditionReport, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -114,5 +114,35 @@ describe("a lair", () => {
     const res = await t.call("POST", "/world/expeditions", { to: lair.cell, count: 25 }, a);
     expect(res.status).toBe(201);
     expect(res.body.party).toBe(entry);
+  });
+});
+
+describe("planning a party before sending it (the Mac's dispatch window)", () => {
+  it("answers who could go, how it would fare and how long the walk is, the same as sending it, and sends nothing", async () => {
+    const { a, far } = await twoCamps();
+    const before = await me(a);
+    const empty = (await t.call("POST", "/world/expeditions/plan", { to: far, kind: "attack" }, a)).body as ExpeditionPlan;
+    expect(empty.residents.length).toBe(before.atHome);
+    expect(empty.residents.map((r) => r.power)).toEqual([...empty.residents.map((r) => r.power)].sort((x, y) => y - x));
+    expect(empty.starts[0]).toEqual(expect.objectContaining({ id: "home", n: before.atHome }));
+    expect(empty.minutes).toBeNull();
+    const party = empty.residents.slice(0, 6).map((r) => r.id);
+    const plan = await t.call("POST", "/world/expeditions/plan", { to: far, kind: "attack", residents: party }, a);
+    expect(plan.status).toBe(200);
+    const p = plan.body as ExpeditionPlan;
+    expect(p.problem).toBeNull();
+    expect(p.estimate).toEqual(expect.objectContaining({ facing: pvpFront(6) }));
+    expect(p.power).toBeGreaterThan(0);
+    // nothing went: everybody still at home, nobody on the road
+    const after = await me(a);
+    expect(after.atHome).toBe(before.atHome);
+    expect(after.walking).toHaveLength(0);
+    const sent = await t.call("POST", "/world/expeditions", { to: far, residents: party }, a);
+    expect(sent.status).toBe(201);
+    expect(Math.round((Date.parse(sent.body.arriveAt) - Date.parse(sent.body.setOutAt)) / MIN)).toBe(p.minutes);
+    // more than may go at once: the server's own sentence
+    const all = (await t.call("POST", "/world/expeditions/plan", { to: far, kind: "attack", residents: p.residents.filter((r) => !party.includes(r.id)).slice(0, 100).map((r) => r.id) }, a)).body as ExpeditionPlan;
+    expect(all.problem).toBeTruthy();
+    expect(all.minutes).toBeNull();
   });
 });

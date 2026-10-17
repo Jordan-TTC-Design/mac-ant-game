@@ -727,7 +727,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if let path = env["CAMP_TEST_WORLD"] { // (with CAMP_TEST_LOGIN) open the big-world window signed in, and draw the page at 15 s
             after(6) { self.showWorld() }
-            after(15) { self.worldWindow?.snapshotForTesting(to: path) { url in log("world window at \(url)") } }
+            after(15) { self.worldPane?.snapshotForTesting(to: path) { log("world page at \(path): \($0)") } }
+            if let pick = env["CAMP_TEST_WORLD_PICK"] { // then pick a cell (and for a lair, open the dispatch sheet) and draw it again at 22 s
+                after(16) { self.worldPane?.pickForTesting(pick) }
+                after(22) { self.worldPane?.snapshotForTesting(to: path.replacingOccurrences(of: ".png", with: "-pick.png")) { log("world pick at \($0)") } }
+            }
         }
         if env["CAMP_TEST_FOCUS"] != nil { // (with CAMP_TEST_LOGIN) three 1-minute focus rounds from 6 s; every 15 s: the books' focus and the merchant
             after(6) { self.startPomodoro(focus: 1, rest: 0, rounds: 3, longRest: 0); log("focus: pomodoro started") }
@@ -2117,6 +2121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         items.signIn.title = sync.status == .needsLogin ? "重新登入…" : "登入或註冊…"
         if friendsUser != user?.id {
             friendsUser = user?.id
+            worldPane?.reset()
             friendsPane = nil
             friendsUnread = 0
             if user != nil { ensureFriendsPane().refreshCount() }
@@ -2301,7 +2306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.onBookCommand = { [weak self] command in self?.sendCommand(command) }
         ledger.loadPending()
         lastStory = try? JSONEncoder().encode(colony.romance)
-        sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks(); self?.checkWorld() } }
+        sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks(); self?.checkWorld(); self?.worldPane?.campChanged() } }
         sync.onEvent = { [weak self] type, event in self?.serverEvent(type, event) }
         sync.onConnected = { [weak self] in
             self?.pullPomodoro()
@@ -4195,7 +4200,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guildPane.setPopped(settings.guildPopped, onTop: settings.guildOnTop)
         guildWindow.applyLevel()
     }
-    private var worldWindow: WebPane? { webPanes[.world] }
+    /// 大世界, the Mac's own page (WorldPane.swift).
+    private var worldPane: WorldPane?
+
+    private func ensureWorldPane() -> WorldPane {
+        if let worldPane { return worldPane }
+        let pane = WorldPane(api: sync.api)
+        pane.me = { [weak self] in self?.sync.user?.id }
+        pane.onOpenCamp = { [weak self] in self?.mainWindow.show(.camp) }
+        pane.onMessage = { [weak self] id in
+            guard let self else { return }
+            self.mainWindow.show(.friends)
+            self.ensureFriendsPane().open(id)
+        }
+        worldPane = pane
+        return pane
+    }
     private lazy var accountPane: AccountPane = {
         let pane = AccountPane()
         pane.content = { [weak self] in self?.accountContent() ?? AccountPane.Content(heading: "", lines: [], buttons: []) }
@@ -4256,7 +4276,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return feedbackPane
         case .friends:
             return ensureFriendsPane()
-        case .world, .quests, .feed:
+        case .world:
+            return ensureWorldPane()
+        case .quests, .feed:
             if let pane = webPanes[page] { return pane }
             let pane = WebPane(api: sync.api, path: "/\(page.rawValue)")
             webPanes[page] = pane

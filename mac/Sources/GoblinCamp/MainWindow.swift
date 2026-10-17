@@ -44,7 +44,8 @@ final class MainWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTab
             switch self {
             case .camp: return 300
             case .guild: return 640 // (the panels beside the hall need their room)
-            case .world, .quests, .feed: return 360
+            case .world: return 760 // (the map, and the column beside it)
+            case .quests, .feed: return 360
             case .feedback: return 460
             case .friends: return 420
             case .account, .manual: return 420

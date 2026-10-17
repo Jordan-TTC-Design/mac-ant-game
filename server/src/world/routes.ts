@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { buildInput, demolishInput, hubInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
+import { buildInput, demolishInput, hubInput, expeditionInput, isCellId, marketInput, openWorldInput, planInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -8,6 +8,7 @@ import {
   buildOnCell,
   demolishOnCell,
   estimateExpedition,
+  planExpedition,
   previewRoute,
   unguard,
   buildTown,
@@ -128,6 +129,14 @@ export function worldRoutes(deps: AppDeps) {
     if ("response" in body) return body.response;
     const userId = c.get("session").user.id;
     return respond(c, await run(c, () => db.transaction((tx) => estimateExpedition(tx, userId, body.data, now()))));
+  });
+
+  /** Everything the dispatch window shows for a party not sent yet (the Mac's window): nothing is sent. */
+  app.post("/expeditions/plan", async (c) => {
+    const body = await readJson(c, planInput);
+    if ("response" in body) return body.response;
+    const userId = c.get("session").user.id;
+    return respond(c, await run(c, () => db.transaction((tx) => planExpedition(tx, userId, body.data, now()))));
   });
 
   /** The way a party would walk round other camps' land (nothing is sent). */
