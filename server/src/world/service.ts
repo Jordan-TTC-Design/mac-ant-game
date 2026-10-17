@@ -95,6 +95,7 @@ import {
   cellBonus,
   cellRaidLosses,
   detailBuildingsFor,
+  buildingSlots,
   hubName,
   hubRule,
   type HubKind,
@@ -426,16 +427,15 @@ async function surroundings(tx: Tx, held: string[], at: Date): Promise<(cell: st
     return hubsOf.get(cell) ?? [];
   };
   // the buildings working on them by `at`, and so the kinds in each region (REGION_COMBOS)
-  const built = new Map(
-    (held.length ? await tx.select({ cell: worldCells.cell, building: worldCells.building }).from(worldCells).where(inArray(worldCells.cell, held)) : [])
-      .filter((r) => workingLevel(r.building, at.getTime()) >= 1)
-      .map((r) => [r.cell, r.building!.kind]),
-  );
+  const rows = held.length ? await tx.select({ cell: worldCells.cell, building: worldCells.building, building2: worldCells.building2 }).from(worldCells).where(inArray(worldCells.cell, held)) : [];
+  const built = new Map(rows.map((r) => [r.cell, [r.building, r.building2].filter((b) => workingLevel(b, at.getTime()) >= 1).map((b) => b!.kind)]));
+  // (a town's or another hub's second building: details.ts buildingSlots)
+  const seconds = new Map(rows.flatMap((r) => (r.building2 ? [[r.cell, r.building2] as const] : [])));
   const kindsIn = new Map<string, string[]>();
   const regionKindsOf = (cell: string) => {
     if (!kindsIn.has(cell)) {
       const region = connectedCells(cell, mine);
-      const kinds = [...new Set(region.flatMap((c) => (built.has(c) ? [built.get(c)!] : [])))];
+      const kinds = [...new Set(region.flatMap((c) => built.get(c) ?? []))];
       for (const c of region) kindsIn.set(c, kinds);
     }
     return kindsIn.get(cell) ?? [];
@@ -457,6 +457,7 @@ async function surroundings(tx: Tx, held: string[], at: Date): Promise<(cell: st
     town: towns.has(cell),
     regionKinds: mine.has(cell) ? regionKindsOf(cell) : [],
     hub: hubAt.get(cell) ?? null,
+    second: seconds.get(cell) ?? null,
     regionHubs: mine.has(cell) && hubAt.size ? regionHubsOf(cell) : [],
   });
 }
@@ -1845,7 +1846,7 @@ export async function demolishHub(tx: Tx, userId: string, cell: string, now: Dat
  * Builds `kind` on a held cell (its ground must allow it), or raises the one there a level (the same kind; one at a time,
  * not while it is still going up). Another kind means taking the old one down first.
  */
-export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: string, now: Date) {
+export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: string, now: Date, slot: 1 | 2 = 1) {
   const { camp } = await ownCell(tx, userId, cell);
   await advanceWorld(tx, camp, now);
   const row = await ownedRow(tx, userId, cell);
@@ -1862,7 +1863,11 @@ export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: st
     const others = region.length ? await tx.select({ building: worldCells.building }).from(worldCells).where(inArray(worldCells.cell, region)) : [];
     if (others.some((o) => o.building?.kind === rule.kind)) throw new WorldError(409, "exists", `這一區已經有${rule.name}了（一區一棵）。`);
   }
-  const b = row.building;
+  // (a town or another hub has a second place: details.ts buildingSlots; not the same kind twice)
+  if (slot === 2 && buildingSlots(row.town || !!row.hub) < 2) throw new WorldError(409, "no_slot", "只有城鎮和其他中心有第二個建築位。");
+  const other = slot === 2 ? row.building : row.building2;
+  if (other?.kind === kind) throw new WorldError(409, "exists", `另一個建築位已經是${cellBuildingName(kind, camp.race)}了。`);
+  const b = slot === 2 ? row.building2 : row.building;
   if (b && b.kind !== kind) throw new WorldError(409, "exists", `這一格已經有${cellBuildingName(b.kind, camp.race)}了；要換先拆掉。`);
   if (b && workingLevel(b, now.getTime()) < b.level) throw new WorldError(409, "busy", "還在蓋，蓋好才能再升級。");
   const level = (b?.level ?? 0) + 1;
@@ -1874,7 +1879,7 @@ export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: st
   camp.materials = spend(camp.materials, cost);
   await recordFlow(tx, userId, now, "world-build", taken(cost));
   const building = { kind: rule.kind, level, busyUntil: new Date(now.getTime() + CELL_BUILDING_HOURS[level - 1]! * HOUR).toISOString() };
-  await tx.update(worldCells).set({ building, updatedAt: now }).where(eq(worldCells.cell, cell));
+  await tx.update(worldCells).set({ ...(slot === 2 ? { building2: building } : { building }), updatedAt: now }).where(eq(worldCells.cell, cell));
   await addEvent(tx, userId, now, "world", { built: { cell, kind, level } });
   await bumpVersion(tx, camp);
 }
@@ -2088,13 +2093,14 @@ export async function setCellTarget(tx: Tx, userId: string, cell: string, target
 }
 
 /** Takes the building down (nothing comes back: the ground is cleared for another). */
-export async function demolishOnCell(tx: Tx, userId: string, cell: string, now: Date) {
+export async function demolishOnCell(tx: Tx, userId: string, cell: string, now: Date, slot: 1 | 2 = 1) {
   const { camp } = await ownCell(tx, userId, cell);
   await advanceWorld(tx, camp, now);
   const row = await ownedRow(tx, userId, cell);
-  if (!row.building) throw new WorldError(409, "none", "這一格沒有建築。");
-  await tx.update(worldCells).set({ building: null, updatedAt: now }).where(eq(worldCells.cell, cell));
-  await addEvent(tx, userId, now, "world", { demolished: { cell, kind: row.building.kind } });
+  const b = slot === 2 ? row.building2 : row.building;
+  if (!b) throw new WorldError(409, "none", "這一格沒有建築。");
+  await tx.update(worldCells).set({ ...(slot === 2 ? { building2: null } : { building: null }), updatedAt: now }).where(eq(worldCells.cell, cell));
+  await addEvent(tx, userId, now, "world", { demolished: { cell, kind: b.kind } });
   await bumpVersion(tx, camp);
 }
 
@@ -2558,6 +2564,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     canBuild: isHome ? [] : [...buildingsFor(terrain), ...specialBuildingsFor(terrain, camp.race, await talentBonusOf(tx, userId)), ...detailBuildingsFor(await detailOf(tx, cell))].map((r) => ({ kind: r.kind, name: cellBuildingName(r.kind, camp.race), blurb: cellBuildingBlurb(r.kind, camp.race) })),
     nextCost: isHome || top ? null : CELL_BUILDING_COSTS[b?.level ?? 0]!,
     nextHours: isHome || top ? null : CELL_BUILDING_HOURS[b?.level ?? 0]!,
+    ...(!isHome && buildingSlots(row.town || !!row.hub) > 1 ? { second: secondPlace(row.building2, camp.race, now, buildingTopFor(raceLevel(me?.xp ?? 0))) } : {}),
     bonus: cellBonus(camp.race, b, now.getTime(), around),
     landmark: around.landmark && landmark ? { ...around.landmark, icon: landmark.icon, label: landmark.name, blurb: landmark.blurb } : null,
     templeNear: !!around.templeNear,
@@ -2570,6 +2577,18 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     guests: guestRows.map((g) => ({ owner: g.owner, name: g.name ?? "？", count: g.n })),
     upkeep: { pays: paying.has(cell), paying: paying.size, rations: rationsIn(camp.materials), freeCells: UPKEEP_FREE_CELLS, perYield: UPKEEP_RATIONS, everyHours: UPKEEP_EVERY * YIELD_HOURS },
     history,
+  };
+}
+
+/** A town's or another hub's second building place, as its page shows it. */
+function secondPlace(b: CellBuilding | null, race: string, now: Date, topLevel: number): NonNullable<CellDetail["second"]> {
+  const top = !!b && b.level >= Math.min(CELL_BUILDING_TOP, topLevel);
+  return {
+    building: b
+      ? { kind: b.kind, name: cellBuildingName(b.kind, race), blurb: cellBuildingBlurb(b.kind, race), level: b.level, working: workingLevel(b, now.getTime()), busyUntil: b.busyUntil && Date.parse(b.busyUntil) > now.getTime() ? b.busyUntil : null }
+      : null,
+    nextCost: top ? null : CELL_BUILDING_COSTS[b?.level ?? 0]!,
+    nextHours: top ? null : CELL_BUILDING_HOURS[b?.level ?? 0]!,
   };
 }
 

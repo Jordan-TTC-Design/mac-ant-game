@@ -373,6 +373,8 @@ export interface CellSurroundings {
   hub?: HubKind | null;
   /** The hubs other than towns of its region, this one among them (their region-wide ways). */
   regionHubs?: readonly HubKind[];
+  /** A town's or another hub's second building (details.ts buildingSlots). */
+  second?: CellBuilding | null;
 }
 
 /**
@@ -448,9 +450,16 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
     out.yieldBoost += SACRED_YIELD;
     out.fort += SACRED_FORT;
   }
+  // its building, and a town's or another hub's second one (details.ts buildingSlots)
+  for (const b of [building, around.second]) addBuilding(out, race, b, now, around);
+  return out;
+}
+
+/** What one building working on a held cell adds to `out` (cellBonus). */
+function addBuilding(out: CellBonus, race: string, building: CellBuilding | null | undefined, now: number, around: CellSurroundings) {
   const level = workingLevel(building, now);
   const rule: (CellBuildingRule & Partial<DetailBuildingRule>) | DetailBuildingRule | undefined = building ? (RULES.get(building.kind as CellBuildingKind) ?? detailBuilding(building.kind)) : undefined;
-  if (!rule || level < 1) return out;
+  if (!rule || level < 1) return;
   const k = (Math.min(CELL_BUILDING_TOP, level) - 1) as 0 | 1 | 2 | 3;
   const races = "races" in rule ? rule.races : undefined;
   for (const [id, v] of Object.entries(races?.[race]?.makes ?? rule.makes ?? {})) if (v[k]) out.makes[id] = (out.makes[id] ?? 0) + v[k];
@@ -460,11 +469,11 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
   if (rule.room) out.room += rule.room[k];
   if (rule.party) out.party += rule.party[k];
   if ("wild" in rule && rule.wild) out.wild = 1 - (1 - (out.wild ?? 0)) * (1 - rule.wild[k]);
-  if ("heal" in rule && rule.heal) out.heal = rule.heal[k];
-  if ("xp" in rule && rule.xp) out.fightXp = rule.xp[k];
-  if ("sage" in rule && rule.sage) out.sage = rule.sage[k];
-  if ("breed" in rule && rule.breed) out.breed = rule.breed[k];
-  if ("wear" in rule && rule.wear) out.wear = rule.wear[k];
+  if ("heal" in rule && rule.heal) out.heal = (out.heal ?? 0) + rule.heal[k];
+  if ("xp" in rule && rule.xp) out.fightXp = (out.fightXp ?? 0) + rule.xp[k];
+  if ("sage" in rule && rule.sage) out.sage = (out.sage ?? 1) * rule.sage[k];
+  if ("breed" in rule && rule.breed) out.breed = (out.breed ?? 1) * rule.breed[k];
+  if ("wear" in rule && rule.wear) out.wear = Math.min(0.9, (out.wear ?? 0) + rule.wear[k]);
   // paired with its partner in the region (REGION_COMBOS): a little more of what it does
   const combos = combosFor(rule.kind, around.regionKinds ?? []);
   for (const _ of combos) {
@@ -475,8 +484,7 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
     if (rule.party) out.party += 1;
     if (rule.travel) out.travel *= 0.9;
   }
-  if (combos.length) out.combos = combos.map((c) => c.name);
-  return out;
+  if (combos.length) out.combos = [...(out.combos ?? []), ...combos.map((c) => c.name)];
 }
 
 /**

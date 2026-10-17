@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { buildInput, hubInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
+import { buildInput, demolishInput, hubInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -168,8 +168,8 @@ export function worldRoutes(deps: AppDeps) {
       if (!isCellId(cell)) return apiError(c, 404, "not_found", "沒有這一格。");
       const userId = c.get("session").user.id;
       let body: unknown = {};
-      if (path === "recall" || path === "build" || path === "market" || path === "target" || path === "hub") {
-        const parsed = await readJson(c, path === "recall" ? recallInput : path === "market" ? marketInput : path === "target" ? targetInput : path === "hub" ? hubInput : buildInput);
+      if (path === "recall" || path === "build" || path === "market" || path === "target" || path === "hub" || path === "demolish") {
+        const parsed = await readJson(c, path === "recall" ? recallInput : path === "market" ? marketInput : path === "target" ? targetInput : path === "hub" ? hubInput : path === "demolish" ? demolishInput : buildInput);
         if ("response" in parsed) return parsed.response;
         body = parsed.data;
       }
@@ -181,7 +181,7 @@ export function worldRoutes(deps: AppDeps) {
   cellAction("town", (userId, cell) => (tx) => buildTown(tx, userId, cell, now()));
   cellAction("hub", (userId, cell, body) => (tx) => buildHub(tx, userId, cell, (body as { kind: "town" | "fortress" | "workstead" | "sanctuary" }).kind, now()));
   cellAction("unhub", (userId, cell) => (tx) => demolishHub(tx, userId, cell, now()));
-  cellAction("build", (userId, cell, body) => (tx) => buildOnCell(tx, userId, cell, (body as { kind: string }).kind, now()));
+  cellAction("build", (userId, cell, body) => (tx) => buildOnCell(tx, userId, cell, (body as { kind: string }).kind, now(), (body as { slot: 1 | 2 }).slot));
   /** Guests walk home: your own from a friend's cell; or, for its holder, every friend's from it. */
   app.post("/cells/:cell/unguard", async (c) => {
     const cell = c.req.param("cell");
@@ -192,7 +192,7 @@ export function worldRoutes(deps: AppDeps) {
     for (const u of out) await notifyCamp(deps, u);
     return c.json(await db.transaction((tx) => worldMe(tx, userId, now())));
   });
-  cellAction("demolish", (userId, cell) => (tx) => demolishOnCell(tx, userId, cell, now()));
+  cellAction("demolish", (userId, cell, body) => (tx) => demolishOnCell(tx, userId, cell, now(), (body as { slot: 1 | 2 }).slot));
   cellAction("target", (userId, cell, body) => (tx) => setCellTarget(tx, userId, cell, (body as { target: number | null }).target, now()));
   cellAction("market", (userId, cell, body) => (tx) => tradeAtMarket(tx, userId, cell, body as { give: string; count: number; get: string }, now()));
   cellAction("recall", (userId, cell, body) => (tx) => recall(tx, userId, cell, body as { count?: number; to?: string; campers?: boolean }, now()));

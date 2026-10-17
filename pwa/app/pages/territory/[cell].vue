@@ -92,6 +92,7 @@ const costText = (cost: Record<string, number> | null) =>
 /** Taking a building down is asked again on the page (the Mac's world window shows no browser dialogs). */
 const askingDemolish = ref(false);
 const askingUnhub = ref(false);
+const askingDemolish2 = ref(false);
 async function act(path: string, body: unknown) {
   askingDemolish.value = false;
   busy.value = true;
@@ -287,11 +288,38 @@ function happening(h: CellHappening): string {
           </div>
         </template>
         <template v-else>
-          <p class="muted small">每一格可以蓋一個建築，看地形有兩種可以選。蓋（{{ d.nextHours }} 小時）：{{ costText(d.nextCost) }}</p>
+          <p class="muted small">每一格可以蓋一個建築，看地形、細分地形有幾種可以選。蓋（{{ d.nextHours }} 小時）：{{ costText(d.nextCost) }}</p>
           <div v-for="k in d.canBuild" :key="k.kind" class="choice">
             <div class="grow"><b>{{ k.name }}</b><small class="muted">{{ k.blurb }}</small></div>
             <button class="btn" :disabled="busy || short(d.nextCost).length > 0" @click="act('build', { kind: k.kind })">蓋</button>
           </div>
+        </template>
+        <!-- a town's or another hub's second place -->
+        <template v-if="d.second">
+          <h3>第二個建築位（中心才有）</h3>
+          <template v-if="d.second.building">
+            <p>
+              <b>{{ d.second.building.name }}</b> {{ d.second.building.working }} 級<span v-if="d.second.building.busyUntil" class="muted">（{{ d.second.building.level === 1 ? "蓋好" : `升到 ${d.second.building.level} 級` }}還要 {{ until(d.second.building.busyUntil) }}）</span>
+            </p>
+            <p class="muted small">{{ d.second.building.blurb }}</p>
+            <p v-if="d.second.nextCost && !d.second.building.busyUntil" class="small">升到 {{ d.second.building.level + 1 }} 級（{{ d.second.nextHours }} 小時）：{{ costText(d.second.nextCost) }}</p>
+            <div class="ops">
+              <button v-if="d.second.nextCost" class="btn primary" :disabled="busy || !!d.second.building.busyUntil || short(d.second.nextCost).length > 0" @click="act('build', { kind: d.second.building.kind, slot: 2 })">升級</button>
+              <button v-if="!askingDemolish2" class="btn" :disabled="busy" @click="askingDemolish2 = true">拆掉</button>
+            </div>
+            <div v-if="askingDemolish2" class="ask">
+              <p>拆掉{{ d.second.building.name }}？花掉的素材不會回來。</p>
+              <button class="btn danger" :disabled="busy" @click="askingDemolish2 = false; act('demolish', { slot: 2 })">確定拆掉</button>
+              <button class="btn" @click="askingDemolish2 = false">再想想</button>
+            </div>
+          </template>
+          <template v-else>
+            <p class="muted small">再蓋一個（不能跟第一個一樣）：{{ costText(d.second.nextCost) }}</p>
+            <div v-for="k in d.canBuild.filter((x) => x.kind !== d!.building?.kind)" :key="k.kind" class="choice">
+              <div class="grow"><b>{{ k.name }}</b><small class="muted">{{ k.blurb }}</small></div>
+              <button class="btn" :disabled="busy || short(d.second.nextCost).length > 0" @click="act('build', { kind: k.kind, slot: 2 })">蓋</button>
+            </div>
+          </template>
         </template>
         <p v-if="actProblem" class="status error">{{ actProblem }}</p>
         <details class="combos">

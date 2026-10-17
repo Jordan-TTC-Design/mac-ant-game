@@ -454,6 +454,31 @@ describe("cells held side by side", () => {
     expect(d.bonus.yieldBoost).toBeCloseTo(plain + 0.3);
     expect(Object.keys(((await detail(a, first)).body as CellDetail).bonus.makes)).toContain("scrap_iron");
   });
+
+  it("a town or another hub has a second building place (not the same kind twice); a plain cell has one", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const ring = neighbors(home);
+    await clear(ring);
+    for (const c of ring.slice(0, 3)) await settle(a, 20, [], (x) => x.cell === c);
+    await give("a@example.com", { scrap_wood: 3000, scrap_iron: 1000, scrap_rag: 600, log: 1000, crystal_shard: 20 });
+    const [first, second] = ring as [string, string];
+    expect(((await detail(a, second)).body as CellDetail).second).toBeUndefined();
+    expect((await t.call("POST", `/world/cells/${second}/build`, { kind: "storehouse", slot: 2 }, a)).body.error).toBe("no_slot");
+    expect((await t.call("POST", `/world/cells/${first}/town`, undefined, a)).status).toBe(200);
+    expect((await t.call("POST", `/world/cells/${first}/build`, { kind: "storehouse" }, a)).status).toBe(200);
+    expect((await t.call("POST", `/world/cells/${first}/build`, { kind: "storehouse", slot: 2 }, a)).body.error).toBe("exists");
+    const room = ((await detail(a, first)).body as CellDetail).capacity;
+    expect((await t.call("POST", `/world/cells/${first}/build`, { kind: "outpost", slot: 2 }, a)).status).toBe(200);
+    t.advance(2 * HOUR); // (built)
+    const d = (await detail(a, first)).body as CellDetail;
+    expect(d.second?.building).toMatchObject({ kind: "outpost", name: "哨站", level: 1 });
+    expect(d.bonus.wild).toBeGreaterThan(0); // (the 哨站's, beside the 倉庫's room)
+    expect(d.capacity).toBeGreaterThan(room); // (the 倉庫 done meanwhile: its room counts with the second place filled)
+    expect((await t.call("POST", `/world/cells/${first}/demolish`, { slot: 2 }, a)).status).toBe(200);
+    expect(((await detail(a, first)).body as CellDetail).second?.building).toBeNull();
+    expect(((await detail(a, first)).body as CellDetail).building?.kind).toBe("storehouse");
+  });
 });
 
 describe("keeping many cells", () => {

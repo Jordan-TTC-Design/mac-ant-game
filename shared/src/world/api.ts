@@ -373,6 +373,8 @@ export interface CellDetail {
   /** What building it (level 1) or raising it to the next level costs, and takes (null: at the top). */
   nextCost: Record<string, number> | null;
   nextHours: number | null;
+  /** A town's or another hub's second building place (details.ts buildingSlots): what is on it and what raising it costs; absent on a cell with one place. */
+  second?: { building: CellDetail["building"]; nextCost: Record<string, number> | null; nextHours: number | null };
   /** What the cell gets now from what is on it. */
   bonus: CellBonus;
   /** The real place standing in it, and what it does for the holder. */
@@ -396,7 +398,10 @@ export interface CellDetail {
 }
 
 /** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
-export const buildInput = z.object({ kind: z.string().max(40) });
+export const buildInput = z.object({ kind: z.string().max(40), slot: z.union([z.literal(1), z.literal(2)]).default(1) });
+
+/** `POST /api/world/cells/:cell/demolish`: which building place (a town's or another hub's second: 2). */
+export const demolishInput = z.object({ slot: z.union([z.literal(1), z.literal(2)]).default(1) });
 
 /** `POST /api/world/cells/:cell/hub`: the centre to make it (details.ts HUBS). */
 export const hubInput = z.object({ kind: z.enum(["town", "fortress", "workstead", "sanctuary"]) });
