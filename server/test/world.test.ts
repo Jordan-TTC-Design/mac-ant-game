@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { GEAR, GEAR_SLOTS, gearPower, type CampView } from "@goblincamp/shared/camp";
-import { bossIn, bossWindow, cellAt, lairEntry, cellCenter, cellsWithin, neighbors, regionOf, WORLD_SEED, type CellView, type ExpeditionReport, type RoutePreview, type WorldMe } from "@goblincamp/shared/world";
+import { bossIn, bossWindow, cellAt, LAIRS, lairEntry, cellCenter, cellsWithin, neighbors, regionOf, WORLD_SEED, type CellView, type ExpeditionReport, type RoutePreview, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { APP_URL, bearer, emptyTables, logIn, mac, openTestDatabase, phone, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -518,7 +518,8 @@ describe("出征的人數、糧食與巢穴的傷（WORLD.md §19）", () => {
     return a;
   }
   const strongest = async (a: Record<string, string>) =>
-    (await map(a, DAAN, 1500)).filter((c) => c.lair && !c.boss && c.cell !== cellAt(DAAN)).sort((x, y) => y.lair!.power - x.lair!.power)[0]!;
+    // (an ordinary lair: not the mid ones behind a race level, WORLD.md §26)
+    (await map(a, DAAN, 1500)).filter((c) => c.lair && !c.boss && c.cell !== cellAt(DAAN) && LAIRS.find((k) => k.id === c.lair!.kind)?.tier === 1).sort((x, y) => y.lair!.power - x.lair!.power)[0]!;
 
   it("a party is small at first; rations let more go and are eaten; boost food too; the farm grows food", async () => {
     const a = await fresh();
