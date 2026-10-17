@@ -288,6 +288,13 @@
       "when": 1792218167914,
       "tag": "0040_camp_buildings",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792238176256,
+      "tag": "0041_world_details",
+      "breakpoints": true
     }
   ]
 }

@@ -11,9 +11,9 @@ import { gunzipSync } from "node:zlib";
 import { VectorTile, type VectorTileFeature } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
 import { inArray } from "drizzle-orm";
-import { cellAt, cellCenter, HEX_RADIUS, standInLandmark, type LatLng, terrainAt, WORLD_SEED, type Landmark, type LandmarkKind, type Terrain } from "@goblincamp/shared/world";
+import { cellAt, cellCenter, HEX_RADIUS, isTerrainDetail, standInDetail, standInLandmark, type LatLng, terrainAt, type TerrainDetail, WORLD_SEED, type Landmark, type LandmarkKind, type Terrain } from "@goblincamp/shared/world";
 import type { Db } from "../auth/session.ts";
-import { worldLandmarks, worldTerrain } from "../db/schema.ts";
+import { worldDetails, worldLandmarks, worldTerrain } from "../db/schema.ts";
 
 const Z = 14;
 const TILEJSON = "https://tiles.openfreemap.org/planet";
@@ -45,7 +45,36 @@ export interface ReadTile {
   spots: Point[];
   /** Named places that make a landmark (holdings.ts), with the rank of their kind (0 the most telling). */
   landmarks: (Point & Landmark & { rank: number })[];
+  /** 細分地形 (WORLD.md §29): the areas that make one, the lines (rivers, railways), and the telling points. */
+  detailAreas: { kind: TerrainDetail; box: number[]; rings: Point[][] }[];
+  detailLines: { kind: "river" | "railway"; box: number[]; lines: Point[][] }[];
+  peaks: Point[];
+  worship: Point[];
+  hotsprings: Point[];
 }
+
+/** Areas that make a cell's detail, by layer and class (most telling first, for ties). */
+const DETAIL_AREAS: { layer: string; kind: TerrainDetail; classes: string[] }[] = [
+  { layer: "landuse", kind: "military", classes: ["military"] },
+  { layer: "landuse", kind: "cemetery", classes: ["cemetery"] },
+  { layer: "landuse", kind: "hospital", classes: ["hospital"] },
+  { layer: "landuse", kind: "campus", classes: ["school", "university", "college", "kindergarten"] },
+  { layer: "water", kind: "coast", classes: ["ocean"] },
+  { layer: "water", kind: "river", classes: ["river"] },
+  { layer: "landcover", kind: "wetland", classes: ["wetland"] },
+  { layer: "landcover", kind: "sand", classes: ["sand"] },
+  { layer: "landcover", kind: "farmland", classes: ["farmland"] },
+  { layer: "landuse", kind: "industrial", classes: ["industrial"] },
+  { layer: "landcover", kind: "mountain", classes: ["rock"] },
+  { layer: "landuse", kind: "railway", classes: ["railway"] },
+];
+const DETAIL_ORDER = DETAIL_AREAS.map((a) => a.kind);
+/** How many of the seven spots an area must hold to make the detail; a river or a railway line this close to the middle; how
+ * many places of worship or hot springs in a cell. */
+const DETAIL_SPOTS = 2;
+const RIVER_METERS = 80;
+const RAIL_METERS = 45;
+const DETAIL_PLACES = 2;
 
 /** The places of the poi layer that count as landmarks, by kind (the first that fits; most telling first). */
 const LANDMARK_POIS: { kind: LandmarkKind; fits: (cls: string, sub: string) => boolean }[] = [
@@ -127,7 +156,88 @@ export function readTile(data: Uint8Array, z: number, x: number, y: number): Rea
       landmarks.push({ x: at.x, y: at.y, kind: LANDMARK_POIS[rank]!.kind, name, rank });
     }
   }
-  return { z, x, y, extent, areas, roads, spots, landmarks };
+  // 細分地形 (WORLD.md §29)
+  const detailAreas: ReadTile["detailAreas"] = [];
+  for (const want of DETAIL_AREAS) {
+    const layer = tile.layers[want.layer];
+    if (!layer) continue;
+    for (let i = 0; i < layer.length; i++) {
+      const f: VectorTileFeature = layer.feature(i);
+      if (f.type !== 3 || !want.classes.includes(String(f.properties.class))) continue;
+      detailAreas.push({ kind: want.kind, box: f.bbox(), rings: f.loadGeometry() });
+    }
+  }
+  const detailLines: ReadTile["detailLines"] = [];
+  const ww = tile.layers.waterway;
+  if (ww) for (let i = 0; i < ww.length; i++) {
+    const f = ww.feature(i);
+    if (f.type === 2 && String(f.properties.class) === "river") detailLines.push({ kind: "river", box: f.bbox(), lines: f.loadGeometry() });
+  }
+  if (t) for (let i = 0; i < t.length; i++) {
+    const f = t.feature(i);
+    if (f.type === 2 && String(f.properties.class) === "rail" && String(f.properties.subclass ?? "rail") === "rail") detailLines.push({ kind: "railway", box: f.bbox(), lines: f.loadGeometry() });
+  }
+  const peaks: Point[] = [];
+  const mp = tile.layers.mountain_peak;
+  if (mp) for (let i = 0; i < mp.length; i++) {
+    const f = mp.feature(i);
+    const at = f.loadGeometry()[0]?.[0];
+    if (f.type === 1 && at && String(f.properties.class ?? "peak") === "peak") peaks.push(at);
+  }
+  const worship: Point[] = [];
+  const hotsprings: Point[] = [];
+  if (poi) for (let i = 0; i < poi.length; i++) {
+    const f = poi.feature(i);
+    const at = f.loadGeometry()[0]?.[0];
+    if (f.type !== 1 || !at) continue;
+    const p = f.properties;
+    if (String(p.class) === "place_of_worship") worship.push(at);
+    // (the tiles have no class for hot springs: in Taiwan the places there are named for them, 北投, 陽明山…)
+    if (String(p["name:zh"] ?? p.name ?? "").includes("溫泉")) hotsprings.push(at);
+  }
+  return { z, x, y, extent, areas, roads, spots, landmarks, detailAreas, detailLines, peaks, worship, hotsprings };
+}
+
+/** What more a cell is (WORLD.md §29): an area most of its spots stand in, else what is there to see (a hot spring town, a
+ * peak, a temple quarter, a river or a railway through its middle); null: nothing more. */
+export function cellDetail(tile: ReadTile, cell: string): TerrainDetail | null {
+  const c = cellCenter(cell);
+  const mLat = 110_574, mLng = 111_320 * Math.cos((c.lat * Math.PI) / 180);
+  const toTile = (lat: number, lng: number): Point => {
+    const t = tileOf(lat, lng);
+    return { x: (t.fx - tile.x) * tile.extent, y: (t.fy - tile.y) * tile.extent };
+  };
+  const votes = new Map<TerrainDetail, number>();
+  for (const [sx, sy] of SPOTS) {
+    const p = toTile(c.lat + (sy * HEX_RADIUS) / mLat, c.lng + (sx * HEX_RADIUS) / mLng);
+    let kind: TerrainDetail | null = null;
+    for (const area of tile.detailAreas) {
+      if (kind && DETAIL_ORDER.indexOf(area.kind) >= DETAIL_ORDER.indexOf(kind)) continue;
+      const [x0, y0, x1, y1] = area.box as [number, number, number, number];
+      if (p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1) continue;
+      if (inside(p, area.rings)) kind = area.kind;
+    }
+    if (kind) votes.set(kind, (votes.get(kind) ?? 0) + 1);
+  }
+  const most = [...votes].sort((a, b) => b[1] - a[1] || DETAIL_ORDER.indexOf(a[0]) - DETAIL_ORDER.indexOf(b[0]))[0];
+  if (most && most[1] >= DETAIL_SPOTS) return most[0];
+  const middle = toTile(c.lat, c.lng);
+  const metersPerUnit = (40_075_016 * Math.cos((c.lat * Math.PI) / 180)) / 2 ** Z / tile.extent;
+  const r = HEX_RADIUS / metersPerUnit;
+  const inCell = (list: Point[]) => list.filter((p) => Math.hypot(p.x - middle.x, p.y - middle.y) < r).length;
+  if (inCell(tile.hotsprings) >= DETAIL_PLACES) return "hotspring";
+  if (inCell(tile.peaks) >= 1) return "mountain";
+  if (inCell(tile.worship) >= DETAIL_PLACES) return "temple";
+  for (const kind of ["river", "railway"] as const) {
+    const reach = (kind === "river" ? RIVER_METERS : RAIL_METERS) / metersPerUnit;
+    for (const line of tile.detailLines) {
+      if (line.kind !== kind) continue;
+      const [x0, y0, x1, y1] = line.box as [number, number, number, number];
+      if (middle.x < x0 - reach || middle.x > x1 + reach || middle.y < y0 - reach || middle.y > y1 + reach) continue;
+      for (const l of line.lines) for (let i = 1; i < l.length; i++) if (distanceToSegment(middle, l[i - 1]!, l[i]!) <= reach) return kind;
+    }
+  }
+  return null;
 }
 
 /** Where a point of a tile is on the earth. */
@@ -326,6 +436,42 @@ export async function landmarksFor(db: Db, cells: string[]): Promise<Map<string,
   }
   if (found.length) await db.insert(worldLandmarks).values(found).onConflictDoNothing();
   return out;
+}
+
+/** The 細分地形 of these cells (null: nothing more): kept ones from the table, the rest read from the tiles and kept (WORLD.md §29). */
+export async function detailsFor(db: Db, cells: string[]): Promise<Map<string, TerrainDetail | null>> {
+  const out = new Map<string, TerrainDetail | null>();
+  if (cells.length === 0) return out;
+  const unique = [...new Set(cells)];
+  if (!useOsm()) {
+    for (const c of unique) out.set(c, standInDetail(c));
+    return out;
+  }
+  for (const row of await db.select().from(worldDetails).where(inArray(worldDetails.cell, unique))) out.set(row.cell, isTerrainDetail(row.detail) ? row.detail : null);
+  const missing = unique.filter((c) => !out.has(c));
+  const byTile = new Map<string, string[]>();
+  for (const c of missing) {
+    const at = cellCenter(c);
+    const t = tileOf(at.lat, at.lng);
+    byTile.set(`${t.x}/${t.y}`, [...(byTile.get(`${t.x}/${t.y}`) ?? []), c]);
+  }
+  const found: { cell: string; detail: string | null }[] = [];
+  for (const [key, list] of byTile) {
+    const [x, y] = key.split("/").map(Number) as [number, number];
+    const tile = await tileAt(x, y);
+    for (const c of list) {
+      // (no tile now: the stand-in, not kept, so it is looked at again)
+      const d = tile ? cellDetail(tile, c) : standInDetail(c);
+      out.set(c, d);
+      if (tile) found.push({ cell: c, detail: d });
+    }
+  }
+  if (found.length) await db.insert(worldDetails).values(found).onConflictDoNothing();
+  return out;
+}
+
+export async function detailOf(db: Db, cell: string): Promise<TerrainDetail | null> {
+  return (await detailsFor(db, [cell])).get(cell) ?? null;
 }
 
 export async function terrainOf(db: Db, cell: string): Promise<Terrain> {

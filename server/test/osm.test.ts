@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { cellAt, cellsWithin } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
-import { cellLandmark, cellTerrain, gunzipTile, landmarksFor, readTile, terrainsFor, useTileSource } from "../src/world/osm.ts";
+import { cellDetail, cellLandmark, cellTerrain, detailsFor, gunzipTile, landmarksFor, readTile, terrainsFor, useTileSource } from "../src/world/osm.ts";
 import { emptyTables, openTestDatabase } from "./helpers.ts";
 
 // 大安森林公園 and the streets around it, as OpenFreeMap had them (zoom 14, tile 13723/7014; © OpenStreetMap contributors)
@@ -29,6 +29,19 @@ describe("the real map's terrain (OpenStreetMap)", () => {
     expect(new Set(found.map((l) => l!.kind))).toEqual(new Set(["station", "temple", "university", "museum", "market"]));
   });
 
+  it("sees more in some cells (細分地形, WORLD.md §29): schools, hospitals, industry… and nothing more in most", () => {
+    const tile = readTile(saved, 14, 13723, 7014);
+    const cells = cellsWithin(PARK, 1500);
+    const seen: Record<string, number> = {};
+    for (const c of cells) {
+      const d = cellDetail(tile, c);
+      seen[d ?? "none"] = (seen[d ?? "none"] ?? 0) + 1;
+    }
+    expect(seen.campus ?? 0).toBeGreaterThan(0); // (大安 has many schools)
+    expect(seen.none).toBeGreaterThan(cells.length / 2); // (most of a city is just city)
+    for (const kind of Object.keys(seen)) expect(["none", "campus", "hospital", "industrial", "temple", "railway", "river", "mountain"]).toContain(kind);
+  });
+
   describe("kept in the database", () => {
     let database: Database;
     let asked = 0;
@@ -42,7 +55,7 @@ describe("the real map's terrain (OpenStreetMap)", () => {
     });
     beforeEach(async () => {
       await emptyTables(database);
-      await database.sql`truncate world_terrain, world_landmarks`;
+      await database.sql`truncate world_terrain, world_landmarks, world_details`;
       asked = 0;
     });
     afterAll(async () => {
@@ -73,6 +86,17 @@ describe("the real map's terrain (OpenStreetMap)", () => {
       const before = asked;
       expect((await landmarksFor(database.db, [station])).get(station)).toEqual({ kind: "station", name: "大安" });
       expect(asked).toBe(before);
+    });
+
+    it("keeps each cell's 細分地形 (or that it has none) once looked at", async () => {
+      const cells = cellsWithin(PARK, 1500);
+      const first = await detailsFor(database.db, cells);
+      expect([...first.values()].filter(Boolean).length).toBeGreaterThan(0);
+      const rows = await database.sql<{ cell: string }[]>`select cell from world_details`;
+      expect(rows.length).toBeGreaterThan(0); // (the cells on the saved tile; the others' tile cannot be had: not kept)
+      const before = asked;
+      expect(await detailsFor(database.db, cells)).toEqual(first);
+      expect(asked).toBe(before); // (from the table)
     });
   });
 });

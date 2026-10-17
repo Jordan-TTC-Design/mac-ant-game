@@ -495,6 +495,12 @@ export const worldLandmarks = pgTable("world_landmarks", {
   name: text("name"),
 });
 
+/** 細分地形 (shared/src/world/details.ts; WORLD.md §29): what more the map says a cell is (null: looked at, nothing more). */
+export const worldDetails = pgTable("world_details", {
+  cell: text("cell").primaryKey(),
+  detail: text("detail"),
+});
+
 /** A guild (shared/src/guild.ts, GUILD.md): its name, the badge the leader drew (16×16 hex digits) and its level. */
 export const guilds = pgTable("guilds", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -15,3 +15,5 @@ export * from "./talents.ts";
 export * from "./availability.ts";
 export * from "./terrain.ts";
 export * from "./territory.ts";
+export * from "./events.ts";
+export * from "./details.ts";
