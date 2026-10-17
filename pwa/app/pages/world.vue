@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
+import { cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, talentBonus, hasAbility, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 import { loadLastAttack, saveLastAttack, type LastAttack } from "~/utils/again";
@@ -273,7 +273,9 @@ const plan = computed(() => (way.value?.waypoints.length ? way.value.waypoints.m
 /** Moving between one's own joined cells is quick (REGION_TRAVEL). */
 const inRegion = computed(() => {
   const start = wayFrom.value === "home" ? s.me?.homeCell : wayFrom.value;
-  return !!start && !!selected.value && sameRegion(start, selected.value, new Set((s.me?.cells ?? []).map((c) => c.cell)));
+  const mine = new Set((s.me?.cells ?? []).map((c) => c.cell));
+  if (!start || !selected.value || !mine.has(selected.value)) return false;
+  return (hasAbility(talentBonus(s.me?.talents?.picks), "tunnels") && mine.has(start)) || sameRegion(start, selected.value, mine); // (地道: all joined)
 });
 /** What setting out from there takes off the walk (its station, inn, dock, town, pairings: the server's cellBonus). */
 const startTravel = computed(() => {

@@ -93,6 +93,8 @@ export interface FightBoosts {
   /** 種族天賦 (talents.ts): attack and hit points +these shares. */
   power?: number;
   vigor?: number;
+  /** 夜襲 (talents.ts nightRaid): the party set out at night, unseen (the camp it goes for has no warning). */
+  hidden?: number;
 }
 
 /** The foes a party with 黏黏彈 meets: a quarter slower. */

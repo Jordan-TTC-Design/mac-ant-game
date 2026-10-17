@@ -132,6 +132,7 @@ const ICON: Record<TalentEffect, string> = {
   travel: "👣", regionTravel: "🛤️", attack: "⚔️", pvpAttack: "🏴", lairAttack: "🐉", hp: "❤️", fort: "🛡️", homeFort: "🏰", yield: "🌾",
   nest: "🥚", room: "🏠", party: "👥", reinforce: "📯", upkeep: "🍞", freeCells: "🗺️", wear: "🔨", market: "⚖️", loot: "💰", xp: "📖",
   intel: "👁️", campYield: "🏗️", campBirths: "👶", campGuard: "🗡️", campRanch: "🐐", campBuild: "⏱️", campLife: "⏳", campHost: "🤝", campTrade: "🧳", campHeart: "💖",
+  plunder: "🏴‍☠️", tunnels: "🕳️", refine: "⭐", ambush: "🎯", sacredTree: "🌲", moonGate: "🌙", raiseDead: "🧟", nightRaid: "🌑", blight: "☠️",
 };
 </script>
 
@@ -189,7 +190,7 @@ const ICON: Record<TalentEffect, string> = {
               v-for="t in talentsIn(x.id)"
               :key="t.id"
               class="node"
-              :class="[state(t), { picked: chosen === t.id, planned: planned[t.id] }]"
+              :class="[state(t), { picked: chosen === t.id, planned: planned[t.id], top: t.row === 4 }]"
               :style="{ gridRow: t.row + 1, gridColumn: t.col + 1 }"
               :title="t.name"
               @click="add(t)"
@@ -251,6 +252,8 @@ section { margin-top: 12px; }
 .node.some .rk { color: #7fd36b; }
 .node.max { border-color: #ffd84a; box-shadow: 0 0 12px #ffd84a88; }
 .node.max .rk { color: #ffd84a; }
+.node.top { width: 62px; height: 62px; border-radius: 50%; }
+.node.top .ic { font-size: 28px; }
 .node.planned { outline: 2px dashed #fff; outline-offset: 2px; }
 .node.picked { transform: scale(1.08); }
 .detail h3 { margin: 0 0 6px; }

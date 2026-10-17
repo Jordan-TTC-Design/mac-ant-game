@@ -116,3 +116,10 @@ export function cellsWithin(point: LatLng, radius: number): CellId[] {
   }
   return out;
 }
+
+/** Night where a cell is (its own clock, by its longitude): 18:00 to 6:00. The dark ones hit harder then; 夜襲 parties set out then. */
+export function nightAt(cell: string, at: Date): boolean {
+  const { lng } = cellCenter(cell);
+  const hour = (at.getUTCHours() + at.getUTCMinutes() / 60 + lng / 15 + 48) % 24;
+  return hour >= 18 || hour < 6;
+}

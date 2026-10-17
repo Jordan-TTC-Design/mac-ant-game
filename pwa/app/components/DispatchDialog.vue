@@ -18,6 +18,10 @@ import {
   walkMinutes,
   REGION_TRAVEL,
   sameRegion,
+  talentBonus,
+  hasAbility,
+  nightAt,
+  TALENT_ABILITIES,
   GUESTS_MAX,
   WORLD_SEED,
   type CellView,
@@ -242,13 +246,26 @@ watch(
 );
 const noWay = computed(() => !!way.value && way.value.waypoints.length === 0);
 /** Moving into one's own cell joined to where they set out: quick (REGION_TRAVEL), as the server walks it. */
+const tb = computed(() => talentBonus(props.me.talents?.picks));
+const startCell = computed(() => (from.value === "home" ? props.me.homeCell : from.value));
 const inRegion = computed(() => {
-  const start = from.value === "home" ? props.me.homeCell : from.value;
-  return !!start && sameRegion(start, props.target.cell, new Set(props.me.cells.map((c) => c.cell)));
+  const start = startCell.value;
+  const mine = new Set(props.me.cells.map((c) => c.cell));
+  if (!start || !mine.has(props.target.cell)) return false; // (only moving into one's own cell)
+  return (hasAbility(tb.value, "tunnels") && mine.has(start) && mine.has(props.target.cell)) || sameRegion(start, props.target.cell, mine); // (地道: all joined)
 });
+/** 月光傳送: between its own towns, while one is left today: at once. */
+const moonGate = computed(() => {
+  const start = props.me.cells.find((c) => c.cell === startCell.value), to = props.me.cells.find((c) => c.cell === props.target.cell);
+  return props.kind === "move" && !!start?.town && !!to?.town && startCell.value !== props.me.homeCell && (props.me.moonGatesLeft ?? 0) > 0;
+});
+/** 夜襲: setting out to attack at night, where it sets out from. */
+const nightRaid = computed(() => props.kind === "attack" && hasAbility(tb.value, "nightRaid") && !!startCell.value && nightAt(startCell.value, new Date()));
 const minutesFor = (meters: number) => {
+  if (moonGate.value) return 1;
   const slowest = Math.min(...party.value.map((a) => fighter(a.r).speed));
-  return Math.max(1, Math.round(walkMinutes(meters, slowest) * (fromCell.value?.travel ?? 1) * (inRegion.value ? REGION_TRAVEL : 1)));
+  const t = tb.value;
+  return Math.max(1, Math.round(walkMinutes(meters, slowest) * (fromCell.value?.travel ?? 1) * (1 - (t.travel ?? 0)) * (inRegion.value ? REGION_TRAVEL * (1 - (t.regionTravel ?? 0)) : 1) * (nightRaid.value ? TALENT_ABILITIES.nightTravel : 1)));
 };
 const minutes = computed(() => (way.value && !noWay.value && party.value.length ? minutesFor(way.value.meters) : null));
 /** How much longer the way round is than straight there. */
@@ -308,7 +325,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
             <div><small>我方戰力</small><b>{{ ourPower }}</b></div>
             <div v-if="theirPower !== null"><small>對方戰力</small><b>{{ theirPower }}</b></div>
             <div v-else-if="target.owner"><small>對方守軍</small><b>{{ target.garrison }} 隻</b></div>
-            <div v-if="minutes !== null"><small>{{ detour ? `繞路 +${detour} 分` : "走過去" }}</small><b>{{ minutes }} 分</b></div>
+            <div v-if="minutes !== null"><small>{{ moonGate ? `月光傳送（今天還有 ${me.moonGatesLeft} 次）` : nightRaid ? "夜襲：對方看不到" : detour ? `繞路 +${detour} 分` : "走過去" }}</small><b>{{ moonGate ? "瞬間到" : `${minutes} 分` }}</b></div>
           </div>
           <p v-if="noWay" class="warn">{{ way?.blockedBy?.name ?? "別人" }}的領地（有巢穴、建築或城鎮）擋在路上，繞不過去：先把擋路的那一格打下來，或從別的地方出發。</p>
           <p v-else-if="wayProblem" class="warn">{{ wayProblem }}</p>

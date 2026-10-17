@@ -266,6 +266,8 @@ export interface WorldMe {
   talents?: { picks: Record<string, number>; points: number; resets: number; resetCost: Record<string, number> };
   /** Held cells beside the camp's own that eat no rations (freeCellsFor + talents). */
   freeCells?: number;
+  /** 月光傳送 (talents.ts moonGate): moves between its towns left today; absent without the talent. */
+  moonGatesLeft?: number;
   recent: ExpeditionSummary[];
   /** What happened in the big world lately (a lair coming back for a cell, a great monster's spoils, what the cells gave), newest first. */
   happenings: {
@@ -308,6 +310,8 @@ export interface CellHappening {
 
 /** `GET /api/world/cells/:cell`: a cell of one's own, looked at from inside (its residents are the camp's, place `cell:<id>`). */
 export interface CellDetail {
+  /** 腐化大地: another camp's cell next to it blights it (it yields less). */
+  blighted?: boolean;
   /** The building is at the top its holder's race level allows, but a higher level opens at this race level. */
   nextNeedsLevel?: number;
   /** A town's market: how many swaps are left today (MARKET_TRADES_PER_DAY); absent on a cell that is not a town. */

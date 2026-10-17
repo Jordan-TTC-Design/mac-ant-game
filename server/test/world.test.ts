@@ -769,7 +769,7 @@ describe("種族天賦", () => {
     expect((await me(a)).freeCells).toBe(3 + 5 + 2);
   });
 
-  it("lets an elf's 遊俠 walk quicker, and its 鷹眼 see what is coming", async () => {
+  it("lets an elf's 遊俠 walk quicker, and an undead camp's 低語 see what is coming", async () => {
     const e = await account("e@example.com", "elf");
     t.advance(40 * HOUR); // (elves come slower: enough to open the big world)
     await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, e);
@@ -782,19 +782,102 @@ describe("種族天賦", () => {
     t.advance(plainMinutes + 1000);
     await me(e);
     // every 遊俠 talent for walking, then 鷹眼 at the top
-    const res = await t.call("POST", "/world/talents", { picks: { "e_ranger.swift": 3, "e_ranger.aim": 1, "e_ranger.paths": 3, "e_ranger.hunter": 3, "e_ranger.wind": 2, "e_ranger.trophy": 1, "e_ranger.volley": 3, "e_ranger.hawkeye": 1 } }, e);
+    const res = await t.call("POST", "/world/talents", { picks: { "e_ranger.swift": 3, "e_ranger.aim": 1, "e_ranger.paths": 3, "e_ranger.hunter": 3, "e_ranger.wind": 2, "e_ranger.trophy": 1, "e_ranger.volley": 3 } }, e);
     expect(res.body.message ?? "").toBe("");
     const quick = await t.call("POST", "/world/expeditions", { to: target, count: 5 }, e);
     const quickMinutes = Date.parse(quick.body.arriveAt) - Date.parse(quick.body.setOutAt);
     expect(quickMinutes).toBeLessThan(plainMinutes); // (−22%)
 
-    // a goblin camp sets out against the elf's home: the elf sees what it is made of
+    // an undead camp with 低語 (恐懼, row 4): a goblin camp sets out against it, and it sees what the party is made of
+    const u = await account("u@example.com", "undead");
+    t.advance(30 * HOUR);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, u);
+    await veteran("u@example.com");
+    const dread = { "u_dread.terror": 3, "u_dread.shroud": 1, "u_dread.siege": 3, "u_dread.haunt": 3, "u_dread.despair": 2, "u_dread.whispers": 1 };
+    expect((await t.call("POST", "/world/talents", { picks: dread }, u)).body.message ?? "").toBe("");
     const g = await account("g@example.com");
     await grow(g);
-    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, g);
+    await t.call("POST", "/world/open", { cell: cellAt({ lat: 25.04, lng: 121.56 }) }, g);
     await veteran("g@example.com");
-    expect((await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, g)).status).toBe(201);
-    const coming = (await me(e)).incoming![0]!;
+    expect((await t.call("POST", "/world/expeditions", { to: cellAt(XINYI), count: 6 }, g)).status).toBe(201);
+    const coming = (await me(u)).incoming![0]!;
     expect(Object.values(coming.breeds ?? {}).reduce((n, k) => n + k, 0)).toBe(6);
+  });
+});
+
+describe("天賦樹頂端的新能力", () => {
+  /** A camp of `race` at `at`, race level 20, with these talents. */
+  async function withTalents(email: string, race: string, at: { lat: number; lng: number }, picks: Record<string, number>) {
+    const a = await account(email, race);
+    t.advance(40 * HOUR);
+    expect((await t.call("POST", "/world/open", { cell: cellAt(at) }, a)).status).toBe(201);
+    await veteran(email);
+    const res = await t.call("POST", "/world/talents", { picks }, a);
+    expect(res.body.message ?? "").toBe("");
+    return a;
+  }
+  const id = async (email: string) => (await database.sql`select id from users where email = ${email}`)[0]!.id as string;
+  const HORDE = { "g_horde.breed": 3, "g_horde.crowd": 2, "g_horde.callout": 3, "g_horde.share": 3, "g_horde.swarm": 2, "g_horde.warren": 3, "g_horde.tunnels": 1 };
+  const ELDER = { "e_elder.lore": 3, "e_elder.trade": 2, "e_elder.frugal": 3, "e_elder.ward": 3, "e_elder.stewards": 2, "e_elder.council": 3, "e_elder.moongate": 1 };
+  const DREAD = { "u_dread.terror": 3, "u_dread.shroud": 3, "u_dread.siege": 3, "u_dread.haunt": 3, "u_dread.despair": 2, "u_dread.crypts": 1, "u_dread.whispers": 1, "u_dread.nightraid": 1 };
+  const CRYPT = { "u_crypt.fasting": 3, "u_crypt.salvage": 2, "u_crypt.ossuary": 3, "u_crypt.embalm": 3, "u_crypt.necropolis": 2, "u_crypt.tomes": 3, "u_crypt.blight": 1 };
+
+  it("地道: others' walls are none to it", async () => {
+    const b = await account("b@example.com");
+    await grow(b);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, b);
+    const a = await withTalents("a@example.com", "goblin", DAAN, {});
+    const wall = neighbors(neighbors(cellAt(DAAN))[0]!)[0]!;
+    await database.sql`insert into world_cells (cell, owner, town) values (${wall}, ${await id("b@example.com")}, true) on conflict (cell) do update set owner = excluded.owner, town = true`;
+    expect((await map(a, cellCenter(wall), 300)).find((c) => c.cell === wall)!.blocks).toBe(true);
+    expect((await t.call("POST", "/world/talents", { picks: HORDE }, a)).status).toBe(200);
+    expect((await map(a, cellCenter(wall), 300)).find((c) => c.cell === wall)!.blocks).toBeFalsy();
+  });
+
+  it("月光傳送: once a day, a party moves between its towns at once", async () => {
+    const e = await withTalents("e@example.com", "elf", DAAN, ELDER);
+    const me_ = await id("e@example.com");
+    const [x, y] = [neighbors(neighbors(cellAt(DAAN))[2]!)[2]!, neighbors(neighbors(cellAt(DAAN))[5]!)[5]!];
+    for (const c of [x, y]) await database.sql`insert into world_cells (cell, owner, town, held_since) values (${c}, ${me_}, true, now()) on conflict (cell) do update set owner = excluded.owner, town = true`;
+    await database.sql`update camp_residents set place = ${`cell:${x}`} where id in (select id from camp_residents where user_id = ${me_} and place = 'home' limit 20)`;
+    await database.sql`update camp_residents set place = ${`cell:${y}`} where id in (select id from camp_residents where user_id = ${me_} and place = 'home' limit 6)`; // (a cell nobody lives on is given up)
+    expect((await me(e)).moonGatesLeft).toBe(1);
+    const first = await t.call("POST", "/world/expeditions", { from: x, to: y, count: 5 }, e);
+    expect(first.status).toBe(201);
+    expect(Date.parse(first.body.arriveAt) - Date.parse(first.body.setOutAt)).toBe(MIN);
+    expect((await me(e)).moonGatesLeft).toBe(0);
+    const second = await t.call("POST", "/world/expeditions", { from: x, to: y, count: 5 }, e);
+    expect(Date.parse(second.body.arriveAt) - Date.parse(second.body.setOutAt)).toBeGreaterThan(MIN);
+  });
+
+  it("夜襲: setting out at night, the camp it goes for is not warned", async () => {
+    const g = await account("g@example.com");
+    await grow(g);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, g);
+    const u = await withTalents("u@example.com", "undead", XINYI, DREAD);
+    // to 22:00 where the undead camp stands (Taipei: UTC+8, by the longitude)
+    const now = t.now();
+    const local = (now.getUTCHours() + 8 + 24) % 24;
+    t.advance((((22 - local + 24) % 24) * 60 - now.getUTCMinutes()) * MIN);
+    const res = await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, u);
+    expect(res.status).toBe(201);
+    expect((await me(g)).incoming).toHaveLength(0);
+    const events = (await t.call("GET", "/camp/events?since=0", undefined, g)).body.events as { data: { incoming?: boolean } }[];
+    expect(events.some((e) => e.data.incoming)).toBe(false);
+  });
+
+  it("腐化大地: others' cells next to its own yield less", async () => {
+    const u = await withTalents("u@example.com", "undead", DAAN, CRYPT);
+    expect(u).toBeTruthy();
+    const b = await account("b@example.com");
+    await grow(b);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, b);
+    const next = neighbors(cellAt(DAAN))[1]!;
+    await database.sql`insert into world_cells (cell, owner, held_since) values (${next}, ${await id("b@example.com")}, now()) on conflict (cell) do update set owner = excluded.owner`;
+    const far = neighbors(cellAt(XINYI))[1]!;
+    await database.sql`insert into world_cells (cell, owner, held_since) values (${far}, ${await id("b@example.com")}, now()) on conflict (cell) do update set owner = excluded.owner`;
+    for (const c of [next, far]) await database.sql`update camp_residents set place = ${`cell:${c}`} where id in (select id from camp_residents where user_id = ${await id("b@example.com")} and place = 'home' limit 6)`;
+    expect((await t.call("GET", `/world/cells/${next}`, undefined, b)).body.blighted).toBe(true);
+    expect((await t.call("GET", `/world/cells/${far}`, undefined, b)).body.blighted).toBeFalsy();
   });
 });

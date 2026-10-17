@@ -43,7 +43,13 @@ describe("種族天賦", () => {
   });
 
   it("adds the talents up by what they do", () => {
-    expect(talentBonus({ "g_raid.sharp": 2, "g_raid.warcry": 1, "g_raid.warband": 3 })).toMatchObject({ attack: 0.16, party: 3 });
+    expect(talentBonus({ "g_raid.sharp": 2, "g_raid.plunder": 1, "g_raid.warband": 3 })).toEqual({ attack: 0.06, party: 3, plunder: 1 });
+    // every big-world tree's top talent opens something new
+    for (const tree of TALENT_TREES.filter((x) => !x.id.endsWith("_camp"))) {
+      const top = TALENTS.find((x) => x.tree === tree.id && x.row === 4)!;
+      expect(top.ranks).toBe(1);
+      expect(["plunder", "tunnels", "refine", "ambush", "sacredTree", "moonGate", "raiseDead", "nightRaid", "blight"]).toContain(top.effect);
+    }
     expect(talentBonus(null)).toEqual({});
   });
 });

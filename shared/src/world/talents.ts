@@ -30,6 +30,16 @@ export type TalentEffect =
   | "loot" // beaten lairs drop this share more
   | "xp" // race experience this share more
   | "intel" // see what an attacking party is made of
+  // each big-world tree's top talent opens something new rather than adding to a number (2026-10-17: TALENT_ABILITIES)
+  | "plunder" // 劫掠: a party may raid another camp's cell, take from its store and leave
+  | "tunnels" // 地道: all one's own cells count as joined for walking, and parties pass under others' walls
+  | "refine" // 拼裝改造: the workshop refines a piece into a better ★ one; a broken piece gives all its materials back
+  | "ambush" // 伏擊: parties passing by one's cells are shot at first
+  | "sacredTree" // 聖樹: an elves-only building on park or forest
+  | "moonGate" // 月光傳送: once a day, a party moves between one's towns at once
+  | "raiseDead" // 戰場復甦: some of the fallen rise and join after a won fight
+  | "nightRaid" // 夜襲: parties setting out at night walk quicker and are not seen coming
+  | "blight" // 腐化大地: others' cells next to one's own yield less, and lairs next to them are weaker
   // the camp tree (its effects are the camp's: server/src/camp, shared/src/camp, the Mac's camp)
   | "campYield" // the camp's sites make this share more
   | "campBirths" // the camp raises residents this share quicker
@@ -127,7 +137,7 @@ export const TALENTS: readonly Talent[] = [
   t("g_raid", 2, 0, "pillage", "洗劫", "pvpAttack", 0.05, 2, "warband"),
   t("g_raid", 2, 2, "hoard", "藏寶窟", "loot", 0.12, 2, "ambush"),
   t("g_raid", 3, 1, "warpaint", "戰紋", "hp", 0.04),
-  t("g_raid", 4, 1, "warcry", "戰嚎", "attack", 0.1, 1, "warpaint"),
+  t("g_raid", 4, 1, "plunder", "劫掠", "plunder", 1, 1, "warpaint"),
   // 哥布林・群聚
   t("g_horde", 0, 0, "breed", "多子多孫", "nest", 0.06),
   t("g_horde", 0, 2, "crowd", "擠一擠", "room", 2),
@@ -136,7 +146,7 @@ export const TALENTS: readonly Talent[] = [
   t("g_horde", 2, 0, "swarm", "蜂擁", "party", 1, 2, "callout"),
   t("g_horde", 2, 2, "sprawl", "到處都是", "freeCells", 1, 2, "share"),
   t("g_horde", 3, 1, "warren", "地道", "regionTravel", 0.1),
-  t("g_horde", 4, 1, "tide", "人海", "reinforce", 3, 1, "warren"),
+  t("g_horde", 4, 1, "tunnels", "地道", "tunnels", 1, 1, "warren"),
   // 哥布林・工匠
   t("g_tinker", 0, 0, "patch", "縫縫補補", "wear", 0.08),
   t("g_tinker", 0, 2, "haggle", "討價還價", "market", 0.03),
@@ -145,7 +155,7 @@ export const TALENTS: readonly Talent[] = [
   t("g_tinker", 2, 0, "rivets", "鉚釘甲", "hp", 0.04, 2, "scrap"),
   t("g_tinker", 2, 2, "spikes", "尖刺圍欄", "homeFort", 0.06, 2, "traps"),
   t("g_tinker", 3, 1, "blueprints", "設計圖", "xp", 0.06),
-  t("g_tinker", 4, 1, "contraption", "怪機器", "wear", 0.25, 1, "blueprints"),
+  t("g_tinker", 4, 1, "refine", "拼裝改造", "refine", 1, 1, "blueprints"),
   // 精靈・遊俠
   t("e_ranger", 0, 0, "swift", "輕盈", "travel", 0.04),
   t("e_ranger", 0, 2, "aim", "瞄準", "attack", 0.03),
@@ -154,7 +164,7 @@ export const TALENTS: readonly Talent[] = [
   t("e_ranger", 2, 0, "wind", "疾風", "travel", 0.05, 2, "paths"),
   t("e_ranger", 2, 2, "trophy", "戰利品", "loot", 0.1, 2, "hunter"),
   t("e_ranger", 3, 1, "volley", "齊射", "pvpAttack", 0.05),
-  t("e_ranger", 4, 1, "hawkeye", "鷹眼", "intel", 1, 1, "volley"),
+  t("e_ranger", 4, 1, "ambush", "伏擊", "ambush", 1, 1, "volley"),
   // 精靈・森林
   t("e_grove", 0, 0, "bloom", "繁花", "yield", 0.05),
   t("e_grove", 0, 2, "bark", "樹皮", "hp", 0.03),
@@ -163,7 +173,7 @@ export const TALENTS: readonly Talent[] = [
   t("e_grove", 2, 0, "harvest", "豐收", "yield", 0.08, 2, "cradle"),
   t("e_grove", 2, 2, "thorns", "荊棘", "fort", 0.05, 2, "canopy"),
   t("e_grove", 3, 1, "roots", "根系", "reinforce", 1),
-  t("e_grove", 4, 1, "worldtree", "世界樹", "fort", 0.12, 1, "roots"),
+  t("e_grove", 4, 1, "sacred", "聖樹", "sacredTree", 1, 1, "roots"),
   // 精靈・長老
   t("e_elder", 0, 0, "lore", "博學", "xp", 0.05),
   t("e_elder", 0, 2, "trade", "通商", "market", 0.03),
@@ -172,7 +182,7 @@ export const TALENTS: readonly Talent[] = [
   t("e_elder", 2, 0, "stewards", "管家", "freeCells", 1, 2, "frugal"),
   t("e_elder", 2, 2, "mending", "修復術", "wear", 0.1, 2, "ward"),
   t("e_elder", 3, 1, "council", "議會", "party", 1),
-  t("e_elder", 4, 1, "sage", "大賢者", "xp", 0.2, 1, "council"),
+  t("e_elder", 4, 1, "moongate", "月光傳送", "moonGate", 1, 1, "council"),
   // 死靈・亡軍
   t("u_legion", 0, 0, "rise", "起身", "nest", 0.06),
   t("u_legion", 0, 2, "bones", "硬骨", "hp", 0.03),
@@ -181,7 +191,7 @@ export const TALENTS: readonly Talent[] = [
   t("u_legion", 2, 0, "horde", "屍潮", "reinforce", 1, 2, "march"),
   t("u_legion", 2, 2, "tireless", "不知疲倦", "travel", 0.05, 2, "graves"),
   t("u_legion", 3, 1, "tide", "亡者之潮", "party", 1),
-  t("u_legion", 4, 1, "endless", "無盡大軍", "party", 3, 1, "tide"),
+  t("u_legion", 4, 1, "raise", "戰場復甦", "raiseDead", 1, 1, "tide"),
   // 死靈・恐懼
   t("u_dread", 0, 0, "terror", "驚嚇", "pvpAttack", 0.04),
   t("u_dread", 0, 2, "shroud", "陰影", "fort", 0.04),
@@ -190,7 +200,7 @@ export const TALENTS: readonly Talent[] = [
   t("u_dread", 2, 0, "despair", "絕望", "pvpAttack", 0.06, 2, "siege"),
   t("u_dread", 2, 2, "crypts", "地下墓穴", "fort", 0.06, 2, "haunt"),
   t("u_dread", 3, 1, "whispers", "低語", "intel", 1, 1),
-  t("u_dread", 4, 1, "nightmare", "惡夢", "attack", 0.1, 1, "whispers"),
+  t("u_dread", 4, 1, "nightraid", "夜襲", "nightRaid", 1, 1, "whispers"),
   // 死靈・墓園
   t("u_crypt", 0, 0, "fasting", "不吃不喝", "upkeep", 0.12),
   t("u_crypt", 0, 2, "salvage", "拆屍取材", "loot", 0.08),
@@ -199,7 +209,7 @@ export const TALENTS: readonly Talent[] = [
   t("u_crypt", 2, 0, "necropolis", "死城", "yield", 0.06, 2, "ossuary"),
   t("u_crypt", 2, 2, "reliquary", "聖物匣", "market", 0.04, 2, "embalm"),
   t("u_crypt", 3, 1, "tomes", "禁書", "xp", 0.06),
-  t("u_crypt", 4, 1, "lich", "巫妖", "upkeep", 0.4, 1, "tomes"),
+  t("u_crypt", 4, 1, "blight", "腐化大地", "blight", 1, 1, "tomes"),
   ...campTree("g_camp"),
   ...campTree("e_camp"),
   ...campTree("u_camp"),
@@ -209,6 +219,28 @@ const BY_ID = new Map(TALENTS.map((x) => [x.id, x]));
 export const talentRule = (id: string) => BY_ID.get(id);
 export const treesFor = (race: string) => TALENT_TREES.filter((x) => x.race === race);
 export const talentsIn = (tree: string) => TALENTS.filter((x) => x.tree === tree);
+
+/** The new things the big-world trees' top talents open (an effect of 1 when bought), and their numbers. */
+export const TALENT_ABILITIES = {
+  /** 劫掠: a won raid takes this share of each material the camp raided has (up to RAID_CAP of each), and leaves. */
+  raidShare: 0.08,
+  raidCap: 30,
+  /** 伏擊: each of one's cells next to a party's way shoots this share of it down (at most AMBUSH_MAX in all). */
+  ambushPerCell: 0.04,
+  ambushMax: 0.25,
+  /** 月光傳送: moves between one's towns this many times a day. */
+  moonGatesPerDay: 1,
+  /** 戰場復甦: this share of all who fell in a won fight rise as new residents of the camp (at most RAISE_MAX). */
+  raiseShare: 0.2,
+  raiseMax: 10,
+  /** 夜襲: walking time at night. */
+  nightTravel: 0.75,
+  /** 腐化大地: others' cells next to one's own yield this share less; lairs next to one's own have this share less hit points. */
+  blightYield: 0.25,
+  blightLair: 0.2,
+} as const;
+/** Whether a camp's talents open an ability (a top talent). */
+export const hasAbility = (bonus: Partial<Record<TalentEffect, number>> | null | undefined, effect: TalentEffect) => (bonus?.[effect] ?? 0) > 0;
 
 /** Talent id → ranks bought. */
 export type TalentPicks = Record<string, number>;
@@ -299,6 +331,15 @@ export function talentText(rule: Talent, ranks = 1): string {
     case "loot": return `打贏巢穴的掉落 +${pct}`;
     case "xp": return `種族經驗 +${pct}`;
     case "intel": return "看得到來襲敵軍的隊伍組成";
+    case "plunder": return `新出征方式「劫掠」：打其他玩家的領地，贏了搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}）就走，不佔地`;
+    case "tunnels": return "地道：自己所有的領地都算相連（調人只要四分之一時間），隊伍可以從別人的城牆底下鑽過去";
+    case "refine": return "工坊多「改造」：把裝備改成 ★ 精良版（更強、更耐用）；壞掉的裝備完整拆回材料";
+    case "ambush": return `伏擊：敵人的隊伍經過你領地旁邊，每塊相鄰的領地先射倒 ${Math.round(TALENT_ABILITIES.ambushPerCell * 100)}%（最多 ${Math.round(TALENT_ABILITIES.ambushMax * 100)}%）`;
+    case "sacredTree": return "可以在公園、森林的領地種「聖樹」：同一區的領地產出、守軍血量增加，聖樹那格生得快";
+    case "moonGate": return `月光傳送：每天 ${TALENT_ABILITIES.moonGatesPerDay} 次，在自己的城鎮之間搬人瞬間到`;
+    case "raiseDead": return `戰場復甦：打贏之後，倒下的（雙方）有 ${Math.round(TALENT_ABILITIES.raiseShare * 100)}% 爬起來加入營地（最多 ${TALENT_ABILITIES.raiseMax} 隻）`;
+    case "nightRaid": return "夜襲：晚上出發的隊伍走路時間 −25%，而且對方不會收到敵軍來襲預警";
+    case "blight": return `腐化大地：你領地旁邊別人的領地產出 −${Math.round(TALENT_ABILITIES.blightYield * 100)}%；打你領地旁邊的巢穴，牠們血量 −${Math.round(TALENT_ABILITIES.blightLair * 100)}%`;
     case "campYield": return `營地場地產出 +${pct}`;
     case "campBirths": return `營地生得快 ${pct}`;
     case "campGuard": return `魔獸來襲時居民攻擊 +${pct}`;
