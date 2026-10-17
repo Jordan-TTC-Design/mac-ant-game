@@ -358,12 +358,17 @@ final class GuildDecorEditor: NSObject {
 
     /// The whole wall in the brush's style: at once, as before (and the segments brushed otherwise go with the next save).
     @objc private func wallAll() {
-        if !walls.isEmpty {
-            record()
-            walls = [:]
-            hall.walls = walls
+        // (a server that keeps segments: every segment brushed, in the draft like any brushing — ⌘Z takes it back, 儲存 keeps it)
+        guard keepsWalls else { return setWall(wallBrush) }
+        record()
+        let layout = hall.layout
+        var next: [String: String] = [:]
+        if wallBrush != wall {
+            for y in 0..<layout.height { for x in 0..<layout.width where layout.wallAt(x, y) { next["\(x),\(y)"] = wallBrush } }
         }
-        setWall(wallBrush)
+        walls = next
+        hall.walls = walls
+        refresh()
     }
 
     @objc private func fillAll() {
@@ -429,7 +434,7 @@ final class GuildDecorEditor: NSObject {
             hint.stringValue = "選一種地板，在據點裡點一下或拖過去，一格一格鋪；或整片換掉。"
             hint.isHidden = false
         case .wall:
-            hint.stringValue = "選一種牆壁，在據點的牆上點一下或拖過去，一段一段換（跟著其他擺設一起儲存）；「整面換成這種」整個據點的牆一起換，馬上生效。"
+            hint.stringValue = "選一種牆壁，在據點的牆上點一下或拖過去，一段一段換（跟著其他擺設一起儲存）；「整面換成這種」把每一段都刷成這種（一樣按儲存才生效，⌘Z 可以復原）。"
             hint.isHidden = false
         case .plots:
             hint.stringValue = "選一位成員，在據點的地板上點一下或拖過去，把那幾格分給他當自己的位置：那裡只有他自己和會長、幹部能擺、能動。「收回」把格子變回大家的。"

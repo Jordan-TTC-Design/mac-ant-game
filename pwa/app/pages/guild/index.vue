@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  merchantVisit,
   DEFAULT_BADGE,
   GUILD_NAME_MAX,
   GUILD_BUBBLE_MS,
@@ -36,6 +37,11 @@ import {
   type GuildRole,
 } from "@goblincamp/shared";
 import { noteTime } from "~/utils/time";
+
+// (the guild merchant comes and goes on his own time: worked out here each minute, not only when the guild was last fetched)
+const minute = ref(Date.now());
+const minuteTimer = setInterval(() => (minute.value = Date.now()), 60_000);
+onBeforeUnmount(() => clearInterval(minuteTimer));
 import { ApiError, api } from "~/utils/api";
 
 // 公會 (GUILD.md): founding one or saying yes to an invitation; then the hall — everyone in it, walking one's own avatar,
@@ -128,9 +134,12 @@ function moveDecor(uid: string, x: number, y: number) {
     message.value = why;
     return;
   }
-  // (dragged off the floor, or into someone else's place: it stays where it last fitted)
+  // (dragged off the floor, or into someone else's place: it stays where it last fitted, and says why for the latter)
   const at = place(d.kind, x, y);
-  if (at && !theirPlace({ kind: d.kind, ...at })) Object.assign(d, at);
+  if (!at) return;
+  const there = theirPlace({ kind: d.kind, ...at });
+  if (there) message.value = there;
+  else Object.assign(d, at);
 }
 /** Draws one tile of the hall's shape on, or rubs it out; everything moves with it when it grows up or to the left. */
 function paintShape(x: number, y: number) {
@@ -334,6 +343,7 @@ onMounted(() => {
 });
 onUnmounted(() => window.removeEventListener("resize", measure));
 
+const merchantHere = computed(() => (guild.value ? merchantVisit(guild.value.id, new Date(minute.value)).here : false));
 </script>
 
 <template>
@@ -383,7 +393,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
           <button type="button" @click="startDecor(); menuOpen = false">🪑 擺裝飾</button>
           <NuxtLink to="/avatar">🧑‍🎨 角色{{ g?.avatarChosen ? "" : "（還沒捏過）" }}</NuxtLink>
           <NuxtLink to="/guild/donate">🎁 捐獻</NuxtLink>
-          <NuxtLink to="/guild/merchant">🛒 公會商人{{ guild?.merchant?.here ? "（來了）" : "" }}</NuxtLink>
+          <NuxtLink to="/guild/merchant">🛒 公會商人{{ merchantHere ? "（來了）" : "" }}</NuxtLink>
           <NuxtLink to="/guild/members">👥 成員</NuxtLink>
           <NuxtLink v-if="role !== 'member'" to="/guild/settings">⚙️ 設定</NuxtLink>
           <NuxtLink to="/" class="leave-link">🏠 回主畫面</NuxtLink>
@@ -393,7 +403,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         <button type="button" class="hud-btn" :class="{ on: editing }" @click="editing ? (editing = false) : startDecor()">🪑 {{ editing ? "擺裝飾中" : "擺裝飾" }}</button>
         <NuxtLink to="/avatar" class="hud-btn">🧑‍🎨 角色</NuxtLink>
         <NuxtLink to="/guild/donate" class="hud-btn">🎁 捐獻</NuxtLink>
-        <NuxtLink to="/guild/merchant" class="hud-btn">🛒 商人{{ guild?.merchant?.here ? "來了" : "" }}</NuxtLink>
+        <NuxtLink to="/guild/merchant" class="hud-btn">🛒 商人{{ merchantHere ? "來了" : "" }}</NuxtLink>
         <NuxtLink to="/guild/members" class="hud-btn">👥 成員</NuxtLink>
         <NuxtLink v-if="role !== 'member'" to="/guild/settings" class="hud-btn">⚙️ 設定</NuxtLink>
       </div>
@@ -426,7 +436,7 @@ onUnmounted(() => window.removeEventListener("resize", measure));
         :bubbles="bubbles"
         :follow="follow"
         :fill="immersive || phone"
-        :merchant-here="!!guild.merchant?.here"
+        :merchant-here="merchantHere"
         :guild-id="guild.id"
         class="hall"
         @merchant="navigateTo('/guild/merchant')"

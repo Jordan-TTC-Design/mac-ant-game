@@ -17,6 +17,20 @@ const decor = computed(() =>
 );
 const clothes = computed(() => (merchant.value?.outfits ?? []).map((id) => guildOutfit(id)).filter((o) => !!o));
 
+// (he comes and goes on his own time: the page asks again the moment he arrives or leaves, without being reloaded)
+let turn: ReturnType<typeof setTimeout> | undefined;
+watch(
+  merchant,
+  (m) => {
+    clearTimeout(turn);
+    if (!m) return;
+    const next = Date.parse(m.here ? m.until : m.from) - Date.now();
+    if (next > 0 && next < 2 ** 31 - 1) turn = setTimeout(() => void live.loadGuild(), next + 1000);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => clearTimeout(turn));
+
 /** "10/22（四）18:00" in Taiwan. */
 function when(iso: string) {
   const d = new Date(iso);
