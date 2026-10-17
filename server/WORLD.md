@@ -609,7 +609,7 @@ OpenStreetMap 還沒接上，`shared/src/world/terrain.ts` 先用種子做「一
 1. **新能力的反制**：九個樹頂端能力都沒有剋星（地道無視城牆、夜襲完全看不到…）。每個加一個反制，例如瞭望塔發現夜襲、城鎮城牆擋地道、聖樹附近不會被腐化。
 2. **地圖標出威脅**：伏擊範圍、被腐化的格子畫在地圖上，玩家知道為什麼被射、為什麼產出變少。
    - 2026-10-17 做了 1、2：地道擋不過城鎮；夜襲碰到目標那一區有瞭望塔照樣預警；腐化大地不腐化城鎮、有聖樹的那一區；伏擊不射拿盾牌的；劫掠城鎮、有瞭望塔的格子只搶一半（`raidGuarded`）；在有營火廣場的格子打，戰場復甦不復甦。聖樹、月光傳送、拼裝改造只影響自己，不加。地圖 `CellView.threats`：伏擊範圍橘色虛線、會被腐化的格子紫色，格子卡片寫原因和怎麼防。
-   - 2026-10-17 做了 4（開發環境的部分）：`pwa/scripts/preview.sh` 開一個預覽：測試用 Postgres 裡的 `goblin_preview`（每次重填假資料 `server/scripts/preview-seed.ts`：Lv50 哥布林 demo@example.com／goblin preview、旁邊的精靈伏擊、死靈腐化、一隊正在打過來），伺服器在 :8790、手機版在 :3000（`API_ORIGIN` 也決定 WebSocket 的埠，`devApiPort`）。看過：大世界地圖、威脅標示、格子卡片、出征（劫掠）、天賦樹、工坊 ★ 改造、領地頁。看出來修了：格子卡片上的 🧱／🔒／⚔️／☠️ 那幾行原本被截斷（`.grow` 不換行）。自動截圖測試還沒做。
+   - 2026-10-17 做了 4（開發環境的部分）：`pwa/scripts/preview.sh` 開一個預覽：測試用 Postgres 裡的 `goblin_preview`（每次重填假資料 `server/scripts/preview-seed.ts`：Lv50 哥布林 demo@example.com／goblin preview、旁邊的精靈伏擊、死靈腐化、一隊正在打過來），伺服器在 :8790、手機版在 :3000（`API_ORIGIN` 也決定 WebSocket 的埠，`devApiPort`）。看過：大世界地圖、威脅標示、格子卡片、出征（劫掠）、天賦樹、工坊 ★ 改造、領地頁。看出來修了：格子卡片上的 🧱／🔒／⚔️／☠️ 那幾行原本被截斷（`.grow` 不換行）。自動截圖檢查：`pwa/scripts/preview.sh --screens`（`pwa/scripts/screens.mjs`，用本機的 Chrome 無頭模式和它的 DevTools 協定，不用裝套件）登入 demo、走過大世界、被打的那一格的卡片、天賦、工坊、領地、營地：有沒有出現該有的字、主控台有沒有錯、格子卡片有沒有字被截斷；截圖存到 `pwa/screens/`（不進 git）。拿掉卡片換行的修正跑過一次，會抓到兩行被截斷。
 3. **平衡模擬**：天賦、九個能力、建築搭配、市場比例、改造成本都是先抓的數字，用 BALANCE.md 的工具跑一輪。
 
 二、品質與穩定

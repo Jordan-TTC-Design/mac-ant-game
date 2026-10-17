@@ -38,3 +38,6 @@ backups/
 .env.*
 !.env.template
 !.env.example
+
+# pictures from pwa/scripts/screens.mjs
+pwa/screens/
