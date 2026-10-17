@@ -10,6 +10,7 @@ import { MATERIALS } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 import { neighbors } from "./grid.ts";
 import { hashString, type Random } from "./random.ts";
+import { detailBuilding, detailBuildingsFor, type DetailBuildingRule, type TerrainDetail } from "./details.ts";
 import { RATIONS } from "./supplies.ts";
 
 export type CellBuildingKind =
@@ -29,7 +30,8 @@ export type CellBuildingKind =
 
 /** A building as `world_cells.building` keeps it. `level` is what it is being raised to while `busyUntil` (ISO) is ahead. */
 export interface CellBuilding {
-  kind: CellBuildingKind;
+  /** A CellBuildingKind, or a 細分地形 building's (details.ts DETAIL_BUILDINGS). */
+  kind: CellBuildingKind | (string & {});
   level: number;
   busyUntil?: string | null;
 }
@@ -114,6 +116,11 @@ export function buildingsFor(terrain: Terrain): CellBuildingRule[] {
   return CELL_BUILDINGS.filter((r) => r.terrain === terrain && !r.only);
 }
 
+/** What a held cell may have built on it: its terrain's two, and its 細分地形's two and the three of anywhere (details.ts). */
+export function buildingKindsFor(terrain: Terrain, detail: TerrainDetail | null | undefined): string[] {
+  return [...buildingsFor(terrain).map((r) => r.kind), ...detailBuildingsFor(detail).map((r) => r.kind)];
+}
+
 /** The buildings only some may put on this ground (聖樹: elves with the talent, on park or forest). */
 export function specialBuildingsFor(terrain: Terrain, race: string, abilities: Partial<Record<string, number>>): CellBuildingRule[] {
   return CELL_BUILDINGS.filter((r) => r.only && r.only.race === race && (abilities[r.only.ability] ?? 0) > 0 && (r.terrain === terrain || r.alsoOn?.includes(terrain)));
@@ -126,11 +133,11 @@ export const SACRED_FORT = 0.1;
 /** The building's name and what it does for this race. */
 export function cellBuildingName(kind: string, race: string): string {
   const rule = RULES.get(kind as CellBuildingKind);
-  return rule?.races?.[race]?.name ?? rule?.name ?? kind;
+  return rule?.races?.[race]?.name ?? rule?.name ?? detailBuilding(kind)?.name ?? kind;
 }
 export function cellBuildingBlurb(kind: string, race: string): string {
   const rule = RULES.get(kind as CellBuildingKind);
-  return rule?.races?.[race]?.blurb ?? rule?.blurb ?? "";
+  return rule?.races?.[race]?.blurb ?? rule?.blurb ?? detailBuilding(kind)?.blurb ?? "";
 }
 
 export const CELL_BUILDING_MAX = 3;
@@ -341,6 +348,13 @@ export interface CellBonus {
   yieldBoost: number;
   /** The pairings (REGION_COMBOS) its building is part of in its region, by name. */
   combos?: string[];
+  /** A 細分地形 building's own ways (details.ts DetailBuildingRule): wild monsters raid it this share less often; its garrison heals this share faster; fights set out from it give this share more experience; the 聰明 / terrain breed is born there this many times as often; gear of parties from it wears this share less. */
+  wild?: number;
+  heal?: number;
+  fightXp?: number;
+  sage?: number;
+  breed?: number;
+  wear?: number;
 }
 
 /** Besides its building: the landmark on the cell, and whether a temple of the same holder stands next to it. */
@@ -419,19 +433,26 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
     out.fort += SACRED_FORT;
   }
   const level = workingLevel(building, now);
-  const rule = building ? RULES.get(building.kind) : undefined;
+  const rule: (CellBuildingRule & Partial<DetailBuildingRule>) | DetailBuildingRule | undefined = building ? (RULES.get(building.kind as CellBuildingKind) ?? detailBuilding(building.kind)) : undefined;
   if (!rule || level < 1) return out;
   const k = (Math.min(CELL_BUILDING_TOP, level) - 1) as 0 | 1 | 2 | 3;
-  for (const [id, v] of Object.entries(rule.races?.[race]?.makes ?? rule.makes ?? {})) if (v[k]) out.makes[id] = (out.makes[id] ?? 0) + v[k];
+  const races = "races" in rule ? rule.races : undefined;
+  for (const [id, v] of Object.entries(races?.[race]?.makes ?? rule.makes ?? {})) if (v[k]) out.makes[id] = (out.makes[id] ?? 0) + v[k];
   for (const [id, v] of Object.entries(rule.finds ?? {})) out.finds[id] = Math.min(1, (out.finds[id] ?? 0) + v[k]);
   if (rule.fort) out.fort += rule.fort[k];
   if (rule.travel) out.travel *= rule.travel[k];
   if (rule.room) out.room += rule.room[k];
   if (rule.party) out.party += rule.party[k];
+  if ("wild" in rule && rule.wild) out.wild = rule.wild[k];
+  if ("heal" in rule && rule.heal) out.heal = rule.heal[k];
+  if ("xp" in rule && rule.xp) out.fightXp = rule.xp[k];
+  if ("sage" in rule && rule.sage) out.sage = rule.sage[k];
+  if ("breed" in rule && rule.breed) out.breed = rule.breed[k];
+  if ("wear" in rule && rule.wear) out.wear = rule.wear[k];
   // paired with its partner in the region (REGION_COMBOS): a little more of what it does
   const combos = combosFor(rule.kind, around.regionKinds ?? []);
   for (const _ of combos) {
-    for (const id of Object.keys(rule.races?.[race]?.makes ?? rule.makes ?? {})) out.makes[id] = (out.makes[id] ?? 0) + 1;
+    for (const id of Object.keys(races?.[race]?.makes ?? rule.makes ?? {})) out.makes[id] = (out.makes[id] ?? 0) + 1;
     for (const id of Object.keys(rule.finds ?? {})) out.finds[id] = Math.min(1, (out.finds[id] ?? 0) + 0.03);
     if (rule.fort) out.fort += 0.1;
     if (rule.room) out.room += 5;
@@ -485,8 +506,9 @@ export function cellRaidChance(raceLevel: number, cellsHeld: number): number {
  * How many of a cell's `garrison` monster raids kill over `yields` yields, and how many raids came. A raid's losses are rounded
  * by chance (a garrison of 10 loses 0 or 1); the garrison never falls below one.
  */
-export function cellRaidLosses(raceLevel: number, cellsHeld: number, garrison: number, fort: number, yields: number, random: Random): { raids: number; fallen: number } {
-  const chance = cellRaidChance(raceLevel, cellsHeld);
+export function cellRaidLosses(raceLevel: number, cellsHeld: number, garrison: number, fort: number, yields: number, random: Random, wild = 0): { raids: number; fallen: number } {
+  // (`wild`: a 蘆葦迷陣, 香火廟 or 哨站 on it keeps this share of them away)
+  const chance = cellRaidChance(raceLevel, cellsHeld) * (1 - Math.min(1, Math.max(0, wild)));
   const share = CELL_RAIDS.share * (1 - Math.min(CELL_RAIDS.fortMax, Math.max(0, fort)));
   let left = garrison;
   let raids = 0;

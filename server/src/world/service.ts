@@ -94,6 +94,7 @@ import {
   buildingsFor,
   cellBonus,
   cellRaidLosses,
+  detailBuildingsFor,
   type TerrainDetail,
   meteorAt,
   seasonAt,
@@ -637,6 +638,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
         birthMinutes: nestBirthMinutes(camp.race, cell.town) / (1 + (tb.nest ?? 0)),
         cap: room,
         detail, // (its 細分地形's rare breed is born there now and then: population.ts)
+        breedBoost: bonus.breed ?? 1, // (a 祈福台 or 祭壇 on it)
       };
       const population: Population = { residents: rows.map(toResident), nextId: camp.nextId, nextSlot: cell.nextSlot, peak: rows.length };
       const step = advance(place, population, camp.seed, now.getTime());
@@ -698,7 +700,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       // the camp's raids are the camp's), killing a few of its garrison
       if (!isHome) {
         const random = seeded(WORLD_SEED, cell.cell, since.getTime(), "cell-raid");
-        const { fallen } = cellRaidLosses(raceLevel(home?.xp ?? 0), held.length, n, bonus.fort + (tb.fort ?? 0), times, random);
+        const { fallen } = cellRaidLosses(raceLevel(home?.xp ?? 0), held.length, n, bonus.fort + (tb.fort ?? 0), times, random, bonus.wild ?? 0);
         if (fallen > 0) {
           const there = await aliveAt(tx, camp.userId, cellPlace(cell.cell));
           const dead = there.map((r) => ({ r, k: random() })).sort((a, b) => a.k - b.k).slice(0, fallen).map((x) => x.r);
@@ -1795,9 +1797,11 @@ export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: st
   await advanceWorld(tx, camp, now);
   const row = await ownedRow(tx, userId, cell);
   if ((await homeCellOf(tx, userId)) === cell) throw new WorldError(409, "camp_cell", "營地那一格蓋場地就好（營地頁）；建築蓋在其他領地上。");
-  const rule = cellBuildingRule(kind);
   const terrain = await terrainOf(tx, cell);
-  if (!rule || (rule.terrain !== terrain && !rule.alsoOn?.includes(terrain))) throw new WorldError(400, "invalid_input", "這種地形不能蓋這個。");
+  // its terrain's, or its 細分地形's (details.ts: the same costs and hours)
+  const extra = detailBuildingsFor(await detailOf(tx, cell)).find((r) => r.kind === kind);
+  const rule = cellBuildingRule(kind) ?? (extra ? { kind: extra.kind, name: extra.name, terrain, only: undefined } : undefined);
+  if (!rule || (rule.terrain !== terrain && !("alsoOn" in rule && rule.alsoOn?.includes(terrain)))) throw new WorldError(400, "invalid_input", "這種地形不能蓋這個。");
   if (rule.only) {
     // (聖樹: an elf's, with the talent, one in a region)
     if (rule.only.race !== camp.race || !hasAbility(await talentBonusOf(tx, userId), rule.only.ability as TalentEffect)) throw new WorldError(403, "not_allowed", `${rule.name}要先點天賦才能蓋。`);
@@ -2493,7 +2497,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
           busyUntil: b.busyUntil && Date.parse(b.busyUntil) > now.getTime() ? b.busyUntil : null,
         }
       : null,
-    canBuild: isHome ? [] : [...buildingsFor(terrain), ...specialBuildingsFor(terrain, camp.race, await talentBonusOf(tx, userId))].map((r) => ({ kind: r.kind, name: cellBuildingName(r.kind, camp.race), blurb: cellBuildingBlurb(r.kind, camp.race) })),
+    canBuild: isHome ? [] : [...buildingsFor(terrain), ...specialBuildingsFor(terrain, camp.race, await talentBonusOf(tx, userId)), ...detailBuildingsFor(await detailOf(tx, cell))].map((r) => ({ kind: r.kind, name: cellBuildingName(r.kind, camp.race), blurb: cellBuildingBlurb(r.kind, camp.race) })),
     nextCost: isHome || top ? null : CELL_BUILDING_COSTS[b?.level ?? 0]!,
     nextHours: isHome || top ? null : CELL_BUILDING_HOURS[b?.level ?? 0]!,
     bonus: cellBonus(camp.race, b, now.getTime(), around),

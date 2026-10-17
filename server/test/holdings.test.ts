@@ -120,7 +120,9 @@ describe("a building on a cell", () => {
     const cell = await settle(a, 20);
     let d = (await detail(a, cell)).body;
     expect(d.building).toBeNull();
-    expect(d.canBuild).toHaveLength(2);
+    // its terrain's two, then its 細分地形's (if any) and the three of anywhere (details.ts)
+    expect(d.canBuild.slice(0, 2).map((b) => b.kind)).toEqual(CELL_BUILDINGS.filter((r) => r.terrain === d.terrain && !r.only).map((r) => r.kind));
+    expect(d.canBuild).toHaveLength(2 + (d.detail ? 2 : 0) + 3);
     expect(d.nextCost).toEqual({ scrap_wood: 20, log: 20 });
     const maker = CELL_BUILDINGS.find((r) => r.terrain === d.terrain && r.makes)!;
     const other = d.canBuild.find((k) => k.kind !== maker.kind)!.kind;
@@ -784,5 +786,21 @@ describe("細分地形 on the map and on a held cell (WORLD.md §29)", () => {
     const got = d.history.filter((h) => h.kind === "yield").flatMap((h) => Object.keys(h.loot ?? {}));
     const { DETAIL_YIELD } = await import("@goblincamp/shared/world");
     expect(DETAIL_YIELD[detail].some((y) => got.includes(y.id))).toBe(true);
+  });
+
+  it("offers its 細分地形's buildings and those of anywhere; a 哨站 keeps wild monsters away", async () => {
+    const a = await ready();
+    const cell = await settle(a, 20, [], (c) => !!c.detail && !c.lair);
+    const detail = (await map(a)).find((c) => c.cell === cell)!.detail!;
+    const { detailBuildingsFor, cellBonus } = await import("@goblincamp/shared/world");
+    const offered = ((await t.call("GET", `/world/cells/${cell}`, undefined, a)).body as CellDetail).canBuild.map((b) => b.kind);
+    for (const r of detailBuildingsFor(detail)) expect(offered).toContain(r.kind);
+    await give("a@example.com", { scrap_wood: 100, log: 100 });
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: "outpost" }, a)).status).toBe(200);
+    expect(((await t.call("GET", `/world/cells/${cell}`, undefined, a)).body as CellDetail).building?.name).toBe("哨站");
+    // (a 細分地形 building of another kind of ground cannot go here)
+    const other = (await import("@goblincamp/shared/world")).DETAIL_BUILDINGS.find((r) => r.detail !== "any" && r.detail !== detail)!;
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind: other.kind }, a)).status).toBeGreaterThanOrEqual(400);
+    expect(cellBonus("goblin", { kind: "outpost", level: 1 }, 0).wild).toBeCloseTo(0.2);
   });
 });
