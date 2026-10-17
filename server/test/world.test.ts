@@ -637,6 +637,22 @@ describe("a garrison overrun falls back", () => {
     expect(wa.recent.find((r) => r.id === going.id)?.outcome?.cell).toBe("settled");
   });
 
+  it("turtles at most a day after losing, then is in the world again by itself", async () => {
+    const { a, b, cells } = await setUp([25]);
+    await overrun(b, cells[0]!);
+    let wa = await me(a);
+    expect(wa.shielded).toBe(true);
+    expect(Date.parse(wa.shieldEndsAt!) - t.now().getTime()).toBeGreaterThan(23 * HOUR);
+    // b cannot attack a turtling camp
+    expect((await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, b)).body.error).toBe("target_shielded");
+    t.advance(24 * HOUR);
+    wa = await me(a);
+    expect(wa.shielded).toBe(false);
+    expect(wa.open).toBe(true);
+    expect(wa.shieldEndsAt).toBeNull();
+    expect((await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, b)).status).toBe(201);
+  });
+
   it("is warned the moment a party sets out against it", async () => {
     const { a, b, cells } = await setUp([25]);
     const res = await t.call("POST", "/world/expeditions", { to: cells[0], count: 6 }, b);
@@ -649,6 +665,16 @@ describe("a garrison overrun falls back", () => {
     expect(events.some((e) => e.kind === "expedition" && e.data.incoming && e.data.where === "領地 1")).toBe(true);
     t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
     expect((await me(a)).incoming).toHaveLength(0); // (it got there)
+  });
+
+  it("wears the fighters' gear down, at half a raid's rate", async () => {
+    const { b, cells } = await setUp([25]);
+    const full = new Map(GEAR.map((g) => [g.id, g.durability]));
+    await overrun(b, cells[0]!);
+    const worn = (await camp(b)).residents.flatMap((r) => Object.values(r.gear ?? {})).filter((g) => g.left < full.get(g.id)!);
+    expect(worn.length).toBeGreaterThan(0);
+    // (half a point a blow or a hit: a short fight takes only a little off)
+    expect(worn.every((g) => g.left > full.get(g.id)! - 20)).toBe(true);
   });
 
   it("too few to hold a cell, walks home", async () => {

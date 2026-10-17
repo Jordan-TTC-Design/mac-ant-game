@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CampView } from "@goblincamp/shared/camp";
-import { buildingsFor, cellAt, cellBonus, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type TerritoryList, type WorldMe } from "@goblincamp/shared/world";
+import { buildingsFor, cellAt, cellBonus, marketQuote, CELL_BUILDING_COSTS, CELL_BUILDINGS, standInLandmark, neighbors, type CellDetail, type CellView, type ExpeditionReport, type TerritoryList, type WorldMe } from "@goblincamp/shared/world";
 import type { Database } from "../src/db/client.ts";
 import { usePlaceSource } from "../src/world/search.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
@@ -599,5 +599,36 @@ describe("gear for residents away from home", () => {
     const cells = await map(a);
     expect(cells.find((c) => c.cell === home)!.home).toBe(true);
     expect(cells.filter((c) => c.home)).toHaveLength(1);
+  });
+});
+
+describe("a town's market", () => {
+  it("swaps materials at a loss, a few times a day for each town", async () => {
+    const a = await ready();
+    const cell = await settle(a, 20);
+    const trade = (body: Record<string, unknown>) => t.call("POST", `/world/cells/${cell}/market`, body, a);
+    expect((await trade({ give: "log", count: 10, get: "stone" })).body.error).toBe("not_town"); // (a plain cell has none)
+    await database.sql`update world_cells set town = true where cell = ${cell}`;
+    await give("a@example.com", { rat_fang: 100 });
+    expect((await detail(a, cell)).body.market).toEqual({ left: 3 });
+    const before = (await camp(a)).materials;
+    const res = await trade({ give: "rat_fang", count: 10, get: "crystal_shard" });
+    expect(res.status).toBe(200);
+    const after = (await camp(a)).materials;
+    expect(after.rat_fang).toBe(before.rat_fang! - 10);
+    expect((after.crystal_shard ?? 0) - (before.crystal_shard ?? 0)).toBe(marketQuote("rat_fang", 10, "crystal_shard"));
+    expect(marketQuote("rat_fang", 10, "crystal_shard")).toBe(4); // (10 × 4 × 0.6 ÷ 5)
+    expect((await trade({ give: "rat_fang", count: 1, get: "crystal_shard" })).body.error).toBe("invalid_input"); // (too few for one)
+    await trade({ give: "rat_fang", count: 10, get: "scrap_iron" });
+    await trade({ give: "rat_fang", count: 10, get: "scrap_iron" });
+    expect((await detail(a, cell)).body.market).toEqual({ left: 0 });
+    expect((await trade({ give: "rat_fang", count: 10, get: "scrap_iron" })).body.error).toBe("market_closed");
+    t.advance(24 * HOUR); // (a new day)
+    expect((await detail(a, cell)).body.market).toEqual({ left: 3 });
+  });
+
+  it("gives a town's defenders walls and its parties a head start", () => {
+    const at = Date.now();
+    expect(cellBonus("goblin", null, at, { town: true })).toMatchObject({ fort: 0.2, travel: 0.75 });
   });
 });

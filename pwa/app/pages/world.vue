@@ -401,7 +401,7 @@ async function goToPlace(p: PlaceFound) {
       </section>
       <section v-else-if="!s.me.open" class="panel intro">
         <h2>龜縮中</h2>
-        <p>上一場打輸了，營地和領地現在都不會被打，但也不能出征。準備好了就重新開啟。</p>
+        <p>上一場打輸了，營地和領地現在都不會被打，但也不能出征。準備好了就重新開啟{{ s.me.shieldEndsAt ? `；${noteTime(s.me.shieldEndsAt)}（龜縮滿 24 小時）會自動結束` : "" }}。</p>
         <button class="btn primary" :disabled="busy" @click="openAgain">重新開啟大世界</button>
       </section>
 

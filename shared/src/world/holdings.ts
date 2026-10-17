@@ -5,6 +5,8 @@
  * cell has none (the camp has its sites: shared/src/camp/sites.ts).
  */
 import { raceRules } from "../camp/races.ts";
+import { donationPoints } from "../guild.ts";
+import { MATERIALS } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 import { neighbors } from "./grid.ts";
 import { hashString } from "./random.ts";
@@ -302,6 +304,29 @@ export interface CellSurroundings {
   neighbours?: number;
   /** The towns of its region that add to its room (townsJoined). */
   townsJoined?: number;
+  /** It is a town itself (TOWN_TRAVEL, TOWN_FORT). */
+  town?: boolean;
+}
+
+/** A town is a base (2026-10-17): parties setting out from it walk this much of the time, and its walls add this to its defenders' hit points. */
+export const TOWN_TRAVEL = 0.75;
+export const TOWN_FORT = 0.2;
+
+/** A town's market (2026-10-17): materials swapped for others, at a loss, a few times a day for each town. */
+export const MARKET_TRADES_PER_DAY = 3;
+/** The share of what is given that comes back in what is wanted (worth for worth). */
+export const MARKET_RATE = 0.6;
+
+/** What one of a material is worth at a market: the guild's worth of it (0: not traded there, e.g. the 道具). */
+export function marketWorth(id: string): number {
+  return id.startsWith("item_") ? 0 : donationPoints(id, (m) => m in MATERIALS);
+}
+
+/** How many of `get` come for `count` of `give` at a town's market (0: no trade). */
+export function marketQuote(give: string, count: number, get: string): number {
+  const a = marketWorth(give), b = marketWorth(get);
+  if (!a || !b || give === get || count < 1) return 0;
+  return Math.floor((count * a * MARKET_RATE) / b);
 }
 
 export function cellBonus(race: string, building: CellBuilding | null | undefined, now: number, around: CellSurroundings = {}): CellBonus {
@@ -316,6 +341,10 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
   }
   if (around.templeNear && around.landmark?.kind !== "temple") out.fort += TEMPLE_AURA;
   out.room += townRoom(raceRules(race).cellCap, around.townsJoined ?? 0);
+  if (around.town) {
+    out.travel *= TOWN_TRAVEL;
+    out.fort += TOWN_FORT;
+  }
   const level = workingLevel(building, now);
   const rule = building ? RULES.get(building.kind) : undefined;
   if (!rule || level < 1) return out;

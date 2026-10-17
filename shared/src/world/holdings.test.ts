@@ -23,6 +23,9 @@ describe("buildings on held cells", () => {
     expect(cellBonus("goblin", { kind: "watchtower", level: 1, busyUntil: later }, at).fort).toBe(0);
     expect(cellBonus("goblin", { kind: "watchtower", level: 3 }, at).fort).toBe(0.35);
     expect(cellBonus("goblin", { kind: "dock", level: 2 }, at).travel).toBe(0.75);
+    // a town: a base to set out from, and walls (with a building's own on top)
+    expect(cellBonus("goblin", null, at, { town: true })).toMatchObject({ travel: 0.75, fort: 0.2 });
+    expect(cellBonus("goblin", { kind: "watchtower", level: 3 }, at, { town: true }).fort).toBeCloseTo(0.55);
     expect(cellBonus("goblin", null, at)).toEqual({ makes: {}, finds: {}, fort: 0, travel: 1, room: 0, party: 0, xp: 0, yieldBoost: 0 });
   });
 

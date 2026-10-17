@@ -215,6 +215,8 @@ export interface WorldMe {
   unlockPeak: number;
   peak: number;
   shielded: boolean;
+  /** When the shield ends by itself (SHIELD_MAX_HOURS after it began); null when not shielded. */
+  shieldEndsAt?: string | null;
   /** Where the camp stands: everybody at home lives and defends there. */
   homeCell: string | null;
   home: { lat: number; lng: number } | null;
@@ -295,6 +297,8 @@ export interface CellHappening {
 
 /** `GET /api/world/cells/:cell`: a cell of one's own, looked at from inside (its residents are the camp's, place `cell:<id>`). */
 export interface CellDetail {
+  /** A town's market: how many swaps are left today (MARKET_TRADES_PER_DAY); absent on a cell that is not a town. */
+  market?: { left: number };
   cell: string;
   lat: number;
   lng: number;
@@ -344,6 +348,9 @@ export interface CellDetail {
 
 /** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
 export const buildInput = z.object({ kind: z.string().max(40) });
+
+/** `POST /api/world/cells/:cell/market`: `count` of `give` swapped at the town's market for `get` (holdings.ts marketQuote). */
+export const marketInput = z.object({ give: z.string().max(40), count: z.number().int().min(1).max(10_000), get: z.string().max(40) });
 
 /** `GET /api/world/landmarks?lat=&lng=`: the landmarks around a point (holdings.ts), the nearest first, and who holds each. */
 export interface NearbyLandmark {

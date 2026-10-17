@@ -3,11 +3,15 @@
  * walking out and what happens when they get there. Residents are the camp's own (camp_residents): where they are is their
  * `place` — "home", "cell:<id>" on a held cell, "exp:<id>" while walking.
  */
-import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { PushSubscriptionJSON, WorldPush } from "@goblincamp/shared";
-import { advance, fightBoosts, RACE_RANGE, raceRules, residentAsFighter, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
+import { advance, fightBoosts, gearRule, RACE_RANGE, raceRules, residentAsFighter, taipeiDay, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
 import {
   afterDefeat,
+  shieldLapsed,
+  marketQuote,
+  MARKET_TRADES_PER_DAY,
+  SHIELD_MAX_HOURS,
   bossAt,
   BOSSES_BY_DEFAULT,
   bossFighters,
@@ -57,6 +61,8 @@ import {
   respawnHours,
   simulateBattle,
   hashString,
+  randomFrom,
+  type BattleEvent,
   terrainAt,
   TOWN_COST,
   TOWN_MIN_CELLS,
@@ -162,8 +168,10 @@ export class WorldError extends Error {
   }
 }
 
-function state(p: PlayerRow | undefined | null): PlayerWorldState {
-  return { open: !!p?.open, shieldedSince: p?.shieldedSince?.toISOString() ?? null, lastShieldEnded: p?.lastShieldEnded?.toISOString() ?? null };
+/** A player's standing in the world; with `now`, a shield that has run its time out counts as over (shieldLapsed). */
+function state(p: PlayerRow | undefined | null, now?: Date): PlayerWorldState {
+  const s = { open: !!p?.open, shieldedSince: p?.shieldedSince?.toISOString() ?? null, lastShieldEnded: p?.lastShieldEnded?.toISOString() ?? null };
+  return now ? shieldLapsed(s, now) : s;
 }
 
 async function lockPlayer(tx: Tx, userId: string): Promise<PlayerRow | null> {
@@ -308,6 +316,53 @@ async function bury(tx: Tx, camp: CampRow, rows: ResidentRow[], at: Date) {
   }
 }
 
+/** A fight in the big world wears gear (2026-10-17) at this share of what a raid on the camp does (camp/raids.ts). */
+export const EXPEDITION_WEAR = 0.5;
+const ARMOUR: GearSlot[] = ["head", "chest", "legs", "feet", "hands"];
+
+/**
+ * Wears down what `rows` wore in a fight (their fighter ids are `prefix` + id): as a raid does, a weapon a point for each
+ * blow it strikes and, for each hit taken, the shield and one piece of armour, at EXPEDITION_WEAR. A piece worn out breaks
+ * (about a third of what it was made from is picked out of it, as in a raid). Changes the rows too, so whoever fell gives
+ * back what is left of theirs.
+ */
+async function wearDown(tx: Tx, camp: CampRow, rows: ResidentRow[], events: BattleEvent[], prefix: string, seed: string) {
+  const byId = new Map(rows.map((r) => [`${prefix}${r.id}`, r]));
+  const wear = new Map<ResidentRow, Partial<Record<GearSlot, number>>>();
+  const roll = randomFrom(hashString(`${seed}|wear`));
+  const add = (r: ResidentRow, slot: GearSlot) => {
+    const w = wear.get(r) ?? {};
+    w[slot] = (w[slot] ?? 0) + EXPEDITION_WEAR;
+    wear.set(r, w);
+  };
+  for (const e of events) {
+    const striker = byId.get(e.actor);
+    if (striker?.gear?.weapon && (e.kind === "hit" || e.kind === "miss")) add(striker, "weapon");
+    const struck = byId.get(e.target);
+    if (struck && e.kind === "hit") {
+      if (struck.gear?.shield) add(struck, "shield");
+      const worn = ARMOUR.filter((slot) => struck.gear?.[slot]);
+      if (worn.length) add(struck, worn[Math.floor(roll() * worn.length)]!);
+    }
+  }
+  const salvage = randomFrom(hashString(`${seed}|broken`));
+  for (const [r, slots] of wear) {
+    const gear = structuredClone(r.gear ?? {}) as Partial<Record<GearSlot, GearItem>>;
+    for (const [slot, n] of Object.entries(slots) as [GearSlot, number][]) {
+      const item = gear[slot];
+      if (!item) continue;
+      item.left -= n;
+      if (item.left > 0) continue;
+      delete gear[slot];
+      for (const [mat, count] of Object.entries(gearRule(item.id)?.cost ?? {})) {
+        for (let k = 0; k < count; k++) if (salvage() < 0.3) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + 1 };
+      }
+    }
+    r.gear = Object.keys(gear).length ? (gear as ResidentRow["gear"]) : null;
+    await tx.update(campResidents).set({ gear: r.gear }).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.id, r.id)));
+  }
+}
+
 async function bumpVersion(tx: Tx, camp: CampRow) {
   camp.version += 1;
   await tx.update(camps).set({ version: camp.version, nextId: camp.nextId, materials: camp.materials, kills: camp.kills }).where(eq(camps.userId, camp.userId));
@@ -335,6 +390,7 @@ async function surroundings(tx: Tx, held: string[]): Promise<(cell: string) => C
     templeNear: neighbors(cell).some((n) => mine.has(n) && landmarks.get(n)?.kind === "temple"),
     neighbours: heldNeighbours(cell, mine),
     townsJoined: mine.has(cell) ? townsJoined(regionTownsOf(cell), towns.has(cell)) : 0,
+    town: towns.has(cell),
   });
 }
 
@@ -585,6 +641,16 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   if (player && rewardXp) {
     player.xp += rewardXp;
     await tx.update(worldPlayers).set({ xp: player.xp }).where(eq(worldPlayers.userId, camp.userId));
+  }
+  // a shield that has run its time out ends (the camp is in the world again, open to attack)
+  if (player?.shieldedSince && !state(player, now).shieldedSince) {
+    const next = state(player, now);
+    player.open = next.open;
+    player.shieldedSince = null;
+    player.lastShieldEnded = next.lastShieldEnded ? new Date(next.lastShieldEnded) : null;
+    await tx.update(worldPlayers).set({ open: player.open, shieldedSince: null, lastShieldEnded: player.lastShieldEnded }).where(eq(worldPlayers.userId, camp.userId));
+    await addEvent(tx, camp.userId, now, "world", { shieldEnded: true });
+    changed = true;
   }
   if (player) {
     const days = Math.floor((now.getTime() - player.xpCountedTo.getTime()) / DAY);
@@ -868,7 +934,7 @@ export async function sendExpedition(
     const [owner] = await tx.select({ since: camps.sanctuarySince }).from(camps).where(eq(camps.userId, target.owner));
     if (owner?.since) throw new WorldError(409, "target_sanctuary", "對方在聖光模式，打不了。");
     const [defender] = await tx.select().from(worldPlayers).where(eq(worldPlayers.userId, target.owner));
-    const refusal = checkAttack(userId, state(player), target.owner, state(defender));
+    const refusal = checkAttack(userId, state(player), target.owner, state(defender, now));
     if (refusal === "target_shielded" || refusal === "target_closed") throw new WorldError(409, refusal, "對方正在龜縮，現在打不了。");
   }
 
@@ -1212,7 +1278,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     // another camp's cell
     const defenderCamp = locked.get(cell.owner);
     const defenderPlayer = await lockPlayer(tx, cell.owner);
-    const refusal = checkAttack(camp.userId, state(player), cell.owner, state(defenderPlayer));
+    const refusal = checkAttack(camp.userId, state(player), cell.owner, state(defenderPlayer, at));
     const sanctuary = !!defenderCamp?.sanctuarySince || !!camp.sanctuarySince;
     if (!defenderCamp || refusal || sanctuary) {
       await placeSurvivors(party, false);
@@ -1257,6 +1323,8 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       report.fallen = result.battle.fallen;
       const fallenA = new Set(result.battle.fallen.attack);
       const fallenD = new Set(result.battle.fallen.defend);
+      await wearDown(tx, camp, party, result.battle.events, "", `${exp.id}|a`);
+      await wearDown(tx, defenderCamp, defenders, result.battle.events, "d", `${exp.id}|d`);
       await bury(tx, camp, party.filter((r) => fallenA.has(String(r.id))), at);
       await bury(tx, defenderCamp, defenders.filter((r) => fallenD.has(`d${r.id}`)), at);
       const fellGuests = guests.rows.filter((r) => fallenD.has(guestId(guests.all, r)));
@@ -1318,6 +1386,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
     report.events = battle.events.slice(0, 1500);
     report.fallen = battle.fallen;
     const fallenA = new Set(battle.fallen.attack);
+    await wearDown(tx, camp, party, battle.events, "", `${exp.id}|a`);
     await bury(tx, camp, party.filter((r) => fallenA.has(String(r.id))), at);
     await placeSurvivors(party.filter((r) => !fallenA.has(String(r.id))), false);
     outcome.won = defeated;
@@ -1353,6 +1422,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       report.events = result.battle.events.slice(0, 1500);
       report.fallen = result.battle.fallen;
       const fallenA = new Set(result.battle.fallen.attack);
+      await wearDown(tx, camp, party, result.battle.events, "", `${exp.id}|a`);
       await bury(tx, camp, party.filter((r) => fallenA.has(String(r.id))), at);
       outcome.fallen = fallenA.size;
       outcome.killed = result.battle.fallen.defend.length;
@@ -1534,6 +1604,33 @@ export async function buildOnCell(tx: Tx, userId: string, cell: string, kind: st
   await tx.update(worldCells).set({ building, updatedAt: now }).where(eq(worldCells.cell, cell));
   await addEvent(tx, userId, now, "world", { built: { cell, kind, level } });
   await bumpVersion(tx, camp);
+}
+
+/** A town's market swaps done today (Taipei's day), for `cell`. */
+async function marketTradesToday(tx: Tx, userId: string, cell: string, now: Date): Promise<number> {
+  const dayStart = new Date(Date.parse(`${taipeiDay(now)}T00:00:00+08:00`));
+  const [{ n }] = (await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(campEvents)
+    .where(and(eq(campEvents.userId, userId), eq(campEvents.kind, "world"), gte(campEvents.at, dayStart), sql`${campEvents.data} -> 'market' ->> 'cell' = ${cell}`))) as [{ n: number }];
+  return n;
+}
+
+/** Swaps materials at a town's market (holdings.ts marketQuote), a few times a day for each town. Returns how many came. */
+export async function tradeAtMarket(tx: Tx, userId: string, cell: string, input: { give: string; count: number; get: string }, now: Date) {
+  const { camp } = await ownCell(tx, userId, cell);
+  await advanceWorld(tx, camp, now);
+  const row = await ownedRow(tx, userId, cell);
+  if (!row.town) throw new WorldError(409, "not_town", "只有城鎮有市場。");
+  if ((await marketTradesToday(tx, userId, cell, now)) >= MARKET_TRADES_PER_DAY) throw new WorldError(409, "market_closed", `這個城鎮的市場今天已經換了 ${MARKET_TRADES_PER_DAY} 次，明天再來。`);
+  const got = marketQuote(input.give, input.count, input.get);
+  if (got < 1) throw new WorldError(400, "invalid_input", "這樣換不到東西（換的數量太少，或這種素材市場不收）。");
+  if ((camp.materials[input.give] ?? 0) < input.count) throw new WorldError(409, "cannot_afford", `${materialName(input.give)}不夠。`);
+  camp.materials = spend(camp.materials, { [input.give]: input.count });
+  camp.materials = { ...camp.materials, [input.get]: (camp.materials[input.get] ?? 0) + got };
+  await addEvent(tx, userId, now, "world", { market: { cell, give: input.give, count: input.count, get: input.get, got } });
+  await bumpVersion(tx, camp);
+  return { got };
 }
 
 /** Takes the building down (nothing comes back: the ground is cleared for another). */
@@ -1741,6 +1838,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
     unlockPeak: worldUnlockPeak(camp.race),
     peak: camp.peak,
     shielded: !!player?.shieldedSince,
+    shieldEndsAt: player?.shieldedSince ? new Date(player.shieldedSince.getTime() + SHIELD_MAX_HOURS * HOUR).toISOString() : null,
     homeCell: player?.homeCell ?? null,
     home: player ? cellCenter(player.homeCell) : null,
     homeMoveAt: player ? (homeMoveAt(player)?.toISOString() ?? null) : null,
@@ -1913,6 +2011,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   const landmark = around.landmark ? landmarkRule(around.landmark.kind) : undefined;
   const top = (b?.level ?? 0) >= CELL_BUILDING_MAX;
   return {
+    ...(row.town ? { market: { left: Math.max(0, MARKET_TRADES_PER_DAY - (await marketTradesToday(tx, userId, cell, now))) } } : {}),
     cell,
     lat: center.lat,
     lng: center.lng,
