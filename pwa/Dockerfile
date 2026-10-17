@@ -27,6 +27,7 @@ COPY mac/Resources/Terrain mac/Resources/Terrain
 COPY mac/Resources/Decor mac/Resources/Decor
 COPY mac/Resources/Avatars mac/Resources/Avatars
 COPY mac/Resources/Guild mac/Resources/Guild
+COPY mac/Resources/Gear mac/Resources/Gear
 RUN pnpm --filter @goblincamp/pwa build
 
 # ---------- runtime ----------
