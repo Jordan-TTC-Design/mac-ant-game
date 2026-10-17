@@ -74,6 +74,15 @@ const suggestions = computed(() => {
 const mendable = computed(() => jobs.value.filter((p) => affordable(repairCost(gearRule(p.item.id)!))).length);
 /** 製作: straight to whoever needs it most (into the store with the handing out off); `n` of them at once. */
 const make = (gear: string, n = 1) => run(n > 1 ? { kind: "craft", gear, count: n } : { kind: "craft", gear });
+/** 建議 all at once: each slot's suggestion in turn (stops at the first that fails: its line says why). */
+async function makeAll() {
+  for (const x of [...suggestions.value]) {
+    await make(x.gear.id, x.n);
+    if (problem.value) return;
+  }
+}
+const suggestOpen = ref(false);
+const suggestCount = computed(() => suggestions.value.reduce((n, x) => n + x.n, 0));
 /** The ⋯ sheet's batches for a piece being made. */
 const batchesFor = (gear: string) => {
   const rule = gearRule(gear)!;
@@ -141,11 +150,7 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
-      <div style="flex: 1"><h1>工坊</h1><div class="sub">做好的可以自動給最需要的，或自己挑人</div></div>
-      <NuxtLink to="/roster" class="icon-btn">名冊</NuxtLink>
-    </header>
+    <CampHead title="工坊" sub="做好的可以自動給最需要的，或自己挑人" />
     <div v-if="!view" class="panel">{{ camp.state.status === "loading" ? "讀取中…" : "還沒有營地。" }}</div>
     <template v-else>
       <nav class="tabs">
@@ -154,7 +159,8 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
         <button :class="{ on: tab === 'have' }" @click="tab = 'have'">現有裝備</button>
         <button :class="{ on: tab === 'mend' }" @click="tab = 'mend'">修理<small v-if="jobs.length"> {{ jobs.length }}</small></button>
       </nav>
-      <div class="panel status">
+      <details class="panel status">
+        <summary>⚙️ 自動發裝備：<b>{{ view.autoGear !== false ? (view.autoGearFar ? "開（含領地）" : "開") : "關" }}</b></summary>
         <label class="auto">
           <input type="checkbox" :checked="view.autoGear !== false" :disabled="busy" @change="run({ kind: 'auto-gear', on: ($event.target as HTMLInputElement).checked })" />
           自動把倉庫的裝備發給最需要的居民<small>（你手動給的 📌、保留在倉庫的不會動）</small>
@@ -163,13 +169,17 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
           <input type="checkbox" :checked="!!view.autoGearFar" :disabled="busy || view.autoGear === false" @change="run({ kind: 'auto-gear-far', on: ($event.target as HTMLInputElement).checked })" />
           也包含領地<small>（營地和城鎮一定會發）</small>
         </label>
-      </div>
+      </details>
       <!-- what just happened: kept in sight whatever is scrolled -->
       <p v-if="message || problem" class="toast" :class="{ bad: problem }" @click="message = problem = ''">{{ problem || message }}</p>
 
       <section v-if="tab === 'make' && (suggestions.length || mendable)" class="panel suggest">
-        <h3>建議</h3>
-        <div v-for="x in suggestions" :key="x.slot" class="suggest-line">
+        <div v-if="suggestions.length" class="suggest-head">
+          <span class="grow"><b>建議</b>：可以做 {{ suggestCount }} 件、{{ suggestions.length }} 種，讓居民變強</span>
+          <button class="btn primary" :disabled="busy" @click="makeAll">全部做</button>
+        </div>
+        <button v-if="suggestions.length" type="button" class="see" @click="suggestOpen = !suggestOpen">{{ suggestOpen ? "收起 ▴" : "看每一樣 ▾" }}</button>
+        <div v-for="x in suggestOpen ? suggestions : []" :key="x.slot" class="suggest-line">
           <GearIcon :id="x.gear.id" :size="26" />
           <span class="grow">{{ SLOT_LABELS[x.slot] }}：{{ x.need }} 隻可以換成<b>{{ x.gear.name }}</b><small class="muted">（{{ effectText(x.gear) }}）</small></span>
           <button class="btn primary" :disabled="busy" @click="make(x.gear.id, x.n)">{{ x.n > 1 ? `做 ×${x.n}` : "做 1 件" }}</button>
@@ -308,7 +318,12 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
 .suggest-line { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
 .suggest-line:first-of-type { border-top: 0; }
 .make-ops { display: flex; gap: 4px; }
-.btn.more { padding-left: 10px; padding-right: 10px; }
+.btn.more { min-width: 44px; min-height: 44px; padding-left: 10px; padding-right: 10px; }
+.suggest-head { display: flex; align-items: center; gap: 10px; }
+.suggest-head .btn { min-height: 44px; }
+.see { border: 0; background: none; padding: 8px 0 2px; color: var(--muted); font-weight: 700; cursor: pointer; }
+.status summary { cursor: pointer; font-size: 14px; }
+.status[open] summary { margin-bottom: 8px; }
 .kind { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; padding: 9px 0; font: inherit; color: inherit; cursor: pointer; }
 .piece.sub { padding-left: 24px; }
 .btn.all { margin: 4px 0 8px; }

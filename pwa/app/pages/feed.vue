@@ -96,13 +96,7 @@ const swap = (items: Record<string, number>) => Object.entries(items).map(([id, 
 
 <template>
   <main v-if="ok" class="page feed">
-    <header class="topbar">
-      <NuxtLink v-if="!mac" to="/camp" class="icon-btn">← 營地</NuxtLink>
-      <div style="flex: 1">
-        <h1>動態</h1>
-        <div class="sub">營地發生的事，最新的在最上面</div>
-      </div>
-    </header>
+    <CampHead title="動態" sub="營地發生的事，最新的在最上面" />
 
     <aside class="today">
       <section class="panel">

@@ -99,7 +99,7 @@ const clipped = await evaluate(`[...document.querySelectorAll(".grow p")].filter
 for (const c of clipped ?? []) problems.push(`world card: text cut off: ${c}`);
 await shot("world-card");
 if (!(await evaluate(`document.body.innerText.includes("正在路上")`))) problems.push("world card: no ⚔️ line for the party on its way");
-await visit("talents", "/talents", ["種族天賦", "掠奪", "劫掠"]);
+await visit("talents", "/talents", ["種族天賦", "掠奪"]);
 await visit("workshop", "/workshop", ["工坊", "建議"]);
 const cell = await evaluate(`fetch("/api/world").then((r) => r.json()).then((w) => w.cells.find((c) => c.town)?.cell ?? w.cells[0]?.cell)`);
 await visit("territory", `/territory/${cell}`, ["住在這裡", "建築"]);

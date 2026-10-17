@@ -22,7 +22,11 @@ import { materialName as sharedMaterialName } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 
+// 營地 (pwa/UI.md §4.2), two of its sub-pages: 總覽 (/camp: the camp, who is at the gate, what waits, raids, the store) and
+// 建設 (/camp/build: the sites, the great works, the ranch).
+const props = defineProps<{ part: "overview" | "build" }>();
 const ok = await useSignedIn();
+const nav = useNav();
 const { user } = useAccount();
 const camp = useCamp();
 const names = ref<ArtNames>({ races: {}, materials: {} });
@@ -252,23 +256,13 @@ async function answerVisitor(yes: boolean) {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <div style="flex: 1">
-        <h1>{{ view ? `${race?.name ?? ""}${race?.nest ?? "營地"}` : "營地" }}</h1>
-        <div v-if="statusLine" class="sub">{{ statusLine }}</div>
-      </div>
-      <nav class="world-links">
-        <NuxtLink to="/world" class="icon-btn" aria-label="大世界" title="大世界">🗺️</NuxtLink>
-        <NuxtLink to="/territory" class="icon-btn" aria-label="領地列表" title="領地列表">🏰</NuxtLink>
-        <NuxtLink to="/quests" class="icon-btn" aria-label="任務" title="任務">📜</NuxtLink>
-        <NuxtLink to="/feed" class="icon-btn" aria-label="動態" title="動態">🕘</NuxtLink>
-      </nav>
-    </header>
+    <CampHead :title="view ? `${race?.name ?? ''}${race?.nest ?? '營地'}` : '營地'" :sub="statusLine" />
 
     <div v-if="!view && camp.state.status === 'none'" class="panel">這個帳號還沒有營地。在 Mac 上登入並選好種族，營地就會出現在這裡。</div>
     <div v-else-if="!view" class="panel">{{ camp.state.status === "loading" ? "讀取中…" : statusLine }}</div>
 
     <template v-else>
+      <template v-if="props.part === 'overview'">
       <CampScene :race="view.race" :stage="view.stage" :residents="home" :sheets="race?.sheets ?? {}" :princess="true" />
 
       <section class="panel stats">
@@ -315,6 +309,13 @@ async function answerVisitor(yes: boolean) {
         <small class="more">看全部 →</small>
       </NuxtLink>
 
+      <section v-if="nav.questsReady.value || nav.merchant.value" class="panel waits">
+        <NuxtLink v-if="nav.questsReady.value" to="/quests" class="wait"><span>📜</span><span class="grow">{{ nav.questsReady.value }} 個任務可以領獎勵</span><span class="go">›</span></NuxtLink>
+        <NuxtLink v-if="nav.merchant.value" to="/feed" class="wait"><span>🛒</span><span class="grow">流浪商人在營地，{{ noteTime(nav.merchant.value.leavesAt) }} 走</span><span class="go">›</span></NuxtLink>
+      </section>
+      </template>
+
+      <template v-if="props.part === 'build'">
       <section v-if="production" class="panel production">
         <h2>場地 <small>空地 {{ production.used }}/{{ production.slots }}・人手 {{ production.workers }}/{{ production.need }}</small></h2>
         <p v-if="production.share < 1" class="warn small">人手不夠：每個場地只有 {{ Math.round(production.share * 100) }}% 的速度。營地的居民越多，養得起越多場地（每一級要 10 隻）。</p>
@@ -345,8 +346,8 @@ async function answerVisitor(yes: boolean) {
               </div>
             </div>
           </li>
-          <li v-for="n in freePlots" :key="`free-${n}`">
-            <button class="site-row free" @click="picking = !picking"><b>空地</b><span class="grow makes">可以蓋一個場地</span></button>
+          <li v-if="freePlots > 0">
+            <button class="site-row free" @click="picking = !picking"><b>空地 ×{{ freePlots }}</b><span class="grow makes">{{ picking ? "收起" : "點這裡蓋一個場地" }}</span></button>
           </li>
         </ul>
         <div v-if="picking && freePlots > 0" class="pick">
@@ -405,6 +406,9 @@ async function answerVisitor(yes: boolean) {
         <p class="muted small">在 Mac 的營地視窗用柵欄圍牧場、抓動物（🏡 裝飾 → 柵欄）。</p>
       </section>
 
+      </template>
+
+      <template v-if="props.part === 'overview'">
       <section class="panel">
         <h2>品種</h2>
         <ul class="breeds">
@@ -462,13 +466,8 @@ async function answerVisitor(yes: boolean) {
         <button v-if="raids.length > 3" class="more" @click="showAllRaids = !showAllRaids">{{ showAllRaids ? "收起" : `看更早的（${raids.length - 3} 次）` }}</button>
       </section>
 
-      <nav class="shortcuts">
-        <NuxtLink to="/workshop" class="btn">🔨 工坊（做裝備、現有裝備、修理）</NuxtLink>
-        <NuxtLink to="/roster" class="btn">📜 名冊（換裝備）</NuxtLink>
-      </nav>
-
-      <section class="panel">
-        <h2>倉庫</h2>
+      <details class="panel store">
+        <summary><h2>倉庫 <small>素材 {{ sorted(view.materials).length }} 種・裝備 {{ view.armory.length }} 件</small></h2></summary>
         <h3>素材</h3>
         <p v-if="sorted(view.materials).length === 0" class="muted">還沒有。</p>
         <ul class="chips">
@@ -485,12 +484,23 @@ async function answerVisitor(yes: boolean) {
             <li v-for="[food, until] in boosts" :key="food">{{ FOOD_NAMES[food] ?? food }} <small>到 {{ noteTime(until) }}</small></li>
           </ul>
         </template>
-      </section>
+      </details>
+      </template>
     </template>
   </main>
 </template>
 
 <style scoped>
+.waits { display: grid; padding: 4px 16px; }
+.wait { display: flex; align-items: center; gap: 10px; min-height: 48px; color: var(--ink); text-decoration: none; border-top: 1px solid var(--line); font-weight: 600; }
+.wait:first-child { border-top: 0; }
+.wait .grow { flex: 1; min-width: 0; }
+.wait .go { color: #999; font-weight: 800; }
+.store summary { list-style: none; cursor: pointer; }
+.store summary::-webkit-details-marker { display: none; }
+.store summary h2 { margin: 0; }
+.store summary h2::after { content: " ▾"; color: #999; }
+.store[open] summary h2::after { content: " ▴"; }
 .sanctuary .row { display: flex; gap: 12px; align-items: flex-start; }
 .sanctuary .grow { flex: 1; min-width: 0; }
 .sanctuary h2 small { font-size: 12px; color: #888; margin-left: 6px; }

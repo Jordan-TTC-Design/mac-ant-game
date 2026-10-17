@@ -105,6 +105,8 @@ function del() {
       <NuxtLink to="/notes" class="icon-btn">{{ isNew ? "取消" : "← 便利貼" }}</NuxtLink>
       <h1 class="title">{{ isNew ? "新的便利貼" : "" }}</h1>
       <button v-if="!isNew" class="icon-btn" @click="del">刪除</button>
+      <!-- (adding is in reach at the top too, not only under the colours below the fold) -->
+      <button v-else class="icon-btn add-top" :disabled="!hasContent" @click="add">新增</button>
     </header>
 
     <div v-if="!n" class="panel">這張便利貼不在了（可能在別台刪掉了）。</div>
@@ -177,6 +179,8 @@ function del() {
 </template>
 
 <style scoped>
+.add-top { background: var(--green); border: 2px solid #1f1f1f; }
+.add-top:disabled { opacity: 0.5; }
 .title { font-size: 17px; text-align: center; }
 .sheet { border-radius: 4px; padding: 18px 16px; border: 2px solid rgba(0, 0, 0, 0.14); box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.28); min-width: 0; }
 .sheet.yellow, .swatch.yellow { background: var(--paper-yellow); }

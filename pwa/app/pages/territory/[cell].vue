@@ -4,6 +4,14 @@ import type { CampResidentView } from "@goblincamp/shared/camp";
 import { ApiError, api } from "~/utils/api";
 import { noteTime } from "~/utils/time";
 
+// (pwa/UI.md §4.3: a cell's page in three parts, so a town is not four screens long; the camp's own cell shows all of it)
+const PARTS = [
+  { id: "about", label: "概況" },
+  { id: "build", label: "建築" },
+  { id: "people", label: "居民" },
+] as const;
+const part = ref<(typeof PARTS)[number]["id"]>("about");
+
 // 領地 from inside (server/WORLD.md §20): a small camp of its own with the residents who live there wandering about, how it
 // grows, what the ground gives, and what happened there. The residents come from the camp's books (place `cell:<id>`).
 const ok = await useSignedIn();
@@ -176,14 +184,12 @@ function happening(h: CellHappening): string {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/territory" class="icon-btn">← 領地</NuxtLink>
-      <div style="flex: 1">
-        <h1>{{ d?.town ? "城鎮" : "領地" }}</h1>
-        <div v-if="d" class="sub">{{ groundName(d.terrain, d.detail) }}・{{ d.heldSince ? `${noteTime(d.heldSince)}佔下` : "" }}</div>
-      </div>
-      <NuxtLink :to="`/world?cell=${cellId}`" class="icon-btn" aria-label="在地圖上看" title="在地圖上看">🗺️</NuxtLink>
-    </header>
+    <AppHeader :title="d?.town ? '城鎮' : d?.hub ? hubName(d.hub as HubKind, race) : '領地'" :sub="d ? `${groundName(d.terrain, d.detail)}${d.heldSince ? `・${noteTime(d.heldSince)}佔下` : ''}` : undefined" back="/territory" back-label="領地">
+      <template #actions><NuxtLink :to="`/world?cell=${cellId}`" aria-label="在地圖上看">🗺️ 地圖</NuxtLink></template>
+    </AppHeader>
+    <nav v-if="d && !d.home" class="parts">
+      <button v-for="p in PARTS" :key="p.id" type="button" :class="{ on: part === p.id }" @click="part = p.id">{{ p.label }}</button>
+    </nav>
 
     <div v-if="!d" class="panel">{{ problem || "讀取中…" }}</div>
     <div v-else-if="d.home" class="panel">
@@ -193,12 +199,12 @@ function happening(h: CellHappening): string {
     <template v-else>
       <CampScene :race="race" :stage="d.town ? 3 : 1" :residents="living" :sheets="art?.sheets ?? {}" :princess="false" />
 
-      <section v-if="d.landmark || d.templeNear" class="panel landmark">
+      <section v-show="d.home || part === 'about'" v-if="d.landmark || d.templeNear" class="panel landmark">
         <p v-if="d.landmark"><span class="big">{{ d.landmark.icon }}</span> <b>{{ d.landmark.name }}</b>（{{ d.landmark.label }}）<br /><small>{{ d.landmark.blurb }}</small></p>
         <p v-if="d.templeNear" class="small">⛩️ 旁邊有你的廟宇：守這一格血量 +10%</p>
       </section>
 
-      <section class="panel grid">
+      <section v-show="d.home || part === 'about'" class="panel grid">
         <div><b>{{ d.garrison }}</b><small>住在這裡（最多 {{ d.capacity }}）</small></div>
         <div><b :class="{ warn: d.garrison < d.garrisonMin + 2 }">{{ d.garrisonMin }}</b><small>至少要留幾隻</small></div>
         <div>
@@ -223,7 +229,7 @@ function happening(h: CellHappening): string {
         @done="recalled"
       />
 
-      <section class="panel">
+      <section v-show="d.home || part === 'about'" class="panel">
         <h2>怎麼長大</h2>
         <p v-if="d.blighted" class="warn">☠️ 旁邊有死靈的腐化大地：這一格的產出 −{{ Math.round(TALENT_ABILITIES.blightYield * 100) }}%（變成城鎮，或在這一區種聖樹就不會）</p>
         <p v-if="d.nest === 'none'" class="muted">還沒有繁殖巢，這一格不會自己生居民；到地圖上點這一格可以蓋。</p>
@@ -234,7 +240,7 @@ function happening(h: CellHappening): string {
         <p class="muted small">住越多產越多，住滿是兩倍{{ d.town ? "；城鎮再兩倍" : "" }}。至少要住 {{ d.garrisonMin }} 隻才有產出。</p>
       </section>
 
-      <section class="panel">
+      <section v-show="d.home || part === 'about'" class="panel">
         <h2>糧食</h2>
         <p v-if="!d.upkeep.pays">這一格不用吃乾糧（營地和最早佔的 {{ d.upkeep.freeCells }} 格免費）。</p>
         <template v-else>
@@ -246,14 +252,14 @@ function happening(h: CellHappening): string {
         <p class="muted small">第 {{ d.upkeep.freeCells + 1 }} 格起，每格每 {{ d.upkeep.everyHours }} 小時吃 1 份乾糧（麵包、魚乾、莓果乾、肉乾都可以）；沒得吃不會死，只是那次產出減半。</p>
       </section>
 
-      <section v-if="d.guests.length" class="panel">
+      <section v-show="d.home || part === 'about'" v-if="d.guests.length" class="panel">
         <h2>好友幫守</h2>
         <p v-for="g in d.guests" :key="g.owner">🤝 {{ g.name }} 派了 <b>{{ g.count }}</b> 隻</p>
         <p class="muted small">有人來打或巢穴回來搶時，牠們會一起守。</p>
         <button class="btn" :disabled="busy" @click="act('unguard', {})">請牠們回去</button>
       </section>
 
-      <section class="panel">
+      <section v-show="d.home || part === 'about'" class="panel">
         <h2>相連的領地</h2>
         <p>旁邊有 <b>{{ d.neighbours }}</b> 格是你的・這一區連著 <b>{{ d.region }}</b> 格</p>
         <p v-if="d.bonus.yieldBoost" class="good">地形產出 +{{ Math.round(d.bonus.yieldBoost * 100) }}%</p>
@@ -265,7 +271,7 @@ function happening(h: CellHappening): string {
         </p>
       </section>
 
-      <section class="panel">
+      <section v-show="d.home || part === 'build'" class="panel">
         <h2>建築</h2>
         <template v-if="d.building">
           <p>
@@ -329,7 +335,7 @@ function happening(h: CellHappening): string {
         </details>
       </section>
 
-      <section v-if="d.hub" class="panel">
+      <section v-show="d.home || part === 'build'" v-if="d.hub" class="panel">
         <h2>{{ ({ fortress: "🏰", workstead: "⚒️", sanctuary: "⛩️" } as Record<string, string>)[d.hub] }} {{ hubName(d.hub as HubKind, race) }}</h2>
         <p>{{ hubRule(d.hub)?.blurb }}</p>
         <p class="muted small">這一區的中心（跟城鎮共用名額，每 4 格 1 個）。生居民比城鎮慢。想換方向可以拆掉再蓋別的，退回一半材料。</p>
@@ -341,7 +347,7 @@ function happening(h: CellHappening): string {
         </template>
       </section>
 
-      <section v-if="d.town" class="panel">
+      <section v-show="d.home || part === 'build'" v-if="d.town" class="panel">
         <h2>城鎮</h2>
         <ul class="bonus">
           <li>從這裡出發的隊伍走路時間 −{{ Math.round((1 - TOWN_TRAVEL) * 100) }}%</li>
@@ -368,7 +374,7 @@ function happening(h: CellHappening): string {
         <button class="btn primary" :disabled="busy || !quote || (d.market?.left ?? 0) <= 0 || (store[give] ?? 0) < giveCount" @click="trade">換</button>
       </section>
 
-      <section v-if="!d.home" class="panel">
+      <section v-show="d.home || part === 'people'" v-if="!d.home" class="panel">
         <h2>自動調人</h2>
         <p class="muted small">設一個目標人數：少了（戰死、老死）營地會自動派人走過來補，多了（巢穴生的）會自動走回營地。營地至少留 {{ STAFF_HOME_KEEP }} 隻。</p>
         <label class="auto-staff"><input v-model="staffOn" type="checkbox" :disabled="busy" /> 自動保持在</label>
@@ -377,7 +383,7 @@ function happening(h: CellHappening): string {
         <p class="small">{{ d.target ? `現在：自動保持 ${d.target} 隻（住在這裡 ${d.garrison} 隻）` : "現在：沒有自動調人" }}</p>
       </section>
 
-      <section class="panel">
+      <section v-show="d.home || part === 'people'" class="panel">
         <h2>住在這裡的 <small>{{ living.length }} 隻</small></h2>
         <p v-if="breeds.length" class="muted small">{{ breeds.map(([b, n]) => `${breedName(b)} ${n}`).join("・") }}</p>
         <ul class="list">
@@ -391,7 +397,7 @@ function happening(h: CellHappening): string {
         <button v-if="strongest.length > shown" class="more" @click="shown += 50">再多列一些（還有 {{ strongest.length - shown }} 隻）</button>
       </section>
 
-      <section class="panel">
+      <section v-show="d.home || part === 'about'" class="panel">
         <h2>最近發生的事</h2>
         <p v-if="!d.history.length" class="muted">還沒有。</p>
         <p v-for="(h, k) in d.history" :key="k" class="event">
@@ -407,6 +413,9 @@ function happening(h: CellHappening): string {
 </template>
 
 <style scoped>
+.parts { position: sticky; top: 0; z-index: 10; display: flex; gap: 4px; margin: -4px -16px 12px; padding: 6px 16px 8px; background: var(--bg); }
+.parts button { flex: 1; min-height: 40px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.1); color: #dfe8d8; font-weight: 800; font-size: 14px; cursor: pointer; }
+.parts button.on { background: var(--card); color: var(--ink); }
 .auto-staff { font-size: 14px; }
 .staff-n { width: 70px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; margin: 0 4px; }
 .combos { margin-top: 10px; font-size: 14px; }

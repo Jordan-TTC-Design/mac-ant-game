@@ -93,10 +93,7 @@ const sheet = (f: { race?: string; breed?: string }) => `/sprites/${f.race ?? "g
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/world" class="icon-btn">← 大世界</NuxtLink>
-      <h1>戰報</h1>
-    </header>
+    <AppHeader title="戰報" back="/expedition" back-label="戰報" />
     <div v-if="!report" class="panel">{{ problem || "讀取中…" }}</div>
     <template v-else>
       <section class="panel">

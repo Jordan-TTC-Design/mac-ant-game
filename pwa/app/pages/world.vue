@@ -15,6 +15,8 @@ const s = world.state;
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | undefined;
 const route = useRoute();
+// (the cell card shows its main buttons; the rest of what can be done on one's own cell folds under 更多)
+const moreOpen = ref(false);
 onMounted(async () => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   await world.open();
@@ -147,7 +149,10 @@ const placeName = computed(() => {
 });
 /** The camp's place is asked twice, in the card itself (the Mac's window shows no browser dialogs): tap, then 確定. */
 const asking = ref<"open" | "move" | null>(null);
-watch(selected, () => (asking.value = null));
+watch(selected, () => {
+  asking.value = null;
+  moreOpen.value = false;
+});
 const openHere = () => {
   asking.value = null;
   void doIt(() => world.openWorld(selected.value!), "大世界開啟了！營地就在這一格。");
@@ -394,15 +399,8 @@ async function goToPlace(p: PlaceFound) {
 
 <template>
   <main v-if="ok" class="page world" :class="{ 'with-sheet': !!cell }">
-    <header class="topbar">
-      <NuxtLink v-if="!mac" to="/camp" class="icon-btn">← 營地</NuxtLink>
-      <div style="flex: 1">
-        <h1>大世界</h1>
-        <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}<template v-if="s.me.upkeep?.paying">・<span :class="{ hungry: s.me.upkeep.rations < s.me.upkeep.perYield }">乾糧 {{ s.me.upkeep.rations }}（每 {{ s.me.upkeep.everyHours }} 小時吃 {{ s.me.upkeep.perYield }}）</span></template></div>
-      </div>
-      <NuxtLink v-if="s.me?.talents" to="/talents" class="icon-btn" :class="{ glow: (s.me.talents.points ?? 0) > Object.values(s.me.talents.picks).reduce((n, r) => n + r, 0) }" title="種族天賦">🌟 天賦</NuxtLink>
-      <NuxtLink to="/leaderboard" class="icon-btn">排行</NuxtLink>
-    </header>
+    <WorldHead :sub="s.me ? `${noun} Lv${s.me.level}・${s.me.cells.length} 格・在家 ${s.me.atHome}${s.me.upkeep?.paying ? `・乾糧 ${s.me.upkeep.rations}` : ''}` : undefined" />
+    <p v-if="s.me?.upkeep?.paying && s.me.upkeep.rations < s.me.upkeep.perYield" class="status error">乾糧不夠：每 {{ s.me.upkeep.everyHours }} 小時要吃 {{ s.me.upkeep.perYield }}，只剩 {{ s.me.upkeep.rations }}</p>
 
     <div v-if="!s.me" class="panel w-top">{{ s.problem || "讀取中…" }}</div>
     <template v-else>
@@ -508,7 +506,10 @@ async function goToPlace(p: PlaceFound) {
         @pan="world.moveTo"
         @home="goHome"
       />
-      <p class="legend">真實世界的地圖（OpenStreetMap）。格子裡是那裡最強的怪物與等級，大馬路邊有強盜與強獸人；黃框是你的，紅框是別人的，深紅粗框是別人蓋了東西的領地（隊伍要繞過去）；黃色點點是點的那一格要走的路。點一格看看。</p>
+      <details class="legend">
+        <summary>地圖怎麼看</summary>
+        真實世界的地圖（OpenStreetMap）。格子裡是那裡最強的怪物與等級，大馬路邊有強盜與強獸人；黃框是你的，紅框是別人的，深紅粗框是別人蓋了東西的領地（隊伍要繞過去）；黃色點點是點的那一格要走的路。點一格看看。
+      </details>
       </div>
 
       <div class="w-rest">
@@ -521,37 +522,9 @@ async function goToPlace(p: PlaceFound) {
         </button>
       </section>
 
-      <section v-if="s.me.walking.length" class="panel">
-        <h2>在路上</h2>
-        <p v-for="w in s.me.walking" :key="w.id" class="line">
-          {{ w.party }} 隻 → {{ cellName(w.to) }}{{ { move: "（搬家）", guard: "（幫守）", recall: "（撤回）", reroute: "（找有空位的領地）", retreat: "（撤退）" }[w.kind as string] ?? "" }}<br />
-          <small>{{ left(w.arriveAt) }}</small>
-        </p>
-      </section>
-
-      <section v-if="s.me.happenings?.length" class="panel">
-        <h2>最近的事</h2>
-        <p v-for="(h, k) in s.me.happenings.slice(0, 5)" :key="k" class="line">
-          <template v-if="h.lairBack">
-            <span :class="h.lairBack.held ? 'won' : 'lost'">{{ h.lairBack.held ? "守住了" : "被搶回去了" }}</span>
-            {{ h.lairBack.name }}（{{ h.lairBack.level }} 級）回來搶領地{{ h.lairBack.fallen ? `，倒下 ${h.lairBack.fallen} 隻` : "" }}{{ h.lairBack.held && Object.keys(h.lairBack.loot).length ? `，撿到 ${lootText(h.lairBack.loot)}` : "" }}
-          </template>
-          <template v-else-if="h.bossReward">
-            <span class="won">世界魔王{{ h.bossReward.name }}倒下了</span>：出了 {{ Math.round(h.bossReward.share * 100) }}% 的力，分到 {{ lootText(h.bossReward.loot) }}，經驗 +{{ h.bossReward.xp }}
-          </template>
-          <template v-else-if="h.yields">領地送來了 {{ lootText(h.yields) }}</template>
-          <br /><small>{{ noteTime(h.at) }}</small>
-        </p>
-      </section>
-
-      <section v-if="s.me.recent.length" class="panel">
-        <h2>戰報</h2>
-        <NuxtLink v-for="r in s.me.recent.slice(0, 5)" :key="r.id" :to="`/expedition/${r.id}`" class="report">
-          <span :class="wentWell(r) ? 'won' : 'lost'">{{ outcomeText(r) }}</span>
-          <span class="grow">{{ r.defending ? `${r.by ?? "有人"}來打${placeText(r) ? `：${placeText(r)}` : ""}` : r.outcome?.against }}</span>
-          <small>{{ noteTime(r.arriveAt) }}</small>
-        </NuxtLink>
-      </section>
+      <NuxtLink v-if="s.me.walking.length || s.me.recent.length" to="/expedition" class="panel to-reports">
+        <span class="grow">{{ s.me.walking.length ? `${s.me.walking.length} 隊在路上・` : "" }}戰報、最近的事</span><span>›</span>
+      </NuxtLink>
       </div>
     </template>
 
@@ -608,7 +581,7 @@ async function goToPlace(p: PlaceFound) {
       </template>
       <p v-else-if="cell.owner" class="muted">住了 {{ cell.garrison }} 隻{{ cell.guests ? `・好友幫守 ${cell.guests} 隻` : "" }}{{ cell.building ? `・${cellBuildingName(cell.building.kind, cell.owner.race)} ${cell.building.level} 級` : "" }}</p>
       <p v-else-if="cell.lairBackAt" class="muted">巢穴清掉了，{{ noteTime(cell.lairBackAt) }} 會回來。現在可以直接住。</p>
-      <p v-else class="muted">什麼都沒有，可以直接住。</p>
+      <p v-else-if="!cell.lair" class="muted">什麼都沒有，可以直接住。</p>
 
       <!-- what can be done -->
       <div class="actions">
@@ -624,10 +597,12 @@ async function goToPlace(p: PlaceFound) {
           </template>
         </template>
         <template v-else-if="mine">
-          <NuxtLink v-if="!isHome" :to="`/territory/${cell.cell}`" class="btn primary">進去看看</NuxtLink>
+          <NuxtLink v-if="!isHome" :to="`/territory/${cell.cell}`" class="btn primary">詳細 ›</NuxtLink>
           <NuxtLink v-else to="/camp" class="btn primary">看營地</NuxtLink>
           <button class="btn" :disabled="!canLaunch" @click="launchHere">從這裡出征</button>
           <button v-if="!isHome" class="btn" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
+          <button v-if="!isHome || centreRoom || myCell?.camping || canMoveHere" type="button" class="btn more-toggle" @click="moreOpen = !moreOpen">{{ moreOpen ? "收起 ▴" : "更多 ▾" }}</button>
+          <template v-if="moreOpen">
           <button v-if="!isHome && cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
           <template v-if="centreRoom">
             <button class="btn" :disabled="busy" @click="town">🏘️ 蓋城鎮</button>
@@ -636,6 +611,7 @@ async function goToPlace(p: PlaceFound) {
           <button v-if="!isHome" class="btn" :disabled="busy" @click="recall">撤回</button>
           <button v-if="myCell?.camping" class="btn" :disabled="busy" @click="recalling = 'campers'">叫扎營的走</button>
           <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>
+          </template>
         </template>
         <template v-else>
           <button v-if="cell.owner && isFriend" class="btn primary" :disabled="!canAct || (cell.guests ?? 0) >= GUESTS_MAX" @click="dispatch = 'guard'">派兵幫守</button>
@@ -691,6 +667,10 @@ p { margin: 6px 0; line-height: 1.55; }
 .places-note { flex-basis: 100%; margin: 2px 2px 0; font-size: 12px; color: #d8e4d0; }
 .chip { border: 0; border-radius: 999px; padding: 7px 12px; background: rgba(255, 255, 255, 0.16); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
 .legend { color: #dfe9d8; font-size: 11px; line-height: 1.6; margin: 6px 2px 0; }
+.legend summary { cursor: pointer; font-size: 12px; font-weight: 700; opacity: 0.85; }
+.to-reports { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--ink); text-decoration: none; font-weight: 700; }
+.to-reports .grow { flex: 1; }
+.more-toggle { color: var(--muted); }
 .line small { color: var(--muted); }
 .report { display: flex; align-items: baseline; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); text-decoration: none; }
 .report:first-of-type { border-top: 0; }
@@ -705,9 +685,11 @@ p { margin: 6px 0; line-height: 1.55; }
 
 /* the cell's card, up from the bottom */
 .sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0 auto; max-width: 560px;
+  /* (just above the tab bar, which stays in reach; in the Mac app --tabbar-h is 0) */
+  position: fixed; left: 0; right: 0; bottom: var(--tabbar-h); z-index: 40; margin: 0 auto; max-width: 560px;
+  max-height: calc(100dvh - var(--tabbar-h) - 140px); overflow-y: auto;
   background: var(--card); border-radius: 18px 18px 0 0; border: 3px solid #1f1f1f; border-bottom: 0;
-  padding: 14px 16px calc(env(safe-area-inset-bottom) + 14px); box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.25); animation: rise 0.18s ease-out;
+  padding: 14px 16px 14px; box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.25); animation: rise 0.18s ease-out;
 }
 @keyframes rise { from { transform: translateY(40px); opacity: 0; } }
 .sheet .x { position: absolute; top: 10px; right: 10px; border: 0; background: #eee; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; }

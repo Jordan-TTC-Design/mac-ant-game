@@ -8,6 +8,7 @@ import { GUILD_PRESENCE, GUILD_ROLE } from "~/composables/useGuild";
 // friend code) and send people away, the leader sets roles and hands over the lead; anyone may leave.
 const ok = await useSignedIn();
 const { user, live, guild, role, busy, message, presence, act } = useGuild();
+const menuFor = ref<string | null>(null);
 const code = ref("");
 onMounted(() => void live.loadFriends());
 /** Friends who could be invited: not in this guild, not invited already. */
@@ -61,15 +62,16 @@ async function leave() {
               <template v-if="m.focusToday">・今天專注 {{ m.focusToday }} 輪</template>
             </small>
           </span>
-          <span v-if="m.id !== user?.id && role === 'leader'" class="actions">
-            <button v-if="m.role === 'member'" class="btn small" :disabled="busy" @click="setRole(m, 'officer')">升幹部</button>
-            <button v-if="m.role === 'officer'" class="btn small" :disabled="busy" @click="setRole(m, 'member')">降成員</button>
-            <button class="btn small" :disabled="busy" @click="setRole(m, 'leader')">交會長</button>
-            <button class="btn small" :disabled="busy" @click="kick(m)">請離開</button>
-          </span>
-          <span v-else-if="m.id !== user?.id && role === 'officer' && m.role === 'member'" class="actions">
-            <button class="btn small" :disabled="busy" @click="kick(m)">請離開</button>
-          </span>
+          <!-- what may be done to a member folds under ⋯ (one row each when open: big enough to tap) -->
+          <button v-if="m.id !== user?.id && (role === 'leader' || (role === 'officer' && m.role === 'member'))" type="button" class="more" :aria-label="`${m.name}：管理`" :aria-expanded="menuFor === m.id" @click="menuFor = menuFor === m.id ? null : m.id">⋯</button>
+          <div v-if="menuFor === m.id" class="manage">
+            <template v-if="role === 'leader'">
+              <button v-if="m.role === 'member'" class="btn" :disabled="busy" @click="setRole(m, 'officer')">升幹部</button>
+              <button v-if="m.role === 'officer'" class="btn" :disabled="busy" @click="setRole(m, 'member')">降成員</button>
+              <button class="btn" :disabled="busy" @click="setRole(m, 'leader')">交會長</button>
+            </template>
+            <button class="btn danger" :disabled="busy" @click="kick(m)">請離開</button>
+          </div>
         </div>
       </section>
 
@@ -99,6 +101,10 @@ async function leave() {
 </template>
 
 <style scoped>
+.row { flex-wrap: wrap; }
+.more { width: 44px; height: 44px; border: 0; border-radius: 10px; background: #ece8dc; font-size: 20px; font-weight: 800; cursor: pointer; }
+.manage { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 2px 52px; }
+.manage .btn { min-height: 44px; }
 .back { color: #fff3c4; font-size: 30px; text-decoration: none; padding: 0 10px 0 0; }
 .grow { flex: 1; min-width: 0; }
 h2 { margin: 0 0 6px; font-size: 17px; }

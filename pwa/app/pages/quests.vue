@@ -75,13 +75,7 @@ const decorOf = (q: QuestView) => {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink v-if="!mac" to="/camp" class="icon-btn">← 營地</NuxtLink>
-      <div style="flex: 1">
-        <h1>任務</h1>
-        <div v-if="list" class="sub">完成了 {{ claimedCount }} 個・做完就能領獎勵</div>
-      </div>
-    </header>
+    <CampHead title="任務" :sub="list ? `完成了 ${claimedCount} 個・做完就能領獎勵` : undefined" />
 
     <nav class="tabs">
       <button v-for="c in CHAPTERS" :key="c" :class="{ on: chapter === c }" @click="chapter = c">

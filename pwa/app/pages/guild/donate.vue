@@ -40,6 +40,11 @@ const progress = computed(() => {
 function setAll(id: string) {
   give[id] = have.value[id] ?? 0;
 }
+/** − / ＋ by a tenth of what there is (at least 1), so a pile of hundreds takes a few taps, not typing. */
+function step(id: string, dir: 1 | -1) {
+  const n = have.value[id] ?? 0;
+  give[id] = Math.max(0, Math.min(n, (Number(give[id]) || 0) + dir * Math.max(1, Math.round(n / 10))));
+}
 function clamp(id: string) {
   give[id] = Math.max(0, Math.min(have.value[id] ?? 0, Math.floor(Number(give[id]) || 0)));
 }
@@ -84,8 +89,12 @@ const list = (m: Record<string, number>) => Object.entries(m).map(([id, n]) => `
         <div v-for="[id, n] in rows" :key="id" class="row">
           <i class="gem" :style="{ background: MATERIALS[id]?.color }" />
           <span class="grow"><b>{{ materialName(id) }}</b> <small>有 {{ n }}・每個 {{ worth(id) }} 貢獻</small></span>
-          <input v-model.number="give[id]" type="number" min="0" :max="n" class="qty" placeholder="0" @change="clamp(id)" />
-          <button type="button" class="btn small" @click="setAll(id)">全部</button>
+          <span class="stepper">
+            <button type="button" :aria-label="`少捐一些${materialName(id)}`" :disabled="!give[id]" @click="step(id, -1)">−</button>
+            <input v-model.number="give[id]" type="number" inputmode="numeric" min="0" :max="n" class="qty" placeholder="0" :aria-label="`捐幾個${materialName(id)}`" @change="clamp(id)" />
+            <button type="button" :aria-label="`多捐一些${materialName(id)}`" :disabled="(give[id] ?? 0) >= n" @click="step(id, 1)">＋</button>
+          </span>
+          <button type="button" class="btn small all" @click="setAll(id)">全部</button>
         </div>
         <div v-if="rows.length" class="send">
           <span class="grow">共 <b>{{ total.toLocaleString() }}</b> 貢獻</span>
@@ -120,10 +129,16 @@ h2.later { margin-top: 14px; }
 .lv small { color: #666; }
 .bar { height: 12px; border-radius: 6px; background: #e6dcc6; border: 2px solid #1f1f1f; overflow: hidden; margin: 8px 0 6px; }
 .bar i { display: block; height: 100%; background: #e8c547; }
-.row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid rgba(0, 0, 0, 0.06); }
+.row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid rgba(0, 0, 0, 0.06); flex-wrap: wrap; }
+.row .grow { flex-basis: 140px; }
+.stepper { display: inline-flex; align-items: center; border: 2px solid #1f1f1f; border-radius: 10px; overflow: hidden; background: #fffdf6; }
+.stepper button { width: 40px; height: 40px; border: 0; background: #ece8dc; font-size: 20px; font-weight: 800; cursor: pointer; }
+.stepper button:disabled { opacity: 0.4; }
+.stepper .qty { width: 58px; height: 40px; border: 0; border-radius: 0; text-align: center; padding: 0 4px; }
+.all { min-height: 40px; }
 .row small { color: #777; }
 .gem { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.4); flex: none; }
-.qty { width: 74px; border: 2px solid #1f1f1f; border-radius: 8px; padding: 5px 6px; font-size: 15px; background: #fffdf6; }
+.qty { font-size: 15px; background: #fffdf6; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .send { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 </style>

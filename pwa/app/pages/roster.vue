@@ -28,7 +28,20 @@ const rows = computed(() =>
     .filter(({ r }) => !filter.value || nameOf(r).includes(filter.value) || breedName(r.breed).includes(filter.value))
     .sort((a, b) => (sort.value === "power" ? b.power - a.power : sort.value === "gear" ? a.pieces - b.pieces || b.power - a.power : a.r.id - b.r.id)),
 );
-const shown = ref(60);
+const shown = ref(40);
+// (more come in by themselves as the end of the list comes into sight; the button stays for a screen reader or a slow phone)
+const moreAt = ref<HTMLElement | null>(null);
+let seeing: IntersectionObserver | undefined;
+onMounted(() => {
+  seeing = new IntersectionObserver((e) => {
+    if (e.some((x) => x.isIntersecting) && rows.value.length > shown.value) shown.value += 60;
+  }, { rootMargin: "400px" });
+  watchEffect(() => {
+    seeing?.disconnect();
+    if (moreAt.value) seeing?.observe(moreAt.value);
+  });
+});
+onUnmounted(() => seeing?.disconnect());
 const open = ref<number | null>(null);
 const busy = ref(false);
 const message = ref("");
@@ -80,11 +93,7 @@ async function change(r: CampResidentView, slot: GearSlot, value: string) {
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
-      <div style="flex: 1"><h1>名冊</h1><div class="sub">點一隻可以換裝備</div></div>
-      <NuxtLink to="/workshop" class="icon-btn">工坊</NuxtLink>
-    </header>
+    <CampHead title="名冊" sub="點一隻可以換裝備" />
     <div v-if="!view" class="panel">{{ camp.state.status === "loading" ? "讀取中…" : "還沒有營地。" }}</div>
     <template v-else>
       <div class="tools">
@@ -125,7 +134,7 @@ async function change(r: CampResidentView, slot: GearSlot, value: string) {
           </div>
         </li>
       </ul>
-      <button v-if="rows.length > shown" class="more" @click="shown += 100">再多列一些（還有 {{ rows.length - shown }} 隻）</button>
+      <button v-if="rows.length > shown" ref="moreAt" class="more" @click="shown += 60">再多列一些（還有 {{ rows.length - shown }} 隻）</button>
     </template>
   </main>
 </template>

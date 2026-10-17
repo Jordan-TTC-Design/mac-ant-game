@@ -138,21 +138,17 @@ const ICON: Record<TalentEffect, string> = {
 
 <template>
   <main v-if="ok" class="page talents">
-    <header class="topbar">
-      <NuxtLink to="/world" class="icon-btn">← 大世界</NuxtLink>
-      <div style="flex: 1">
-        <h1>種族天賦</h1>
-        <div class="sub">{{ noun }} Lv{{ level }}・天賦點 {{ points - left }} / {{ points }}（每升一級多一點）</div>
-      </div>
-    </header>
+    <WorldHead title="種族天賦" :sub="`${noun} Lv${level}・天賦點 ${points - left} / ${points}`" />
     <div v-if="!me" class="panel">{{ s.problem || "讀取中…" }}</div>
     <div v-else-if="!me.open && !me.talents" class="panel">開啟大世界之後，種族等級每升一級就有一個天賦點。</div>
     <template v-else>
       <section class="panel head">
         <div class="pts"><b>{{ left }}</b><small>剩下的點數</small></div>
         <div class="sum">
-          <small class="muted">目前的天賦加成</small>
-          <p v-if="summary.length">{{ summary.join("、") }}</p>
+          <details v-if="summary.length">
+            <summary class="muted">目前的天賦加成（{{ summary.length }} 項）</summary>
+            <p>{{ summary.join("、") }}</p>
+          </details>
           <p v-else class="muted">還沒點。點一個亮著的天賦開始。</p>
         </div>
         <div class="ops">
@@ -229,7 +225,7 @@ section { margin-top: 12px; }
 .ok { grid-column: 1 / -1; color: var(--green); font-weight: 600; margin: 0; }
 .warn { color: #b3412c; margin: 4px 0; }
 .tabs { display: flex; gap: 6px; margin-top: 12px; overflow-x: auto; }
-.tabs button { flex: 1; white-space: nowrap; border: 1px solid var(--line); background: #faf8f0; border-radius: 10px; padding: 8px 6px; font: inherit; font-weight: 700; cursor: pointer; color: inherit; }
+.tabs button { flex: 1 1 0; min-width: 0; white-space: nowrap; border: 1px solid var(--line); background: #faf8f0; border-radius: 10px; padding: 8px 2px; font-size: 14px; font: inherit; font-weight: 700; cursor: pointer; color: inherit; }
 .tabs button.on { background: var(--green); color: #fff; border-color: var(--green); }
 .tabs small { opacity: 0.75; font-weight: 400; }
 .trees .tree { display: none; }

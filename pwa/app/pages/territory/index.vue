@@ -49,16 +49,7 @@ const NEST: Record<TerritoryItem["nest"], string> = { none: "沒有巢", buildin
 
 <template>
   <main v-if="ok" class="page">
-    <header class="topbar">
-      <NuxtLink to="/camp" class="icon-btn">← 營地</NuxtLink>
-      <div style="flex: 1">
-        <h1>領地</h1>
-        <div v-if="list" class="sub">
-          {{ list.items.length }} 格・住 {{ list.residents }} 隻{{ towns ? `・城鎮 ${towns}` : "" }}{{ built ? `・建築 ${built}` : "" }}
-        </div>
-      </div>
-      <NuxtLink to="/world" class="icon-btn" aria-label="大世界" title="大世界">🗺️</NuxtLink>
-    </header>
+    <WorldHead title="領地" :sub="list ? `${list.items.length} 格・住 ${list.residents} 隻${towns ? `・城鎮 ${towns}` : ''}${built ? `・建築 ${built}` : ''}` : undefined" />
 
     <div v-if="!list" class="panel">{{ problem || "讀取中…" }}</div>
     <div v-else-if="!list.items.length" class="panel">
