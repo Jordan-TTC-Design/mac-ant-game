@@ -82,6 +82,8 @@ export interface WorldOwner {
   id: string;
   name: string;
   race: string;
+  /** Its race level, where the map shows it (its camp's building grows with it). */
+  level?: number;
 }
 
 /** A lair as the map shows it. */
@@ -193,6 +195,8 @@ export interface IncomingParty {
   setOutAt: string;
   arriveAt: string;
   route?: string[];
+  /** What it is made of, breed → how many (only with the 情報 talent: talents.ts "intel"). */
+  breeds?: Record<string, number>;
 }
 
 /** `GET /api/world/expeditions/:id`: everything, with the blow-by-blow for playing it back. */
@@ -258,6 +262,10 @@ export interface WorldMe {
   walking: ExpeditionSummary[];
   /** Other camps' parties on their way to attack one of this camp's cells (older servers leave it out). */
   incoming?: IncomingParty[];
+  /** 種族天賦 (talents.ts): what is bought, the points the race level gives, and what resetting costs now. */
+  talents?: { picks: Record<string, number>; points: number; resets: number; resetCost: Record<string, number> };
+  /** Held cells beside the camp's own that eat no rations (freeCellsFor + talents). */
+  freeCells?: number;
   recent: ExpeditionSummary[];
   /** What happened in the big world lately (a lair coming back for a cell, a great monster's spoils, what the cells gave), newest first. */
   happenings: {
@@ -300,6 +308,8 @@ export interface CellHappening {
 
 /** `GET /api/world/cells/:cell`: a cell of one's own, looked at from inside (its residents are the camp's, place `cell:<id>`). */
 export interface CellDetail {
+  /** The building is at the top its holder's race level allows, but a higher level opens at this race level. */
+  nextNeedsLevel?: number;
   /** A town's market: how many swaps are left today (MARKET_TRADES_PER_DAY); absent on a cell that is not a town. */
   market?: { left: number };
   /** How many its holder wants living here (null: as it comes); the camp sends more or calls the rest home (auto staffing). */
@@ -353,6 +363,9 @@ export interface CellDetail {
 
 /** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
 export const buildInput = z.object({ kind: z.string().max(40) });
+
+/** `POST /api/world/talents`: the talents wanted (all of them: more ranks only, nothing taken back but by a reset). */
+export const talentsInput = z.object({ picks: z.record(z.string().max(60), z.number().int().min(0).max(5)) });
 
 /** `POST /api/world/cells/:cell/target`: how many should live on a held cell (null: as it comes); the camp keeps it so by itself. */
 export const targetInput = z.object({ target: z.number().int().min(1).max(500).nullable() });

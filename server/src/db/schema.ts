@@ -227,6 +227,9 @@ export const worldPlayers = pgTable("world_players", {
   xp: integer("xp").notNull().default(0),
   /** Held cells earn experience by the day; days are counted from here. */
   xpCountedTo: timestamp("xp_counted_to", { withTimezone: true, precision: 3 }).notNull(),
+  /** 種族天賦 bought (shared/src/world/talents.ts): talent id → ranks; and how many times they were all reset. */
+  talents: jsonb("talents").$type<Record<string, number>>().notNull().default({}),
+  talentResets: integer("talent_resets").notNull().default(0),
 });
 
 /** Cells someone changed: held, or a lair cleared. A cell nobody touched is worked out from the seed (contents.ts). */

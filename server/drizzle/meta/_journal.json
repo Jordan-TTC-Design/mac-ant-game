@@ -260,6 +260,13 @@
       "when": 1792205495953,
       "tag": "0036_guild_merchant",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792207634026,
+      "tag": "0037_talents",
+      "breakpoints": true
     }
   ]
 }

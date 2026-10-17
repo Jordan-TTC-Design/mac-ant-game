@@ -724,3 +724,77 @@ describe("a garrison overrun falls back", () => {
     expect((await me(a)).atHome).toBeGreaterThanOrEqual(atHome + going.party);
   });
 });
+
+describe("種族天賦", () => {
+  async function opened(email = "a@example.com") {
+    const a = await account(email);
+    await grow(a);
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, a);
+    await veteran(email); // (race level 20: 19 points)
+    return a;
+  }
+  const learn = (auth: Record<string, string>, picks: Record<string, number>) => t.call("POST", "/world/talents", { picks }, auth);
+
+  it("buys talents with the race level's points, takes none back, and resets for more and more", async () => {
+    const a = await opened();
+    let w = await me(a);
+    expect(w.talents).toMatchObject({ points: 19, picks: {}, resets: 0, resetCost: { crystal_shard: 15, amber: 4 } });
+    expect((await learn(a, { "e_ranger.swift": 1 })).body.error).toBe("not_allowed"); // (an elf's: a goblin camp)
+    let res = await learn(a, { "g_raid.sharp": 3, "g_raid.greed": 1, "g_raid.warband": 3 });
+    expect(res.status).toBe(200);
+    w = res.body as WorldMe;
+    expect(w.talents!.picks).toEqual({ "g_raid.sharp": 3, "g_raid.greed": 1, "g_raid.warband": 3 });
+    expect(w.partyCap).toBe((await me(a)).partyCap); // (the answer is the new standing)
+    expect((await learn(a, { "g_raid.sharp": 2, "g_raid.greed": 1, "g_raid.warband": 3 })).body.message).toContain("重置");
+    // reset: costs crystal shards and amber, more the next time
+    expect((await t.call("POST", "/world/talents/reset", {}, a)).body.error).toBe("cannot_afford");
+    await database.sql`update camps set materials = materials || '{"crystal_shard": 100, "amber": 100}'::jsonb`;
+    res = await t.call("POST", "/world/talents/reset", {}, a);
+    expect(res.status).toBe(200);
+    w = res.body as WorldMe;
+    expect(w.talents).toMatchObject({ picks: {}, resets: 1, resetCost: { crystal_shard: 30, amber: 8 } });
+    expect((await camp(a)).materials).toMatchObject({ crystal_shard: 85, amber: 96 });
+  });
+
+  it("works where the big world works: more go, they walk quicker, more cells eat nothing", async () => {
+    const a = await opened();
+    const before = await me(a);
+    expect(before.freeCells).toBe(3 + 5); // (3, and one every 4 levels: level 20)
+    const raid = { "g_raid.sharp": 3, "g_raid.greed": 1, "g_raid.warband": 3 };
+    const horde = { "g_horde.breed": 3, "g_horde.crowd": 1, "g_horde.share": 3 };
+    expect((await learn(a, { ...raid, ...horde })).status).toBe(200);
+    expect((await me(a)).partyCap).toBe(Math.min(30, before.partyCap + 3));
+    // 到處都是 (row 2, needs 分著吃 maxed): two more cells without upkeep
+    expect((await learn(a, { ...raid, ...horde, "g_horde.callout": 3, "g_horde.sprawl": 2 })).status).toBe(200);
+    expect((await me(a)).freeCells).toBe(3 + 5 + 2);
+  });
+
+  it("lets an elf's 遊俠 walk quicker, and its 鷹眼 see what is coming", async () => {
+    const e = await account("e@example.com", "elf");
+    t.advance(40 * HOUR); // (elves come slower: enough to open the big world)
+    await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, e);
+    await veteran("e@example.com");
+    const target = (await map(e, DAAN, 900)).find((c) => !c.owner && !c.lair && !c.boss && c.cell !== cellAt(DAAN))!.cell;
+    const slow = await t.call("POST", "/world/expeditions/route", { to: target }, e);
+    expect(slow.status).toBe(200);
+    const plain = await t.call("POST", "/world/expeditions", { to: target, count: 5 }, e);
+    const plainMinutes = Date.parse(plain.body.arriveAt) - Date.parse(plain.body.setOutAt);
+    t.advance(plainMinutes + 1000);
+    await me(e);
+    // every 遊俠 talent for walking, then 鷹眼 at the top
+    const res = await t.call("POST", "/world/talents", { picks: { "e_ranger.swift": 3, "e_ranger.aim": 1, "e_ranger.paths": 3, "e_ranger.hunter": 3, "e_ranger.wind": 2, "e_ranger.trophy": 1, "e_ranger.volley": 3, "e_ranger.hawkeye": 1 } }, e);
+    expect(res.body.message ?? "").toBe("");
+    const quick = await t.call("POST", "/world/expeditions", { to: target, count: 5 }, e);
+    const quickMinutes = Date.parse(quick.body.arriveAt) - Date.parse(quick.body.setOutAt);
+    expect(quickMinutes).toBeLessThan(plainMinutes); // (−22%)
+
+    // a goblin camp sets out against the elf's home: the elf sees what it is made of
+    const g = await account("g@example.com");
+    await grow(g);
+    await t.call("POST", "/world/open", { cell: cellAt(XINYI) }, g);
+    await veteran("g@example.com");
+    expect((await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, g)).status).toBe(201);
+    const coming = (await me(e)).incoming![0]!;
+    expect(Object.values(coming.breeds ?? {}).reduce((n, k) => n + k, 0)).toBe(6);
+  });
+});

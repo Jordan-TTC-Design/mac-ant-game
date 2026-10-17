@@ -119,36 +119,46 @@ const RACE_LOOK: Record<string, { flag: string; wall: string; roof: string; ston
  * A camp's home (a hut) or a town (a castle) in pixels, 24 by 24 (the flag above), with a flag in the race's colour bearing its face on
  * top (the flag sways: .map-flag). Outlined by drawing each part a pixel bigger in black first.
  */
-function buildingSvg(kind: "home" | "town", race: string): string {
+/** What a camp's home looks like by its race level (2026-10-17): a hut, a stockade (Lv5), a stone keep (Lv10), a citadel (Lv20). */
+const homeTier = (level = 1) => (level >= 20 ? 3 : level >= 10 ? 2 : level >= 5 ? 1 : 0);
+
+function buildingSvg(kind: "home" | "town", race: string, level = 1): string {
   const look = RACE_LOOK[race] ?? RACE_LOOK.goblin!;
   const ink = "#1f1f1f";
   const box = (x: number, y: number, w: number, h: number, fill: string) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`;
+  const castle: [number, number, number, number, string][] = [
+    [2, 9, 6, 14, look.stone], [16, 9, 6, 14, look.stone], [7, 13, 10, 10, look.stone], // towers and the wall
+    [2, 7, 2, 2, look.stone], [6, 7, 2, 2, look.stone], [16, 7, 2, 2, look.stone], [20, 7, 2, 2, look.stone], // merlons
+    [8, 11, 2, 2, look.stone], [14, 11, 2, 2, look.stone],
+  ];
+  const tier = kind === "home" ? homeTier(level) : -1;
   const parts: [number, number, number, number, string][] =
-    kind === "town"
-      ? [
-          [2, 9, 6, 14, look.stone], [16, 9, 6, 14, look.stone], [7, 13, 10, 10, look.stone], // towers and the wall
-          [2, 7, 2, 2, look.stone], [6, 7, 2, 2, look.stone], [16, 7, 2, 2, look.stone], [20, 7, 2, 2, look.stone], // merlons
-          [8, 11, 2, 2, look.stone], [14, 11, 2, 2, look.stone],
-        ]
-      : [[5, 16, 14, 7, look.wall]];
+    kind === "town" ? castle
+    : tier === 3 ? [...castle.filter(([, y]) => y !== 11), [9, 6, 6, 17, look.stone], [9, 4, 2, 2, look.stone], [13, 4, 2, 2, look.stone]] // a tall keep between the towers
+    : tier === 2 ? [[6, 10, 12, 13, look.stone], [6, 8, 2, 2, look.stone], [10, 8, 4, 2, look.stone], [16, 8, 2, 2, look.stone]] // a square keep
+    : [[5, 16, 14, 7, look.wall]];
   const outline = parts.map(([x, y, w, h]) => box(x - 1, y - 1, w + 2, h + 2, ink)).join("");
   const body = parts.map(([x, y, w, h, fill]) => box(x, y, w, h, fill)).join("");
+  const stakes = [1, 4, 7, 15, 18, 21].map((x) => box(x - 1, 18, 3, 6, ink) + box(x, 19, 1, 5, look.wall)).join(""); // (a stockade)
   const details =
-    kind === "town"
-      ? box(10, 17, 4, 6, ink) + box(11, 16, 2, 1, ink) + box(4, 12, 2, 2, ink) + box(18, 12, 2, 2, ink)
-      : `<polygon points="2,17 12,7 22,17" fill="${ink}"/><polygon points="4,16 12,8.5 20,16" fill="${look.roof}"/>` + box(10, 18, 4, 5, ink);
-  const top = kind === "town" ? 11 : 8; // where the pole meets the building
+    kind === "town" ? box(10, 17, 4, 6, ink) + box(11, 16, 2, 1, ink) + box(4, 12, 2, 2, ink) + box(18, 12, 2, 2, ink)
+    : tier === 3 ? box(10, 17, 4, 6, ink) + box(11, 16, 2, 1, ink) + box(4, 12, 2, 2, ink) + box(18, 12, 2, 2, ink) + box(11, 10, 2, 3, ink)
+    : tier === 2 ? box(10, 17, 4, 6, ink) + box(11, 16, 2, 1, ink) + box(8, 12, 2, 2, ink) + box(14, 12, 2, 2, ink)
+    : `<polygon points="2,17 12,7 22,17" fill="${ink}"/><polygon points="4,16 12,8.5 20,16" fill="${look.roof}"/>` + box(10, 18, 4, 5, ink) + (tier === 1 ? stakes : "");
+  const top = kind === "town" ? 11 : tier === 3 ? 4 : tier === 2 ? 8 : 8; // where the pole meets the building
+  // a star on the flag for every five levels (up to four)
+  const stars = kind === "home" ? Array.from({ length: Math.min(4, Math.floor(level / 5)) }, (_, i) => box(19, -5 + i * 1.25, 1, 1, "#ffe27a")).join("") : "";
   const flag = // (on a pole above the building: drawn from y −6)
     box(11, -6, 1, top + 6, ink) +
     `<g class="map-flag">${box(12, -6, 9, 7, ink)}${box(12, -5, 8, 5, look.flag)}` +
-    `<image href="/sprites/${race}/icon.png" x="13.5" y="-5" width="5" height="5" style="image-rendering:pixelated"/></g>`;
+    `<image href="/sprites/${race}/icon.png" x="13" y="-5" width="5" height="5" style="image-rendering:pixelated"/>${stars}</g>`;
   return `<svg viewBox="0 -6 24 30" width="40" height="50" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${outline}${body}${details}${flag}</svg>`;
 }
 
 /** What a cell's icon shows, as a key: the icon is made again only when this changes. */
 function markerKey(c: CellView): string {
   return JSON.stringify([
-    c.owner && [c.owner.id === props.mine, c.owner.race, c.garrison, c.town, c.home, c.nest],
+    c.owner && [c.owner.id === props.mine, c.owner.race, c.garrison, c.town, c.home, c.nest, c.home ? homeTier(c.owner.level) : 0, c.home ? Math.min(4, Math.floor((c.owner.level ?? 1) / 5)) : 0],
     c.boss && [c.boss.kind, Math.round((100 * c.boss.hp) / c.boss.maxHp)],
     c.lair && [c.lair.kind, c.lair.level, c.lair.boss, leaderOf(c.lair.foes)],
     c.landmark?.kind,
@@ -164,7 +174,7 @@ function cellMarker(c: CellView): HTMLElement | null {
   if (c.owner && (c.home || c.town)) {
     const building = document.createElement("span");
     building.className = "map-building";
-    building.innerHTML = buildingSvg(c.home ? "home" : "town", c.owner.race);
+    building.innerHTML = buildingSvg(c.home ? "home" : "town", c.owner.race, c.owner.level);
     el.append(building, label(`${c.garrison}${c.home ? " 營地" : " 城"}`, c.owner.id === props.mine ? "mine" : "theirs"));
   } else if (c.owner) {
     const face = document.createElement("img");

@@ -33,7 +33,7 @@ export interface CellBuilding {
   busyUntil?: string | null;
 }
 
-type ByLevel = readonly [number, number, number];
+type ByLevel = readonly [number, number, number, number];
 
 export interface CellBuildingRule {
   kind: CellBuildingKind;
@@ -57,7 +57,8 @@ export interface CellBuildingRule {
   races?: Record<string, { name?: string; blurb?: string; makes?: Record<string, ByLevel> }>;
 }
 
-const lv = (a: number, b: number, c: number): ByLevel => [a, b, c];
+/** By level 1…3, and level 4 (race level CELL_BUILDING_TOP_RACE_LEVEL) going on as from 2 to 3. */
+const lv = (a: number, b: number, c: number): ByLevel => [a, b, c, Math.round((c + (c - b)) * 1000) / 1000];
 
 export const CELL_BUILDINGS: readonly CellBuildingRule[] = [
   { kind: "sawmill", terrain: "forest", name: "伐木營地", blurb: "每次產出多給木材和木片", makes: { log: lv(3, 6, 10), scrap_wood: lv(2, 4, 6) } },
@@ -109,13 +110,19 @@ export function cellBuildingBlurb(kind: string, race: string): string {
 }
 
 export const CELL_BUILDING_MAX = 3;
+/** Level 4 (2026-10-17): open once the race level reaches CELL_BUILDING_TOP_RACE_LEVEL. */
+export const CELL_BUILDING_TOP = 4;
+export const CELL_BUILDING_TOP_RACE_LEVEL = 10;
+/** The highest level a building can be raised to at a race level. */
+export const buildingTopFor = (raceLevel: number) => (raceLevel >= CELL_BUILDING_TOP_RACE_LEVEL ? CELL_BUILDING_TOP : CELL_BUILDING_MAX);
 /** Hours to build (level 1) and to raise it to level 2 and 3. */
-export const CELL_BUILDING_HOURS = [1, 4, 12] as const;
+export const CELL_BUILDING_HOURS = [1, 4, 12, 24] as const;
 /** What building it (level 1) and raising it cost; the same for every kind. */
 export const CELL_BUILDING_COSTS: readonly Record<string, number>[] = [
   { scrap_wood: 20, log: 20 },
   { scrap_wood: 50, scrap_iron: 20, log: 60, stone: 20 },
   { scrap_wood: 100, scrap_iron: 50, scrap_rag: 30, log: 150, stone: 80, crystal_shard: 1 },
+  { scrap_wood: 200, scrap_iron: 100, scrap_rag: 60, log: 300, stone: 160, crystal_shard: 5, amber: 2 },
 ];
 
 /** The level that works now (while it is being raised, the one before; 0 while it is first being built). */
@@ -248,6 +255,9 @@ export function heldNeighbours(cell: string, held: ReadonlySet<string>): number 
  * hungry is not lost: its yield that time is HUNGRY_YIELD of what it would be.
  */
 export const UPKEEP_FREE_CELLS = 3;
+/** The race level adds cells without upkeep (2026-10-17): one more every this many levels. */
+export const UPKEEP_FREE_PER_LEVELS = 4;
+export const freeCellsFor = (level: number) => UPKEEP_FREE_CELLS + Math.floor(Math.max(0, level) / UPKEEP_FREE_PER_LEVELS);
 export const UPKEEP_RATIONS = 1;
 export const UPKEEP_EVERY = 2;
 
@@ -357,10 +367,10 @@ export function marketWorth(id: string): number {
 }
 
 /** How many of `get` come for `count` of `give` at a town's market (0: no trade). */
-export function marketQuote(give: string, count: number, get: string): number {
+export function marketQuote(give: string, count: number, get: string, rate = MARKET_RATE): number {
   const a = marketWorth(give), b = marketWorth(get);
   if (!a || !b || give === get || count < 1) return 0;
-  return Math.floor((count * a * MARKET_RATE) / b);
+  return Math.floor((count * a * rate) / b);
 }
 
 export function cellBonus(race: string, building: CellBuilding | null | undefined, now: number, around: CellSurroundings = {}): CellBonus {
@@ -382,7 +392,7 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
   const level = workingLevel(building, now);
   const rule = building ? RULES.get(building.kind) : undefined;
   if (!rule || level < 1) return out;
-  const k = (Math.min(CELL_BUILDING_MAX, level) - 1) as 0 | 1 | 2;
+  const k = (Math.min(CELL_BUILDING_TOP, level) - 1) as 0 | 1 | 2 | 3;
   for (const [id, v] of Object.entries(rule.races?.[race]?.makes ?? rule.makes ?? {})) if (v[k]) out.makes[id] = (out.makes[id] ?? 0) + v[k];
   for (const [id, v] of Object.entries(rule.finds ?? {})) out.finds[id] = Math.min(1, (out.finds[id] ?? 0) + v[k]);
   if (rule.fort) out.fort += rule.fort[k];

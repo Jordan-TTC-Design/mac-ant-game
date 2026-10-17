@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { buildInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, targetInput } from "@goblincamp/shared/world";
+import { buildInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -23,6 +23,8 @@ import {
   moveHome,
   openWorldFor,
   recall,
+  learnTalents,
+  resetTalents,
   sendExpedition,
   setCellTarget,
   tradeAtMarket,
@@ -192,6 +194,22 @@ export function worldRoutes(deps: AppDeps) {
   cellAction("recall", (userId, cell, body) => (tx) => recall(tx, userId, cell, body as { count?: number; to?: string; campers?: boolean }, now()));
   /** The camp moves here (once every HOME_MOVE_DAYS). */
   cellAction("home", (userId, cell) => (tx) => moveHome(tx, userId, cell, now()));
+
+  /** 種族天賦: buy (all of them as wanted), or reset all for crystal shards and amber. Answers with the new standing. */
+  app.post("/talents", async (c) => {
+    const body = await readJson(c, talentsInput);
+    if ("response" in body) return body.response;
+    const userId = c.get("session").user.id;
+    const out = await run(c, () => db.transaction((tx) => learnTalents(tx, userId, body.data.picks, now())), [userId]);
+    if (out instanceof Response) return out;
+    return c.json(await db.transaction((tx) => worldMe(tx, userId, now())));
+  });
+  app.post("/talents/reset", async (c) => {
+    const userId = c.get("session").user.id;
+    const out = await run(c, () => db.transaction((tx) => resetTalents(tx, userId, now())), [userId]);
+    if (out instanceof Response) return out;
+    return c.json(await db.transaction((tx) => worldMe(tx, userId, now())));
+  });
 
   app.get("/leaderboard", async (c) => respond(c, await run(c, () => db.transaction((tx) => leaderboard(tx)))));
 

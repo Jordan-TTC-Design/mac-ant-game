@@ -90,6 +90,9 @@ export interface FightBoosts {
   sticky?: number;
   luck?: number;
   lantern?: number;
+  /** 種族天賦 (talents.ts): attack and hit points +these shares. */
+  power?: number;
+  vigor?: number;
 }
 
 /** The foes a party with 黏黏彈 meets: a quarter slower. */
@@ -126,9 +129,9 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
     name: r.name,
     side,
     row: healer || range > 0 ? "back" : "front",
-    hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0))),
-    maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0))),
-    attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0) + 0.1 * (boosts.tonic ?? 0)),
+    hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.vigor ?? 0))),
+    maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.vigor ?? 0))),
+    attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.power ?? 0)),
     range,
     speed: r.speed * (1 + 0.15 * (boosts.carrot ?? 0)),
     heal: healer ? Math.round(r.might * 5) : 0,

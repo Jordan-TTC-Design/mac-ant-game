@@ -422,15 +422,16 @@ describe("cells held side by side", () => {
 });
 
 describe("keeping many cells", () => {
-  it("the first three besides the camp are free; the rest eat rations every yield, and go hungry without", async () => {
+  it("the first three besides the camp are free (more with the race level); the rest eat rations every yield, and go hungry without", async () => {
     const a = await ready();
+    await database.sql`update world_players set xp = 200`; // (race level 3: no more free cells than the three yet, freeCellsFor)
     const home = (await me(a)).homeCell!;
     const around = neighbors(home);
     const at = t.now().toISOString();
     for (const c of around) await database.sql`insert into world_cells (cell, cleared_at) values (${c}, ${at}::timestamptz) on conflict (cell) do update set cleared_at = ${at}::timestamptz`;
     const cells: string[] = [];
     for (let i = 0; i < 4; i++) {
-      cells.push(await settle(a, 10, [], (c) => c.cell === around[i]));
+      cells.push(await settle(a, 6, [], (c) => c.cell === around[i]));
       t.advance(MIN); // (held one after another: the last is the one that pays)
     }
     let w = await me(a);
@@ -666,5 +667,31 @@ describe("auto staffing", () => {
     await target(null);
     await database.sql`update camp_residents set died_at = now() where place = ${`cell:${cell}`} and id in (select id from camp_residents where place = ${`cell:${cell}`} limit 3)`;
     expect((await me(a)).walking.filter((x) => x.to === cell)).toHaveLength(0);
+  });
+});
+
+describe("cells without upkeep grow with the race level", () => {
+  it("frees one more cell every four levels", async () => {
+    const a = await ready(); // (race level 20)
+    expect((await me(a)).upkeep).toEqual(expect.objectContaining({ freeCells: 3 + 5 }));
+    await database.sql`update world_players set xp = 200`; // (level 3)
+    expect((await me(a)).upkeep).toEqual(expect.objectContaining({ freeCells: 3 }));
+  });
+});
+
+describe("buildings' level 4", () => {
+  it("opens at race level 10", async () => {
+    const a = await ready(); // (race level 20)
+    const cell = await settle(a, 10);
+    const kind = buildingsFor((await detail(a, cell)).body.terrain)[0]!.kind;
+    await database.sql`update world_cells set building = ${JSON.stringify({ kind, level: 3 })}::jsonb where cell = ${cell}`;
+    await give("a@example.com", { scrap_wood: 500, scrap_iron: 500, scrap_rag: 500, log: 500, stone: 500, crystal_shard: 50, amber: 50 });
+    await database.sql`update world_players set xp = 200`; // (level 3)
+    expect((await detail(a, cell)).body.nextNeedsLevel).toBe(10);
+    const refused = await t.call("POST", `/world/cells/${cell}/build`, { kind }, a);
+    expect(refused.body.message).toContain("種族等級 10");
+    await database.sql`update world_players set xp = 18050`;
+    expect((await t.call("POST", `/world/cells/${cell}/build`, { kind }, a)).status).toBe(200);
+    expect((await detail(a, cell)).body.building!.level).toBe(4);
   });
 });

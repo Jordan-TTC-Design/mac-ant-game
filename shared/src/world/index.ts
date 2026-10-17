@@ -11,6 +11,7 @@ export * from "./leaderboard.ts";
 export * from "./random.ts";
 export * from "./route.ts";
 export * from "./supplies.ts";
+export * from "./talents.ts";
 export * from "./availability.ts";
 export * from "./terrain.ts";
 export * from "./territory.ts";

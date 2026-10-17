@@ -394,6 +394,7 @@ async function goToPlace(p: PlaceFound) {
         <h1>大世界</h1>
         <div v-if="s.me" class="sub">{{ noun }} Lv{{ s.me.level }}（{{ s.me.xp }}/{{ s.me.nextLevelXp }}）・{{ s.me.cells.length }} 格・在家 {{ s.me.atHome }}<template v-if="s.me.upkeep?.paying">・<span :class="{ hungry: s.me.upkeep.rations < s.me.upkeep.perYield }">乾糧 {{ s.me.upkeep.rations }}（每 {{ s.me.upkeep.everyHours }} 小時吃 {{ s.me.upkeep.perYield }}）</span></template></div>
       </div>
+      <NuxtLink v-if="s.me?.talents" to="/talents" class="icon-btn" :class="{ glow: (s.me.talents.points ?? 0) > Object.values(s.me.talents.picks).reduce((n, r) => n + r, 0) }" title="種族天賦">🌟 天賦</NuxtLink>
       <NuxtLink to="/leaderboard" class="icon-btn">排行</NuxtLink>
     </header>
 
@@ -656,6 +657,7 @@ async function goToPlace(p: PlaceFound) {
 </template>
 
 <style scoped>
+.icon-btn.glow { box-shadow: 0 0 0 2px #ffd84a, 0 0 10px #ffd84a; }
 .incoming { border: 2px solid #e04a3a; background: #fff3f0; }
 .incoming h2 { color: #c0392b; }
 .incoming-line { display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; color: inherit; padding: 6px 0; cursor: pointer; border-top: 1px solid #f3cfc8; }

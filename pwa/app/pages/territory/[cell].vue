@@ -267,6 +267,7 @@ function happening(h: CellHappening): string {
           </p>
           <p class="muted small">{{ d.building.blurb }}</p>
           <ul v-if="bonusText(d.bonus).length" class="bonus"><li v-for="line in bonusText(d.bonus)" :key="line">{{ line }}</li></ul>
+          <p v-if="d.nextNeedsLevel" class="small muted">🔒 種族等級 {{ d.nextNeedsLevel }} 才能升到 {{ d.building.level + 1 }} 級</p>
           <template v-if="d.nextCost && !d.building.busyUntil">
             <p class="small">升到 {{ d.building.level + 1 }} 級（{{ d.nextHours }} 小時）：{{ costText(d.nextCost) }}</p>
           </template>
