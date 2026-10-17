@@ -342,6 +342,35 @@ export const adminLog = pgTable(
   (t) => [index("admin_log_at_idx").on(t.at)],
 );
 
+/** Who came on which day (Taiwan time, 2026-10-17): one row the first time an account is seen that day, for 後台's trend. */
+export const dailyActive = pgTable(
+  "daily_active",
+  {
+    day: text("day").notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.userId] })],
+);
+
+/** 公告 an admin put up (後台): a banner on the phone's home page and a notice on the Mac, maybe pushed too. */
+export const announcements = pgTable(
+  "announcements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    url: text("url"),
+    audience: text("audience", { enum: ["all", "admins"] }).notNull(),
+    at: timestamp("at", { withTimezone: true, precision: 3 }).notNull(),
+    /** Shown until then (null: until taken down; taking it down sets it to then). */
+    endsAt: timestamp("ends_at", { withTimezone: true, precision: 3 }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    /** Phones it was pushed to (null: not pushed). */
+    pushed: integer("pushed"),
+  },
+  (t) => [index("announcements_at_idx").on(t.at)],
+);
+
 /**
  * Friends (server/DESIGN.md §7): one row per pair, the smaller id first. An ask is a row with no `acceptedAt`; a yes fills
  * it in; no, unfriending or blocking removes the row.

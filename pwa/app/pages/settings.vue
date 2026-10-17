@@ -47,10 +47,9 @@ async function endOthers() {
   await loadSessions();
 }
 
-// the admin page's link shows only for admins (the server says who they are)
-const admin = ref(false);
+// the admin page's link shows only for admins (the server says who they are in auth/me)
+const admin = computed(() => !!user.value?.admin);
 onMounted(async () => {
-  api("GET", "admin").then(() => (admin.value = true)).catch(() => {});
   installed.value = isInstalled();
   push.value = await pushState();
   await loadSessions();
@@ -111,7 +110,7 @@ async function signOut() {
       <h2>帳號</h2>
       <p><strong>{{ user?.displayName }}</strong>（{{ user?.email }}）</p>
       <p>好友代碼：<code>{{ user?.friendCode }}</code> <button class="btn small" @click="copyCode">{{ copied ? "複製了" : "複製" }}</button></p>
-      <p v-if="admin"><NuxtLink to="/admin" class="btn">後台（邀請碼、帳號、大世界）</NuxtLink></p>
+      <p v-if="admin"><NuxtLink to="/admin" class="btn">後台（帳號、公告、伺服器狀態）</NuxtLink></p>
     </section>
 
     <section class="panel">

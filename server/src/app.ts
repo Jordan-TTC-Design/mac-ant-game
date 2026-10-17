@@ -13,6 +13,7 @@ import { noteRoutes } from "./notes/routes.ts";
 import { pushRoutes } from "./push/routes.ts";
 import { worldRoutes } from "./world/routes.ts";
 import { adminRoutes } from "./admin/routes.ts";
+import { announcementRoutes } from "./admin/announcements.ts";
 import { claudeRoutes } from "./claude/routes.ts";
 import { feedbackRoutes } from "./feedback/routes.ts";
 import { friendRoutes } from "./friends/routes.ts";
@@ -22,6 +23,7 @@ import { pomodoroRoutes } from "./pomodoro/routes.ts";
 import { NoPushSender, type PushSender } from "./push/sender.ts";
 import { Hub, type Socket } from "./realtime/hub.ts";
 import type { Backups } from "./backup.ts";
+import { Watch } from "./admin/watch.ts";
 
 export interface AppDeps {
   database: Database;
@@ -35,6 +37,8 @@ export interface AppDeps {
   limiter?: RateLimiter;
   /** The database backups (none: BACKUP_DIR is not set). */
   backups?: Backups;
+  /** Counts of pushes and mails sent, and the last clearing of old records, for 後台's health page. */
+  watch: Watch;
 }
 
 export type AppEnv = { Variables: { session: CurrentSession } };
@@ -42,8 +46,9 @@ export type AppEnv = { Variables: { session: CurrentSession } };
 /**
  * The HTTP API. `app.request()` works without a network (tests); `injectWebSocket` must be given the real server for /api/ws.
  */
-export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; push?: PushSender }) {
-  const deps: AppDeps = { ...options, hub: options.hub ?? new Hub(), push: options.push ?? new NoPushSender() };
+export function createApp(options: Omit<AppDeps, "hub" | "push" | "watch"> & { hub?: Hub; push?: PushSender }) {
+  const watch = new Watch(options.now);
+  const deps: AppDeps = { ...options, hub: options.hub ?? new Hub(), push: watch.pushes(options.push ?? new NoPushSender()), mailer: watch.mails(options.mailer), watch };
   const root = new Hono<AppEnv>();
   const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app: root });
   const app = root.basePath("/api");
@@ -60,6 +65,7 @@ export function createApp(options: Omit<AppDeps, "hub" | "push"> & { hub?: Hub; 
   app.route("/push", pushRoutes(deps));
   app.route("/world", worldRoutes(deps));
   app.route("/admin", adminRoutes(deps));
+  app.route("/announcements", announcementRoutes(deps));
   app.route("/friends", friendRoutes(deps));
   const live = guildLive(deps);
   app.route("/guild", guildRoutes(deps, live));

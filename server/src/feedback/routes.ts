@@ -17,7 +17,7 @@ import {
 } from "@goblincamp/shared";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
-import { feedback, feedbackReplies, feedbackVotes, users } from "../db/schema.ts";
+import { adminLog, feedback, feedbackReplies, feedbackVotes, users } from "../db/schema.ts";
 import { apiError, readJson } from "../http.ts";
 import { RateLimiter } from "../lib/rate-limit.ts";
 import { pushToPhones } from "../push/phones.ts";
@@ -212,6 +212,7 @@ export function feedbackRoutes(deps: AppDeps) {
     const at = now();
     await db.insert(feedbackReplies).values({ feedbackId: row.id, userId: me.id, admin: true, body: note, status: status === row.status ? null : status, at });
     await db.update(feedback).set({ status, updatedAt: at }).where(eq(feedback.id, row.id));
+    if (status !== row.status) await db.insert(adminLog).values({ adminId: me.id, targetId: row.userId, action: "feedback-status", detail: { title: row.title, status } });
     await tell([row.userId], me.id, {
       type: "social",
       title: `你的回報：${FEEDBACK_STATUS_LABEL[status]}`,
@@ -248,6 +249,7 @@ export function feedbackRoutes(deps: AppDeps) {
     const admin = await isAdmin(me);
     if (!admin && !(row.userId === me.id && row.status === "open")) return apiError(c, 403, "forbidden", "已經在處理的回報不能刪除。");
     await db.delete(feedback).where(eq(feedback.id, row.id));
+    if (admin && row.userId !== me.id) await db.insert(adminLog).values({ adminId: me.id, targetId: row.userId, action: "feedback-delete", detail: { title: row.title } });
     return c.body(null, 204);
   });
 

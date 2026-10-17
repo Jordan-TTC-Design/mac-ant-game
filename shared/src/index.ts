@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+export * from "./admin.ts";
 export * from "./auth.ts";
 export * from "./claude.ts";
 export * from "./feedback.ts";

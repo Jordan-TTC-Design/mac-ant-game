@@ -104,7 +104,9 @@ export type ServerEvent =
   /** A Claude question came, was answered or went away. */
   | { type: "claude.changed" }
   /** The answer to a question the Mac `device` is waiting on. */
-  | { type: "claude.answer"; id: string; device: string; action: "allow" | "deny" | "reply" | "dismiss"; text?: string };
+  | { type: "claude.answer"; id: string; device: string; action: "allow" | "deny" | "reply" | "dismiss"; text?: string }
+  /** An announcement went up or came down (fetch `GET /api/announcements`). */
+  | { type: "announcements.changed" };
 
 /** A phone's Web Push subscription, as the browser gives it (`PushSubscription.toJSON()`). */
 export const pushSubscriptionSchema = z.object({

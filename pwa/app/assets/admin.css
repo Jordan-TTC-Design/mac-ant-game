@@ -1,0 +1,46 @@
+/* 後台 (pages/admin*): wider on a computer, the same cards on a phone. Everything here sits under .admin. */
+.admin.page { max-width: 560px; }
+.admin .nav { display: flex; gap: 6px; overflow-x: auto; margin: -4px 0 12px; padding-bottom: 4px; scrollbar-width: none; }
+.admin .nav a { white-space: nowrap; color: #fff; background: rgba(255, 255, 255, 0.14); border-radius: 9px; padding: 7px 12px; font-size: 14px; font-weight: 600; text-decoration: none; }
+.admin .nav a.router-link-exact-active, .admin .nav a.here { background: #fff; color: var(--bg); }
+.admin .nav .count { margin-left: 4px; background: var(--red); color: #fff; border-radius: 8px; padding: 0 6px; font-size: 11px; }
+@media (min-width: 900px) {
+  .admin.page { max-width: 1200px; display: grid; grid-template-columns: 180px 1fr; column-gap: 20px; align-items: start; }
+  .admin .topbar { grid-column: 1 / -1; }
+  .admin .nav { flex-direction: column; position: sticky; top: 12px; margin: 0; overflow: visible; }
+  .admin .nav a { padding: 10px 12px; }
+  .admin .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+  .admin .two > .panel + .panel { margin-top: 0 !important; }
+}
+.admin .panel + .two, .admin .two + .panel, .admin .two + .two, .admin p + .panel { margin-top: 12px; }
+.admin .two > .panel + .panel { margin-top: 12px; }
+.admin h2 { font-size: 16px; margin: 0 0 10px; }
+.admin h3 { font-size: 13px; margin: 14px 0 4px; }
+.admin .muted { color: var(--muted); }
+.admin .small { font-size: 13px; margin: 4px 0; }
+.admin .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.admin .row label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.admin .row input:not([type="checkbox"]), .admin .row select { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: #fff; }
+.admin .tag { margin-left: 6px; font-size: 11px; background: #eee; border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+.admin .tag.red { background: #fbd9d6; color: var(--red); }
+.admin .tag.gold { background: #fff0b8; color: #8a6a00; }
+.admin .tag.green { background: #d8f0d8; color: var(--green); }
+.admin .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+@media (min-width: 900px) { .admin .stats { grid-template-columns: repeat(6, 1fr); } }
+.admin .stats b { display: block; font-size: 22px; }
+.admin .stats small { font-size: 11px; color: var(--muted); }
+.admin .list > * { padding: 8px 0; border-top: 1px solid var(--line); }
+.admin .list > *:first-child { border-top: 0; }
+.admin .ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.admin .ops .btn, .admin .btn.small { font-size: 13px; min-height: 34px; padding: 5px 10px; text-decoration: none; }
+.admin .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin .chips button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+.admin .chips button.on { background: var(--bg); color: #fff; border-color: var(--bg); }
+.admin .more { display: block; width: 100%; margin-top: 10px; }
+.admin table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.admin th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.admin td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.admin tr.link { cursor: pointer; }
+.admin tr.link:hover td { background: #faf7ec; }
+.admin .wide-only { display: none; }
+@media (min-width: 900px) { .admin .wide-only { display: block; } .admin table.wide-only { display: table; } .admin .narrow-only { display: none; } }

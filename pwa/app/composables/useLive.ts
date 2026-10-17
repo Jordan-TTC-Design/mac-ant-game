@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponse, ClaudeResponse, FriendsResponse, GuildChatLine, GuildMove, GuildResponse, PomodoroAction, PomodoroResponse, PomodoroState, ServerEvent } from "@goblincamp/shared";
+import type { Announcement, AnnouncementsResponse, ChatMessage, ChatResponse, ClaudeResponse, FriendsResponse, GuildChatLine, GuildMove, GuildResponse, PomodoroAction, PomodoroResponse, PomodoroState, ServerEvent } from "@goblincamp/shared";
 import { pomodoroAt, pomodoroSegments } from "@goblincamp/shared";
 import { ApiError, api } from "~/utils/api";
 
@@ -24,7 +24,9 @@ const state = reactive<{
   guildMoves: Record<string, GuildMove & { heard: number }>;
   /** What was said in the hall (the last 50), newest last. */
   guildChat: GuildChatLine[];
-}>({ friends: null, pomodoro: null, pomodoroLoaded: false, clockOffset: 0, claude: null, chatWith: null, chat: null, guild: null, guildMoves: {}, guildChat: [] });
+  /** 公告 up now (後台), newest first; the ones closed on this phone are left out by the page. */
+  announcements: Announcement[];
+}>({ friends: null, pomodoro: null, pomodoroLoaded: false, clockOffset: 0, claude: null, chatWith: null, chat: null, guild: null, guildMoves: {}, guildChat: [], announcements: [] });
 let started = false;
 
 async function quietly<T>(work: () => Promise<T>): Promise<T | null> {
@@ -53,6 +55,10 @@ const loadGuild = async () => {
   const out = await quietly(() => api<GuildResponse>("GET", "guild"));
   if (out) state.guild = out;
 };
+const loadAnnouncements = async () => {
+  const out = await quietly(() => api<AnnouncementsResponse>("GET", "announcements"));
+  if (out) state.announcements = out.announcements;
+};
 const loadGuildChat = async () => {
   const out = await quietly(() => api<{ lines: GuildChatLine[] }>("GET", "guild/chat"));
   if (out) state.guildChat = out.lines;
@@ -78,6 +84,7 @@ function onEvent(e: Event) {
   if (event.type === "pomodoro.changed" && event.version !== state.pomodoro?.version) void loadPomodoro();
   if (event.type === "claude.changed") void loadClaude();
   if (event.type === "guild.changed") void loadGuild();
+  if (event.type === "announcements.changed") void loadAnnouncements();
   if (event.type === "guild.move") {
     const { type: _, userId, ...move } = event;
     state.guildMoves[userId] = { ...move, heard: Date.now() };
@@ -99,6 +106,7 @@ function onVisible() {
   void loadClaude();
   void loadChat();
   void loadGuild();
+  void loadAnnouncements();
 }
 
 export function useLive() {

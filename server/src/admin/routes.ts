@@ -1,36 +1,51 @@
-import { and, count, desc, eq, gt, isNotNull, isNull, lte, max, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { z } from "zod";
+import {
+  API_VERSION,
+  taipeiDay,
+  type AdminBackupList,
+  type AdminDay,
+  type AdminHealth,
+  type AdminInviteRow,
+  type AdminLogPage,
+  type AdminOverview,
+  type AdminStats,
+} from "@goblincamp/shared";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
-import { adminLog, campResidents, camps, devices, emailTokens, expeditions, invites, notes, sessions, users, worldCells, worldPlayers } from "../db/schema.ts";
+import { adminLog, campResidents, camps, dailyActive, devices, expeditions, feedback, invites, notes, users, worldCells, worldPlayers } from "../db/schema.ts";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { BackupError, KEEP_AUTO_DAYS, MANUAL_MAX, nextSlot } from "../backup.ts";
 import { apiError, readJson } from "../http.ts";
-import { hashSecret, newInviteCode, newToken, normalizeCode } from "../lib/tokens.ts";
-import { adminResetMail } from "../mail/templates.ts";
+import { hashSecret, newInviteCode, normalizeCode } from "../lib/tokens.ts";
+import { bootstrapAdmins } from "./access.ts";
+import { adminAnnouncementRoutes } from "./announcements.ts";
+import { adminUserRoutes } from "./users.ts";
 
-/** How long the link in a mail an admin asked for works (longer than the 1 hour of 「忘記密碼」: nobody asked for it just now). */
-const ADMIN_RESET_HOURS = 24;
-
+const DAY = 86_400_000;
 const inviteInput = z.object({ count: z.number().int().min(1).max(50).default(1), days: z.number().int().min(1).max(90).default(14) });
-
-const roleInput = z.object({ role: z.enum(["user", "admin"]) });
-const deleteInput = z.object({ confirm: z.string().max(200) });
+const logQuery = z.object({
+  action: z.string().trim().max(40).optional(),
+  target: z.uuid().optional(),
+  cursor: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
 
 /**
- * 後台 (server/DESIGN.md §12): who runs the server sees how it is used, hands out invite codes, and looks after the accounts
- * (stop one, let it back in, sign it out everywhere, confirm its address, make it an admin, delete it). Admins are accounts
- * whose role is admin; an address in ADMIN_EMAILS becomes one the first time it comes here (the very first admin), and
- * `make admin email=…` does the same on the server. Everything done here goes into the admin log.
+ * 後台 (server/DESIGN.md §12): who runs the server sees how it is used and how the server itself is doing, hands out
+ * invite codes, looks after the accounts (admin/users.ts), puts up announcements (admin/announcements.ts) and keeps the
+ * backups. Admins are accounts whose role is admin; an address in ADMIN_EMAILS becomes one the first time it comes here
+ * (the very first admin), and `make admin email=…` does the same on the server. Everything done here goes into the admin log.
  */
 export function adminRoutes(deps: AppDeps) {
   const app = new Hono<AppEnv>();
   const { db } = deps.database;
   const now = deps.now ?? (() => new Date());
-  const bootstrap = new Set((deps.config.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean));
+  const bootstrap = bootstrapAdmins(deps);
   app.use("*", requireAuth(deps));
   app.use("*", async (c, next) => {
     const me = c.get("session").user;
@@ -42,17 +57,17 @@ export function adminRoutes(deps: AppDeps) {
     }
     await next();
   });
-  const log = (adminId: string, targetId: string | null, action: string, detail: object = {}) => db.insert(adminLog).values({ adminId, targetId, action, detail });
+  const log = (adminId: string | null, targetId: string | null, action: string, detail: object = {}) => db.insert(adminLog).values({ adminId, targetId, action, detail });
 
-  /** Whether this account is an admin (the page asks before showing its link). */
+  /** Whether this account is an admin (older pages ask before showing the link; `GET /auth/me` says so now). */
   app.get("/", (c) => c.json({ admin: true }));
 
   app.get("/overview", async (c) => {
     const at = now();
-    const day = new Date(at.getTime() - 86_400_000);
-    const week = new Date(at.getTime() - 7 * 86_400_000);
+    const day = new Date(at.getTime() - DAY);
+    const week = new Date(at.getTime() - 7 * DAY);
     const one = async (q: Promise<{ n: number }[]>) => (await q)[0]?.n ?? 0;
-    const [usersAll, verified, active1, active7, macs, phones, notesLive, residents, worldOpen, held, walking, fought, invitesFree, invitesUsed, invitesExpired] = await Promise.all([
+    const [usersAll, verified, active1, active7, macs, phones, notesLive, residents, worldOpen, held, walking, fought, invitesFree, invitesUsed, invitesExpired, feedbackOpen] = await Promise.all([
       one(db.select({ n: count() }).from(users)),
       one(db.select({ n: count() }).from(users).where(isNotNull(users.emailVerifiedAt))),
       one(db.select({ n: sql<number>`count(distinct ${devices.userId})::int` }).from(devices).where(gt(devices.lastSeenAt, day))),
@@ -68,9 +83,10 @@ export function adminRoutes(deps: AppDeps) {
       one(db.select({ n: count() }).from(invites).where(and(isNull(invites.usedAt), gt(invites.expiresAt, at)))),
       one(db.select({ n: count() }).from(invites).where(isNotNull(invites.usedAt))),
       one(db.select({ n: count() }).from(invites).where(and(isNull(invites.usedAt), lte(invites.expiresAt, at)))),
+      one(db.select({ n: count() }).from(feedback).where(eq(feedback.status, "open"))),
     ]);
     const races = await db.select({ race: camps.race, n: count() }).from(camps).groupBy(camps.race);
-    return c.json({
+    const body: AdminOverview = {
       users: { all: usersAll, verified, active1, active7 },
       devices: { macs, phones },
       notes: notesLive,
@@ -78,59 +94,68 @@ export function adminRoutes(deps: AppDeps) {
       residents,
       world: { open: worldOpen, heldCells: held, walking, fought },
       invites: { free: invitesFree, used: invitesUsed, expired: invitesExpired },
-    });
+      feedbackOpen,
+    };
+    return c.json(body);
   });
 
-  /** Everyone, newest first: their camp, devices and when they were last seen. */
-  app.get("/users", async (c) => {
-    const rows = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        name: users.displayName,
-        createdAt: users.createdAt,
-        verified: users.emailVerifiedAt,
-        deleting: users.deletingAt,
-        role: users.role,
-        disabled: users.disabledAt,
-        race: camps.race,
-        peak: camps.peak,
-      })
-      .from(users)
-      .leftJoin(camps, eq(camps.userId, users.id))
-      .orderBy(desc(users.createdAt))
-      .limit(500);
-    const seen = new Map(
-      (await db.select({ userId: devices.userId, last: max(devices.lastSeenAt), n: count() }).from(devices).groupBy(devices.userId)).map((r) => [r.userId, r]),
-    );
-    const alive = new Map(
-      (await db.select({ userId: campResidents.userId, n: count() }).from(campResidents).where(isNull(campResidents.diedAt)).groupBy(campResidents.userId)).map((r) => [r.userId, r.n]),
-    );
-    const cells = new Map(
-      (await db.select({ owner: worldCells.owner, n: count() }).from(worldCells).where(isNotNull(worldCells.owner)).groupBy(worldCells.owner)).map((r) => [r.owner, r.n]),
-    );
-    return c.json({
-      users: rows.map((r) => ({
-        id: r.id,
-        email: r.email,
-        name: r.name,
-        createdAt: r.createdAt.toISOString(),
-        verified: !!r.verified,
-        deleting: !!r.deleting,
-        role: r.role,
-        disabled: !!r.disabled,
-        camp: r.race ? { race: r.race, population: alive.get(r.id) ?? 0, peak: r.peak ?? 0, cells: cells.get(r.id) ?? 0 } : null,
-        devices: seen.get(r.id)?.n ?? 0,
-        lastSeenAt: seen.get(r.id)?.last?.toISOString() ?? null,
-      })),
-    });
+  /** The last `days` days (30 or 90, Taiwan time, oldest first): who came each day and who signed up. */
+  app.get("/stats", async (c) => {
+    const n = c.req.query("days") === "90" ? 90 : 30;
+    const at = now();
+    const days = Array.from({ length: n }, (_, k) => taipeiDay(new Date(at.getTime() - (n - 1 - k) * DAY)));
+    const first = days[0]!;
+    const signupDay = sql<string>`to_char(${users.createdAt} at time zone 'Asia/Taipei', 'YYYY-MM-DD')`;
+    const [active, signups] = await Promise.all([
+      db.select({ day: dailyActive.day, n: count() }).from(dailyActive).where(gte(dailyActive.day, first)).groupBy(dailyActive.day),
+      db.select({ day: signupDay, n: count() }).from(users).where(gte(users.createdAt, new Date(at.getTime() - (n + 1) * DAY))).groupBy(signupDay),
+    ]);
+    const activeBy = new Map(active.map((r) => [r.day, r.n]));
+    const signupsBy = new Map(signups.map((r) => [r.day, r.n]));
+    const body: AdminStats = { days: days.map((day): AdminDay => ({ day, active: activeBy.get(day) ?? 0, signups: signupsBy.get(day) ?? 0 })) };
+    return c.json(body);
   });
+
+  /** How the server itself is doing: its version, the database's size, who is connected, pushes and mails, clearing, backups. */
+  app.get("/health", async (c) => {
+    const { sql: pg } = deps.database;
+    const [[size], tables] = await Promise.all([
+      pg<{ bytes: string }[]>`select pg_database_size(current_database())::bigint as bytes`,
+      pg<{ name: string; bytes: string; rows: string }[]>`
+        select relname as name, pg_total_relation_size(relid)::bigint as bytes, n_live_tup::bigint as rows
+        from pg_stat_user_tables order by pg_total_relation_size(relid) desc limit 10`,
+    ]);
+    const b = deps.backups;
+    const [auto, failures] = b ? await Promise.all([b.files("auto"), b.failures()]) : [[], []];
+    const w = deps.watch;
+    const body: AdminHealth = {
+      apiVersion: API_VERSION,
+      commit: process.env.GIT_SHA || null,
+      startedAt: w.startedAt.toISOString(),
+      node: process.version,
+      database: { bytes: Number(size?.bytes ?? 0), tables: tables.map((t) => ({ name: t.name, bytes: Number(t.bytes), rows: Number(t.rows) })) },
+      live: deps.hub.size(),
+      maintenance: w.maintenance,
+      push: { configured: !!deps.push.publicKey, sent: w.last24h("push.sent"), failed: w.last24h("push.failed"), gone: w.last24h("push.gone") },
+      mail: { sent: w.last24h("mail.sent"), failed: w.last24h("mail.failed"), lastErrors: w.mailErrors.slice(0, 5) },
+      backups: {
+        enabled: !!b,
+        next: b ? nextSlot(now()).toISOString() : null,
+        lastAuto: auto[0]?.at ?? null,
+        failures: failures.filter((f) => new Date(f.at).getTime() > now().getTime() - DAY).length,
+      },
+    };
+    return c.json(body);
+  });
+
+  adminUserRoutes(app, deps, log);
+  adminAnnouncementRoutes(app, deps, log);
 
   /** Invite codes made here (shown once, only their hashes are kept), and how the ones made so far were used. */
   app.post("/invites", async (c) => {
     const body = await readJson(c, inviteInput);
     if ("response" in body) return body.response;
-    const expiresAt = new Date(now().getTime() + body.data.days * 86_400_000);
+    const expiresAt = new Date(now().getTime() + body.data.days * DAY);
     const codes = Array.from({ length: body.data.count }, newInviteCode);
     await db.insert(invites).values(codes.map((code) => ({ codeHash: hashSecret(normalizeCode(code)), createdBy: c.get("session").user.id, expiresAt })));
     await log(c.get("session").user.id, null, "invites", { count: codes.length, days: body.data.days });
@@ -139,155 +164,43 @@ export function adminRoutes(deps: AppDeps) {
 
   app.get("/invites", async (c) => {
     const at = now();
+    const usedBy = alias(users, "used_by");
+    const maker = alias(users, "maker");
     const rows = await db
-      .select({ createdAt: invites.createdAt, expiresAt: invites.expiresAt, usedAt: invites.usedAt, usedBy: users.email })
+      .select({ hash: invites.codeHash, createdAt: invites.createdAt, expiresAt: invites.expiresAt, usedAt: invites.usedAt, usedBy: usedBy.email, createdBy: maker.displayName })
       .from(invites)
-      .leftJoin(users, eq(users.id, invites.usedBy))
+      .leftJoin(usedBy, eq(usedBy.id, invites.usedBy))
+      .leftJoin(maker, eq(maker.id, invites.createdBy))
       .orderBy(desc(invites.createdAt))
       .limit(200);
     return c.json({
-      invites: rows.map((r) => ({
-        createdAt: r.createdAt.toISOString(),
-        expiresAt: r.expiresAt.toISOString(),
-        usedAt: r.usedAt?.toISOString() ?? null,
-        usedBy: r.usedBy ?? null,
-        state: r.usedAt ? "used" : r.expiresAt <= at ? "expired" : "free",
-      })),
+      invites: rows.map(
+        (r): AdminInviteRow => ({
+          id: r.hash.toString("hex"),
+          createdAt: r.createdAt.toISOString(),
+          expiresAt: r.expiresAt.toISOString(),
+          usedAt: r.usedAt?.toISOString() ?? null,
+          usedBy: r.usedBy ?? null,
+          createdBy: r.createdBy ?? null,
+          state: r.usedAt ? "used" : r.expiresAt <= at ? "expired" : "free",
+        }),
+      ),
     });
   });
 
-  // ── one account ─────────────────────────────────────────
-  const target = async (id: string) => {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-    const [row] = await db.select().from(users).where(eq(users.id, id));
-    return row ?? null;
-  };
-  const signOutEverywhere = async (id: string) => {
-    await db.update(sessions).set({ revokedAt: now() }).where(and(eq(sessions.userId, id), isNull(sessions.revokedAt)));
-    deps.hub.close(id);
-  };
-
-  /** One account: its devices and sign-ins, its camp, and what admins did to it. */
-  app.get("/users/:id", async (c) => {
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    const devs = await db.select().from(devices).where(eq(devices.userId, u.id)).orderBy(desc(devices.lastSeenAt));
-    const live = await db
-      .select({ deviceId: sessions.deviceId, n: count() })
-      .from(sessions)
-      .where(and(eq(sessions.userId, u.id), isNull(sessions.revokedAt), gt(sessions.expiresAt, now())))
-      .groupBy(sessions.deviceId);
-    const signedIn = new Map(live.map((l) => [l.deviceId, l.n]));
-    const [camp] = await db.select().from(camps).where(eq(camps.userId, u.id));
-    const [{ alive }] = (await db.select({ alive: count() }).from(campResidents).where(and(eq(campResidents.userId, u.id), isNull(campResidents.diedAt)))) as [{ alive: number }];
-    const history = await db.select().from(adminLog).where(eq(adminLog.targetId, u.id)).orderBy(desc(adminLog.at)).limit(20);
-    return c.json({
-      id: u.id,
-      email: u.email,
-      name: u.displayName,
-      role: u.role,
-      verified: !!u.emailVerifiedAt,
-      disabled: !!u.disabledAt,
-      deletingAt: u.deletingAt?.toISOString() ?? null,
-      createdAt: u.createdAt.toISOString(),
-      devices: devs.map((d) => ({ id: d.id, kind: d.kind, name: d.name, lastSeenAt: d.lastSeenAt.toISOString(), signedIn: (signedIn.get(d.id) ?? 0) > 0 })),
-      camp: camp ? { race: camp.race, population: alive, peak: camp.peak, startedAt: camp.startedAt.toISOString() } : null,
-      history: history.map((h) => ({ at: h.at.toISOString(), action: h.action, detail: h.detail })),
-    });
-  });
-
-  app.post("/users/:id/disable", async (c) => {
+  /** Takes back a code not used yet (handed to the wrong person, say): it stops working now. */
+  app.post("/invites/:id/revoke", async (c) => {
     const me = c.get("session").user;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    if (u.id === me.id) return apiError(c, 409, "conflict", "不能停用自己。");
-    await db.update(users).set({ disabledAt: now() }).where(eq(users.id, u.id));
-    await signOutEverywhere(u.id);
-    await log(me.id, u.id, "disable");
-    return c.json({ ok: true });
-  });
-
-  app.post("/users/:id/enable", async (c) => {
-    const me = c.get("session").user;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    await db.update(users).set({ disabledAt: null }).where(eq(users.id, u.id));
-    await log(me.id, u.id, "enable");
-    return c.json({ ok: true });
-  });
-
-  app.post("/users/:id/sign-out", async (c) => {
-    const me = c.get("session").user;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    if (u.id === me.id) return apiError(c, 409, "conflict", "要登出自己的其他裝置，請到「設定」。");
-    await signOutEverywhere(u.id);
-    await log(me.id, u.id, "sign-out");
-    return c.json({ ok: true });
-  });
-
-  app.post("/users/:id/verify", async (c) => {
-    const me = c.get("session").user;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    await db.update(users).set({ emailVerifiedAt: u.emailVerifiedAt ?? now() }).where(eq(users.id, u.id));
-    await log(me.id, u.id, "verify");
-    return c.json({ ok: true });
-  });
-
-  /** Mails the person a link to set a password of their own (the same link as 「忘記密碼」, 24 hours); nothing changes until they use it. */
-  app.post("/users/:id/send-reset", async (c) => {
-    const me = c.get("session").user;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    if (u.deletingAt) return apiError(c, 409, "conflict", "這個帳號正在等著被刪除，請先復原。");
+    const id = c.req.param("id");
+    if (!/^[0-9a-f]{64}$/.test(id)) return apiError(c, 404, "not_found", "沒有這組邀請碼。");
     const at = now();
-    // an older reset link stops working: only the newest mail counts
-    await db.update(emailTokens).set({ usedAt: at }).where(and(eq(emailTokens.userId, u.id), eq(emailTokens.purpose, "reset"), isNull(emailTokens.usedAt)));
-    const token = newToken("gce");
-    await db.insert(emailTokens).values({ userId: u.id, purpose: "reset", tokenHash: hashSecret(token), createdAt: at, expiresAt: new Date(at.getTime() + ADMIN_RESET_HOURS * 3_600_000) });
-    try {
-      await deps.mailer.send(adminResetMail(u.email, `${deps.config.APP_URL}/reset-password?token=${encodeURIComponent(token)}`, ADMIN_RESET_HOURS));
-    } catch (err) {
-      return apiError(c, 503, "unavailable", `信寄不出去：${err instanceof Error ? err.message : String(err)}`);
-    }
-    await log(me.id, u.id, "send-reset");
-    return c.json({ ok: true });
-  });
-
-  app.post("/users/:id/role", async (c) => {
-    const me = c.get("session").user;
-    const body = await readJson(c, roleInput);
-    if ("response" in body) return body.response;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    if (u.id === me.id && body.data.role !== "admin") return apiError(c, 409, "conflict", "不能拿掉自己的管理員（請另一位管理員做）。");
-    await db.update(users).set({ role: body.data.role }).where(eq(users.id, u.id));
-    await log(me.id, u.id, "role", { role: body.data.role });
-    return c.json({ ok: true });
-  });
-
-  /** Deleting: the account is signed out and goes in 30 days (maintenance.ts); until then it can be brought back. */
-  app.post("/users/:id/delete", async (c) => {
-    const me = c.get("session").user;
-    const body = await readJson(c, deleteInput);
-    if ("response" in body) return body.response;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    if (u.id === me.id) return apiError(c, 409, "conflict", "不能刪除自己。");
-    if (body.data.confirm.trim().toLowerCase() !== u.email.toLowerCase()) return apiError(c, 400, "invalid_input", "要輸入這個帳號的信箱才能刪除。");
-    await db.update(users).set({ deletingAt: now() }).where(eq(users.id, u.id));
-    await signOutEverywhere(u.id);
-    await log(me.id, u.id, "delete");
-    return c.json({ ok: true });
-  });
-
-  app.post("/users/:id/restore", async (c) => {
-    const me = c.get("session").user;
-    const u = await target(c.req.param("id"));
-    if (!u) return apiError(c, 404, "not_found", "沒有這個帳號。");
-    await db.update(users).set({ deletingAt: null }).where(eq(users.id, u.id));
-    await log(me.id, u.id, "restore");
+    const [row] = await db
+      .update(invites)
+      .set({ expiresAt: at })
+      .where(and(eq(invites.codeHash, Buffer.from(id, "hex")), isNull(invites.usedAt), gt(invites.expiresAt, at)))
+      .returning({ createdAt: invites.createdAt });
+    if (!row) return apiError(c, 409, "conflict", "這組邀請碼已經用掉或過期了。");
+    await log(me.id, null, "invite-revoke", {});
     return c.json({ ok: true });
   });
 
@@ -296,9 +209,18 @@ export function adminRoutes(deps: AppDeps) {
   /** The backups there are (auto and manual, newest first), the latest failures, and when the next auto one is due. */
   app.get("/backups", async (c) => {
     const b = deps.backups;
-    if (!b) return c.json({ enabled: false });
+    if (!b) return c.json({ enabled: false } satisfies AdminBackupList);
     const [auto, manual, failures] = await Promise.all([b.files("auto"), b.files("manual"), b.failures()]);
-    return c.json({ enabled: true, running: b.running, next: nextSlot(now()).toISOString(), keepDays: KEEP_AUTO_DAYS, manualMax: MANUAL_MAX, auto, manual, failures: failures.slice(0, 5) });
+    return c.json({
+      enabled: true,
+      running: b.running,
+      next: nextSlot(now()).toISOString(),
+      keepDays: KEEP_AUTO_DAYS,
+      manualMax: MANUAL_MAX,
+      auto,
+      manual,
+      failures: failures.slice(0, 5),
+    } satisfies AdminBackupList);
   });
 
   /** A manual backup, now (answers when it is done). */
@@ -343,14 +265,34 @@ export function adminRoutes(deps: AppDeps) {
     return c.json({ ok: true });
   });
 
-  /** What admins did lately. */
+  /** What admins did, newest first, a page at a time; only one kind of action, or only what was done to one account. */
   app.get("/log", async (c) => {
+    const query = logQuery.safeParse(c.req.query());
+    if (!query.success) return apiError(c, 400, "invalid_input", "篩選條件不對。");
+    const { action, target, cursor, limit } = query.data;
+    const where: SQL[] = [];
+    if (action) where.push(eq(adminLog.action, action));
+    if (target) where.push(eq(adminLog.targetId, target));
     const rows = await db
-      .select({ at: adminLog.at, action: adminLog.action, detail: adminLog.detail, admin: sql<string | null>`(select display_name from users where id = ${adminLog.adminId})`, target: sql<string | null>`(select email from users where id = ${adminLog.targetId})` })
+      .select({
+        id: adminLog.id,
+        at: adminLog.at,
+        action: adminLog.action,
+        detail: adminLog.detail,
+        targetId: adminLog.targetId,
+        admin: sql<string | null>`(select display_name from users where id = ${adminLog.adminId})`,
+        target: sql<string | null>`(select email from users where id = ${adminLog.targetId})`,
+      })
       .from(adminLog)
-      .orderBy(desc(adminLog.at))
-      .limit(100);
-    return c.json({ log: rows.map((r) => ({ ...r, at: r.at.toISOString() })) });
+      .where(where.length ? and(...where) : undefined)
+      .orderBy(desc(adminLog.at), desc(adminLog.id))
+      .offset(cursor)
+      .limit(limit + 1);
+    const body: AdminLogPage = {
+      log: rows.slice(0, limit).map((r) => ({ ...r, at: r.at.toISOString(), detail: (r.detail as Record<string, unknown> | null) ?? null })),
+      next: rows.length > limit ? String(cursor + limit) : null,
+    };
+    return c.json(body);
   });
 
   return app;

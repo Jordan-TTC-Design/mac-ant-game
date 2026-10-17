@@ -280,6 +280,21 @@ Mac 上已經有的便利貼全部上傳，伺服器上已經有的（例如另�
 - **API**（`/api/admin`，要登入而且是管理員）：`GET /overview`、`GET /users`、`GET /users/:id`、`POST /users/:id/disable｜enable｜sign-out｜verify｜role｜delete｜restore`、`POST /invites`、`GET /invites`、`GET /log`。
 - 測試 6 個。
 
+### 12.1 後台第二版（2026-10-17）
+
+使用者：「幫我檢視目前後台，給我一個後台管理更新計畫，可以做更完整完善的功能」；先做「帳號管理好用化、營運與健康監控、公告與推播」，版面「拆多頁＋電腦寬螢幕」。（公會、檢舉的管理留到下一輪。）
+
+- **拆成多頁**：`/admin`（總覽）、`/admin/users`、`/admin/users/:id`、`/admin/announce`、`/admin/invites`、`/admin/health`、`/admin/backups`、`/admin/log`；`pages/admin.vue` 只剩外框（分頁導覽）。手機一樣是一張張卡片；900px 以上變成左邊導覽、最寬 1200px，帳號列表是表格。確認改用頁面裡的對話框（`useConfirm`＋`ConfirmDialog`），不再用瀏覽器的 confirm／prompt／alert。
+- **設定頁的後台連結**：`GET /auth/me` 的 `user.admin` 說了算（管理員或 `ADMIN_EMAILS`），不再每次打 `GET /admin` 吃 403。
+- **帳號**：搜尋信箱、名字、好友代碼（任何一段，`%`、`_` 照字面）；篩管理員、未驗證、停用、刪除中；新註冊或最近用過的在前；一頁 50 筆、可以再載入（原本最多 500 筆、超過不會說）。搜尋條件留在網址上。帳號頁多了遊戲（營地、種族等級、領地、路上的隊伍、公會）、好友數、封鎖數、便利貼、回報、營地最近的事件、哪支手機收推播；可以**改名**、**改信箱**（變未驗證、寄確認信到新信箱；新信箱已被用就不行）。
+- **邀請碼**：列出誰產生的；還沒用的可以**收回**（立刻失效）。
+- **管理紀錄**：一頁 50 筆、再載入，可以只看一種動作或一個帳號（`?target=`）。新記的：改名、改信箱、收回邀請碼、發／下架公告、管理員改回報狀態或刪掉別人的回報、伺服器指令產生的邀請碼。
+- **趨勢**：新表 `daily_active (day, user_id)`：一個帳號一天（台灣時間）第一次被看到時記一筆（登入時，以及登入狀態每小時更新那一下、或換日後的第一個請求），保留 400 天；註冊數直接從 `users.created_at` 算。總覽畫 30／90 天的折線（來的人、註冊），自己畫的 SVG，沒加套件。另有「還沒處理的回報」卡片。
+- **伺服器**（`GET /admin/health`）：已經跑多久、程式版本（`make deploy` 把 `git rev-parse --short HEAD` 當 `GIT_SHA` 帶進映像檔）、Node 版本、資料庫大小與最大的 10 張表、現在連線的帳號數、最近 24 小時推播（送出、失敗、手機已取消訂閱）與寄信（寄出、失敗、最近的錯誤）、上次定期清除清了什麼、備份狀態。推播與寄信的次數存在記憶體（`admin/watch.ts`），伺服器重開就從 0 算。
+- **公告**（新表 `announcements`）：標題（60 字）、內容（500 字）、點了打開哪一頁（`/` 開頭）、給所有人或只給管理員（先試看看）、顯示幾小時或直到下架；可以勾「同時推播」（送出前說會推給幾支手機；在背景送，送完記下推了幾支；一分鐘最多推一次）。手機首頁最上面出現黃色橫幅，按 × 關掉（記在這支手機上）；發出或下架時 WebSocket 送 `announcements.changed`。`GET /api/announcements` 給一般使用者。**Mac 還沒顯示公告**（下一步）。
+- **API**（新的）：`GET /admin/users?q=&status=&sort=&cursor=&limit=`（回 `{users, next, total}`）、`POST /users/:id/name｜email`、`POST /invites/:id/revoke`、`GET /log?action=&target=&cursor=`、`GET /stats?days=30|90`、`GET /health`、`GET|POST /announcements`、`DELETE /announcements/:id`、`GET /announcements/audience?audience=`。後台的回應型別在 `shared/src/admin.ts`。
+- 程式：`server/src/admin/routes.ts`（守門、總覽、趨勢、伺服器、邀請碼、備份、紀錄）、`admin/users.ts`、`admin/announcements.ts`、`admin/access.ts`、`admin/watch.ts`。測試 16 個（多了 8 個）。
+
 ## 13. 舊資料自動清除（2026-09-28）
 
 使用者：「想確認那些 log 會記錄多久？會自動清除」。原本文件說營地事件保留 30 天，但其實沒有程式在刪；現在伺服器啟動一分鐘後、之後每 6 小時清一次（`src/maintenance.ts`）：
@@ -294,6 +309,7 @@ Mac 上已經有的便利貼全部上傳，伺服器上已經有的（例如另�
 | 用過或過期的信件連結、Mac 的一次性網頁連結 | 7 天 |
 | 過期沒用的邀請碼 | 30 天 |
 | 申請刪除（或管理員刪除）的帳號 | 30 天後整個刪掉，連同營地、便利貼、裝置 |
+| 每天來的人（後台的趨勢，`daily_active`） | 400 天 |
 
 好友訊息與公會聊天不看天數，看則數：每段對話留最近 1000 則、每個公會留最近 200 句，傳新的時候順便刪掉更舊的（2026-10-17 使用者：「保留最近多少內容」）。
 

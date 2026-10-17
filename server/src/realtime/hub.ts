@@ -43,4 +43,16 @@ export class Hub {
   count(userId: string): number {
     return this.byUser.get(userId)?.size ?? 0;
   }
+
+  /** Everyone connected right now: how many sockets, how many accounts. */
+  size(): { sockets: number; users: number } {
+    let sockets = 0;
+    for (const s of this.byUser.values()) sockets += s.size;
+    return { sockets, users: this.byUser.size };
+  }
+
+  /** Tells everyone connected. */
+  notifyAll(event: ServerEvent) {
+    for (const userId of this.byUser.keys()) this.notify(userId, event);
+  }
 }

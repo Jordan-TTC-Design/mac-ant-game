@@ -18,6 +18,7 @@ import { burnPasswordTime, hashPassword, verifyPassword } from "../lib/passwords
 import { RateLimiter } from "../lib/rate-limit.ts";
 import { hashSecret, newFriendCode, newToken, normalizeCode } from "../lib/tokens.ts";
 import type { Mail } from "../mail/mailer.ts";
+import { canAdmin } from "../admin/access.ts";
 import { alreadyRegisteredMail, resetMail, verifyMail } from "../mail/templates.ts";
 import { clearSessionCookie, createSession, requireAuth, setSessionCookie, type Db } from "./session.ts";
 
@@ -252,7 +253,7 @@ export function authRoutes(deps: AppDeps) {
 
   app.get("/me", auth, (c) => {
     const s = c.get("session");
-    return c.json({ user: publicUser(s.user), sessionId: s.id, deviceId: s.deviceId });
+    return c.json({ user: { ...publicUser(s.user), admin: canAdmin(deps, s.user) }, sessionId: s.id, deviceId: s.deviceId });
   });
 
   // ── 登入中的裝置 ──────────────────────────────────────

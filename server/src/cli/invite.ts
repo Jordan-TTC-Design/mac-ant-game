@@ -4,7 +4,7 @@ import { and, count, gt, isNotNull, isNull, lte } from "drizzle-orm";
 import { loadConfig } from "../config.ts";
 import { createDatabase } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
-import { invites } from "../db/schema.ts";
+import { adminLog, invites } from "../db/schema.ts";
 import { hashSecret, newInviteCode, normalizeCode } from "../lib/tokens.ts";
 
 const [command, ...rest] = process.argv.slice(2);
@@ -25,6 +25,7 @@ try {
     const expiresAt = new Date(Date.now() + days * 86_400_000);
     const codes = Array.from({ length: howMany }, newInviteCode);
     await db.insert(invites).values(codes.map((code) => ({ codeHash: hashSecret(normalizeCode(code)), expiresAt })));
+    await db.insert(adminLog).values({ adminId: null, targetId: null, action: "invites", detail: { count: howMany, days, by: "cli" } });
     console.log(`${howMany} 組邀請碼，每組只能用一次，${days} 天內有效（${expiresAt.toLocaleString("zh-TW")} 之前）：\n`);
     for (const code of codes) console.log(`  ${code}`);
     console.log("\n只會顯示這一次，請現在複製下來。");

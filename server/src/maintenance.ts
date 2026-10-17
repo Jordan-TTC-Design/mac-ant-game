@@ -8,15 +8,17 @@
  * - mail links (confirm, reset) and the Mac's one-time web links used or expired, after 7 days;
  * - invite codes that ran out unused, after 30 days;
  * - accounts that asked to be deleted (or an admin deleted), 30 days after (everything of theirs goes with them);
- * - Claude's questions passed to the phone after a day (they say what someone's code does).
+ * - Claude's questions passed to the phone after a day (they say what someone's code does);
+ * - who came on which day (後台's trend) after 400 days.
  */
 import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type { AppDeps } from "./app.ts";
 import { clearClaude } from "./claude/routes.ts";
-import { campEvents, emailTokens, expeditions, invites, sessions, users, worldRewards } from "./db/schema.ts";
+import { campEvents, dailyActive, emailTokens, expeditions, invites, sessions, users, worldRewards } from "./db/schema.ts";
+import { taipeiDay } from "@goblincamp/shared";
 
 const DAY = 86_400_000;
-export const KEEP = { events: 30, replays: 7, reports: 30, rewards: 30, sessions: 30, links: 7, invites: 30, deleting: 30 };
+export const KEEP = { events: 30, replays: 7, reports: 30, rewards: 30, sessions: 30, links: 7, invites: 30, deleting: 30, active: 400 };
 
 export interface Cleared {
   events: number;
@@ -28,6 +30,7 @@ export interface Cleared {
   invites: number;
   accounts: number;
   claude: number;
+  active: number;
 }
 
 export async function clearOld(deps: Pick<AppDeps, "database">, now: Date): Promise<Cleared> {
@@ -59,14 +62,17 @@ export async function clearOld(deps: Pick<AppDeps, "database">, now: Date): Prom
   const invitesGone = await count(db.delete(invites).where(and(isNull(invites.usedAt), lt(invites.expiresAt, before(KEEP.invites)))).returning({ at: invites.createdAt }));
   const accounts = await count(db.delete(users).where(and(isNotNull(users.deletingAt), lt(users.deletingAt, before(KEEP.deleting)))).returning({ id: users.id }));
   const claude = await clearClaude(deps, now);
-  return { events, replays, reports, rewards, sessions: sessionsGone, links, invites: invitesGone, accounts, claude };
+  const active = await count(db.delete(dailyActive).where(lt(dailyActive.day, taipeiDay(before(KEEP.active)))).returning({ day: dailyActive.day }));
+  return { events, replays, reports, rewards, sessions: sessionsGone, links, invites: invitesGone, accounts, claude, active };
 }
 
 /** Clears old records a minute after the start and then every six hours; returns a function that stops it. */
-export function startMaintenance(deps: Pick<AppDeps, "database">, everyMs = 6 * 3_600_000): () => void {
+export function startMaintenance(deps: Pick<AppDeps, "database" | "watch">, everyMs = 6 * 3_600_000): () => void {
   const run = async () => {
     try {
-      const cleared = await clearOld(deps, new Date());
+      const at = new Date();
+      const cleared = await clearOld(deps, at);
+      deps.watch.maintenance = { at: at.toISOString(), cleared: { ...cleared } };
       const total = Object.values(cleared).reduce((a, b) => a + b, 0);
       if (total) console.log("cleared old records:", cleared);
     } catch (err) {

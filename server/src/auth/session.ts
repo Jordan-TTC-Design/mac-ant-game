@@ -1,8 +1,9 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { and, eq, gt, isNull } from "drizzle-orm";
+import { taipeiDay } from "@goblincamp/shared";
 import type { AppDeps, AppEnv } from "../app.ts";
-import { devices, sessions, users } from "../db/schema.ts";
+import { dailyActive, devices, sessions, users } from "../db/schema.ts";
 import { apiError } from "../http.ts";
 import { hashSecret, newToken } from "../lib/tokens.ts";
 
@@ -13,7 +14,7 @@ const DAY = 86_400_000;
 export interface CurrentSession {
   id: string;
   deviceId: string | null;
-  user: { id: string; email: string; displayName: string; friendCode: string };
+  user: { id: string; email: string; displayName: string; friendCode: string; role: "user" | "admin" };
   /** Signed in with the cookie (a phone) rather than a Bearer token (a Mac). */
   viaCookie: boolean;
 }
@@ -27,6 +28,7 @@ export async function createSession(db: Db, userId: string, deviceId: string, no
   const token = newToken("gcs");
   const expiresAt = new Date(now.getTime() + SESSION_DAYS * DAY);
   await db.insert(sessions).values({ userId, deviceId, tokenHash: hashSecret(token), createdAt: now, lastSeenAt: now, expiresAt });
+  await db.insert(dailyActive).values({ day: taipeiDay(now), userId }).onConflictDoNothing();
   return { token, expiresAt };
 }
 
@@ -46,7 +48,8 @@ export function clearSessionCookie(c: Context) {
 
 /**
  * Lets the request through only with a live session (Bearer token or cookie), and puts it in `c.get("session")`.
- * A session in use is kept alive for another 90 days (written at most once an hour).
+ * A session in use is kept alive for another 90 days (written at most once an hour, and the first time on a new day: then
+ * the account is also counted as come that day, for 後台's trend).
  */
 export function requireAuth(deps: AppDeps): MiddlewareHandler<AppEnv> {
   const now = deps.now ?? (() => new Date());
@@ -73,12 +76,14 @@ export function requireAuth(deps: AppDeps): MiddlewareHandler<AppEnv> {
       if (cookie) clearSessionCookie(c);
       return apiError(c, 401, "unauthorized", "登入已經過期，請重新登入。");
     }
-    if (at.getTime() - row.session.lastSeenAt.getTime() > 3_600_000) {
+    const today = taipeiDay(at);
+    if (at.getTime() - row.session.lastSeenAt.getTime() > 3_600_000 || taipeiDay(row.session.lastSeenAt) !== today) {
       await db.update(sessions).set({ lastSeenAt: at, expiresAt: new Date(at.getTime() + SESSION_DAYS * DAY) }).where(eq(sessions.id, row.session.id));
       if (row.session.deviceId) await db.update(devices).set({ lastSeenAt: at }).where(eq(devices.id, row.session.deviceId));
+      await db.insert(dailyActive).values({ day: today, userId: row.user.id }).onConflictDoNothing();
     }
-    const { id, email, displayName, friendCode } = row.user;
-    c.set("session", { id: row.session.id, deviceId: row.session.deviceId, user: { id, email, displayName, friendCode }, viaCookie: !!cookie });
+    const { id, email, displayName, friendCode, role } = row.user;
+    c.set("session", { id: row.session.id, deviceId: row.session.deviceId, user: { id, email, displayName, friendCode, role }, viaCookie: !!cookie });
     await next();
   };
 }

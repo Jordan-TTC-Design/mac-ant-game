@@ -24,6 +24,10 @@ export const deviceSchema = z.object({
 });
 export type DeviceInput = z.infer<typeof deviceSchema>;
 
+/** A name shown to others (also what 後台 checks when renaming someone). */
+export const displayNameSchema = displayName;
+/** An address (also what 後台 checks when changing someone's). */
+export const emailSchema = email;
 export const registerInput = z.object({ email, password, displayName, inviteCode: typedCode });
 export const verifyEmailInput = z.object({ token });
 export const emailOnlyInput = z.object({ email });
@@ -38,6 +42,8 @@ export interface PublicUser {
   email: string;
   displayName: string;
   friendCode: string;
+  /** Can open 後台 (only `GET /auth/me` says; elsewhere left out). */
+  admin?: boolean;
 }
 
 export interface LoginResult {

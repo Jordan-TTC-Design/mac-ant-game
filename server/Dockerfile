@@ -25,6 +25,9 @@ COPY server/drizzle server/drizzle
 WORKDIR /repo/server
 USER node
 EXPOSE 8787
+# the commit it was built from (make passes it), shown on 後台's server page
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8787/api/health >/dev/null 2>&1 || exit 1
 CMD ["node", "--import", "tsx", "src/index.ts"]

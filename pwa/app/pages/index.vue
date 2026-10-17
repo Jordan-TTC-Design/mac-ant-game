@@ -48,6 +48,22 @@ const unread = computed(() => friends.value?.friends.reduce((n, f) => n + f.unre
 const waiting = computed(() => live.state.claude?.waiting ?? []);
 const guild = computed(() => live.state.guild);
 const guildOnline = computed(() => guild.value?.guild?.members.filter((m) => m.presence !== "offline").length ?? 0);
+// 公告 from 後台: shown until closed here (remembered on this phone only)
+const closed = ref<string[]>([]);
+try {
+  closed.value = JSON.parse(localStorage.getItem("gc-announce-closed") ?? "[]") as string[];
+} catch {
+  closed.value = [];
+}
+const notices = computed(() => live.state.announcements.filter((a) => !closed.value.includes(a.id)));
+function closeNotice(id: string) {
+  closed.value = [...closed.value, id].slice(-50);
+  try {
+    localStorage.setItem("gc-announce-closed", JSON.stringify(closed.value));
+  } catch {
+    // (private browsing: closed for now only)
+  }
+}
 const answering = ref(false);
 const answerProblem = ref("");
 async function answer(action: "allow" | "deny") {
@@ -80,6 +96,15 @@ const hello = computed(() => {
       </div>
       <NuxtLink to="/settings" class="icon-btn">設定</NuxtLink>
     </header>
+
+    <div v-for="a in notices" :key="a.id" class="card notice">
+      <span class="icon">📣</span>
+      <component :is="a.url ? 'NuxtLink' : 'div'" :to="a.url ?? undefined" class="grow">
+        <b>{{ a.title }}</b>
+        <small v-if="a.body">{{ a.body }}</small>
+      </component>
+      <button class="close" aria-label="關掉這則公告" @click="closeNotice(a.id)">×</button>
+    </div>
 
     <!-- Claude waiting for an answer comes first: a yes or no right here for a permission -->
     <div v-if="waiting.length" class="card claude-wait">
@@ -169,6 +194,10 @@ const hello = computed(() => {
   text-decoration: none; border: 3px solid #1f1f1f; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
 }
 .card .icon { font-size: 26px; line-height: 1.1; }
+.notice { display: flex; gap: 10px; min-height: 0; margin-bottom: 12px; background: #fff6d6; align-items: flex-start; }
+.notice .grow { display: grid; gap: 2px; text-decoration: none; color: inherit; flex: 1; min-width: 0; }
+.notice small { white-space: pre-line; overflow-wrap: anywhere; }
+.notice .close { border: 0; background: none; font-size: 22px; line-height: 1; padding: 0 4px; color: #8a6a00; cursor: pointer; }
 .card b { font-size: 16px; }
 .card small { color: #666; font-size: 12px; line-height: 1.4; }
 .card .accent { color: #c0392b; font-weight: 700; }

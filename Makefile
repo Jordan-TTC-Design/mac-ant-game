@@ -10,6 +10,8 @@
 DEV  := -f docker-compose_dev.yaml
 PROD := -f docker-compose_prod.yml
 BASE := -f docker-compose.yml
+# the commit being deployed, shown on 後台's server page (empty outside a git checkout)
+export GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null)
 
 # make invite n=3 days=14　｜　make admin email=you@example.com
 n    ?= 1
