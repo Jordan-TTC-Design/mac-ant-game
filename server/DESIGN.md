@@ -291,7 +291,7 @@ Mac 上已經有的便利貼全部上傳，伺服器上已經有的（例如另�
 - **管理紀錄**：一頁 50 筆、再載入，可以只看一種動作或一個帳號（`?target=`）。新記的：改名、改信箱、收回邀請碼、發／下架公告、管理員改回報狀態或刪掉別人的回報、伺服器指令產生的邀請碼。
 - **趨勢**：新表 `daily_active (day, user_id)`：一個帳號一天（台灣時間）第一次被看到時記一筆（登入時，以及登入狀態每小時更新那一下、或換日後的第一個請求），保留 400 天；註冊數直接從 `users.created_at` 算。總覽畫 30／90 天的折線（來的人、註冊），自己畫的 SVG，沒加套件。另有「還沒處理的回報」卡片。
 - **伺服器**（`GET /admin/health`）：已經跑多久、程式版本（`make deploy` 把 `git rev-parse --short HEAD` 當 `GIT_SHA` 帶進映像檔）、Node 版本、資料庫大小與最大的 10 張表、現在連線的帳號數、最近 24 小時推播（送出、失敗、手機已取消訂閱）與寄信（寄出、失敗、最近的錯誤）、上次定期清除清了什麼、備份狀態。推播與寄信的次數存在記憶體（`admin/watch.ts`），伺服器重開就從 0 算。
-- **公告**（新表 `announcements`）：標題（60 字）、內容（500 字）、點了打開哪一頁（`/` 開頭）、給所有人或只給管理員（先試看看）、顯示幾小時或直到下架；可以勾「同時推播」（送出前說會推給幾支手機；在背景送，送完記下推了幾支；一分鐘最多推一次）。手機首頁最上面出現黃色橫幅，按 × 關掉（記在這支手機上）；發出或下架時 WebSocket 送 `announcements.changed`。`GET /api/announcements` 給一般使用者。**Mac 還沒顯示公告**（下一步）。
+- **公告**（新表 `announcements`）：標題（60 字）、內容（500 字）、點了打開哪一頁（`/` 開頭）、給所有人或只給管理員（先試看看）、顯示幾小時或直到下架；可以勾「同時推播」（送出前說會推給幾支手機；在背景送，送完記下推了幾支；一分鐘最多推一次）。手機首頁最上面出現黃色橫幅，按 × 關掉（記在這支手機上）；發出或下架時 WebSocket 送 `announcements.changed`。`GET /api/announcements` 給一般使用者。Mac 上由公主唸出來（聽到 `announcements.changed` 或連上伺服器時；每則只唸一次，記在 UserDefaults `toldAnnouncements`；安靜模式時不唸、也不算唸過）。
 - **API**（新的）：`GET /admin/users?q=&status=&sort=&cursor=&limit=`（回 `{users, next, total}`）、`POST /users/:id/name｜email`、`POST /invites/:id/revoke`、`GET /log?action=&target=&cursor=`、`GET /stats?days=30|90`、`GET /health`、`GET|POST /announcements`、`DELETE /announcements/:id`、`GET /announcements/audience?audience=`。後台的回應型別在 `shared/src/admin.ts`。
 - 程式：`server/src/admin/routes.ts`（守門、總覽、趨勢、伺服器、邀請碼、備份、紀錄）、`admin/users.ts`、`admin/announcements.ts`、`admin/access.ts`、`admin/watch.ts`。測試 16 個（多了 8 個）。
 

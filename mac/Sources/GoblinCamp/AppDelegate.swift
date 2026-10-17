@@ -2267,6 +2267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sync.onConnected = { [weak self] in
             self?.pullPomodoro()
             self?.checkRelayed()
+            self?.tellAnnouncements()
         }
         applyBooksToCamp()
         booksTimer?.invalidate()
@@ -2963,6 +2964,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "friends.changed":
             // (with `from`: a message from that friend)
             if let from = event["from"] as? String { tellMessage(from: from) }
+        case "announcements.changed":
+            tellAnnouncements()
         case "claude.answer":
             guard let id = event["id"] as? String, event["device"] as? String == sync.account.deviceID, relayedAsks[id] != nil else { return }
             relayedAsks[id] = nil
@@ -2992,6 +2995,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.toldMessages[friend] = last.at
             let text = last.text.count > 60 ? String(last.text.prefix(60)) + "…" : last.text
             self.say("\(who.name) 傳來訊息：「\(text)」\(who.unread > 1 ? "（還有 \(who.unread - 1) 則沒看）" : "")")
+        }
+    }
+
+    /// 公告 from 後台 (the phone shows them as a banner): the princess reads out each one once, newest last; which were read
+    /// is kept, so starting again or reconnecting says nothing new. While the camp is quiet nothing is read (nor marked).
+    private func tellAnnouncements() {
+        struct Notice: Decodable { let id: String; let title: String; let body: String }
+        struct Notices: Decodable { let announcements: [Notice] }
+        Task { @MainActor in
+            guard !self.isSilenced, let list = try? await self.sync.api.request("GET", "announcements", as: Notices.self) else { return }
+            let key = "toldAnnouncements"
+            var told = UserDefaults.standard.stringArray(forKey: key) ?? []
+            for notice in list.announcements.reversed() where !told.contains(notice.id) {
+                told.append(notice.id)
+                let body = notice.body.count > 80 ? String(notice.body.prefix(80)) + "…" : notice.body
+                self.say("公告：\(notice.title)\(body.isEmpty ? "" : "。\(body)")")
+            }
+            UserDefaults.standard.set(Array(told.suffix(50)), forKey: key)
         }
     }
 

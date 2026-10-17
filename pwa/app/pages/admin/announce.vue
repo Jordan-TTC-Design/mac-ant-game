@@ -11,7 +11,7 @@ import { api } from "~/utils/api";
 import { errText } from "~/utils/admin";
 import { noteTime } from "~/utils/time";
 
-// 後台 › 公告: a banner on everyone's phone home page, maybe pushed to their phones too.
+// 後台 › 公告: a banner on everyone's phone home page (the princess reads it out on the Mac), maybe pushed to phones too.
 const { ask } = useConfirm();
 const list = ref<AdminAnnouncement[]>([]);
 const problem = ref("");
@@ -38,7 +38,7 @@ async function send() {
   note.value = "";
   const who = await api<AnnounceAudienceCount>("GET", `admin/announcements/audience?audience=${audience.value}`).catch(() => null);
   const whom = audience.value === "admins" ? "管理員" : "所有人";
-  const lines = [`${whom}（${who?.users ?? "?"} 個帳號）打開手機首頁會看到。`];
+  const lines = [`${whom}（${who?.users ?? "?"} 個帳號）打開手機首頁會看到，Mac 上的公主也會唸一次。`];
   if (push.value) lines.push(`也會推播到 ${who?.phones ?? "?"} 支手機（一分鐘只能推一次）。`);
   if (!(await ask({ title: `發出公告「${title.value.trim()}」？`, body: lines.join("\n"), yes: push.value ? "發出並推播" : "發出" }))) return;
   busy.value = true;
