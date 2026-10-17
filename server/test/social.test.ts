@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ChatResponse, ClaudeResponse, FriendsResponse, PomodoroResponse, ServerEvent } from "@goblincamp/shared";
+import { MESSAGES_KEPT, type ChatResponse, type ClaudeResponse, type FriendsResponse, type PomodoroResponse, type ServerEvent } from "@goblincamp/shared";
 import type { Database } from "../src/db/client.ts";
 import { tellPomodoros } from "../src/pomodoro/routes.ts";
 import { clearOld } from "../src/maintenance.ts";
@@ -63,6 +63,30 @@ describe("好友與訊息", () => {
     expect(((await t.call("GET", "/friends", undefined, b.onPhone)).body as FriendsResponse).friends[0]!.unread).toBe(0);
     expect(((await t.call("GET", `/friends/${b.id}/messages`, undefined, a.onPhone)).body as ChatResponse).messages[0]!.read).toBe(true);
     expect((await t.call("POST", `/friends/${a.id}/messages`, { text: "x".repeat(201) }, b.onPhone)).status).toBe(400);
+  });
+
+  it("a conversation keeps its latest MESSAGES_KEPT, however old; others are left alone", async () => {
+    const a = await person("a@example.com");
+    const b = await person("b@example.com");
+    const c = await person("c@example.com");
+    for (const other of [b, c]) {
+      await t.call("POST", "/friends/asks", { code: other.code }, a.onPhone);
+      await t.call("POST", `/friends/${a.id}/accept`, {}, other.onPhone);
+    }
+    // a year-old conversation with b already full, and one old message with c
+    const start = t.now().getTime() - 365 * 86_400_000;
+    await database.sql`insert into messages (from_user, to_user, text, at)
+      select ${b.id}::uuid, ${a.id}::uuid, 'old ' || i, ${new Date(start).toISOString()}::timestamptz + i * interval '1 minute' from generate_series(1, ${MESSAGES_KEPT}) i`;
+    await database.sql`insert into messages (from_user, to_user, text, at) values (${c.id}, ${a.id}, 'c', ${new Date(start).toISOString()})`;
+    const count = async (from: string) => (await database.sql<{ n: number }[]>`select count(*)::int as n from messages where from_user = ${from} or to_user = ${from}`)[0]!.n;
+
+    expect((await t.call("POST", `/friends/${b.id}/messages`, { text: "新的" }, a.onPhone)).status).toBe(201);
+    expect(await count(b.id)).toBe(MESSAGES_KEPT);
+    expect((await database.sql`select 1 from messages where text = 'old 1'`).length).toBe(0); // the oldest went
+    expect((await database.sql`select 1 from messages where text = 'old 2'`).length).toBe(1);
+    expect(await count(c.id)).toBe(1);
+    expect((await clearOld(t.app.deps, t.now())) as object).not.toHaveProperty("messages");
+    expect(await count(c.id)).toBe(1); // (no time limit)
   });
 
   it("asking back is a yes; asking by who they are (from the map); unfriend and block", async () => {

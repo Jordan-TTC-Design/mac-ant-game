@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { BADGE_SIZE, DEFAULT_BADGE, DEFAULT_HALL_AREA, defaultAvatar, GUILD_DECOR, guildSeason, seasonWindow, starterDecor, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
+import { BADGE_SIZE, DEFAULT_BADGE, GUILD_CHAT_KEPT, DEFAULT_HALL_AREA, defaultAvatar, GUILD_DECOR, guildSeason, seasonWindow, starterDecor, PRESENCE_TTL_SECONDS, randomAvatar, type GuildChatLine, type GuildDecorLogEntry, type GuildDonations, type GuildResponse, type ServerEvent } from "@goblincamp/shared";
 import { eq } from "drizzle-orm";
 import type { Database } from "../src/db/client.ts";
 import { camps, guilds } from "../src/db/schema.ts";
@@ -282,6 +282,15 @@ describe("公會", () => {
     const lines = (await t.call("GET", "/guild/chat", undefined, a.auth)).body.lines as GuildChatLine[];
     expect(lines).toHaveLength(21);
     expect(lines[0]!.text).toBe("早安！");
+
+    // only the latest GUILD_CHAT_KEPT stay, however old
+    await database.sql`insert into guild_chat (guild_id, user_id, text, at)
+      select ${g.id}::uuid, ${a.id}::uuid, 'old ' || i, ${new Date(t.now().getTime() - 365 * 86_400_000).toISOString()}::timestamptz + i * interval '1 minute' from generate_series(1, ${GUILD_CHAT_KEPT}) i`;
+    t.advance(60_000);
+    await t.call("POST", "/guild/say", { text: "最新" }, a.auth);
+    const kept = await database.sql<{ text: string }[]>`select text from guild_chat where guild_id = ${g.id} order by at`;
+    expect(kept).toHaveLength(GUILD_CHAT_KEPT);
+    expect(kept.at(-1)!.text).toBe("最新");
 
     // a move from a's page reaches b, not a itself, not the outsider; junk is dropped
     b.heard.length = 0;

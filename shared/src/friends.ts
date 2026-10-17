@@ -8,6 +8,8 @@ import { z } from "zod";
 export const MESSAGE_MAX = 200;
 /** Messages one account may send in a day (so nobody is flooded). */
 export const MESSAGES_PER_DAY = 300;
+/** Messages a conversation keeps: older ones go when a new one is sent (no time limit). */
+export const MESSAGES_KEPT = 1000;
 /** Asks one account may have waiting at once. */
 export const PENDING_ASKS_MAX = 20;
 

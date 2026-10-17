@@ -3,6 +3,7 @@ import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   friendAskInput,
   messageInput,
+  MESSAGES_KEPT,
   MESSAGES_PER_DAY,
   PENDING_ASKS_MAX,
   type ChatResponse,
@@ -19,6 +20,8 @@ import { blocks, camps, friendships, messages, users } from "../db/schema.ts";
 const DAY = 86_400_000;
 /** The pair's row key: the smaller id first. */
 const pair = (a: string, b: string) => (a < b ? { userA: a, userB: b } : { userA: b, userB: a });
+/** The messages between two accounts, either way. */
+const between = (a: string, b: string) => or(and(eq(messages.fromUser, a), eq(messages.toUser, b)), and(eq(messages.fromUser, b), eq(messages.toUser, a)));
 const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
 /** 好友與訊息 (server/DESIGN.md §7). */
@@ -165,11 +168,11 @@ export function friendRoutes(deps: AppDeps) {
     const friend = (await people([id])).get(id);
     if (!row?.acceptedAt || !friend) return apiError(c, 404, "not_found", "沒有這個好友。");
     const before = c.req.query("before");
-    const between = or(and(eq(messages.fromUser, me.id), eq(messages.toUser, id)), and(eq(messages.fromUser, id), eq(messages.toUser, me.id)));
+    const both = between(me.id, id);
     const rows = await db
       .select()
       .from(messages)
-      .where(before && !Number.isNaN(Date.parse(before)) ? and(between, lt(messages.at, new Date(before))) : between)
+      .where(before && !Number.isNaN(Date.parse(before)) ? and(both, lt(messages.at, new Date(before))) : both)
       .orderBy(desc(messages.at))
       .limit(51);
     const unread = rows.some((m) => m.toUser === me.id && !m.readAt);
@@ -204,6 +207,9 @@ export function friendRoutes(deps: AppDeps) {
       .where(and(eq(messages.fromUser, me.id), gte(messages.at, new Date(at.getTime() - DAY))))) as [{ n: number }];
     if (n >= MESSAGES_PER_DAY) return apiError(c, 429, "rate_limited", `一天最多傳 ${MESSAGES_PER_DAY} 則。`);
     const [msg] = await db.insert(messages).values({ fromUser: me.id, toUser: id, text: body.data.text, at }).returning();
+    // only the latest MESSAGES_KEPT of a conversation stay
+    const [oldest] = await db.select({ at: messages.at }).from(messages).where(between(me.id, id)).orderBy(desc(messages.at)).offset(MESSAGES_KEPT - 1).limit(1);
+    if (oldest) await db.delete(messages).where(and(between(me.id, id), lt(messages.at, oldest.at)));
     tell(me.id);
     if (!(await blocked(id, me.id))) {
       tell(id, me.id);
