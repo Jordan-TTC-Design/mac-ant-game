@@ -156,6 +156,9 @@ export function gearPower(item: GearItem | undefined): number {
   return item.left / rule.durability < 0.25 ? power / 2 : power;
 }
 
+/** Pieces worn under this share are offered for mending (the workshop's 修理). */
+export const REPAIR_BELOW = 0.75;
+
 /** What mending costs: a third of what it was made from (rounded up, at least one of each). */
 export function repairCost(rule: GearRule): Record<string, number> {
   return Object.fromEntries(Object.entries(rule.cost).map(([id, n]) => [id, Math.max(1, Math.ceil(n / 3))]));

@@ -105,11 +105,13 @@ final class CampLedger {
         let focus: FocusInfo?
         /// The quests' decorations earned (shared/src/camp/quests.ts `decorEarned`); older servers leave it out.
         let decorEarned: [String]?
+        /// 任務 whose reward was taken: some open a 道具's recipe (Items.all `unlock`); older servers leave it out.
+        let questsDone: [String]?
         let residents: [Resident]
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, autoGearFar, places, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -143,6 +145,7 @@ final class CampLedger {
             ranch = try? c.decodeIfPresent(RanchView.self, forKey: .ranch)
             focus = try? c.decodeIfPresent(FocusInfo.self, forKey: .focus)
             decorEarned = try? c.decodeIfPresent([String].self, forKey: .decorEarned)
+            questsDone = try? c.decodeIfPresent([String].self, forKey: .questsDone)
             residents = try c.decode([Resident].self, forKey: .residents)
         }
     }
@@ -369,8 +372,9 @@ final class CampLedger {
         var food: String?
         var name: String?
         var romance: RomanceState?
-        /// craft: for whom; gear-hold: held or not; auto-gear: on or off.
+        /// craft: for whom (and how many, made for whoever needs them); gear-hold: held or not; auto-gear: on or off.
         var to: Int?
+        var count: Int?
         var held: Bool?
         var on: Bool?
         init(kind: String) { requestId = UUID().uuidString.lowercased(); self.kind = kind }

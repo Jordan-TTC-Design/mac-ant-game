@@ -4,8 +4,8 @@
 // from the bottom of the screen.
 import type { CampResidentView, CampView, GearSlot } from "@goblincamp/shared/camp";
 
-const props = defineProps<{ view: CampView; gear: string; title: string; allowAuto?: boolean; names: Record<string, string> }>();
-const emit = defineEmits<{ pick: [resident: number | null]; close: [] }>();
+const props = defineProps<{ view: CampView; gear: string; title: string; allowAuto?: boolean; batches?: { label: string; n: number }[]; names: Record<string, string> }>();
+const emit = defineEmits<{ pick: [resident: number | null]; batch: [n: number]; close: [] }>();
 
 const rule = computed(() => gearRule(props.gear)!);
 const slot = computed(() => rule.value.slot as GearSlot);
@@ -50,7 +50,11 @@ const blocked = (r: CampResidentView) => slot.value === "shield" && !!gearRule(r
         <b>自動</b>
         <small>{{ auto ? `給最需要的：${nameOf(auto)}（${names[auto.breed] ?? auto.breed}${auto.place === "home" ? "" : `・${placeLabel(view, auto)}`}）` : view.autoGear === false ? "放進倉庫（自動分配關著）" : "大家這個位置都有一樣好的了" }}</small>
       </button>
-      <input v-model="filter" class="find" placeholder="找名字或品種" />
+      <div v-if="batches?.length" class="batches">
+        <button v-for="b in batches" :key="b.n" class="btn primary" @click="emit('batch', b.n)">{{ b.label }}</button>
+        <small class="muted">一次做好幾件，每件給當時最需要的</small>
+      </div>
+      <input v-model="filter" class="find" placeholder="找名字或品種（給特定一隻）" />
       <div v-if="placesHere.length > 1" class="places">
         <button :class="{ on: place === 'all' }" @click="place = 'all'">全部</button>
         <button v-for="[id, p] in placesHere" :key="id" :class="{ on: place === id }" @click="place = id">{{ p.label }} <small>{{ p.n }}</small></button>
@@ -91,5 +95,7 @@ header b { flex: 1; font-size: 16px; }
 .places button.on { background: #333; color: #fff; }
 .places small { opacity: 0.7; }
 h4 { margin: 6px 2px 0; font-size: 12px; color: var(--muted); }
+.batches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; }
+.batches small { width: 100%; font-size: 12px; }
 .more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 8px; cursor: pointer; }
 </style>

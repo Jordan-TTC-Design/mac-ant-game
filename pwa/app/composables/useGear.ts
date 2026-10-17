@@ -73,6 +73,28 @@ export function autoPick(view: CampView, gear: string): CampResidentView | null 
   return who ? (pool.find((r) => r.id === who.id) ?? null) : null;
 }
 
+/**
+ * How many would take a new `gear` over what they wear there now, among those the handing out reaches (none with the
+ * switch off): worse there, a hand free for a shield, and not something put on by hand (as neediest).
+ */
+export function upgradeCount(view: CampView, gear: string): number {
+  if (view.autoGear === false) return 0;
+  const rule = gearRule(gear);
+  if (!rule) return 0;
+  const power = gearPower({ id: gear, left: rule.durability });
+  return view.residents.filter((r) => {
+    if (!reached(view, r)) return false;
+    const now = r.gear?.[rule.slot];
+    if (now?.pinned || gearPower(now) >= power) return false;
+    if (rule.slot === "shield" && gearRule(r.gear?.weapon?.id ?? "")?.twoHanded) return false;
+    if (rule.twoHanded && r.gear?.shield?.pinned) return false;
+    return true;
+  }).length;
+}
+
+/** How many of something the stored materials make. */
+export const affordableCount = (view: CampView, cost: Record<string, number>) => Math.min(...Object.entries(cost).map(([id, n]) => Math.floor((view.materials[id] ?? 0) / Math.max(1, n))));
+
 /** A piece's worth for sorting (the same as the handing out uses). */
 export const pieceWorth = (item: { id: string; left: number }) => gearPower(item);
 

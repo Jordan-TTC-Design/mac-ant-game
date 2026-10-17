@@ -58,8 +58,10 @@ const requestId = z.uuid().optional();
 
 /** `POST /api/camp/commands`: one thing the player does. The server checks it against the books (server/CAMP.md §3.3). */
 export const campCommand = z.discriminatedUnion("kind", [
-  /** The workshop makes a piece; it goes to `to` (a resident at home, on a held cell or guarding one, by hand: pinned), or else to whoever needs it most. */
-  z.object({ requestId, kind: z.literal("craft"), gear: z.string().max(40), to: z.number().int().min(1).optional() }),
+  /**
+   * The workshop makes a piece (`count` of them, up to 20, each for whoever needs it most then; it stops when the materials
+   * run out or nobody needs another); it goes to `to` (a resident at home, on a held cell or guarding one, by hand: pinned), or else to whoever needs it most. */
+  z.object({ requestId, kind: z.literal("craft"), gear: z.string().max(40), to: z.number().int().min(1).optional(), count: z.number().int().min(1).max(20).optional() }),
   /** Puts a piece from the store (`stock`, its place in the list; `gear` checks it is the one meant) on a resident by hand. */
   z.object({ requestId, kind: z.literal("equip"), resident: z.number().int(), stock: z.number().int().min(0), gear: z.string().max(40) }),
   /** Takes a resident's piece off by hand: it goes to the store, held. */
@@ -72,6 +74,8 @@ export const campCommand = z.discriminatedUnion("kind", [
   z.object({ requestId, kind: z.literal("auto-gear-far"), on: z.boolean() }),
   /** Mends a piece a resident wears (`resident` + `slot`) or one in the store (`stock`, its place in the list). */
   z.object({ requestId, kind: z.literal("repair"), resident: z.number().int().optional(), slot: z.enum(GEAR_SLOTS).optional(), stock: z.number().int().min(0).optional() }),
+  /** Mends every piece under three quarters (REPAIR_BELOW) the camp can afford, the most worn first. */
+  z.object({ requestId, kind: z.literal("repair-all") }),
   /** Puts a food (or, for the undead, a soul) down. */
   z.object({ requestId, kind: z.literal("food"), food: z.enum([...FOODS, ...SOULS]) }),
   z.object({ requestId, kind: z.literal("princess-name"), name: z.string().trim().min(1).max(8) }),

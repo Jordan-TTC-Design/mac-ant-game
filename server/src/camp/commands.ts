@@ -44,6 +44,7 @@ import {
   residentFor,
   redistribute,
   repairCost,
+  REPAIR_BELOW,
   spend,
   type CampCommand,
   type GearItem,
@@ -143,15 +144,31 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
         give(to, item, store, true);
         resident = to.id;
       } else {
-        const pick = camp.autoGear ? neediest(camp.race, pool, item) : null;
-        if (camp.autoGear && !pick) return { ok: false, code: "nobody_needs", message: `沒有人需要${rule.name}（大家都有一樣好或更好的）。` };
-        spend(materials, rule.cost);
-        if (pick) give(pick, item, store);
-        else store.push(item); // (the handing out is off: into the store)
-        resident = pick?.id; // (the devices say who by name: names come from the seed on them)
+        // one or several, each for whoever needs it most by then (or into the store with the handing out off)
+        const want = command.count ?? 1;
+        let made = 0;
+        let given = 0;
+        while (made < want && canAfford(materials, rule.cost)) {
+          const piece: GearItem = { id: rule.id, left: rule.durability };
+          const pick = camp.autoGear ? neediest(camp.race, pool, piece) : null;
+          if (camp.autoGear && !pick) break;
+          spend(materials, rule.cost);
+          if (pick) {
+            give(pick, piece, store);
+            given++;
+          } else store.push(piece); // (the handing out is off: into the store)
+          if (made === 0) resident = pick?.id; // (the devices say who by name: names come from the seed on them)
+          made++;
+        }
+        if (made === 0) return { ok: false, code: "nobody_needs", message: `沒有人需要${rule.name}（大家都有一樣好或更好的）。` };
+        if (made > 1) resident = undefined;
+        redistribute(camp.race, pool, store, camp.autoGear);
+        const stopped = made < want ? (canAfford(materials, rule.cost) ? "（其他人都有一樣好的了）" : "（材料用完了）") : "";
+        message = made > 1 ? `做好了 ${made} 件${rule.name}${given ? `，發給了 ${given} 隻` : "，放進倉庫"}${stopped}。` : resident === undefined ? `做好了${rule.name}，放進倉庫。${stopped}` : `做好了${rule.name}。${stopped}`;
+        break;
       }
       redistribute(camp.race, pool, store, camp.autoGear);
-      message = resident === undefined ? `做好了${rule.name}，放進倉庫。` : `做好了${rule.name}。`;
+      message = `做好了${rule.name}。`;
       break;
     }
     case "equip": {
@@ -222,6 +239,24 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       spend(materials, price);
       item.left = rule.durability;
       message = `修好了${rule.name}。`;
+      break;
+    }
+    case "repair-all": {
+      // the most worn first, while the materials last
+      const jobs = [...(await loadWearers()).flatMap((w) => Object.values(w.gear) as GearItem[]), ...store]
+        .filter((i) => gearRule(i.id) && i.left / gearRule(i.id)!.durability < REPAIR_BELOW)
+        .sort((a, b) => a.left / gearRule(a.id)!.durability - b.left / gearRule(b.id)!.durability);
+      if (!jobs.length) return { ok: false, code: "not_found", message: "沒有要修的。" };
+      let done = 0;
+      for (const item of jobs) {
+        const price = repairCost(gearRule(item.id)!);
+        if (!canAfford(materials, price)) continue;
+        spend(materials, price);
+        item.left = gearRule(item.id)!.durability;
+        done++;
+      }
+      if (!done) return { ok: false, code: "not_enough", message: "材料不夠，一件都修不了。" };
+      message = `修好了 ${done} 件${done < jobs.length ? `（還有 ${jobs.length - done} 件材料不夠）` : ""}。`;
       break;
     }
     case "food": {

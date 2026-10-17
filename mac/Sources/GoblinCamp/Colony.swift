@@ -1514,6 +1514,63 @@ final class Colony {
 
     func canAfford(_ gear: Gear) -> Bool { gear.cost.allSatisfy { materials[$0.0, default: 0] >= $0.1 } }
 
+    /// How many of it the stored materials make.
+    func affordableCount(_ cost: [(String, Int)]) -> Int { cost.map { materials[$0.0, default: 0] / max(1, $0.1) }.min() ?? 0 }
+
+    /// How many would wear this piece rather than what they wear there now (at home, and away where the handing out reaches).
+    func upgradeCount(_ gear: Gear) -> Int {
+        let item = GearItem(gear)
+        return ants.filter { !$0.isDying && needs($0, item) }.count + awayResidents.filter { $0.reached && needs($0.ant, item) }.count
+    }
+
+    /// Makes `count` pieces, each for whoever needs it most then (signed in: one command, the server stops when nobody needs
+    /// another or the materials run out). Returns how many were made here, and whether it went to the server instead.
+    func craftMany(_ gear: Gear, count: Int) -> (made: Int, sent: Bool) {
+        guard canAfford(gear) else { return (0, false) }
+        if followsBooks {
+            onBookCommand?(.craft(gear.id, to: nil, count: count))
+            return (0, true)
+        }
+        var made = 0
+        while made < count {
+            switch craft(gear) {
+            case .made, .stored: made += 1
+            default: return (made, false)
+            }
+        }
+        return (made, false)
+    }
+
+    /// Mends every worn piece the materials pay for, the most worn first. Returns how many (signed in: how many it asked for).
+    @discardableResult
+    func repairAll() -> Int {
+        let affordable = repairJobs().filter { canAffordRepair($0.gear) }
+        guard !affordable.isEmpty else { return 0 }
+        if followsBooks {
+            onBookCommand?(.repairAll)
+            return affordable.count
+        }
+        var done = 0
+        for job in repairJobs() where canAffordRepair(job.gear) {
+            if repair(job) { done += 1 }
+        }
+        return done
+    }
+
+    // MARK: 道具
+
+    /// 任務 done as the books have them (some open a 道具's recipe).
+    var booksQuestsDone: Set<String> = []
+
+    func isOpen(_ item: ItemRecipe) -> Bool { item.unlock.map { booksQuestsDone.contains($0) } ?? true }
+
+    /// Makes a 道具 (only signed in: they are taken along on the big world's expeditions); the server keeps it in the store.
+    func craftItem(_ item: ItemRecipe) -> Bool {
+        guard followsBooks, isOpen(item), affordableCount(item.cost) > 0 else { return false }
+        onBookCommand?(.craft(item.id, to: nil, count: nil))
+        return true
+    }
+
     /// How many goblins wear this piece now (at home and away), and how many are in the stock.
     func wearers(of gear: Gear) -> Int { (ants + awayResidents.map(\.ant)).filter { $0.gear[gear.slot.rawValue] == gear.id }.count }
     func inStock(of gear: Gear) -> Int { armory.filter { $0.id == gear.id }.count }
@@ -1578,7 +1635,7 @@ final class Colony {
         guard canAfford(gear) else { return .missing }
         if let antID, let ant = gearHolder(antID), let why = cannotWear(gear, on: ant) { return .refused(why) }
         if followsBooks {
-            onBookCommand?(.craft(gear.id, to: antID))
+            onBookCommand?(.craft(gear.id, to: antID, count: nil))
             return .sent(gear: gear)
         }
         var item = GearItem(gear)
@@ -1686,7 +1743,7 @@ final class Colony {
 
     /// Whether this goblin would take the piece: what it has there is worse, it has a hand free for a shield, and its piece
     /// there was not put on by hand.
-    private func needs(_ ant: Ant, _ item: GearItem) -> Bool {
+    func needs(_ ant: Ant, _ item: GearItem) -> Bool {
         guard let gear = item.gear else { return false }
         let twoHanded = ant.item(in: .weapon)?.gear?.grip == .two
         let placed = ant.gearPinned.contains(gear.slot.rawValue) || (gear.grip == .two && ant.gearPinned.contains(GearSlot.shield.rawValue))
@@ -2323,7 +2380,8 @@ struct BookResident {
 
 /// A player's action the server does when the camp follows the books (shared/src/camp/api.ts `campCommand`).
 enum BookCommand {
-    case craft(String, to: Int?)
+    case craft(String, to: Int?, count: Int?)
+    case repairAll
     case equip(resident: Int, stock: Int, gear: String)
     case unequip(resident: Int, slot: String)
     case gearHold(stock: Int, gear: String, held: Bool)

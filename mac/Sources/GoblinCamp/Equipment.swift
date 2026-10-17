@@ -329,6 +329,26 @@ enum Gears {
     private static let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 }
 
+/// One of the workshop's 道具 (the same as shared/src/world/supplies.ts ITEMS): taken along on the big world's expeditions
+/// like the boosting foods, so made only signed in. Some open with a 任務 (`unlock`).
+struct ItemRecipe {
+    let id: String
+    let name: String
+    let cost: [(String, Int)]
+    let what: String
+    var unlock: String?
+}
+
+enum Items {
+    static let all: [ItemRecipe] = [
+        ItemRecipe(id: "item_bandage", name: "草藥繃帶", cost: [("scrap_rag", 2), ("frog_leg", 1)], what: "受到的傷害 −10%"),
+        ItemRecipe(id: "item_tonic", name: "蜂王漿", cost: [("royal_jelly", 1), ("food_honey", 1)], what: "攻擊 +10%、血量 +10%"),
+        ItemRecipe(id: "item_sticky", name: "黏黏彈", cost: [("sticky_tongue", 2), ("slime_goo", 2)], what: "敵人慢 25%（我方先出手）", unlock: "raids_100"),
+        ItemRecipe(id: "item_charm", name: "幸運符", cost: [("golden_frog_eye", 1), ("shiny_bead", 1)], what: "打贏巢穴的掉落 +50%", unlock: "lairs_10"),
+        ItemRecipe(id: "item_lantern", name: "夜光燈籠", cost: [("night_heart", 1), ("bat_wing", 2), ("scrap_iron", 1)], what: "晚上打黑暗生物，牠們不會變強", unlock: "boss_1"),
+    ]
+}
+
 /// Each piece's 16×16 icon (Resources/Gear, drawn by tools/make_gear_icons.py from each piece's look and colour), framed
 /// in its tier's colour: how good it is among the pieces for its slot (the weakest quarter grey, then green, blue, purple).
 enum GearIcons {

@@ -504,6 +504,43 @@ describe("commands", () => {
     expect((made.body.camp as CampView).armory).toEqual([{ id: "bone_knife", left: 120 }]);
   });
 
+  it("makes several at once, each for whoever needs it most, stopping when nobody needs another", async () => {
+    const me = await campWith({ rat_fang: 100, rat_tail: 30 }, "goblin", 6);
+    let res = await cmd(me, { kind: "craft", gear: "bone_knife", count: 4 });
+    expect(res.status).toBe(200);
+    let camp = res.body.camp as CampView;
+    expect(camp.residents.filter((r) => r.gear?.weapon?.id === "bone_knife")).toHaveLength(4);
+    expect(res.body.message).toContain("4 件");
+    expect(camp.materials.rat_fang).toBe(100 - 4 * 4);
+    // asked for 10 more: only the two without one get theirs, and only two are made
+    res = await cmd(me, { kind: "craft", gear: "bone_knife", count: 10 });
+    camp = res.body.camp;
+    expect(camp.residents.filter((r) => r.gear?.weapon?.id === "bone_knife")).toHaveLength(6);
+    expect(camp.materials.rat_fang).toBe(100 - 6 * 4);
+    expect(res.body.message).toContain("一樣好");
+    expect((await cmd(me, { kind: "craft", gear: "bone_knife", count: 3 })).body.error).toBe("nobody_needs");
+  });
+
+  it("mends everything worn it can afford, the most worn first", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/migrate", {
+      race: "goblin",
+      save: { goblins: [{ id: 1, breed: "common", age: 10, seed: "1", gear: { weapon: "bone_knife" } }, { id: 2, breed: "common", age: 10, seed: "2", gear: { weapon: "bone_knife" } }], materials: { rat_fang: 2, rat_tail: 1 } },
+    }, me);
+    await database.sql`update camp_residents set gear = jsonb_set(gear, '{weapon,left}', '10') where id = 1`;
+    await database.sql`update camp_residents set gear = jsonb_set(gear, '{weapon,left}', '50') where id = 2`;
+    let res = await cmd(me, { kind: "repair-all" });
+    expect(res.status).toBe(200);
+    expect(res.body.message).toContain("還有 1 件");
+    let camp = res.body.camp as CampView;
+    expect(camp.residents.find((r) => r.id === 1)!.gear!.weapon!.left).toBe(120); // (the more worn first)
+    expect(camp.residents.find((r) => r.id === 2)!.gear!.weapon!.left).toBe(50);
+    await database.sql`update camps set materials = '{"rat_fang": 10, "rat_tail": 10}'`;
+    camp = (await cmd(me, { kind: "repair-all" })).body.camp;
+    expect(camp.residents.find((r) => r.id === 2)!.gear!.weapon!.left).toBe(120);
+    expect((await cmd(me, { kind: "repair-all" })).body.error).toBe("not_found");
+  });
+
   it("refuses a shield for one holding a two-handed weapon", async () => {
     const me = await account();
     await t.call("POST", "/camp/migrate", {
