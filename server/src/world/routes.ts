@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { buildInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput } from "@goblincamp/shared/world";
+import { buildInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, targetInput } from "@goblincamp/shared/world";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -24,6 +24,7 @@ import {
   openWorldFor,
   recall,
   sendExpedition,
+  setCellTarget,
   tradeAtMarket,
   warnDefender,
   notifyCamp,
@@ -163,8 +164,8 @@ export function worldRoutes(deps: AppDeps) {
       if (!isCellId(cell)) return apiError(c, 404, "not_found", "沒有這一格。");
       const userId = c.get("session").user.id;
       let body: unknown = {};
-      if (path === "recall" || path === "build" || path === "market") {
-        const parsed = await readJson(c, path === "recall" ? recallInput : path === "market" ? marketInput : buildInput);
+      if (path === "recall" || path === "build" || path === "market" || path === "target") {
+        const parsed = await readJson(c, path === "recall" ? recallInput : path === "market" ? marketInput : path === "target" ? targetInput : buildInput);
         if ("response" in parsed) return parsed.response;
         body = parsed.data;
       }
@@ -186,6 +187,7 @@ export function worldRoutes(deps: AppDeps) {
     return c.json(await db.transaction((tx) => worldMe(tx, userId, now())));
   });
   cellAction("demolish", (userId, cell) => (tx) => demolishOnCell(tx, userId, cell, now()));
+  cellAction("target", (userId, cell, body) => (tx) => setCellTarget(tx, userId, cell, (body as { target: number | null }).target, now()));
   cellAction("market", (userId, cell, body) => (tx) => tradeAtMarket(tx, userId, cell, body as { give: string; count: number; get: string }, now()));
   cellAction("recall", (userId, cell, body) => (tx) => recall(tx, userId, cell, body as { count?: number; to?: string; campers?: boolean }, now()));
   /** The camp moves here (once every HOME_MOVE_DAYS). */

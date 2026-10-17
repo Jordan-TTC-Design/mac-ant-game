@@ -179,6 +179,9 @@ export const NEIGHBOUR_YIELD_MAX = 3;
 export const REINFORCE_PER_CELL = 5;
 
 /** The held cells joined to `cell` through held cells next to each other (itself included; empty if it is not held). */
+/** Auto staffing (2026-10-17) keeps at least this many at home (the camp's sites need hands). */
+export const STAFF_HOME_KEEP = 30;
+
 /** Within one's own connected region (2026-10-17), residents moving between its cells walk this share of the time. */
 export const REGION_TRAVEL = 0.25;
 

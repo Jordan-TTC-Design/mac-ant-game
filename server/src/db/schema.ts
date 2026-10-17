@@ -250,6 +250,8 @@ export const worldCells = pgTable(
     lairWounds: jsonb("lair_wounds").$type<{ hp: number[]; at: number }>(),
     /** What the holder built on it (shared/src/world/holdings.ts); gone when the cell changes hands. */
     building: jsonb("building").$type<CellBuilding>(),
+    /** How many its holder wants living here (null: as it comes): the camp sends more or calls the rest home by itself. */
+    target: integer("target"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("world_cells_owner_idx").on(t.owner)],

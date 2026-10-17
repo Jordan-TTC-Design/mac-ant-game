@@ -632,3 +632,39 @@ describe("a town's market", () => {
     expect(cellBonus("goblin", null, at, { town: true })).toMatchObject({ fort: 0.2, travel: 0.75 });
   });
 });
+
+describe("auto staffing", () => {
+  it("keeps a held cell at the number set: the camp sends more, and calls the rest home", async () => {
+    const a = await ready();
+    const cell = await settle(a, 10);
+    const target = (n: number | null) => t.call("POST", `/world/cells/${cell}/target`, { target: n }, a);
+    expect((await target(2)).body.error).toBe("invalid_input"); // (fewer than a cell must keep)
+    expect((await target(999)).body.error).toBe("invalid_input"); // (more than it houses)
+    expect((await t.call("POST", `/world/cells/${(await me(a)).homeCell}/target`, { target: 10 }, a)).body.error).toBe("camp_cell");
+
+    let res = await target(20);
+    expect(res.status).toBe(200);
+    let w = res.body as WorldMe;
+    const going = w.walking.filter((x) => x.to === cell);
+    expect(going).toHaveLength(1);
+    expect(going[0]).toMatchObject({ kind: "move", party: 10 });
+    expect((await me(a)).walking.filter((x) => x.to === cell)).toHaveLength(1); // (looking again sends nobody more)
+    expect((await detail(a, cell)).body.target).toBe(20);
+    t.advance(Date.parse(going[0]!.arriveAt) - t.now().getTime() + 1000);
+    expect((await me(a)).cells.find((c) => c.cell === cell)!.garrison).toBe(20);
+
+    res = await target(12);
+    w = res.body as WorldMe;
+    const back = w.walking.filter((x) => x.from === cell);
+    expect(back).toHaveLength(1);
+    expect(back[0]).toMatchObject({ kind: "recall", party: 8 });
+    expect(w.cells.find((c) => c.cell === cell)!.garrison).toBe(12);
+    const log = (await detail(a, cell)).body.history.filter((h) => h.kind === "staffed");
+    expect(log.map((h) => [h.residents, h.back])).toEqual([[0, 8], [10, 0]]);
+
+    // off: nothing moves any more
+    await target(null);
+    await database.sql`update camp_residents set died_at = now() where place = ${`cell:${cell}`} and id in (select id from camp_residents where place = ${`cell:${cell}`} limit 3)`;
+    expect((await me(a)).walking.filter((x) => x.to === cell)).toHaveLength(0);
+  });
+});

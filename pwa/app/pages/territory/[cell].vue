@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { REGION_COMBOS, MARKET_RATE, MARKET_TRADES_PER_DAY, marketQuote, marketWorth, materialName, TERRAIN_NAMES, TOWN_FORT, TOWN_TRAVEL, type CellBonus, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
+import { REGION_COMBOS, STAFF_HOME_KEEP, MARKET_RATE, MARKET_TRADES_PER_DAY, marketQuote, marketWorth, materialName, TERRAIN_NAMES, TOWN_FORT, TOWN_TRAVEL, type CellBonus, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
 import type { CampResidentView } from "@goblincamp/shared/camp";
 import { ApiError, api } from "~/utils/api";
 import { noteTime } from "~/utils/time";
@@ -118,6 +118,20 @@ async function trade() {
   if (!actProblem.value) recallNote.value = `換到了 ${materialName(want.value)} ×${quote.value}。`;
 }
 
+// auto staffing: a number to keep the cell at (null: as it comes)
+const staffOn = ref(false);
+const staffTarget = ref(0);
+watch(
+  () => d.value?.target,
+  (t) => {
+    staffOn.value = !!t;
+    staffTarget.value = t ?? Math.min(d.value?.capacity ?? 0, (d.value?.garrisonMin ?? 5) * 3);
+  },
+  { immediate: true },
+);
+const staffChanged = computed(() => (staffOn.value ? staffTarget.value : null) !== (d.value?.target ?? null));
+const saveStaff = () => act("target", { target: staffOn.value ? staffTarget.value : null });
+
 /** What the cell gets now, in words. */
 function bonusText(b: CellBonus): string[] {
   const out: string[] = [];
@@ -141,6 +155,7 @@ function happening(h: CellHappening): string {
       const help = `${h.helped ? `，旁邊的格子來了 ${h.helped} 隻幫忙` : ""}${h.guests ? `，好友 ${h.guests} 隻一起守` : ""}`;
       return h.held ? `${h.name}回來搶地盤，守住了（倒下 ${h.fallen}、打倒 ${h.killed}${help}）${lootText(h.loot) ? `，撿到 ${lootText(h.loot)}` : ""}` : `${h.name}回來搶地盤，沒守住（倒下 ${h.fallen}${help}）`;
     }
+    case "staffed": return h.residents ? `自動調人：營地派了 ${h.residents} 隻過來（目標 ${h.target} 隻）` : `自動調人：多的 ${h.back} 隻走回營地（目標 ${h.target} 隻）`;
     case "incoming": return `⚔️ ${h.by}派了 ${h.residents} 隻要來打`;
     case "attacked": return h.held ? `${h.by}來打，守住了（倒下 ${h.fallen}）` : `${h.by}來打，被搶走了（倒下 ${h.fallen}）`;
     case "settled": return h.killed ? `打下這一格，住了進來（倒下 ${h.fallen}）` : "有居民搬進來了";
@@ -307,6 +322,15 @@ function happening(h: CellHappening): string {
         <button class="btn primary" :disabled="busy || !quote || (d.market?.left ?? 0) <= 0 || (store[give] ?? 0) < giveCount" @click="trade">換</button>
       </section>
 
+      <section v-if="!d.home" class="panel">
+        <h2>自動調人</h2>
+        <p class="muted small">設一個目標人數：少了（戰死、老死）營地會自動派人走過來補，多了（巢穴生的）會自動走回營地。營地至少留 {{ STAFF_HOME_KEEP }} 隻。</p>
+        <label class="auto-staff"><input v-model="staffOn" type="checkbox" :disabled="busy" /> 自動保持在</label>
+        <input v-model.number="staffTarget" type="number" class="staff-n" :min="d.garrisonMin" :max="d.capacity" :disabled="busy || !staffOn" /> 隻
+        <button class="btn" :disabled="busy || !staffChanged || (staffOn && (staffTarget < d.garrisonMin || staffTarget > d.capacity))" @click="saveStaff">存</button>
+        <p class="small">{{ d.target ? `現在：自動保持 ${d.target} 隻（住在這裡 ${d.garrison} 隻）` : "現在：沒有自動調人" }}</p>
+      </section>
+
       <section class="panel">
         <h2>住在這裡的 <small>{{ living.length }} 隻</small></h2>
         <p v-if="breeds.length" class="muted small">{{ breeds.map(([b, n]) => `${breedName(b)} ${n}`).join("・") }}</p>
@@ -337,6 +361,8 @@ function happening(h: CellHappening): string {
 </template>
 
 <style scoped>
+.auto-staff { font-size: 14px; }
+.staff-n { width: 70px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; margin: 0 4px; }
 .combos { margin-top: 10px; font-size: 14px; }
 .combos summary { cursor: pointer; color: var(--muted); }
 .combos ul { margin: 6px 0 0; padding-left: 18px; }

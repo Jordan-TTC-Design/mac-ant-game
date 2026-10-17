@@ -278,7 +278,10 @@ export interface CellHappening {
    * yield: the ground gave; lairBack: the lair came back for it; incoming: another camp's party set out for it; attacked:
    * another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home.
    */
-  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests";
+  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests" | "staffed";
+  /** Auto staffing: those it sent walking home (with `residents` 0), and the number it keeps it at. */
+  back?: number;
+  target?: number;
   loot?: Record<string, number>;
   held?: boolean;
   /** A yield eaten short: there were not rations enough to keep it. */
@@ -299,6 +302,8 @@ export interface CellHappening {
 export interface CellDetail {
   /** A town's market: how many swaps are left today (MARKET_TRADES_PER_DAY); absent on a cell that is not a town. */
   market?: { left: number };
+  /** How many its holder wants living here (null: as it comes); the camp sends more or calls the rest home (auto staffing). */
+  target?: number | null;
   cell: string;
   lat: number;
   lng: number;
@@ -348,6 +353,9 @@ export interface CellDetail {
 
 /** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
 export const buildInput = z.object({ kind: z.string().max(40) });
+
+/** `POST /api/world/cells/:cell/target`: how many should live on a held cell (null: as it comes); the camp keeps it so by itself. */
+export const targetInput = z.object({ target: z.number().int().min(1).max(500).nullable() });
 
 /** `POST /api/world/cells/:cell/market`: `count` of `give` swapped at the town's market for `get` (holdings.ts marketQuote). */
 export const marketInput = z.object({ give: z.string().max(40), count: z.number().int().min(1).max(10_000), get: z.string().max(40) });

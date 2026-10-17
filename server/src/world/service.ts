@@ -11,6 +11,7 @@ import {
   shieldLapsed,
   sameRegion,
   REGION_TRAVEL,
+  STAFF_HOME_KEEP,
   marketQuote,
   MARKET_TRADES_PER_DAY,
   SHIELD_MAX_HOURS,
@@ -557,6 +558,8 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
   const ground = await terrainsFor(tx, held.map((c) => c.cell));
   const around = await surroundings(tx, held.map((c) => c.cell), now);
   let landmarkXp = 0;
+  /** Held cells with a target (and how many live there now), for staff() once the cells are worked out. */
+  const staffed: { cell: string; target: number; there: number }[] = [];
   for (const cell of held) {
     const terrain = ground.get(cell.cell) ?? terrainAt(WORLD_SEED, cell.cell);
     // (a camp's cell opened before its nest came with it gets it now)
@@ -610,6 +613,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
       changed = true;
       continue;
     }
+    if (cell.target !== null && !isHome) staffed.push({ cell: cell.cell, target: Math.min(cell.target, room), there: await countAt(tx, camp.userId, cellPlace(cell.cell)) });
     // what the ground gave meanwhile (every YIELD_HOURS, by its terrain and how many work it, up to a cell's room)
     const since = cell.yieldedTo ?? cell.heldSince ?? now;
     const times = Math.floor((now.getTime() - since.getTime()) / (YIELD_HOURS * HOUR));
@@ -644,6 +648,7 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
     }
   }
 
+  if (staffed.length && (await staff(tx, camp, staffed, home?.cell ?? null, now))) changed = true;
   if (Object.keys(yields).length || Object.keys(upkeep).length || hungry.length) {
     await addEvent(tx, camp.userId, now, "world", { yields, cells: yieldsByCell, ...(Object.keys(upkeep).length ? { upkeep } : {}), ...(hungry.length ? { hungry } : {}) });
   }
@@ -771,7 +776,7 @@ async function releaseCell(tx: Tx, cell: string) {
   await tx.update(campResidents).set({ place: "home" }).where(and(or(eq(campResidents.place, guardPlace(cell)), eq(campResidents.place, campingPlace(cell))), isNull(campResidents.diedAt)));
   await tx
     .update(worldCells)
-    .set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: null, building: null, updatedAt: new Date() })
+    .set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: null, building: null, target: null, updatedAt: new Date() })
     .where(eq(worldCells.cell, cell));
 }
 
@@ -779,7 +784,7 @@ async function takeCell(tx: Tx, cell: string, owner: string, now: Date) {
   await touchCell(tx, cell);
   await tx
     .update(worldCells)
-    .set({ owner, heldSince: now, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: now, building: null, updatedAt: now })
+    .set({ owner, heldSince: now, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: now, building: null, target: null, updatedAt: now })
     .where(eq(worldCells.cell, cell));
 }
 
@@ -1266,6 +1271,11 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
       outcome.cell = left.length ? "camping" : "settled";
       outcome.against = `自己的領地（${parts.join("，")}）`;
     }
+  } else if (exp.kind === "move" && cell?.owner !== camp.userId) {
+    // moving into one's own cell that was lost on the way: they do not fight for it, they go back
+    await placeSurvivors(party, false);
+    outcome.cell = "back";
+    outcome.against = "那一格已經不是你的了";
   } else if (exp.kind === "retreat") {
     // fled from an overrun cell to a free one beside it: they settle it while it is still free and they are enough to hold
     // it (as many as it has room for); the rest, or everyone if not, walk on home
@@ -1663,6 +1673,22 @@ export async function tradeAtMarket(tx: Tx, userId: string, cell: string, input:
   return { got };
 }
 
+/** Sets how many should live on a held cell (null: as it comes), and staffs it at once (staff). */
+export async function setCellTarget(tx: Tx, userId: string, cell: string, target: number | null, now: Date) {
+  const { camp } = await ownCell(tx, userId, cell);
+  await advanceWorld(tx, camp, now);
+  const row = await ownedRow(tx, userId, cell);
+  if ((await homeCellOf(tx, userId)) === cell) throw new WorldError(409, "camp_cell", "營地那一格就是營地本身，不用設人數。");
+  if (target !== null) {
+    const room = await roomOf(tx, camp, row, now);
+    const min = garrisonMin(camp.race);
+    if (target < min || target > room) throw new WorldError(400, "invalid_input", `人數要在 ${min}（一格最少）到 ${room}（住得下的）之間。`);
+  }
+  await tx.update(worldCells).set({ target, updatedAt: now }).where(eq(worldCells.cell, cell));
+  await advanceWorld(tx, camp, now); // (sends or calls home right away)
+  await bumpVersion(tx, camp);
+}
+
 /** Takes the building down (nothing comes back: the ground is cleared for another). */
 export async function demolishOnCell(tx: Tx, userId: string, cell: string, now: Date) {
   const { camp } = await ownCell(tx, userId, cell);
@@ -1723,8 +1749,43 @@ export async function recall(tx: Tx, userId: string, cell: string, input: { coun
   return { residents: going.length, gaveUp: all && !input.campers, arriveAt: row.arriveAt.toISOString() };
 }
 
+/**
+ * Keeps held cells at the number their holder set (2026-10-17, WORLD.md): short of it, the camp sends what it can spare
+ * (keeping STAFF_HOME_KEEP at home), the plain ones as settlers are, walking; over it, the weakest beyond it walk home. Those already on their way
+ * there, or camping beside it, count as there, so nobody is sent twice. Returns whether anybody was sent.
+ */
+async function staff(tx: Tx, camp: CampRow, cells: { cell: string; target: number; there: number }[], homeCell: string | null, now: Date): Promise<boolean> {
+  if (!homeCell) return false;
+  const walking = await tx
+    .select({ to: expeditions.toCell, party: expeditions.party })
+    .from(expeditions)
+    .where(and(eq(expeditions.userId, camp.userId), eq(expeditions.status, "walking"), inArray(expeditions.toCell, cells.map((c) => c.cell))));
+  const coming = new Map<string, number>();
+  for (const w of walking) coming.set(w.to, (coming.get(w.to) ?? 0) + w.party.length);
+  let home = await aliveAt(tx, camp.userId, "home");
+  let sent = false;
+  for (const c of cells) {
+    const on = c.there + (coming.get(c.cell) ?? 0) + (await countAt(tx, camp.userId, campingPlace(c.cell)));
+    if (on < c.target) {
+      const going = pickParty(camp.race, home, undefined, Math.min(c.target - on, home.length - STAFF_HOME_KEEP), false);
+      if (!going.length) continue;
+      await walk(tx, camp, going, homeCell, c.cell, "move", now);
+      home = home.filter((r) => !going.includes(r));
+      await addEvent(tx, camp.userId, now, "world", { staffed: { cell: c.cell, sent: going.length, target: c.target } });
+      sent = true;
+    } else if (c.there > c.target && !coming.has(c.cell)) {
+      const going = pickParty(camp.race, await aliveAt(tx, camp.userId, cellPlace(c.cell)), undefined, c.there - c.target, false);
+      if (!going.length) continue;
+      await walk(tx, camp, going, c.cell, homeCell, "recall", now);
+      await addEvent(tx, camp.userId, now, "world", { staffed: { cell: c.cell, back: going.length, target: c.target } });
+      sent = true;
+    }
+  }
+  return sent;
+}
+
 /** Sends residents walking from one cell to another (a recall, or its leftovers looking for room): no fight, no party cap. */
-async function walk(tx: Tx, camp: CampRow, party: ResidentRow[], from: string, to: string, kind: "recall" | "reroute" | "retreat", at: Date): Promise<ExpeditionRow> {
+async function walk(tx: Tx, camp: CampRow, party: ResidentRow[], from: string, to: string, kind: "recall" | "reroute" | "retreat" | "move", at: Date): Promise<ExpeditionRow> {
   const boosts = fightBoosts(camp.race, camp.boosts, at.getTime());
   const slowest = Math.min(...party.map((r) => residentFighter(fighterOf(camp.race, r), "attack", traitsOf(camp.race), boosts).speed));
   // (between its own cells: round other camps' land if it can be, straight on if not; nobody is left stranded)
@@ -2005,7 +2066,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
         eq(campEvents.userId, userId),
         sql`(${campEvents.data} -> 'cells' ? ${cell} or ${campEvents.data} -> 'lairBack' ->> 'cell' = ${cell} or ${campEvents.data} ->> 'cell' = ${cell}
           or ${campEvents.data} ->> 'nest' = ${cell} or ${campEvents.data} ->> 'town' = ${cell} or ${campEvents.data} ->> 'recalled' = ${cell}
-          or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'guests' ->> 'cell' = ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell}
+          or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'guests' ->> 'cell' = ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell} or ${campEvents.data} -> 'staffed' ->> 'cell' = ${cell}
           or (${campEvents.data} ->> 'to' = ${cell} and (${campEvents.data} ? 'arrived' or ${campEvents.data} ? 'incoming')))`,
       ),
     )
@@ -2018,6 +2079,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     if (d.cells?.[cell] || d.hungry?.includes(cell)) history.push({ at, kind: "yield", loot: d.cells?.[cell] ?? {}, hungry: d.hungry?.includes(cell) || undefined });
     else if (d.lairBack) history.push({ at, kind: "lairBack", name: d.lairBack.name, held: d.lairBack.held, fallen: d.lairBack.fallen, killed: d.lairBack.killed, loot: d.lairBack.loot, helped: d.lairBack.helped, guests: d.lairBack.guests });
     else if (d.guests) history.push({ at, kind: "guests", by: d.guests.from, residents: d.guests.count });
+    else if (d.staffed) history.push({ at, kind: "staffed", residents: d.staffed.sent ?? 0, back: d.staffed.back ?? 0, target: d.staffed.target });
     else if (d.incoming) history.push({ at, kind: "incoming", by: d.by, residents: d.party, expedition: d.id });
     else if (d.defended) history.push({ at, kind: "attacked", by: d.by, held: d.won, fallen: d.fallen, expedition: d.id });
     else if (d.arrived && (d.cell === "settled" || d.cell === "taken")) history.push({ at, kind: "settled", fallen: d.fallen, killed: d.killed, expedition: d.id });
@@ -2043,6 +2105,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   const top = (b?.level ?? 0) >= CELL_BUILDING_MAX;
   return {
     ...(row.town ? { market: { left: Math.max(0, MARKET_TRADES_PER_DAY - (await marketTradesToday(tx, userId, cell, now))) } } : {}),
+    target: row.target,
     cell,
     lat: center.lat,
     lng: center.lng,

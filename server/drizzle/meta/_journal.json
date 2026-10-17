@@ -246,6 +246,13 @@
       "when": 1792202711597,
       "tag": "0034_guild_places_outfits",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792205230703,
+      "tag": "0035_cell_target",
+      "breakpoints": true
     }
   ]
 }
