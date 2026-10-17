@@ -74,7 +74,7 @@ describe("任務", () => {
     expect(ids).toContain("pop_60");
     expect(ids).not.toContain("lumber_2");
     expect(ids).not.toContain("pop_120");
-    expect(QUESTS).toHaveLength(86);
+    expect(QUESTS).toHaveLength(113);
     expect(list.find((q) => q.id === "pop_60")).toEqual(expect.objectContaining({ have: 6, need: 60, done: false, claimed: false }));
   });
 
@@ -129,5 +129,31 @@ describe("任務", () => {
     const made = await cmd(me, { kind: "craft", gear: "item_sticky" });
     expect(made.status).toBe(200);
     expect((made.body.camp as CampView).materials.item_sticky).toBe(1);
+  });
+});
+
+describe("任務 of the big world's new things (the third batch)", () => {
+  const quests = async (auth: Record<string, string>) => (await t.call("GET", "/camp/quests", undefined, auth)).body.quests as QuestView[];
+  it("count talents, meteors, 細分地形, hubs, terrain breeds and ★ gear", async () => {
+    const me = await account("q@example.com");
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    t.advance(30 * HOUR);
+    expect((await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, me)).status).toBe(201);
+    const [{ id }] = (await database.sql`select id from users where email = 'q@example.com'`) as [{ id: string }];
+    await database.sql`update world_players set xp = 18050, talents = '{"g_raid.sharp": 3, "g_raid.greed": 1}'::jsonb where user_id = ${id}`;
+    // a held cell with a 細分地形 and one of its buildings, a fortress beside it with a second building
+    const cells = (await t.call("GET", `/world/cells?lat=${DAAN.lat}&lng=${DAAN.lng}&radius=900`, undefined, me)).body as CellView[];
+    const withDetail = cells.find((c) => c.detail && !c.owner && !c.lair)!;
+    await database.sql`insert into world_cells (cell, owner, held_since, building) values (${withDetail.cell}, ${id}, now(), '{"kind": "outpost", "level": 1}'::jsonb)`;
+    const other = cells.find((c) => !c.owner && !c.lair && c.cell !== withDetail.cell && c.cell !== cellAt(DAAN))!;
+    await database.sql`insert into world_cells (cell, owner, held_since, hub, building2) values (${other.cell}, ${id}, now(), 'fortress', '{"kind": "storehouse", "level": 1}'::jsonb)`;
+    for (const c of [withDetail.cell, other.cell]) await database.sql`update camp_residents set place = ${`cell:${c}`} where user_id = ${id} and id in (select id from camp_residents where user_id = ${id} and place = 'home' and died_at is null order by born_at desc limit 5)`;
+    await database.sql`insert into world_bosses (key, kind, cell, hp, max_hp, ends_at, defeated_at, defeated_by) values ('meteor:test@1', 'meteor', ${other.cell}, 0, 0, now(), now(), ${id})`;
+    await database.sql`update camp_residents set breed = 'd_mountain' where user_id = ${id} and id = (select min(id) from camp_residents where user_id = ${id} and died_at is null)`;
+    await database.sql`update camps set armory = '[{"id": "bone_knife", "left": 40, "refined": true}]'::jsonb where user_id = ${id}`;
+    expect((await quests(me)).length).toBeGreaterThan(0); // (the new chains show once those before them are claimed)
+    const { questMetrics } = await import("../src/camp/quests.ts");
+    const m = await database.db.transaction(async (tx) => questMetrics(tx, (await tx.query.camps.findFirst({ where: (c, { eq }) => eq(c.userId, id) }))! as never));
+    expect(m).toMatchObject({ talentsSpent: 4, talentTops: 0, meteors: 1, detailCells: 1, detailKinds: 1, detailBuildings: 2, hubs: 1, centreKinds: 1, secondBuildings: 1, terrainBreeds: 1, terrainBreedKinds: 1, refined: 1, plunders: 0 });
   });
 });

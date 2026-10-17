@@ -1,13 +1,15 @@
 import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { CAMP_MONSTERS, MIDDLE_GEAR, QUESTS, questShown, raceRules, type QuestMetrics, type QuestView } from "@goblincamp/shared/camp";
-import { CELL_BUILDING_MAX, connectedCells, ITEMS, LAIRS, raceLevel } from "@goblincamp/shared/world";
+import { CELL_BUILDING_MAX, connectedCells, detailBuilding, hasAbility, ITEMS, LAIRS, raceLevel, talentBonus } from "@goblincamp/shared/world";
 import type { Tx } from "../auth/session.ts";
-import { campResidents, expeditions, friendships, worldCells, worldPlayers } from "../db/schema.ts";
-import { landmarksFor } from "../world/osm.ts";
+import { campResidents, expeditions, friendships, worldBosses, worldCells, worldPlayers } from "../db/schema.ts";
+import { detailsFor, landmarksFor } from "../world/osm.ts";
 import type { CampRow } from "./service.ts";
 
 const BOSSES = new Set(LAIRS.filter((l) => l.boss && l.leader).map((l) => l.leader!));
 const RAIDERS = new Set(CAMP_MONSTERS.map((m) => m.id));
+/** The big-world trees' top talents (talents.ts): each opens something new. */
+const TOP_ABILITIES = ["plunder", "tunnels", "refine", "ambush", "sacredTree", "moonGate", "raiseDead", "nightRaid", "blight"] as const;
 
 /** Everything the quests look at (camp/quests.ts), from the camp as it is now. */
 export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics> {
@@ -19,8 +21,30 @@ export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics>
   const siteLevels: Record<string, number> = {};
   for (const s of sites) siteLevels[s.kind] = Math.max(siteLevels[s.kind] ?? 0, s.level);
 
-  const [player] = await tx.select({ xp: worldPlayers.xp, home: worldPlayers.homeCell }).from(worldPlayers).where(eq(worldPlayers.userId, userId));
-  const held = await tx.select({ cell: worldCells.cell, nest: worldCells.nestStartedAt, building: worldCells.building, town: worldCells.town }).from(worldCells).where(eq(worldCells.owner, userId));
+  const [player] = await tx.select({ xp: worldPlayers.xp, home: worldPlayers.homeCell, talents: worldPlayers.talents }).from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  const held = await tx
+    .select({ cell: worldCells.cell, nest: worldCells.nestStartedAt, building: worldCells.building, building2: worldCells.building2, town: worldCells.town, hub: worldCells.hub })
+    .from(worldCells)
+    .where(eq(worldCells.owner, userId));
+  // (the third batch: talents, meteors, 細分地形, hubs, terrain breeds, plunder, ★ gear)
+  const picks = player?.talents ?? {};
+  const tb = talentBonus(picks);
+  const tops = TOP_ABILITIES.filter((a) => hasAbility(tb, a)).length;
+  const details = await detailsFor(tx, held.map((c) => c.cell));
+  const kinds = new Set([...details.values()].filter((d) => d));
+  const [{ meteors }] = (await tx
+    .select({ meteors: sql<number>`count(*)::int` })
+    .from(worldBosses)
+    .where(and(eq(worldBosses.kind, "meteor"), eq(worldBosses.defeatedBy, userId)))) as [{ meteors: number }];
+  const breeds = await tx
+    .select({ breed: campResidents.breed, n: sql<number>`count(*)::int` })
+    .from(campResidents)
+    .where(and(eq(campResidents.userId, userId), sql`${campResidents.breed} like 'd\_%'`))
+    .groupBy(campResidents.breed);
+  const [{ plunders }] = (await tx
+    .select({ plunders: sql<number>`count(*)::int` })
+    .from(expeditions)
+    .where(and(eq(expeditions.userId, userId), eq(expeditions.status, "done"), sql`${expeditions.result} -> 'outcome' ->> 'cell' = 'plundered'`))) as [{ plunders: number }];
   const cells = new Set(held.map((c) => c.cell));
   const landmarks = await landmarksFor(tx, [...cells]);
   const [{ won }] = (await tx
@@ -81,6 +105,19 @@ export async function questMetrics(tx: Tx, camp: CampRow): Promise<QuestMetrics>
     focusRounds: camp.focus?.rounds ?? 0,
     focusBestDay: camp.focus?.bestDay ?? 0,
     ranchAnimals: camp.ranch?.animals.length ?? 0,
+    talentsSpent: Object.values(picks).reduce((a, b) => a + b, 0),
+    talentTops: tops,
+    meteors,
+    detailCells: [...details.values()].filter((d) => d).length,
+    detailKinds: kinds.size,
+    detailBuildings: held.reduce((k, c) => k + [c.building, c.building2].filter((b) => b && detailBuilding(b.kind)).length, 0),
+    hubs: held.filter((c) => c.hub).length,
+    centreKinds: new Set(held.flatMap((c) => (c.town ? ["town"] : c.hub ? [c.hub] : []))).size,
+    secondBuildings: held.filter((c) => c.building2).length,
+    terrainBreeds: breeds.reduce((k, b) => k + b.n, 0),
+    terrainBreedKinds: new Set(breeds.map((b) => b.breed)).size,
+    plunders,
+    refined: [...worn.flat(), ...camp.armory].filter((g) => !!g && "refined" in g && g.refined).length,
   };
 }
 

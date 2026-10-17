@@ -55,6 +55,26 @@ export interface QuestMetrics {
   focusBestDay: number;
   /** Animals kept in the ranch now (ranch.ts). */
   ranchAnimals: number;
+  // (2026-10-17: the big world's new things — talents, meteors, 細分地形, hubs; optional, 0 when not worked out)
+  /** 種族天賦 points spent; the top talents (new abilities) taken. */
+  talentsSpent?: number;
+  talentTops?: number;
+  /** Meteors taken (events.ts). */
+  meteors?: number;
+  /** Held cells with a 細分地形, and how many kinds of it among them; 細分地形 buildings standing (either place). */
+  detailCells?: number;
+  detailKinds?: number;
+  detailBuildings?: number;
+  /** Hubs other than towns held (fortress, workstead, sanctuary), the kinds of centre held (towns among them), second buildings. */
+  hubs?: number;
+  centreKinds?: number;
+  secondBuildings?: number;
+  /** Terrain breeds ever born to the camp (d_<detail>), and how many kinds. */
+  terrainBreeds?: number;
+  terrainBreedKinds?: number;
+  /** Raids won with 劫掠; ★ refined pieces owned (worn at home or in the store). */
+  plunders?: number;
+  refined?: number;
 }
 
 export interface QuestReward {
@@ -178,6 +198,40 @@ export const QUESTS: readonly Quest[] = [
   { id: "friend_3", chapter: "夥伴", title: "三五好友", text: "有三位好友。", goal: (m) => n(m.friends, 3), reward: { materials: { food_honey: 5, food_cheese: 3 } }, after: "friend_1" },
   { id: "friend_5", chapter: "夥伴", title: "朋友遍天下", text: "有五位好友。", goal: (m) => n(m.friends, 5), reward: { residents: 5, materials: { item_tonic: 3 } }, after: "friend_3" },
   { id: "middle_gear_5", chapter: "夥伴", title: "收藏家", text: "擁有五種不同的中等裝備。", goal: (m) => n(m.middleGearKinds, 5), reward: { residents: 8, materials: { crystal_shard: 6 } }, after: "middle_gear" },
+
+  // --- the third batch (2026-10-17): 種族天賦, meteors, 細分地形, the new centres ---
+  // 大世界：等級與天賦
+  { id: "level_20", chapter: "大世界", title: "天賦全開", text: "種族等級到 20 級（天賦樹的頂端開放了）。", goal: (m) => n(m.raceLevel, 20), reward: { residents: 15, materials: { crystal_shard: 10 } }, after: "level_12" },
+  { id: "level_30", chapter: "大世界", title: "傳說的開始", text: "種族等級到 30 級。", goal: (m) => n(m.raceLevel, 30), reward: { residents: 20, materials: { amber: 6, crystal_shard: 15 } }, after: "level_20" },
+  { id: "level_50", chapter: "大世界", title: "世界的對手", text: "種族等級到 50 級（可以挑戰世界魔王了）。", goal: (m) => n(m.raceLevel, 50), reward: { residents: 30, materials: { amber: 12, crystal_shard: 30 } }, after: "level_30" },
+  { id: "talent_1", chapter: "大世界", title: "第一個天賦", text: "在大世界頁的「🌟 天賦」點一個天賦。", goal: (m) => n(m.talentsSpent ?? 0, 1), reward: { materials: { ration_bread: 10, crystal_shard: 2 } }, after: "level_3" },
+  { id: "talent_10", chapter: "大世界", title: "專精", text: "一共點了十個天賦點。", goal: (m) => n(m.talentsSpent ?? 0, 10), reward: { residents: 5, materials: { amber: 2 } }, after: "talent_1" },
+  { id: "talent_top", chapter: "大世界", title: "登峰造極", text: "點到一棵大世界天賦樹的頂端，學會一個新能力（劫掠、地道、伏擊、夜襲…）。", goal: (m) => n(m.talentTops ?? 0, 1), reward: { residents: 10, materials: { crystal_shard: 8, amber: 3 } }, after: "talent_10" },
+  { id: "talent_tops_2", chapter: "大世界", title: "雙修", text: "學會兩個天賦樹頂端的新能力。", goal: (m) => n(m.talentTops ?? 0, 2), reward: { residents: 15, materials: { amber: 6 } }, after: "talent_top" },
+  // 大世界：流星
+  { id: "meteor_1", chapter: "大世界", title: "許願", text: "派隊伍撿到一顆流星（地圖上發光的 ☄️，先到先拿）。", goal: (m) => n(m.meteors ?? 0, 1), reward: { materials: { crystal_shard: 3, amber: 1 } }, after: "world_open" },
+  { id: "meteor_5", chapter: "大世界", title: "追星", text: "撿到五顆流星。", goal: (m) => n(m.meteors ?? 0, 5), reward: { residents: 5, materials: { amber: 3 } }, after: "meteor_1" },
+  { id: "meteor_20", chapter: "大世界", title: "流星雨", text: "撿到二十顆流星（夏日祭、冬至祭掉得特別多）。", goal: (m) => n(m.meteors ?? 0, 20), reward: { residents: 10, materials: { amber: 8, crystal_shard: 10 } }, after: "meteor_5" },
+  // 大世界：細分地形
+  { id: "detail_1", chapter: "大世界", title: "好山好水", text: "佔下一格有細分地形的領地（山地、河川、農田、溫泉…）。", goal: (m) => n(m.detailCells ?? 0, 1), reward: { materials: { stone: 30, ration_fish: 5 } }, after: "cells_2" },
+  { id: "detail_kinds_4", chapter: "大世界", title: "走遍各地", text: "同時佔著四種不同細分地形的領地。", goal: (m) => n(m.detailKinds ?? 0, 4), reward: { residents: 5, materials: { crystal_shard: 4 } }, after: "detail_1" },
+  { id: "detail_kinds_8", chapter: "大世界", title: "地理學家", text: "同時佔著八種不同細分地形的領地。", goal: (m) => n(m.detailKinds ?? 0, 8), reward: { residents: 10, materials: { amber: 4, river_pearl: 2 } }, after: "detail_kinds_4" },
+  { id: "dbuild_1", chapter: "大世界", title: "因地制宜", text: "蓋一棟細分地形才有的建築（礦坑、水車、靈堂、溫泉旅館…，倉庫、哨站、祭壇也算）。", goal: (m) => n(m.detailBuildings ?? 0, 1), reward: { materials: { log: 60, stone: 40 } }, after: "detail_1" },
+  { id: "dbuild_5", chapter: "大世界", title: "百工興", text: "領地上一共有五棟細分地形建築。", goal: (m) => n(m.detailBuildings ?? 0, 5), reward: { residents: 8, materials: { crystal_shard: 6 } }, after: "dbuild_1" },
+  { id: "tbreed_1", chapter: "大世界", title: "土生土長", text: "在細分地形領地的繁殖巢生出一隻地形稀有種（祈福台、祭壇讓牠們多生）。", goal: (m) => n(m.terrainBreeds ?? 0, 1), reward: { materials: { food_meat: 10, crystal_shard: 2 } }, after: "detail_1" },
+  { id: "tbreed_kinds_3", chapter: "大世界", title: "物種圖鑑", text: "生出過三種不同的地形稀有種。", goal: (m) => n(m.terrainBreedKinds ?? 0, 3), reward: { residents: 8, materials: { amber: 3 } }, after: "tbreed_1" },
+  { id: "tbreed_kinds_7", chapter: "大世界", title: "百族共存", text: "生出過七種不同的地形稀有種。", goal: (m) => n(m.terrainBreedKinds ?? 0, 7), reward: { residents: 15, materials: { amber: 6, crystal_shard: 10 } }, after: "tbreed_kinds_3" },
+  // 大世界：中心
+  { id: "hub_1", chapter: "大世界", title: "另一條路", text: "蓋一座要塞、工坊鎮或聖地（跟城鎮共用一區的名額）。", goal: (m) => n(m.hubs ?? 0, 1), reward: { residents: 8, materials: { scrap_iron: 40, log: 60 } }, after: "town_1" },
+  { id: "centres_4", chapter: "大世界", title: "四方之主", text: "城鎮、要塞、工坊鎮、聖地四種中心各有一座。", goal: (m) => n(m.centreKinds ?? 0, 4), reward: { residents: 20, materials: { amber: 8, crystal_shard: 12 } }, after: "hub_1" },
+  { id: "slot2_1", chapter: "大世界", title: "雙棟並立", text: "在城鎮或其他中心蓋第二棟建築。", goal: (m) => n(m.secondBuildings ?? 0, 1), reward: { materials: { scrap_wood: 80, stone: 60 } }, after: "town_1" },
+  { id: "cells_30", chapter: "大世界", title: "三十格領地", text: "營地以外佔著三十格。", goal: (m) => n(m.cells - 1, 30), reward: { residents: 15, materials: { stone: 150, log: 150 } }, after: "cells_20" },
+  { id: "region_12", chapter: "大世界", title: "大一統", text: "十二格自己的格子連在一起：一區可以有三個中心了。", goal: (m) => n(m.region, 12), reward: { residents: 10, materials: { scrap_iron: 80, crystal_shard: 6 } }, after: "region_8" },
+  { id: "plunder_1", chapter: "大世界", title: "打家劫舍", text: "用「🏴‍☠️ 劫掠」打贏一次（要先點哥布林掠奪樹頂端的天賦）。", goal: (m) => n(m.plunders ?? 0, 1), reward: { materials: { stolen_coin: 5, food_meat: 10 } }, after: "pvp_1" },
+  { id: "plunder_10", chapter: "大世界", title: "江洋大盜", text: "用劫掠打贏十次。", goal: (m) => n(m.plunders ?? 0, 10), reward: { residents: 10, materials: { stolen_coin: 15, crystal_shard: 6 } }, after: "plunder_1" },
+  // 營地：★ 精良裝備
+  { id: "refined_1", chapter: "營地", title: "拼裝大師", text: "擁有一件 ★ 精良裝備（哥布林工匠樹頂端「拼裝改造」，在工坊「★ 改造」）。", goal: (m) => n(m.refined ?? 0, 1), reward: { materials: { scrap_iron: 30, leather_strap: 4 } }, after: "gear_20" },
+  { id: "refined_10", chapter: "營地", title: "精工軍團", text: "擁有十件 ★ 精良裝備。", goal: (m) => n(m.refined ?? 0, 10), reward: { residents: 8, materials: { crystal_shard: 8 } }, after: "refined_1" },
 ];
 
 const BY_ID = new Map(QUESTS.map((q) => [q.id, q]));
