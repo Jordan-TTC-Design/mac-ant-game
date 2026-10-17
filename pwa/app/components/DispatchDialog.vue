@@ -409,7 +409,7 @@ const sheet = (b: string) => `/sprites/${props.race}/${names.value.races[props.r
               <button :class="{ on: !settle && !plunder }" @click="plunder = false; chooseSettle(false)">直接回家</button>
               <button v-if="canPlunder" :class="{ on: plunder }" @click="plunder = true">🏴‍☠️ 劫掠</button>
             </div>
-            <small class="muted">{{ plunder ? `搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}）就走，不佔地` : settle ? `活下來的至少 ${min} 隻才佔得住` : "撿了戰利品就回來" }}・下次會記得</small>
+            <small class="muted">{{ plunder ? `搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}、一次最多 ${TALENT_ABILITIES.raidTotal}；城鎮、有瞭望塔的格子減半）就走，不佔地` : settle ? `活下來的至少 ${min} 隻才佔得住` : "撿了戰利品就回來" }}・下次會記得</small>
           </div>
           <p v-if="kind === 'settle' && party.length < min" class="warn">至少要 {{ min }} 隻才守得住一格。</p>
           <p v-if="kind === 'guard'" class="muted small">牠們會住在那裡，巢穴回來搶、有人來打時一起守；戰死的裝備會回你的倉庫。你或對方隨時可以叫牠們回來。一格最多 {{ GUESTS_MAX }} 隻好友的居民（現在有 {{ target.guests ?? 0 }} 隻）。</p>

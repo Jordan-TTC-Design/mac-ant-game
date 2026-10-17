@@ -804,7 +804,7 @@ describe("種族天賦", () => {
     expect(res.body.message ?? "").toBe("");
     const quick = await t.call("POST", "/world/expeditions", { to: target, count: 5 }, e);
     const quickMinutes = Date.parse(quick.body.arriveAt) - Date.parse(quick.body.setOutAt);
-    expect(quickMinutes).toBeLessThan(plainMinutes); // (−22%)
+    expect(quickMinutes).toBeLessThan(plainMinutes); // (−12%)
 
     // an undead camp with 低語 (恐懼, row 4): a goblin camp sets out against it, and it sees what the party is made of
     const u = await account("u@example.com", "undead");
@@ -956,12 +956,17 @@ describe("天賦樹頂端的新能力", () => {
     t.advance(Date.parse(res.body.arriveAt) - t.now().getTime() + 1000);
     const report = (await t.call("GET", `/world/expeditions/${res.body.id}`, undefined, g)).body as ExpeditionReport;
     expect(report.outcome!.cell).toBe("plundered");
-    // (8% of each, up to 30: the camp's store grew a little on the way from its raids and sites)
-    expect(report.outcome!.loot.log).toBe(30);
+    // (8% of each, up to 10 of each and 60 in all: the camp's store grew a little on the way from its raids and sites)
+    expect(report.outcome!.loot.log).toBe(10);
     expect(report.outcome!.loot.rat_fang).toBeGreaterThanOrEqual(8);
-    expect((await camp(g)).materials.log).toBeGreaterThanOrEqual(30);
+    expect(Object.values(report.outcome!.loot).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(60);
+    expect((await camp(g)).materials.log).toBeGreaterThanOrEqual(10);
     expect((await me(g)).cells.map((c) => c.cell)).not.toContain(cell); // (it takes and leaves: the cell is not the raider's)
     expect((await me(b)).shielded).toBe(false); // (a raid is no defeat)
+    // not again for 6 hours, by anybody (its camp itself, now: the cell was left with nobody)
+    expect((await t.call("POST", "/world/expeditions", { to: cellAt(XINYI), count: 5, plunder: true }, g)).body.error).toBe("plundered_lately");
+    t.advance(6 * HOUR);
+    expect((await t.call("POST", "/world/expeditions", { to: cellAt(XINYI), count: 5, plunder: true }, g)).status).toBe(201);
   });
 
   it("劫掠 a town takes half as much; 戰場復甦 does not raise the fallen of a cell with a 營火廣場 (反制)", async () => {
@@ -984,7 +989,7 @@ describe("天賦樹頂端的新能力", () => {
     t.advance(Math.max(Date.parse(raid.body.arriveAt), Date.parse(take.body.arriveAt)) - t.now().getTime() + 1000);
     const raided = (await t.call("GET", `/world/expeditions/${raid.body.id}`, undefined, g)).body as ExpeditionReport;
     expect(raided.outcome!.cell).toBe("plundered");
-    expect(raided.outcome!.loot.log).toBe(15);
+    expect(raided.outcome!.loot.log).toBe(5);
     const taken = (await t.call("GET", `/world/expeditions/${take.body.id}`, undefined, u)).body as ExpeditionReport;
     expect(taken.outcome!.won).toBe(true);
     expect(taken.outcome!.raised ?? 0).toBe(0);

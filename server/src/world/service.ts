@@ -1041,6 +1041,7 @@ export async function sendExpedition(
   if (input.plunder) {
     if (moving || !target?.owner || target.owner === userId) throw new WorldError(400, "invalid_input", "劫掠只能打其他玩家的領地。");
     if (!hasAbility(mt, "plunder")) throw new WorldError(403, "not_allowed", "要先點天賦「劫掠」。");
+    if (await plunderedLately(tx, target.owner, now)) throw new WorldError(409, "plundered_lately", `對方剛被劫掠過，${TALENT_ABILITIES.raidRestHours} 小時內不能再搶。`);
     carried = { ...(carried ?? {}), plunder: 1 };
   }
   const walked = walkMinutes(way.route.meters, slowest) * fromBonus.travel * (1 - (mt.travel ?? 0)) * (inRegion ? REGION_TRAVEL * (1 - (mt.regionTravel ?? 0)) : 1) * (night ? TALENT_ABILITIES.nightTravel : 1);
@@ -1481,9 +1482,12 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         // 劫掠: take from the store and leave (nothing changes hands, nobody turtles)
         // (反制: a town or a cell with a 瞭望塔 gives up half as much)
         const guarded = cell!.town || (cell!.building?.kind === "watchtower" && workingLevel(cell!.building, at.getTime()) >= 1) ? TALENT_ABILITIES.raidGuarded : 1;
-        for (const [id, n] of Object.entries(defenderCamp.materials)) {
-          const take = Math.min(Math.floor(TALENT_ABILITIES.raidCap * guarded), Math.floor(n * TALENT_ABILITIES.raidShare * guarded));
+        // (the biggest piles first, up to raidTotal in all; nothing from a camp plundered lately: two raids on the way at once)
+        let room = (await plunderedLately(tx, defenderCamp.userId, at)) ? 0 : Math.floor(TALENT_ABILITIES.raidTotal * guarded);
+        for (const [id, n] of Object.entries(defenderCamp.materials).sort((a, b) => b[1] - a[1])) {
+          const take = Math.min(room, Math.floor(TALENT_ABILITIES.raidCap * guarded), Math.floor(n * TALENT_ABILITIES.raidShare * guarded));
           if (take <= 0) continue;
+          room -= take;
           defenderCamp.materials = { ...defenderCamp.materials, [id]: n - take };
           camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + take };
           outcome.loot[id] = take;
@@ -1869,6 +1873,16 @@ async function blightFoes(tx: Tx, userId: string, cell: string, foes: Fighter[])
   if (!neighbors(cell).some((n) => mine.has(n))) return foes;
   const k = 1 - TALENT_ABILITIES.blightLair;
   return foes.map((f) => ({ ...f, hp: Math.max(1, Math.round(f.hp * k)), maxHp: Math.max(1, Math.round(f.maxHp * k)) }));
+}
+
+/** 劫掠: `userId`'s camp was plundered within the last raidRestHours (it is not plundered again till then). */
+async function plunderedLately(tx: Tx, userId: string, at: Date): Promise<boolean> {
+  const since = new Date(at.getTime() - TALENT_ABILITIES.raidRestHours * HOUR);
+  const [{ n }] = (await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(campEvents)
+    .where(and(eq(campEvents.userId, userId), eq(campEvents.kind, "expedition"), gte(campEvents.at, since), lte(campEvents.at, at), sql`${campEvents.data} ? 'plundered'`))) as [{ n: number }];
+  return n > 0;
 }
 
 /** 夜襲's 反制: `owner` has a working 瞭望塔 in the region of its cells that `cell` is in. */

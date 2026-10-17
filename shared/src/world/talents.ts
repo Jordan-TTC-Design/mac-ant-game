@@ -158,12 +158,12 @@ export const TALENTS: readonly Talent[] = [
   t("g_tinker", 4, 1, "refine", "拼裝改造", "refine", 1, 1, "blueprints"),
   // 精靈・遊俠
   t("e_ranger", 0, 0, "swift", "輕盈", "travel", 0.04),
-  t("e_ranger", 0, 2, "aim", "瞄準", "attack", 0.03),
+  t("e_ranger", 0, 2, "aim", "瞄準", "attack", 0.05), // (0.03 till 2026-10-17: the elves' fighting tree hit softest of all, balance:talents)
   t("e_ranger", 1, 0, "paths", "林間小徑", "regionTravel", 0.1),
   t("e_ranger", 1, 2, "hunter", "獵手", "lairAttack", 0.05),
-  t("e_ranger", 2, 0, "wind", "疾風", "travel", 0.05, 2, "paths"),
+  t("e_ranger", 2, 0, "wind", "樹皮護身", "hp", 0.05, 2, "paths"), // (疾風, travel +5%, till 2026-10-17)
   t("e_ranger", 2, 2, "trophy", "戰利品", "loot", 0.1, 2, "hunter"),
-  t("e_ranger", 3, 1, "volley", "齊射", "pvpAttack", 0.05),
+  t("e_ranger", 3, 1, "volley", "齊射", "pvpAttack", 0.07),
   t("e_ranger", 4, 1, "ambush", "伏擊", "ambush", 1, 1, "volley"),
   // 精靈・森林
   t("e_grove", 0, 0, "bloom", "繁花", "yield", 0.05),
@@ -224,7 +224,11 @@ export const talentsIn = (tree: string) => TALENTS.filter((x) => x.tree === tree
 export const TALENT_ABILITIES = {
   /** 劫掠: a won raid takes this share of each material the camp raided has (up to RAID_CAP of each), and leaves. */
   raidShare: 0.08,
-  raidCap: 30,
+  raidCap: 10,
+  /** …and this many in all (the biggest piles first): about three lairs' worth (BALANCE.md §3, balance:talents). */
+  raidTotal: 60,
+  /** A camp plundered is not plundered again (by anyone) for this many hours. */
+  raidRestHours: 6,
   /** …a town or a cell with a 瞭望塔 gives up only this share of that (反制). */
   raidGuarded: 0.5,
   /** 伏擊: each of one's cells next to a party's way shoots this share of it down (at most AMBUSH_MAX in all). */
@@ -333,7 +337,7 @@ export function talentText(rule: Talent, ranks = 1): string {
     case "loot": return `打贏巢穴的掉落 +${pct}`;
     case "xp": return `種族經驗 +${pct}`;
     case "intel": return "看得到來襲敵軍的隊伍組成";
-    case "plunder": return `新出征方式「劫掠」：打其他玩家的領地，贏了搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}）就走，不佔地（反制：城鎮、有瞭望塔的格子只搶得到一半）`;
+    case "plunder": return `新出征方式「劫掠」：打其他玩家的領地，贏了搶走對方倉庫每種素材的 ${Math.round(TALENT_ABILITIES.raidShare * 100)}%（每種最多 ${TALENT_ABILITIES.raidCap}、一次最多 ${TALENT_ABILITIES.raidTotal}）就走，不佔地；被搶過的營地 ${TALENT_ABILITIES.raidRestHours} 小時內不會再被搶（反制：城鎮、有瞭望塔的格子只搶得到一半）`;
     case "tunnels": return "地道：自己所有的領地都算相連（調人只要四分之一時間），隊伍可以從別人的城牆底下鑽過去（反制：城鎮擋得住）";
     case "refine": return "工坊多「改造」：把裝備改成 ★ 精良版（更強、更耐用）；壞掉的裝備完整拆回材料";
     case "ambush": return `伏擊：敵人的隊伍經過你領地旁邊，每塊相鄰的領地先射倒 ${Math.round(TALENT_ABILITIES.ambushPerCell * 100)}%（最多 ${Math.round(TALENT_ABILITIES.ambushMax * 100)}%；反制：拿盾牌的不會被射倒）`;
