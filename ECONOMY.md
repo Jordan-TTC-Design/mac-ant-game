@@ -134,6 +134,7 @@
 ## 5. 進度
 
 - 2026-10-17：**後台「經濟」頁**完成（`/api/admin/economy`，`server/src/camp/economy.ts`；營地與大世界的每次素材變動都記成 flow 事件）。**§1.1 配方**完成：52 件新裝備（T2 11、T3 16、T4 13、傳說 12，`tier` 欄位），每種材料都有用途。**§1.2 強化**完成（`enhance` 指令、`GearItem.plus`、`gearBonus`、`gearMax`）。
+- 2026-10-17：**§1.3 營地建設**完成（`shared/src/camp/buildings.ts`、`building-build` 指令、`camps.buildings`、migration 0040；Mac 三族建築圖與「🏰 建設」面板、手機營地頁）。主營地才有；大世界城鎮另有自己的建築（另一個工作階段）。
 
 ## 6. 做的順序（建議）
 
