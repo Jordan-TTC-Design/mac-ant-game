@@ -2,9 +2,17 @@
 #
 # 資料庫卷：db_data（與 docker-compose.yml 共用）。
 # 相較 docker-compose.yml：每個服務都有記憶體上限。
+# 容器 log（nginx 每個請求一行）每個服務最多 3 個 10MB 檔，滿了輪替，不會塞爆主機。
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   web:
     container_name: ${COMPOSE_PROJECT_NAME}_web
+    logging: *logging
     build:
       context: .
       dockerfile: pwa/Dockerfile
@@ -23,6 +31,7 @@ services:
 
   server:
     container_name: ${COMPOSE_PROJECT_NAME}_server
+    logging: *logging
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -53,6 +62,7 @@ services:
 
   postgres:
     container_name: ${COMPOSE_PROJECT_NAME}_postgres
+    logging: *logging
     image: postgres:16-alpine
     restart: always
     environment:

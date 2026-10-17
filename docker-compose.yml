@@ -3,9 +3,17 @@
 # 對外只開 web（WEB_PORT），網域與 HTTPS 由主機上的反向代理處理；server 與 postgres 只在內部網路。
 # 資料庫卷：db_data（與 docker-compose_prod.yml 共用，正式主機上互相切換不會遺失資料）。
 # 本機試跑整套請用 docker-compose_dev.yaml，它有獨立的 db_data_dev。
+# 容器 log（nginx 每個請求一行）每個服務最多 3 個 10MB 檔，滿了輪替，不會塞爆主機。
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   web:
     container_name: ${COMPOSE_PROJECT_NAME}_web
+    logging: *logging
     build:
       context: .
       dockerfile: pwa/Dockerfile
@@ -20,6 +28,7 @@ services:
 
   server:
     container_name: ${COMPOSE_PROJECT_NAME}_server
+    logging: *logging
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -46,6 +55,7 @@ services:
 
   postgres:
     container_name: ${COMPOSE_PROJECT_NAME}_postgres
+    logging: *logging
     image: postgres:16-alpine
     restart: always
     environment:
