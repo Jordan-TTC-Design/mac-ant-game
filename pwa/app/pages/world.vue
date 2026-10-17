@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BOSS_MIN_RACE_LEVEL, cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, talentBonus, hasAbility, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
+import { BOSS_MIN_RACE_LEVEL, HUBS, hubName, type HubKind, cellBuildingName, cellCenter, GUESTS_MAX, REGION_TRAVEL, sameRegion, talentBonus, hasAbility, landmarkRule, LANDMARKS, type NearbyLandmark, type PlaceFound, FOES, HOME_MOVE_DAYS, isCellId, materialName, TERRAIN_NAMES, TERRAIN_YIELD, walkMinutes, type CellView, type RoutePreview } from "@goblincamp/shared/world";
 import { noteTime } from "~/utils/time";
 import { ApiError, api } from "~/utils/api";
 import { loadLastAttack, saveLastAttack, type LastAttack } from "~/utils/again";
@@ -182,6 +182,9 @@ const moveHere = () => {
 const openAgain = () => doIt(() => world.openWorld(), "重新開啟了大世界。");
 const nest = () => doIt(() => world.nest(selected.value!), "開始蓋繁殖巢了（2 小時）。");
 const town = () => doIt(() => world.town(selected.value!), "蓋了城鎮！");
+const hub = (kind: string) => doIt(() => world.hub(selected.value!, kind), `蓋了${hubName(kind as HubKind, race.value)}！`);
+// (a region has one centre for every TOWN_CELLS_EACH cells: a town, a fortress, a workstead or a sanctuary)
+const centreRoom = computed(() => !!s.me && !cell.value?.town && !cell.value?.hub && (myCell.value?.region ?? 0) >= s.me.rules.townCellsEach * ((myCell.value?.regionCentres ?? myCell.value?.regionTowns ?? 0) + 1));
 // 撤回: pick where to and how many in the recall sheet (they walk; `campers`: those camping beside the cell)
 const recalling = ref<null | "garrison" | "campers">(null);
 const recall = () => (recalling.value = "garrison");
@@ -626,7 +629,10 @@ async function goToPlace(p: PlaceFound) {
           <button class="btn" :disabled="!canLaunch" @click="launchHere">從這裡出征</button>
           <button v-if="!isHome" class="btn" :disabled="!canAct" @click="dispatch = 'move'">派人駐守</button>
           <button v-if="!isHome && cell.nest === 'none'" class="btn" :disabled="busy" @click="nest">蓋繁殖巢</button>
-          <button v-if="!cell.town && (myCell?.region ?? 0) >= s.me.rules.townCellsEach * ((myCell?.regionTowns ?? 0) + 1)" class="btn" :disabled="busy" @click="town">蓋城鎮</button>
+          <template v-if="centreRoom">
+            <button class="btn" :disabled="busy" @click="town">🏘️ 蓋城鎮</button>
+            <button v-for="h in HUBS.filter((x) => x.kind !== 'town' && !isHome)" :key="h.kind" class="btn" :disabled="busy" :title="h.blurb" @click="hub(h.kind)">{{ ({ fortress: "🏰", workstead: "⚒️", sanctuary: "⛩️" } as Record<string, string>)[h.kind] }} 蓋{{ hubName(h.kind, race) }}</button>
+          </template>
           <button v-if="!isHome" class="btn" :disabled="busy" @click="recall">撤回</button>
           <button v-if="myCell?.camping" class="btn" :disabled="busy" @click="recalling = 'campers'">叫扎營的走</button>
           <button v-if="canMoveHere && asking !== 'move'" class="btn" :disabled="busy || !!moveWait" @click="asking = 'move'">搬營地到這裡</button>

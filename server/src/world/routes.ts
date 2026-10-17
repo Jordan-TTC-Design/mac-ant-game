@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { buildInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
+import { buildInput, hubInput, expeditionInput, isCellId, marketInput, openWorldInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -11,6 +11,8 @@ import {
   previewRoute,
   unguard,
   buildTown,
+  buildHub,
+  demolishHub,
   cellDetail,
   cellsAround,
   landmarksAround,
@@ -166,8 +168,8 @@ export function worldRoutes(deps: AppDeps) {
       if (!isCellId(cell)) return apiError(c, 404, "not_found", "沒有這一格。");
       const userId = c.get("session").user.id;
       let body: unknown = {};
-      if (path === "recall" || path === "build" || path === "market" || path === "target") {
-        const parsed = await readJson(c, path === "recall" ? recallInput : path === "market" ? marketInput : path === "target" ? targetInput : buildInput);
+      if (path === "recall" || path === "build" || path === "market" || path === "target" || path === "hub") {
+        const parsed = await readJson(c, path === "recall" ? recallInput : path === "market" ? marketInput : path === "target" ? targetInput : path === "hub" ? hubInput : buildInput);
         if ("response" in parsed) return parsed.response;
         body = parsed.data;
       }
@@ -177,6 +179,8 @@ export function worldRoutes(deps: AppDeps) {
     });
   cellAction("nest", (userId, cell) => (tx) => buildNest(tx, userId, cell, now()));
   cellAction("town", (userId, cell) => (tx) => buildTown(tx, userId, cell, now()));
+  cellAction("hub", (userId, cell, body) => (tx) => buildHub(tx, userId, cell, (body as { kind: "town" | "fortress" | "workstead" | "sanctuary" }).kind, now()));
+  cellAction("unhub", (userId, cell) => (tx) => demolishHub(tx, userId, cell, now()));
   cellAction("build", (userId, cell, body) => (tx) => buildOnCell(tx, userId, cell, (body as { kind: string }).kind, now()));
   /** Guests walk home: your own from a friend's cell; or, for its holder, every friend's from it. */
   app.post("/cells/:cell/unguard", async (c) => {

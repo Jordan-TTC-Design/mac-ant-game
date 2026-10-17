@@ -421,6 +421,39 @@ describe("cells held side by side", () => {
     const defending = report.fighters.filter((f) => f.side === "defend").length;
     expect(defending).toBe(garrison + 5);
   });
+
+  it("a fortress, a workstead or a sanctuary takes a town's place in the region; it can be taken down for half", async () => {
+    const a = await ready();
+    const home = (await me(a)).homeCell!;
+    const ring = neighbors(home);
+    await clear(ring);
+    for (const c of ring.slice(0, 3)) await settle(a, 20, [], (x) => x.cell === c);
+    await give("a@example.com", { scrap_wood: 2000, scrap_iron: 1000, scrap_rag: 600, crystal_shard: 20 });
+    const [first, second] = ring as [string, string];
+    const before = (await detail(a, first)).body as CellDetail;
+    expect((await t.call("POST", `/world/cells/${first}/hub`, { kind: "fortress" }, a)).status).toBe(200);
+    let d = (await detail(a, first)).body as CellDetail;
+    expect(d.hub).toBe("fortress");
+    expect(d.town).toBe(false);
+    expect(d.capacity).toBe(Math.round(before.capacity * 1.5)); // (×1.5 a cell's room)
+    expect(d.bonus.fort).toBeGreaterThanOrEqual(before.bonus.fort + 0.4);
+    expect(d.bonus.party).toBe(before.bonus.party + 3);
+    expect(d.history[0]).toMatchObject({ kind: "hub", name: "要塞" });
+    expect(((await map(a)).find((c) => c.cell === first))!.hub).toBe("fortress");
+    // (one centre for 4 cells: no town beside it, nor a second hub)
+    expect((await t.call("POST", `/world/cells/${second}/town`, undefined, a)).body.error).toBe("too_few");
+    expect((await t.call("POST", `/world/cells/${second}/hub`, { kind: "workstead" }, a)).body.error).toBe("too_few");
+    expect((await t.call("POST", `/world/cells/${first}/hub`, { kind: "workstead" }, a)).body.error).toBe("exists");
+    // taken down: half the cost back; then a workstead: the region's cells yield more
+    const wood = (await camp(a)).materials.scrap_wood ?? 0;
+    expect((await t.call("POST", `/world/cells/${first}/unhub`, undefined, a)).status).toBe(200);
+    expect((await camp(a)).materials.scrap_wood).toBeGreaterThan(wood);
+    const plain = ((await detail(a, second)).body as CellDetail).bonus.yieldBoost;
+    expect((await t.call("POST", `/world/cells/${first}/hub`, { kind: "workstead" }, a)).status).toBe(200);
+    d = (await detail(a, second)).body as CellDetail;
+    expect(d.bonus.yieldBoost).toBeCloseTo(plain + 0.3);
+    expect(Object.keys(((await detail(a, first)).body as CellDetail).bonus.makes)).toContain("scrap_iron");
+  });
 });
 
 describe("keeping many cells", () => {

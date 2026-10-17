@@ -95,6 +95,9 @@ import {
   cellBonus,
   cellRaidLosses,
   detailBuildingsFor,
+  hubName,
+  hubRule,
+  type HubKind,
   type TerrainDetail,
   meteorAt,
   seasonAt,
@@ -411,6 +414,17 @@ async function surroundings(tx: Tx, held: string[], at: Date): Promise<(cell: st
   const landmarks = await landmarksFor(tx, held);
   const mine = new Set(held);
   const towns = await townsIn(tx, held);
+  const hubs = [...(await hubsIn(tx, held))].filter(([, k]) => k !== "town");
+  const hubAt = new Map(hubs);
+  const hubsOf = new Map<string, HubKind[]>();
+  const regionHubsOf = (cell: string) => {
+    if (!hubsOf.has(cell)) {
+      const region = connectedCells(cell, mine);
+      const kinds = region.flatMap((c) => (hubAt.has(c) ? [hubAt.get(c)!] : []));
+      for (const c of region) hubsOf.set(c, kinds);
+    }
+    return hubsOf.get(cell) ?? [];
+  };
   // the buildings working on them by `at`, and so the kinds in each region (REGION_COMBOS)
   const built = new Map(
     (held.length ? await tx.select({ cell: worldCells.cell, building: worldCells.building }).from(worldCells).where(inArray(worldCells.cell, held)) : [])
@@ -442,8 +456,20 @@ async function surroundings(tx: Tx, held: string[], at: Date): Promise<(cell: st
     townsJoined: mine.has(cell) ? townsJoined(regionTownsOf(cell), towns.has(cell)) : 0,
     town: towns.has(cell),
     regionKinds: mine.has(cell) ? regionKindsOf(cell) : [],
+    hub: hubAt.get(cell) ?? null,
+    regionHubs: mine.has(cell) && hubAt.size ? regionHubsOf(cell) : [],
   });
 }
+
+/** The hubs among these cells (towns and the other centres: details.ts HUBS), by kind. */
+async function hubsIn(tx: Tx, cells: string[]): Promise<Map<string, HubKind>> {
+  if (!cells.length) return new Map();
+  const rows = await tx.select({ cell: worldCells.cell, town: worldCells.town, hub: worldCells.hub }).from(worldCells).where(and(inArray(worldCells.cell, cells), or(eq(worldCells.town, true), isNotNull(worldCells.hub))));
+  return new Map(rows.map((r) => [r.cell, r.town ? "town" : (r.hub as HubKind)]));
+}
+
+/** A hub other than a town's births: as a town's nest, slowed by its rule (details.ts HubRule.births). */
+const hubBirthMinutes = (race: string, hub: string | null) => nestBirthMinutes(race, true) / (hubRule(hub ?? "")?.births ?? 1);
 
 /** The towns among these cells. */
 async function townsIn(tx: Tx, cells: string[]): Promise<Set<string>> {
@@ -635,10 +661,11 @@ export async function advanceWorld(tx: Tx, camp: CampRow, now: Date): Promise<bo
         race: camp.race,
         key: cellPlace(cell.cell),
         startedAt: readyAt.getTime(),
-        birthMinutes: nestBirthMinutes(camp.race, cell.town) / (1 + (tb.nest ?? 0)),
+        birthMinutes: (cell.hub ? hubBirthMinutes(camp.race, cell.hub) : nestBirthMinutes(camp.race, cell.town)) / (1 + (tb.nest ?? 0)),
         cap: room,
         detail, // (its 細分地形's rare breed is born there now and then: population.ts)
         breedBoost: bonus.breed ?? 1, // (a 祈福台 or 祭壇 on it)
+        sageBoost: bonus.sage ?? 1, // (a 圖書館)
       };
       const population: Population = { residents: rows.map(toResident), nextId: camp.nextId, nextSlot: cell.nextSlot, peak: rows.length };
       const step = advance(place, population, camp.seed, now.getTime());
@@ -849,7 +876,7 @@ async function releaseCell(tx: Tx, cell: string) {
   await tx.update(campResidents).set({ place: "home" }).where(and(or(eq(campResidents.place, guardPlace(cell)), eq(campResidents.place, campingPlace(cell))), isNull(campResidents.diedAt)));
   await tx
     .update(worldCells)
-    .set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: null, building: null, target: null, updatedAt: new Date() })
+    .set({ owner: null, heldSince: null, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, hub: null, yieldedTo: null, building: null, building2: null, target: null, updatedAt: new Date() })
     .where(eq(worldCells.cell, cell));
 }
 
@@ -857,7 +884,7 @@ async function takeCell(tx: Tx, cell: string, owner: string, now: Date) {
   await touchCell(tx, cell);
   await tx
     .update(worldCells)
-    .set({ owner, heldSince: now, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, yieldedTo: now, building: null, target: null, updatedAt: now })
+    .set({ owner, heldSince: now, nestStartedAt: null, nextSlot: 0, advancedTo: null, town: false, hub: null, yieldedTo: now, building: null, building2: null, target: null, updatedAt: now })
     .where(eq(worldCells.cell, cell));
 }
 
@@ -1763,28 +1790,54 @@ export async function buildNest(tx: Tx, userId: string, cell: string, now: Date)
 }
 
 export async function buildTown(tx: Tx, userId: string, cell: string, now: Date) {
+  await buildHub(tx, userId, cell, "town", now);
+}
+
+/**
+ * Makes a held cell its region's centre: a town, or a fortress, a workstead or a sanctuary (details.ts HUBS). They stand in
+ * a region of its holder's of TOWN_MIN_CELLS joined cells or more, and share its places: one for every TOWN_CELLS_EACH cells.
+ */
+export async function buildHub(tx: Tx, userId: string, cell: string, kind: HubKind, now: Date) {
   const { camp } = await ownCell(tx, userId, cell);
   await advanceWorld(tx, camp, now);
   const row = await ownedRow(tx, userId, cell);
-  if (row.town) throw new WorldError(409, "exists", "這一格已經是城鎮了。");
-  // a town stands in a region of its holder's: TOWN_MIN_CELLS held cells joined side by side (this one among them), and one more
-  // town for every TOWN_CELLS_EACH more cells
+  const rule = hubRule(kind);
+  if (!rule) throw new WorldError(400, "invalid_input", "沒有這種中心。");
+  const name = hubName(kind, camp.race);
+  if (row.town || row.hub) throw new WorldError(409, "exists", `這一格已經是${row.town ? "城鎮" : hubName(row.hub as HubKind, camp.race)}了；要換先拆掉。`);
   const held = new Set(await heldCells(tx, userId));
   const region = connectedCells(cell, held).length;
-  if (region < TOWN_MIN_CELLS) throw new WorldError(409, "too_few", `城鎮要蓋在至少 ${TOWN_MIN_CELLS} 格相連的領地裡（這裡連著 ${region} 格）。`);
-  const towns = await townsIn(tx, [...held]);
-  const already = regionTowns(cell, held, towns);
+  if (region < TOWN_MIN_CELLS) throw new WorldError(409, "too_few", `${name}要蓋在至少 ${TOWN_MIN_CELLS} 格相連的領地裡（這裡連著 ${region} 格）。`);
+  const centres = new Set((await hubsIn(tx, [...held])).keys());
+  const already = regionTowns(cell, held, centres);
   if (!regionHasRoomForTown(region, already)) {
-    throw new WorldError(409, "too_few", `這一區每 ${TOWN_CELLS_EACH} 格可以蓋 1 座城鎮：連著 ${region} 格、已經有 ${already} 座，要連到 ${TOWN_CELLS_EACH * (already + 1)} 格才能再蓋。`);
+    throw new WorldError(409, "too_few", `這一區每 ${TOWN_CELLS_EACH} 格可以有 1 個中心（城鎮、要塞、工坊鎮、聖地共用）：連著 ${region} 格、已經有 ${already} 個，要連到 ${TOWN_CELLS_EACH * (already + 1)} 格才能再蓋。`);
   }
-  if (!canAfford(camp.materials, TOWN_COST)) throw new WorldError(409, "cannot_afford", `素材不夠：城鎮要 ${costText(TOWN_COST)}。`);
+  if (!canAfford(camp.materials, TOWN_COST)) throw new WorldError(409, "cannot_afford", `素材不夠：${name}要 ${costText(TOWN_COST)}。`);
   camp.materials = spend(camp.materials, TOWN_COST);
   await recordFlow(tx, userId, now, "world-build", taken(TOWN_COST));
-  // a town has a nest of its own (it raises residents as fast as the home camp)
-  await tx.update(worldCells).set({ town: true, nestStartedAt: row.nestStartedAt ?? new Date(now.getTime() - NEST_BUILD_HOURS * HOUR), updatedAt: now }).where(eq(worldCells.cell, cell));
+  // a centre has a nest of its own (a town's as fast as the home camp's; the others slower: HubRule.births)
+  await tx
+    .update(worldCells)
+    .set({ ...(kind === "town" ? { town: true } : { hub: kind }), nestStartedAt: row.nestStartedAt ?? new Date(now.getTime() - NEST_BUILD_HOURS * HOUR), updatedAt: now })
+    .where(eq(worldCells.cell, cell));
   const player = await lockPlayer(tx, userId);
   if (player) await tx.update(worldPlayers).set({ xp: player.xp + Math.round(XP.townBuilt * (1 + (talentBonus(player.talents).xp ?? 0))) }).where(eq(worldPlayers.userId, userId));
-  await addEvent(tx, userId, now, "world", { town: cell });
+  await addEvent(tx, userId, now, "world", kind === "town" ? { town: cell } : { hub: { cell, kind } });
+  await bumpVersion(tx, camp);
+}
+
+/** Takes a cell's centre down (to build another kind): half its cost back; its second building goes with it. */
+export async function demolishHub(tx: Tx, userId: string, cell: string, now: Date) {
+  const { camp } = await ownCell(tx, userId, cell);
+  await advanceWorld(tx, camp, now);
+  const row = await ownedRow(tx, userId, cell);
+  if (!row.town && !row.hub) throw new WorldError(409, "not_hub", "這一格不是城鎮或其他中心。");
+  const back = Object.fromEntries(Object.entries(TOWN_COST).map(([id, n]) => [id, Math.floor(n / 2)]));
+  for (const [id, n] of Object.entries(back)) camp.materials = { ...camp.materials, [id]: (camp.materials[id] ?? 0) + n };
+  await recordFlow(tx, userId, now, "world-build", back);
+  await tx.update(worldCells).set({ town: false, hub: null, building2: null, updatedAt: now }).where(eq(worldCells.cell, cell));
+  await addEvent(tx, userId, now, "world", { unhub: { cell, kind: row.town ? "town" : row.hub } });
   await bumpVersion(tx, camp);
 }
 
@@ -2296,6 +2349,7 @@ export async function worldMe(tx: Tx, userId: string, now: Date): Promise<WorldM
       nextYieldAt: new Date((c.yieldedTo ?? c.heldSince ?? now).getTime() + YIELD_HOURS * HOUR).toISOString(),
       region: connectedCells(c.cell, new Set(held.map((h) => h.cell))).length,
       regionTowns: regionTowns(c.cell, new Set(held.map((h) => h.cell)), new Set(held.filter((h) => h.town).map((h) => h.cell))),
+      regionCentres: regionTowns(c.cell, new Set(held.map((h) => h.cell)), new Set(held.filter((h) => h.town || h.hub).map((h) => h.cell))),
       upkeep: paying.has(c.cell),
       party: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).party,
       travel: cellBonus(camp.race, c.building, now.getTime(), around(c.cell)).travel,
@@ -2374,6 +2428,7 @@ export async function territoryList(tx: Tx, userId: string, now: Date): Promise<
       lng: at.lng,
       terrain: ground.get(c.cell) ?? terrainAt(WORLD_SEED, c.cell),
       detail: details.get(c.cell) ?? null,
+      hub: (c.hub as HubKind | null) ?? null,
       home: isHome,
       town: c.town,
       garrison: counts.get(c.cell)?.n ?? 0,
@@ -2410,7 +2465,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
   const capacity = await roomOf(tx, camp, row, now, isHome);
   const nest = nestState(row, now);
   const readyAt = row.nestStartedAt ? new Date(row.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR) : null;
-  const birthMinutes = row.nestStartedAt && !isHome ? nestBirthMinutes(camp.race, row.town) / (1 + ((await talentBonusOf(tx, userId)).nest ?? 0)) : null;
+  const birthMinutes = row.nestStartedAt && !isHome ? (row.hub ? hubBirthMinutes(camp.race, row.hub) : nestBirthMinutes(camp.race, row.town)) / (1 + ((await talentBonusOf(tx, userId)).nest ?? 0)) : null;
   let nextBirthAt: Date | null = null;
   if (readyAt && birthMinutes && garrison < capacity) {
     nextBirthAt = nest === "ready" ? new Date(Math.max(now.getTime(), readyAt.getTime() + row.nextSlot * birthMinutes * MINUTE)) : readyAt;
@@ -2424,7 +2479,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
         eq(campEvents.userId, userId),
         sql`(${campEvents.data} -> 'cells' ? ${cell} or ${campEvents.data} -> 'lairBack' ->> 'cell' = ${cell} or ${campEvents.data} ->> 'cell' = ${cell}
           or ${campEvents.data} ->> 'nest' = ${cell} or ${campEvents.data} ->> 'town' = ${cell} or ${campEvents.data} ->> 'recalled' = ${cell}
-          or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'raided' ? ${cell} or ${campEvents.data} -> 'guests' ->> 'cell' = ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell} or ${campEvents.data} -> 'staffed' ->> 'cell' = ${cell}
+          or ${campEvents.data} -> 'hungry' ? ${cell} or ${campEvents.data} -> 'raided' ? ${cell} or ${campEvents.data} -> 'hub' ->> 'cell' = ${cell} or ${campEvents.data} -> 'unhub' ->> 'cell' = ${cell} or ${campEvents.data} -> 'guests' ->> 'cell' = ${cell} or ${campEvents.data} -> 'built' ->> 'cell' = ${cell} or ${campEvents.data} -> 'demolished' ->> 'cell' = ${cell} or ${campEvents.data} -> 'staffed' ->> 'cell' = ${cell}
           or (${campEvents.data} ->> 'to' = ${cell} and (${campEvents.data} ? 'arrived' or ${campEvents.data} ? 'incoming')))`,
       ),
     )
@@ -2444,6 +2499,8 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     else if (d.arrived && (d.cell === "settled" || d.cell === "taken")) history.push({ at, kind: "settled", fallen: d.fallen, killed: d.killed, expedition: d.id });
     else if (d.nest) history.push({ at, kind: "nest" });
     else if (d.town) history.push({ at, kind: "town" });
+    else if (d.hub) history.push({ at, kind: "hub", name: hubName(d.hub.kind, camp.race) });
+    else if (d.unhub) history.push({ at, kind: "unhub", name: d.unhub.kind === "town" ? "城鎮" : hubName(d.unhub.kind, camp.race) });
     else if (d.recalled) history.push({ at, kind: "recalled", residents: d.residents });
     else if (d.built) history.push({ at, kind: "built", name: cellBuildingName(d.built.kind, camp.race), residents: d.built.level });
     else if (d.demolished) history.push({ at, kind: "demolished", name: cellBuildingName(d.demolished.kind, camp.race) });
@@ -2475,6 +2532,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     lng: center.lng,
     terrain,
     detail: await detailOf(tx, cell),
+    hub: (row.hub as HubKind | null) ?? null,
     home: isHome,
     town: row.town,
     garrison,
@@ -2506,6 +2564,7 @@ export async function cellDetail(tx: Tx, userId: string, cell: string, now: Date
     neighbours: around.neighbours ?? 0,
     region: connectedCells(cell, new Set(mine)).length,
     regionTowns: regionTowns(cell, new Set(mine), await townsIn(tx, mine)),
+    regionCentres: regionTowns(cell, new Set(mine), new Set((await hubsIn(tx, mine)).keys())),
     townRoom: isHome ? 0 : townRoom(raceRules(camp.race).cellCap, around.townsJoined ?? 0),
     camping: (await campersBeside(tx, [cell])).get(cell) ?? 0,
     guests: guestRows.map((g) => ({ owner: g.owner, name: g.name ?? "？", count: g.n })),
@@ -2668,6 +2727,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       lng: center.lng,
       terrain,
       ...(detail ? { detail } : {}),
+      ...(row?.owner && row.hub ? { hub: row.hub as HubKind } : {}),
       owner: row?.owner ? (owners.get(row.owner) ?? null) : null,
       garrison: counts.get(cell)?.n ?? 0,
       nest: row ? nestState(row, now) : "none",

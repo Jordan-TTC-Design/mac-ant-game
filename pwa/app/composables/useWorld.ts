@@ -114,6 +114,9 @@ export function useWorld() {
       ),
     nest: (cell: string) => act(() => api("POST", `world/cells/${cell}/nest`)),
     town: (cell: string) => act(() => api("POST", `world/cells/${cell}/town`)),
+    /** A fortress, a workstead or a sanctuary (details.ts HUBS): a centre of its region in a town's place. */
+    hub: (cell: string, kind: string) => act(() => api("POST", `world/cells/${cell}/hub`, { kind })),
+    unhub: (cell: string) => act(() => api("POST", `world/cells/${cell}/unhub`)),
     recall: (cell: string) => act(() => api("POST", `world/cells/${cell}/recall`, {})),
     /** Guests walk home: your own from a friend's cell, or (the holder) every friend's from yours. */
     unguard: (cell: string) => act(() => api("POST", `world/cells/${cell}/unguard`, {})),

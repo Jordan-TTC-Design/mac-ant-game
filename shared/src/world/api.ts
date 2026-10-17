@@ -5,7 +5,7 @@
 import { z } from "zod";
 import type { BattleEvent } from "./battle.ts";
 import type { Terrain } from "./contents.ts";
-import type { TerrainDetail } from "./details.ts";
+import type { HubKind, TerrainDetail } from "./details.ts";
 import { isCellId } from "./grid.ts";
 import type { CellBonus, Landmark } from "./holdings.ts";
 
@@ -127,6 +127,8 @@ export interface CellView {
   terrain: Terrain;
   /** Its 細分地形 (details.ts), if any: it changes what the ground gives and which rarer lairs stand there (lairAt). */
   detail?: TerrainDetail | null;
+  /** A centre other than a town on it (details.ts HUBS): fortress, workstead, sanctuary. */
+  hub?: HubKind | null;
   owner: WorldOwner | null;
   garrison: number;
   nest: "none" | "building" | "ready";
@@ -262,6 +264,8 @@ export interface WorldMe {
     region: number;
     /** The towns in that region (one may stand for every TOWN_CELLS_EACH cells). */
     regionTowns: number;
+    /** The centres of its region (towns and the other hubs: they share the places, one per TOWN_CELLS_EACH cells). */
+    regionCentres?: number;
     /** Parties setting out from it may be this many bigger, and walk this share of the time (its building). */
     party: number;
     travel: number;
@@ -310,7 +314,7 @@ export interface CellHappening {
    * yield: the ground gave; lairBack: the lair came back for it; incoming: another camp's party set out for it; attacked:
    * another camp came; settled: a party moved in or took it; nest / town: built; recalled: some walked home.
    */
-  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests" | "staffed" | "raided";
+  kind: "yield" | "lairBack" | "incoming" | "attacked" | "settled" | "nest" | "town" | "recalled" | "built" | "demolished" | "guests" | "staffed" | "raided" | "hub" | "unhub";
   /** Auto staffing: those it sent walking home (with `residents` 0), and the number it keeps it at. */
   back?: number;
   target?: number;
@@ -334,6 +338,7 @@ export interface CellHappening {
 export interface CellDetail {
   /** Its 細分地形 (details.ts), if any. */
   detail?: TerrainDetail | null;
+  hub?: HubKind | null;
   /** 腐化大地: another camp's cell next to it blights it (it yields less). */
   blighted?: boolean;
   /** The building is at the top its holder's race level allows, but a higher level opens at this race level. */
@@ -379,6 +384,7 @@ export interface CellDetail {
   region: number;
   /** The towns in its region, and the room they add to this cell (counted in `capacity`; at most TOWN_ROOM_MAX towns count). */
   regionTowns: number;
+  regionCentres?: number;
   townRoom: number;
   /** The holder's residents camping beside it, waiting for room (they help defend it and move in as room frees up). */
   camping: number;
@@ -391,6 +397,9 @@ export interface CellDetail {
 
 /** `POST /api/world/cells/:cell/build`: build a kind on the cell, or raise the one there (the same kind) a level. */
 export const buildInput = z.object({ kind: z.string().max(40) });
+
+/** `POST /api/world/cells/:cell/hub`: the centre to make it (details.ts HUBS). */
+export const hubInput = z.object({ kind: z.enum(["town", "fortress", "workstead", "sanctuary"]) });
 
 /** `POST /api/world/talents`: the talents wanted (all of them: more ranks only, nothing taken back but by a reset). */
 export const talentsInput = z.object({ picks: z.record(z.string().max(60), z.number().int().min(0).max(5)) });
@@ -432,6 +441,7 @@ export interface TerritoryItem {
   lng: number;
   terrain: Terrain;
   detail?: TerrainDetail | null;
+  hub?: HubKind | null;
   /** The camp's own cell. */
   home: boolean;
   town: boolean;

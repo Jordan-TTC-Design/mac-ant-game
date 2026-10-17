@@ -252,6 +252,8 @@ export const worldCells = pgTable(
     nextSlot: integer("next_slot").notNull().default(0),
     advancedTo: timestamp("advanced_to", { withTimezone: true, precision: 3 }),
     town: boolean("town").notNull().default(false),
+    /** A region's centre other than a town (details.ts HUBS: fortress, workstead, sanctuary); it takes a town's place in the region. */
+    hub: text("hub"),
     /** What the ground yields has been taken up to here (shared/src/world/territory.ts cellYield). */
     yieldedTo: timestamp("yielded_to", { withTimezone: true, precision: 3 }),
     /** The lair that was here was beaten at this time (it comes back after its respawn hours). */
@@ -260,6 +262,8 @@ export const worldCells = pgTable(
     lairWounds: jsonb("lair_wounds").$type<{ hp: number[]; at: number }>(),
     /** What the holder built on it (shared/src/world/holdings.ts); gone when the cell changes hands. */
     building: jsonb("building").$type<CellBuilding>(),
+    /** A town's or another hub's second building (details.ts buildingSlots). */
+    building2: jsonb("building2").$type<CellBuilding>(),
     /** How many its holder wants living here (null: as it comes): the camp sends more or calls the rest home by itself. */
     target: integer("target"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

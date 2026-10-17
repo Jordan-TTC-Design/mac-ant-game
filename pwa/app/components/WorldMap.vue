@@ -124,6 +124,8 @@ const RACE_LOOK: Record<string, { flag: string; wall: string; roof: string; ston
 /** What a camp's home looks like by its race level (2026-10-17): a hut, a stockade (Lv5), a stone keep (Lv10), a citadel (Lv20). */
 const homeTier = (level = 1) => (level >= 20 ? 3 : level >= 10 ? 2 : level >= 5 ? 1 : 0);
 
+const HUB_ICONS: Record<string, string> = { fortress: "🏰", workstead: "⚒️", sanctuary: "⛩️" };
+
 function buildingSvg(kind: "home" | "town", race: string, level = 1): string {
   const look = RACE_LOOK[race] ?? RACE_LOOK.goblin!;
   const ink = "#1f1f1f";
@@ -160,7 +162,7 @@ function buildingSvg(kind: "home" | "town", race: string, level = 1): string {
 /** What a cell's icon shows, as a key: the icon is made again only when this changes. */
 function markerKey(c: CellView): string {
   return JSON.stringify([
-    c.owner && [c.owner.id === props.mine, c.owner.race, c.garrison, c.town, c.home, c.nest, c.home ? homeTier(c.owner.level) : 0, c.home ? Math.min(4, Math.floor((c.owner.level ?? 1) / 5)) : 0],
+    c.owner && [c.owner.id === props.mine, c.owner.race, c.garrison, c.town, c.hub, c.home, c.nest, c.home ? homeTier(c.owner.level) : 0, c.home ? Math.min(4, Math.floor((c.owner.level ?? 1) / 5)) : 0],
     c.boss && [c.boss.kind, Math.round((100 * c.boss.hp) / c.boss.maxHp)],
     c.lair && [c.lair.kind, c.lair.level, c.lair.boss, leaderOf(c.lair.foes)],
     c.landmark?.kind,
@@ -174,11 +176,13 @@ function markerKey(c: CellView): string {
 function cellMarker(c: CellView): HTMLElement | null {
   const el = document.createElement("div");
   el.className = "map-cell";
-  if (c.owner && (c.home || c.town)) {
+  if (c.owner && (c.home || c.town || c.hub)) {
     const building = document.createElement("span");
     building.className = "map-building";
     building.innerHTML = buildingSvg(c.home ? "home" : "town", c.owner.race, c.owner.level);
-    el.append(building, label(`${c.garrison}${c.home ? " 營地" : " 城"}`, c.owner.id === props.mine ? "mine" : "theirs"));
+    // (a fortress, workstead or sanctuary: the town's walls, with its sign)
+    const sign = c.hub ? `${HUB_ICONS[c.hub] ?? ""} ` : "";
+    el.append(building, label(`${sign}${c.garrison}${c.home ? " 營地" : c.hub ? "" : " 城"}`, c.owner.id === props.mine ? "mine" : "theirs"));
   } else if (c.owner) {
     const face = document.createElement("img");
     face.src = `/sprites/${c.owner.race}/icon.png`;

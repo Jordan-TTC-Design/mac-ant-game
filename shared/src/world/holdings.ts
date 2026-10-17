@@ -10,7 +10,7 @@ import { MATERIALS } from "./drops.ts";
 import type { Terrain } from "./contents.ts";
 import { neighbors } from "./grid.ts";
 import { hashString, type Random } from "./random.ts";
-import { detailBuilding, detailBuildingsFor, type DetailBuildingRule, type TerrainDetail } from "./details.ts";
+import { detailBuilding, detailBuildingsFor, hubRule, type DetailBuildingRule, type HubKind, type TerrainDetail } from "./details.ts";
 import { RATIONS } from "./supplies.ts";
 
 export type CellBuildingKind =
@@ -369,6 +369,10 @@ export interface CellSurroundings {
   town?: boolean;
   /** The kinds of building working in its region (for REGION_COMBOS). */
   regionKinds?: readonly string[];
+  /** It is a hub other than a town itself (details.ts HUBS: fortress, workstead, sanctuary). */
+  hub?: HubKind | null;
+  /** The hubs other than towns of its region, this one among them (their region-wide ways). */
+  regionHubs?: readonly HubKind[];
 }
 
 /**
@@ -427,6 +431,18 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
     out.travel *= TOWN_TRAVEL;
     out.fort += TOWN_FORT;
   }
+  // a hub of its own (a fortress: more room, sturdier, bigger parties; a workstead: a big yield of its own), and the hubs
+  // of its region (a fortress keeps half the wild raids off the region; a workstead: the region's cells yield more)
+  const own = around.hub ? hubRule(around.hub) : undefined;
+  if (own?.room) out.room += Math.round(raceRules(race).cellCap * (own.room - 1));
+  if (own?.fort) out.fort += own.fort;
+  if (own?.party) out.party += own.party;
+  for (const [id, n] of Object.entries(own?.yield ?? {})) out.makes[id] = (out.makes[id] ?? 0) + n;
+  for (const kind of new Set(around.regionHubs ?? [])) {
+    const h = hubRule(kind);
+    if (h?.regionYield) out.yieldBoost += h.regionYield;
+    if (h?.wild) out.wild = 1 - (1 - (out.wild ?? 0)) * (1 - h.wild);
+  }
   // a 聖樹 standing in its region
   if (around.regionKinds?.includes("sacred")) {
     out.yieldBoost += SACRED_YIELD;
@@ -443,7 +459,7 @@ export function cellBonus(race: string, building: CellBuilding | null | undefine
   if (rule.travel) out.travel *= rule.travel[k];
   if (rule.room) out.room += rule.room[k];
   if (rule.party) out.party += rule.party[k];
-  if ("wild" in rule && rule.wild) out.wild = rule.wild[k];
+  if ("wild" in rule && rule.wild) out.wild = 1 - (1 - (out.wild ?? 0)) * (1 - rule.wild[k]);
   if ("heal" in rule && rule.heal) out.heal = rule.heal[k];
   if ("xp" in rule && rule.xp) out.fightXp = rule.xp[k];
   if ("sage" in rule && rule.sage) out.sage = rule.sage[k];

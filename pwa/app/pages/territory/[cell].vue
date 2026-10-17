@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { REGION_COMBOS, STAFF_HOME_KEEP, TALENT_ABILITIES, MARKET_RATE, MARKET_TRADES_PER_DAY, marketQuote, marketWorth, materialName, TERRAIN_NAMES, TOWN_FORT, TOWN_TRAVEL, type CellBonus, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
+import { hubName, hubRule, type HubKind, REGION_COMBOS, STAFF_HOME_KEEP, TALENT_ABILITIES, MARKET_RATE, MARKET_TRADES_PER_DAY, marketQuote, marketWorth, materialName, TERRAIN_NAMES, TOWN_FORT, TOWN_TRAVEL, type CellBonus, type CellDetail, type CellHappening } from "@goblincamp/shared/world";
 import type { CampResidentView } from "@goblincamp/shared/camp";
 import { ApiError, api } from "~/utils/api";
 import { noteTime } from "~/utils/time";
@@ -91,6 +91,7 @@ const costText = (cost: Record<string, number> | null) =>
   Object.entries(cost ?? {}).map(([id, n]) => `${materialName(id)} ${n}${(store.value[id] ?? 0) < n ? `（有 ${store.value[id] ?? 0}）` : ""}`).join("、");
 /** Taking a building down is asked again on the page (the Mac's world window shows no browser dialogs). */
 const askingDemolish = ref(false);
+const askingUnhub = ref(false);
 async function act(path: string, body: unknown) {
   askingDemolish.value = false;
   busy.value = true;
@@ -162,6 +163,8 @@ function happening(h: CellHappening): string {
     case "settled": return h.killed ? `打下這一格，住了進來（倒下 ${h.fallen}）` : "有居民搬進來了";
     case "nest": return "開始蓋繁殖巢";
     case "town": return "蓋成了城鎮";
+    case "hub": return `蓋成了${h.name}`;
+    case "unhub": return `拆掉了${h.name}（退回一半材料）`;
     case "recalled": return `${h.residents} 隻撤走了`;
     case "built": return h.residents === 1 ? `開始蓋${h.name}` : `${h.name}開始升到 ${h.residents} 級`;
     case "demolished": return `拆掉了${h.name}`;
@@ -296,6 +299,18 @@ function happening(h: CellHappening): string {
           <p class="muted small">相連的領地裡兩種都蓋好了，兩邊都會多一點：產出每樣 +1、防守 +10%、住人 +5、多帶 1 隻、走路 −10%。</p>
           <ul><li v-for="c in REGION_COMBOS" :key="c.name"><b>{{ c.name }}</b>：{{ c.blurb }}</li></ul>
         </details>
+      </section>
+
+      <section v-if="d.hub" class="panel">
+        <h2>{{ ({ fortress: "🏰", workstead: "⚒️", sanctuary: "⛩️" } as Record<string, string>)[d.hub] }} {{ hubName(d.hub as HubKind, race) }}</h2>
+        <p>{{ hubRule(d.hub)?.blurb }}</p>
+        <p class="muted small">這一區的中心（跟城鎮共用名額，每 4 格 1 個）。生居民比城鎮慢。想換方向可以拆掉再蓋別的，退回一半材料。</p>
+        <button v-if="!askingUnhub" class="btn" :disabled="busy" @click="askingUnhub = true">拆掉{{ hubName(d.hub as HubKind, race) }}</button>
+        <template v-else>
+          <p class="warn">確定要拆？只退回一半材料。</p>
+          <button class="btn danger" :disabled="busy" @click="askingUnhub = false; act('unhub', {})">確定拆掉</button>
+          <button class="btn" @click="askingUnhub = false">不要</button>
+        </template>
       </section>
 
       <section v-if="d.town" class="panel">
