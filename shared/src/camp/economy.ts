@@ -9,6 +9,7 @@ export type FlowSource = string;
 export const FLOW_SOURCE_NAMES: Record<string, string> = {
   production: "工地產出",
   raid: "突襲掉落",
+  "raid-plunder": "突襲打輸被搶",
   salvage: "壞裝備拆回",
   world: "大世界",
   "world-loot": "大世界戰利品",

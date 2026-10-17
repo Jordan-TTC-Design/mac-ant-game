@@ -1,4 +1,4 @@
-import { bossLoot, campBoss, campFoe, MONSTER_DROPS, MONSTER_VARIANTS, RACE_RANGE, residentAsFighter, SCRAP_DROPS, type GearItem, type GearSlot, type RaidPlan } from "@goblincamp/shared/camp";
+import { bossLoot, campBoss, campFoe, MONSTER_DROPS, MONSTER_VARIANTS, RAID_MAX_FALLEN, RACE_RANGE, residentAsFighter, SCRAP_DROPS, type GearItem, type GearSlot, type RaidPlan } from "@goblincamp/shared/camp";
 import { FOES, hashString, randomFrom, residentFighter, simulateBattle, type BattleEvent, type FightBoosts, type Fighter } from "@goblincamp/shared/world";
 
 /** How many residents go out to meet each monster (the rest keep on with their day). */
@@ -135,6 +135,9 @@ export function resolveRaid(
   });
 
   const battle = simulateBattle(monsters, defending, { seed: hashString(`${campSeed}|raid-battle|${plan.index}`) });
+  // (no raid takes more than RAID_MAX_FALLEN of those at home: the rest who went down come out of it hurt)
+  const fallenAll = battle.fallen.defend.map(Number);
+  const fallen = fallenAll.slice(0, Math.max(1, Math.floor(alive.length * RAID_MAX_FALLEN)));
 
   const killed: Record<string, number> = {};
   const loot: Record<string, number> = {};
@@ -177,7 +180,7 @@ export function resolveRaid(
     monsters: plan.monsters,
     ...(plan.boss ? { boss: plan.boss, bossBeaten } : {}),
     defenders: defenders.map((r) => r.id),
-    fallen: battle.fallen.defend.map(Number),
+    fallen,
     killed,
     loot,
     winner: battle.winner === "defend" ? "camp" : "monsters",

@@ -189,6 +189,9 @@ export interface CampView {
   /** Who waits at the gate wanting to move in (visitors.ts; null: nobody), and the level bosses beaten (raids.ts). Older servers leave them out. */
   visitor?: import("./visitors.ts").CampVisitor | null;
   bossesBeaten?: number[];
+  /** How strong the camp's raids are (raids.ts raidRaceLevel: the race level, held back by the residents' gear); the Mac's own
+   *  monsters follow it too. Older servers leave it out. */
+  raidLevel?: number;
   /** The camp's buildings (buildings.ts: id → level and when the one going up is done). Older servers leave it out. */
   buildings?: import("./buildings.ts").CampBuildings;
   /** The camp may refine gear into ★ pieces (the 拼裝改造 talent, talents.ts refine). Older servers leave it out. */

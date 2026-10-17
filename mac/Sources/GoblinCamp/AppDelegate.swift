@@ -2423,6 +2423,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.decorEarned = Set(ledger.view?.decorEarned ?? [])
         colony.booksStage = ledger.view?.stage
         colony.booksRaceLevel = ledger.view?.raceLevel
+        colony.booksRaidLevel = ledger.view?.raidLevel ?? ledger.view?.raceLevel
         // (someone at the gate whose wait is not over; the talents' bonuses; who lives at home)
         colony.booksVisitor = ledger.view?.visitor.flatMap { MerchantVisitInfo.date($0.leaves) > Date() ? $0 : nil }
         colony.booksCampBonus = ledger.view?.campBonus

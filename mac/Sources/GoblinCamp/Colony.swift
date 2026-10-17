@@ -168,6 +168,8 @@ final class Colony {
     var booksStage: Int?
     /// The race level as the books have it (nil: signed out or an older server): more decoration room, tiers and limits.
     var booksRaceLevel: Int?
+    /// The raids' strength as the books have it (the race level held back by the residents' gear); the Mac's own monsters follow it.
+    var booksRaidLevel: Int?
     /// Who waits at the gate wanting to move in, and the 營地 talents' bonuses, as the books have them (Visitors.swift).
     var booksVisitor: CampLedger.View.Visitor?
     var booksCampBonus: CampLedger.View.CampBonus?
@@ -801,7 +803,7 @@ final class Colony {
     /// A monster (or a pack of them) walks in from a screen edge, heading for the camp.
     func spawnMonsters(of kind: AnimalKind? = nil) {
         guard nest != nil, let kind = kind ?? Animals.pick(monsters: true, minutes: playSeconds / 60, ants: peakAnts, biome: scene?.biome.rawValue, night: Colony.isNight,
-                                                                   water: scene.map { !$0.visiblePonds.isEmpty } ?? false, raceLevel: decorLevel) else { return }
+                                                                   water: scene.map { !$0.visiblePonds.isEmpty } ?? false, raceLevel: booksRaidLevel ?? 1) else { return }
         let count = Int.random(in: kind.monster.pack)
         let before = creatures.count
         for _ in 0..<count { spawnAnimal(of: kind) }
@@ -810,7 +812,7 @@ final class Colony {
             creatures[i].pos.y += CGFloat.random(in: -22...22)
             creatures[i].stay = Double.random(in: 200...320)
             // (a higher race level: now and then a variant, as on the server)
-            if Double.random(in: 0..<1) < MonsterVariant.chance(raceLevel: decorLevel) { creatures[i].make(MonsterVariant.allCases.randomElement()!) }
+            if Double.random(in: 0..<1) < MonsterVariant.chance(raceLevel: booksRaidLevel ?? 1) { creatures[i].make(MonsterVariant.allCases.randomElement()!) }
         }
     }
 

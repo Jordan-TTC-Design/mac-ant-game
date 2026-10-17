@@ -3,6 +3,7 @@
  * that is offline sees no raids; the fight itself is worked out with the big world's battle rules and played back).
  */
 import { hashString, randomFrom } from "../world/random.ts";
+import { taipeiDay } from "./merchant.ts";
 import { raceRules } from "./races.ts";
 
 const MINUTE = 60_000;
@@ -102,6 +103,21 @@ export function campBoss(level: number): CampBoss {
   return { ...base, level, hp: Math.round(base.hp * more), attack: Math.round(base.attack * more) };
 }
 
+/**
+ * How strong the camp is for its raids (2026-10-17: a race level alone wiped out camps whose gear had not caught up): the
+ * race level, but no more than its residents' gear stands for — 1.5 levels for each point of their average gearPower
+ * (the pieces they wear, added up). Bare residents meet the first tier only; a camp in full first-tier gear the third.
+ */
+export function raidRaceLevel(raceLevel: number, averageGear: number): number {
+  return Math.max(1, Math.min(raceLevel, 1 + Math.floor(Math.max(0, averageGear) * 1.5)));
+}
+
+/** At most this share of the residents at home fall in one raid (at least one may); the rest come out of it hurt. */
+export const RAID_MAX_FALLEN = 0.05;
+/** A raid the monsters win carries off this share of these. */
+export const RAID_PLUNDER = 0.05;
+export const RAID_PLUNDERED = ["log", "stone", "scrap_iron"] as const;
+
 /** The boss a raid brings now: the lowest of the ten-levels reached not yet beaten (null: none). */
 export function bossDue(raceLevel: number, beaten: readonly number[]): number | null {
   for (let level = BOSS_EVERY; level <= raceLevel; level += BOSS_EVERY) if (!beaten.includes(level)) return level;
@@ -166,10 +182,13 @@ export function planRaid(race: string, campSeed: number, startedAt: number, inde
     const key = `${kind.id}|${variant}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  const boss = bossDue(raceLevel, beaten);
+  // (the boss comes with the first raid of each day (Taipei) until beaten, not with every raid)
+  const at = raidTime(race, campSeed, startedAt, index);
+  const firstToday = index === 0 || taipeiDay(new Date(at)) !== taipeiDay(new Date(raidTime(race, campSeed, startedAt, index - 1)));
+  const boss = firstToday ? bossDue(raceLevel, beaten) : null;
   return {
     index,
-    at: raidTime(race, campSeed, startedAt, index),
+    at,
     monsters: [...counts].map(([key, count]) => {
       const [id, variant] = key.split("|") as [string, MonsterVariant | ""];
       return variant ? { id, count, variant } : { id, count };

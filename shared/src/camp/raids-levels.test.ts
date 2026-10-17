@@ -68,3 +68,25 @@ describe("sites by race level and the 豐收 talent (DESKTOP.md §10.0)", async 
     expect(produce({ ...base, boost: 0.1 }).got.log).toBeGreaterThan(produce(base).got.log!);
   });
 });
+
+describe("raids held back by the camp's own strength (2026-10-17)", async () => {
+  const { raidRaceLevel, planRaid: plan, raidTime } = await import("./raids.ts");
+  const { taipeiDay } = await import("./merchant.ts");
+  it("follow the residents' gear, not the race level alone", () => {
+    expect(raidRaceLevel(50, 0)).toBe(1); // (bare residents: the first tier only)
+    expect(raidRaceLevel(50, 8)).toBe(13);
+    expect(raidRaceLevel(5, 20)).toBe(5); // (never above the race level)
+  });
+  it("bring a level boss only with the first raid of a day", () => {
+    const days = new Map<string, number>();
+    for (let i = 0; i < 60; i++) {
+      const p = plan("goblin", 3, T0, i, 100, 20, [])!;
+      if (p.boss) {
+        const day = taipeiDay(new Date(raidTime("goblin", 3, T0, i)));
+        days.set(day, (days.get(day) ?? 0) + 1);
+      }
+    }
+    expect(days.size).toBeGreaterThan(2);
+    expect([...days.values()].every((n) => n === 1)).toBe(true);
+  });
+});

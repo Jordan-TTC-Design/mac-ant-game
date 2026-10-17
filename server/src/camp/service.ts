@@ -8,6 +8,10 @@ import { focusView, decorEarned,
   fightBoosts,
   gearRule,
   planRaid,
+  raidRaceLevel,
+  RAID_PLUNDER,
+  RAID_PLUNDERED,
+  gearPower,
   specialEffects,
   visitorAt,
   buildingEffects,
@@ -126,6 +130,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   const bonus = await talentBonusOf(tx, camp.userId);
   const beaten = [...(camp.bossesBeaten ?? [])];
   const salvaged: Record<string, number> = {}; // (for the economy dashboard: what broken gear gave back)
+  const plundered: { at: Date; taken: Record<string, number> }[] = [];
   // 營地建設 (buildings.ts): the one going up is done once its time is past; what they do counts from then
   const buildings: CampBuildings = structuredClone(camp.buildings ?? {});
   const built: { id: string; level: number; at: Date }[] = [];
@@ -186,7 +191,10 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
     await settleGear();
     const alive = aliveAt(population);
     // (聖光模式: no monster comes; the raid's time passes by)
-    const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length, level, beaten);
+    // (how strong the camp is for it: its race level, but no more than its residents' gear stands for: raids.ts raidRaceLevel)
+    const gear = alive.reduce((n, r) => n + Object.values(wearers.get(r.id)?.gear ?? {}).reduce((k, item) => k + gearPower(item as GearItem), 0), 0);
+    const raidLevelNow = raidRaceLevel(level, alive.length ? gear / alive.length : 0);
+    const plan = camp.sanctuarySince ? null : planRaid(camp.race, camp.seed, startedAt, nextRaid, alive.length, raidLevelNow, beaten);
     if (plan) {
       const specials = specialEffects(alive.map((r) => r.breed));
       const help = {
@@ -197,7 +205,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
         hp: works.raidDefenderHp,
         bossAttack: works.bossAttack,
       };
-      const outcome = resolveRaid(camp.race, camp.seed, plan, alive.map((r) => ({ ...r, gear: wearers.get(r.id)?.gear })), fightBoosts(camp.race, camp.boosts, t), level, help);
+      const outcome = resolveRaid(camp.race, camp.seed, plan, alive.map((r) => ({ ...r, gear: wearers.get(r.id)?.gear })), fightBoosts(camp.race, camp.boosts, t), raidLevelNow, help);
       if (outcome.bossBeaten && plan.boss) beaten.push(plan.boss);
       // wear, and what broke (about a third of what it was made from can be picked out of the wreck)
       const broken: { resident: number; gear: string }[] = [];
@@ -223,6 +231,21 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
       }
       fall(population, outcome.fallen, t);
       for (const [id, n] of Object.entries(outcome.loot)) materials[id] = (materials[id] ?? 0) + n;
+      // (a raid lost: the monsters carry off a little of the camp's plain stuff, instead of more lives)
+      if (outcome.winner === "monsters") {
+        const taken: Record<string, number> = {};
+        for (const id of RAID_PLUNDERED) {
+          const n = Math.floor((materials[id] ?? 0) * RAID_PLUNDER);
+          if (n > 0) {
+            materials[id] = materials[id]! - n;
+            taken[id] = n;
+          }
+        }
+        if (Object.keys(taken).length) {
+          (outcome as RaidOutcome & { plundered?: Record<string, number> }).plundered = taken;
+          plundered.push({ at: new Date(t), taken });
+        }
+      }
       for (const [id, n] of Object.entries(outcome.killed)) kills[id] = (kills[id] ?? 0) + n;
       raids.push({ ...outcome, broken } as RaidOutcome);
       await settleGear();
@@ -312,6 +335,7 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   for (const raid of raids) await addEvent(tx, camp.userId, new Date(raid.at), "raid", raid);
   // (the economy dashboard's flows: what the raids dropped, broken gear gave back, and the sites made)
   for (const raid of raids) await recordFlow(tx, camp.userId, new Date(raid.at), "raid", raid.loot);
+  for (const p of plundered) await recordFlow(tx, camp.userId, p.at, "raid-plunder", Object.fromEntries(Object.entries(p.taken).map(([id, n]) => [id, -n])));
   await recordFlow(tx, camp.userId, now, "salvage", salvaged);
   await recordFlow(tx, camp.userId, now, "production", made);
   for (const b of built) await addEvent(tx, camp.userId, b.at, "site", { building: b.id, level: b.level, name: campBuilding(b.id)?.name ?? b.id });
@@ -364,6 +388,11 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     })(),
     bossesBeaten: camp.bossesBeaten,
     buildings: camp.buildings,
+    raidLevel: (() => {
+      const home = rows.filter((r) => r.place === "home");
+      const gear = home.reduce((n, r) => n + Object.values(r.gear ?? {}).reduce((k, item) => k + gearPower(item as GearItem), 0), 0);
+      return raidRaceLevel(level, home.length ? gear / home.length : 0);
+    })(),
     canRefine: ((await talentBonusOf(tx, camp.userId)).refine ?? 0) > 0,
     campBonus: await (async () => {
       const b = await talentBonusOf(tx, camp.userId);

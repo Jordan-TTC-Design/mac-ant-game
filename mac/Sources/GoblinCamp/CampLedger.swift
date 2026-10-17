@@ -97,6 +97,8 @@ final class CampLedger {
         let decor: [DecorPlaced]?
         /// The race level in the big world (1 before it opens): the decorations' room, tiers and limits (Decor.swift); older servers leave it out.
         let raceLevel: Int?
+        /// How strong the raids are (the race level held back by the residents' gear: shared raids.ts raidRaceLevel); older servers leave it out.
+        let raidLevel: Int?
         /// The ranch's animals (Ranch.swift); older servers leave it out.
         struct RanchView: Codable {
             struct Animal: Codable { let id: Int; let kind: String; let bornAt: String; let caught: Bool?; let name: String? }
@@ -125,7 +127,7 @@ final class CampLedger {
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, autoGearFar, places, boosts, foodCooldowns
-            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, canRefine, buildings, residents
+            case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, raidLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, canRefine, buildings, residents
         }
 
         init(from decoder: Decoder) throws {
@@ -156,6 +158,7 @@ final class CampLedger {
             merchant = try? c.decodeIfPresent(MerchantVisitInfo.self, forKey: .merchant)
             decor = try? c.decodeIfPresent([DecorPlaced].self, forKey: .decor)
             raceLevel = try? c.decodeIfPresent(Int.self, forKey: .raceLevel)
+            raidLevel = try? c.decodeIfPresent(Int.self, forKey: .raidLevel)
             ranch = try? c.decodeIfPresent(RanchView.self, forKey: .ranch)
             focus = try? c.decodeIfPresent(FocusInfo.self, forKey: .focus)
             decorEarned = try? c.decodeIfPresent([String].self, forKey: .decorEarned)
