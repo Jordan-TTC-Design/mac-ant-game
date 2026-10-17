@@ -35,6 +35,17 @@ export interface Place {
   cap: number;
   /** 聖光模式 (server/CAMP.md §7): every other birth slot passes by while it has SANCTUARY_FULL_BELOW or more. */
   sanctuary?: boolean;
+  /** A held cell's 細分地形 (world/details.ts): a common born there is now and then its terrain breed (TERRAIN_BREED_CHANCE). */
+  detail?: string | null;
+  /** × that chance (the 祈福台 and the 祭壇: details.ts DETAIL_BUILDINGS `breed`). */
+  breedBoost?: number;
+}
+
+/** The chance a common born on a 細分地形 is its terrain breed (`d_<detail>`) instead. */
+export const TERRAIN_BREED_CHANCE = 0.03;
+
+export function terrainBreed(detail: string): string {
+  return `d_${detail}`;
 }
 
 /** In 聖光模式 a camp below this many is born at full speed (so one that was beaten down can grow back). */
@@ -63,6 +74,10 @@ export function residentFor(place: Place, campSeed: number, slot: number, id: nu
   const seed = Math.floor(random() * 4294967296);
   const jitter = 0.9 + 0.2 * random();
   const diesAt = rules.ages ? bornAt + Math.floor(BASE_LIFESPAN_HOURS * HOUR * breed.lifespan * jitter) : null;
+  // (a draw of its own, so births anywhere without a 細分地形 — the home camp, the Mac's — stay as they were)
+  if (place.detail && breed.id === "common" && seeded(campSeed, place.key, "terrain", slot)() < TERRAIN_BREED_CHANCE * (place.breedBoost ?? 1)) {
+    return { id, breed: terrainBreed(place.detail), seed, bornAt, diesAt, diedAt: null };
+  }
   return { id, breed: breed.id, seed, bornAt, diesAt, diedAt: null };
 }
 

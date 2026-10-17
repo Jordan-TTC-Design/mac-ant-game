@@ -6,6 +6,7 @@
  */
 import { hashString, randomFrom } from "../world/random.ts";
 import { taipeiDay } from "./merchant.ts";
+import { TERRAIN_BREEDS, terrainBreedDetail } from "../world/details.ts";
 
 const HOUR = 3_600_000;
 
@@ -42,6 +43,8 @@ const BREED_NAMES: Record<string, Record<string, string>> = {
 
 /** A breed's name for this race ("居民" for one not known here). */
 export function breedName(race: string, breed: string): string {
+  const detail = terrainBreedDetail(breed);
+  if (detail) return TERRAIN_BREEDS[detail].names[race] ?? "居民";
   return specialResident(breed)?.names[race] ?? BREED_NAMES[race]?.[breed] ?? "居民";
 }
 

@@ -3,10 +3,11 @@
  * mac/Sources/GoblinCamp/Materials.swift). Only the server fights (raids and the big world); the Mac plays the result.
  */
 import { GEAR_ATTACK_PER_MIGHT, GEAR_HP_PER_HEALTH, type Resident as Fighter } from "../world/battle.ts";
+import { TERRAIN_BREEDS } from "../world/details.ts";
 import { gearBonus, gearMax, gearRule, type GearItem, type GearSlot } from "./gear.ts";
 
 /** A breed's fighting stats, per race (might and health as multiples of a plain goblin; speed ×). Missing = 1 / 3 / 1. */
-export const BREED_STATS: Record<string, Record<string, { might?: number; health?: number; speed?: number }>> = {
+const PLAIN_STATS: Record<string, Record<string, { might?: number; health?: number; speed?: number }>> = {
   goblin: {
     common: {},
     scout: { speed: 1.35, might: 0.6, health: 2 },
@@ -38,6 +39,18 @@ export const BREED_STATS: Record<string, Record<string, { might?: number; health
     half_hum: { speed: 1.2, might: 1.2, health: 3.5 },
   },
 };
+
+/** With each race's 14 terrain breeds (world/details.ts TERRAIN_BREEDS): its common's stats, × theirs. */
+export const BREED_STATS: Record<string, Record<string, { might?: number; health?: number; speed?: number }>> = Object.fromEntries(
+  Object.entries(PLAIN_STATS).map(([race, breeds]) => {
+    const common = { might: 1, health: 3, speed: 1, ...breeds.common };
+    const terrain = Object.entries(TERRAIN_BREEDS).map(([d, t]) => [
+      `d_${d}`,
+      { might: common.might * (t.stats.might ?? 1), health: common.health * (t.stats.health ?? 1), speed: common.speed * (t.stats.speed ?? 1) },
+    ]);
+    return [race, { ...breeds, ...Object.fromEntries(terrain) }];
+  }),
+);
 
 /** How a race fights as a whole (elves shoot from the back). */
 export const RACE_RANGE: Record<string, number> = { goblin: 0, elf: 34, undead: 0 };

@@ -6,6 +6,9 @@ import { CELL_BUILDINGS } from "./holdings.ts";
 import { MATERIALS } from "./drops.ts";
 import { seeded } from "./random.ts";
 import { cellYield } from "./territory.ts";
+import { BREED_STATS } from "../camp/combat.ts";
+import { residentFor } from "../camp/population.ts";
+import { breedName } from "../camp/visitors.ts";
 
 describe("細分地形 (WORLD.md §29)", () => {
   it("has fourteen kinds, each yielding known materials and at home for some race", () => {
@@ -77,5 +80,24 @@ describe("細分地形 (WORLD.md §29)", () => {
     expect(hubForRace("sanctuary", "undead")).toMatchObject({ vsUndead: 0, undeadDefend: 0.2 });
     expect(hubForRace("sanctuary", "goblin").vsUndead).toBeGreaterThan(0);
     for (const id of Object.keys(HUBS.find((h) => h.kind === "workstead")!.yield!)) expect(MATERIALS[id]).toBeDefined();
+  });
+
+  it("now and then bears a held cell's terrain breed in a common's place; the home camp as it was (§29.2)", () => {
+    const home = { race: "goblin", key: "home", startedAt: 0, birthMinutes: 60, cap: 100 };
+    const cell = { ...home, key: "cell:1:2", detail: "hotspring" };
+    let terrain = 0;
+    for (let slot = 0; slot < 4000; slot++) {
+      expect(residentFor({ ...home, detail: null }, 9, slot, 1, 0)).toEqual(residentFor(home, 9, slot, 1, 0));
+      const plain = residentFor({ ...cell, detail: null }, 9, slot, 1, 0);
+      const r = residentFor(cell, 9, slot, 1, 0);
+      if (r.breed === "d_hotspring") terrain++;
+      else expect(r).toEqual(plain);
+    }
+    expect(terrain).toBeGreaterThan(40);
+    expect(terrain).toBeLessThan(160);
+    expect(breedName("goblin", "d_hotspring")).toBe("泡湯");
+    expect(breedName("undead", "d_temple")).toBe("背誓");
+    expect(BREED_STATS.elf!.d_mountain!.health).toBeCloseTo(3.5 * 1.4);
+    expect(BREED_STATS.goblin!.brute).toEqual({ speed: 0.8, might: 1.6, health: 5 });
   });
 });

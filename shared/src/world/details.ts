@@ -287,3 +287,34 @@ export function hubForRace(kind: HubKind, race: string): HubRule {
   const h = hubRule(kind)!;
   return kind === "sanctuary" && race === "undead" ? { ...h, vsUndead: 0, undeadDefend: 0.2 } : h;
 }
+
+// ── Terrain breeds (WORLD.md §29.2) ────────────────────────────────────────────────────────────────────────────────
+
+type Stats = { might?: number; health?: number; speed?: number };
+/**
+ * Each 細分地形's own breed (`d_<detail>`), born now and then in place of a common on a held cell of it (camp/population.ts
+ * TERRAIN_BREED_CHANCE): its name by race, and its stats as × the race's common (combat.ts BREED_STATS): a little better in
+ * one way fitting the ground.
+ */
+export const TERRAIN_BREEDS: Record<TerrainDetail, { names: Record<string, string>; stats: Stats }> = {
+  mountain: { names: { goblin: "岩膚", elf: "山風", undead: "石棺" }, stats: { health: 1.4 } },
+  river: { names: { goblin: "泳河", elf: "溪語", undead: "溺魂" }, stats: { speed: 1.2 } },
+  farmland: { names: { goblin: "田耕", elf: "穀穗", undead: "稻草" }, stats: { health: 1.25, might: 1.05 } },
+  cemetery: { names: { goblin: "掘墓", elf: "守靈", undead: "夜哭" }, stats: { might: 1.2 } },
+  wetland: { names: { goblin: "泥沼", elf: "蘆影", undead: "沼魂" }, stats: { health: 1.2, speed: 1.1 } },
+  campus: { names: { goblin: "書蟲", elf: "學士", undead: "書靈" }, stats: { might: 1.1, speed: 1.05 } },
+  industrial: { names: { goblin: "鐵手", elf: "鋼弦", undead: "鐵骨" }, stats: { might: 1.25 } },
+  sand: { names: { goblin: "沙行", elf: "浪蹄", undead: "沙骸" }, stats: { speed: 1.25 } },
+  coast: { names: { goblin: "潮汐", elf: "海歌", undead: "沉船" }, stats: { health: 1.2, might: 1.1 } },
+  hotspring: { names: { goblin: "泡湯", elf: "溫泉", undead: "蒸骨" }, stats: { health: 1.35 } },
+  temple: { names: { goblin: "拜拜", elf: "祈福", undead: "背誓" }, stats: { might: 1.15, health: 1.1 } },
+  hospital: { names: { goblin: "白衣", elf: "醫葉", undead: "縫屍" }, stats: { health: 1.3, speed: 1.05 } },
+  military: { names: { goblin: "鐵衛", elf: "衛兵", undead: "骨衛" }, stats: { might: 1.2, health: 1.2 } },
+  railway: { names: { goblin: "疾行", elf: "風行", undead: "幽軌" }, stats: { speed: 1.35 } },
+};
+
+/** The 細分地形 a breed is the terrain breed of (null: not one). */
+export function terrainBreedDetail(breed: string): TerrainDetail | null {
+  const d = breed.startsWith("d_") ? breed.slice(2) : "";
+  return isTerrainDetail(d) ? d : null;
+}
