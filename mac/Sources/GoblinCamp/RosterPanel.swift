@@ -214,6 +214,7 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
             popup.menu?.autoenablesItems = false
             let current = ant.item(in: slot)
             popup.addItem(withTitle: current.map { "\($0.pinned ? "📌 " : "")\($0.gear?.name ?? $0.id) \(Int($0.fraction * 100))%" } ?? "（空）")
+            popup.lastItem?.image = current.flatMap { GearIcons.image($0.id, points: 16) } ?? GearMenus.empty
             let pieces = colony.armory.enumerated().filter { $0.element.gear?.slot == slot }.sorted { ($0.element.gear?.power ?? 0) > ($1.element.gear?.power ?? 0) }
             if !pieces.isEmpty {
                 popup.menu?.addItem(.separator())
@@ -225,6 +226,7 @@ final class RosterPanel: NSObject, MainPane, NSTableViewDataSource, NSTableViewD
                         self.gearSignature = ""
                         self.reload()
                     }
+                    entry.image = GearIcons.image(gear.id, points: 16)
                     if colony.cannotWear(gear, on: ant) != nil { entry.isEnabled = false; entry.toolTip = colony.cannotWear(gear, on: ant) }
                     popup.menu?.addItem(entry)
                 }

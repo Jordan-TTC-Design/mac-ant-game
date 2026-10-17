@@ -328,3 +328,55 @@ enum Gears {
     static func by(id: String) -> Gear? { byID[id] }
     private static let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 }
+
+/// Each piece's 16×16 icon (Resources/Gear, drawn by tools/make_gear_icons.py from each piece's look and colour), framed
+/// in its tier's colour: how good it is among the pieces for its slot (the weakest quarter grey, then green, blue, purple).
+enum GearIcons {
+    private struct Sheet { let image: CGImage; let size: Int; let cols: Int; let index: [String: Int] }
+    private static let sheet: Sheet? = {
+        struct Index: Decodable { let size: Int; let cols: Int; let icons: [String: Int] }
+        guard let folder = Bundle.main.resourceURL?.appendingPathComponent("Gear"),
+              let data = try? Data(contentsOf: folder.appendingPathComponent("icons.json")),
+              let index = try? JSONDecoder().decode(Index.self, from: data),
+              let image = NSImage(contentsOf: folder.appendingPathComponent("icons.png"))?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+        return Sheet(image: image, size: index.size, cols: index.cols, index: index.icons)
+    }()
+    private static var cache: [String: NSImage] = [:]
+
+    static let tierColors: [NSColor] = [
+        NSColor(srgbRed: 0.6, green: 0.6, blue: 0.6, alpha: 1), NSColor(srgbRed: 0.3, green: 0.67, blue: 0.27, alpha: 1),
+        NSColor(srgbRed: 0.24, green: 0.5, blue: 0.86, alpha: 1), NSColor(srgbRed: 0.63, green: 0.31, blue: 0.86, alpha: 1),
+    ]
+
+    /// 0…3: which quarter of the pieces for its slot this one is in, by `power`.
+    static func tier(_ gear: Gear) -> Int {
+        let slot = Gears.all.filter { $0.slot == gear.slot }.map(\.power).sorted()
+        let below = slot.filter { $0 < gear.power }.count
+        return min(3, below * 4 / max(1, slot.count))
+    }
+
+    /// The icon `points` square, framed (nil: no art for it, e.g. run without the app's resources).
+    static func image(_ id: String, points: CGFloat = 20) -> NSImage? {
+        let key = "\(id)@\(points)"
+        if let hit = cache[key] { return hit }
+        guard let sheet, let n = sheet.index[id], let gear = Gears.by(id: id),
+              let cell = sheet.image.cropping(to: CGRect(x: (n % sheet.cols) * sheet.size, y: (n / sheet.cols) * sheet.size, width: sheet.size, height: sheet.size))
+        else { return nil }
+        let color = tierColors[tier(gear)]
+        let image = NSImage(size: NSSize(width: points, height: points), flipped: false) { rect in
+            let frame = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: points * 0.2, yRadius: points * 0.2)
+            color.withAlphaComponent(0.16).setFill()
+            frame.fill()
+            color.withAlphaComponent(0.85).setStroke()
+            frame.lineWidth = 1
+            frame.stroke()
+            guard let context = NSGraphicsContext.current?.cgContext else { return true }
+            context.interpolationQuality = .none // (sharp pixels)
+            context.draw(cell, in: rect.insetBy(dx: points * 0.1, dy: points * 0.1))
+            return true
+        }
+        cache[key] = image
+        return image
+    }
+}

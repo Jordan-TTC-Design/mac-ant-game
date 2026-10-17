@@ -8,7 +8,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_watchtower",
@@ -19,7 +20,8 @@
   "frames": 2,
   "fn": "watch",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_hut",
@@ -30,7 +32,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_outhouse",
@@ -41,7 +44,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_smithy",
@@ -52,7 +56,8 @@
   "frames": 2,
   "fn": "smithy",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_storehouse",
@@ -63,7 +68,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_totem",
@@ -74,7 +80,8 @@
   "frames": 1,
   "fn": "totem",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_tavern",
@@ -85,7 +92,8 @@
   "frames": 2,
   "fn": "tavern",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_kennel",
@@ -96,7 +104,8 @@
   "frames": 2,
   "fn": "wolfdog",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_lizardpit",
@@ -107,7 +116,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_stumpset",
@@ -118,7 +128,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_strawbed",
@@ -129,7 +140,8 @@
   "frames": 1,
   "fn": "bed",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_cauldron",
@@ -140,7 +152,8 @@
   "frames": 2,
   "fn": "cook",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_hammock",
@@ -151,7 +164,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_sofa",
@@ -162,7 +176,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_barrels",
@@ -173,7 +188,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_drum",
@@ -184,7 +200,8 @@
   "frames": 2,
   "fn": "drum",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_chest",
@@ -195,7 +212,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_whetstone",
@@ -206,7 +224,8 @@
   "frames": 1,
   "fn": "whet",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_campfire",
@@ -217,7 +236,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_mud",
@@ -228,7 +248,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_junkpile",
@@ -239,7 +260,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_range",
@@ -250,7 +272,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_ring",
@@ -261,7 +284,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_well",
@@ -272,7 +296,8 @@
   "frames": 1,
   "fn": "well",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_crooked",
@@ -283,7 +308,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_bonetree",
@@ -294,7 +320,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_appletree",
@@ -305,7 +332,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_shroomtree",
@@ -316,7 +344,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_bamboo",
@@ -327,7 +356,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_sign_noway",
@@ -338,7 +368,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_sign_skull",
@@ -349,7 +380,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_board",
@@ -360,7 +392,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_banner",
@@ -371,7 +404,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_skull_big",
@@ -382,7 +416,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_bonefence",
@@ -393,7 +428,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_ribarch",
@@ -404,7 +440,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_daisies",
@@ -415,7 +452,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_stinkflower",
@@ -426,7 +464,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_toadstools",
@@ -437,7 +476,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_thistle",
@@ -448,7 +488,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_maneater",
@@ -459,7 +500,8 @@
   "frames": 2,
   "fn": "bite",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_pitcher",
@@ -470,7 +512,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_flyvine",
@@ -481,7 +524,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_crowperch",
@@ -492,7 +536,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_frogpuddle",
@@ -503,7 +548,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_treehouse",
@@ -514,7 +560,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_moonpavilion",
@@ -525,7 +572,8 @@
   "frames": 1,
   "fn": "moonrest",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_gazebo",
@@ -536,7 +584,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_shroomhouse",
@@ -547,7 +596,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_vinearch",
@@ -558,7 +608,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_observatory",
@@ -569,7 +620,8 @@
   "frames": 2,
   "fn": "forecast",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_shrine",
@@ -580,7 +632,8 @@
   "frames": 2,
   "fn": "heal",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_library",
@@ -591,7 +644,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_beegarden",
@@ -602,7 +656,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_swanpond",
@@ -613,7 +668,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_teatable",
@@ -624,7 +680,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_leafhammock",
@@ -635,7 +692,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_harp",
@@ -646,7 +704,8 @@
   "frames": 2,
   "fn": "music",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_spinner",
@@ -657,7 +716,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_swing",
@@ -668,7 +728,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_bench",
@@ -679,7 +740,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_crystallamp",
@@ -690,7 +752,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_bookshelf",
@@ -701,7 +764,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_moonpool",
@@ -712,7 +776,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_mosspath",
@@ -723,7 +788,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_meditstone",
@@ -734,7 +800,8 @@
   "frames": 1,
   "fn": "meditate",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_target",
@@ -745,7 +812,8 @@
   "frames": 1,
   "fn": "archery",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_waterfall",
@@ -756,7 +824,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_flowerbed",
@@ -767,7 +836,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_silvertree",
@@ -778,7 +848,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_cherry",
@@ -789,7 +860,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_lanterntree",
@@ -800,7 +872,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_willow",
@@ -811,7 +884,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_heartoak",
@@ -822,7 +896,8 @@
   "frames": 1,
   "fn": "growth",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_leafsign",
@@ -833,7 +908,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_runestone",
@@ -844,7 +920,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_vinelamp",
@@ -855,7 +932,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_chimes",
@@ -866,7 +944,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_antlers",
@@ -877,7 +956,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_fossil",
@@ -888,7 +968,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_bonevase",
@@ -899,7 +980,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_moonflower",
@@ -910,7 +992,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_lilyvalley",
@@ -921,7 +1004,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_bluerose",
@@ -932,7 +1016,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_sunflower",
@@ -943,7 +1028,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_treant",
@@ -954,7 +1040,8 @@
   "frames": 2,
   "fn": "guard",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_buglotus",
@@ -965,7 +1052,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_singingflower",
@@ -976,7 +1064,8 @@
   "frames": 2,
   "fn": "lullaby",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_butterflies",
@@ -987,7 +1076,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_fireflies",
@@ -998,7 +1088,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_squirreltree",
@@ -1009,7 +1100,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_chapel",
@@ -1020,7 +1112,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_crypt",
@@ -1031,7 +1124,8 @@
   "frames": 2,
   "fn": "door",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bonetower",
@@ -1042,7 +1136,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_belltower",
@@ -1053,7 +1148,8 @@
   "frames": 2,
   "fn": "bell",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_throne",
@@ -1064,7 +1160,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_hauntedhouse",
@@ -1075,7 +1172,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_coffinstore",
@@ -1086,7 +1184,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_alchemy",
@@ -1097,7 +1196,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_horses",
@@ -1108,7 +1208,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bonedogs",
@@ -1119,7 +1220,8 @@
   "frames": 2,
   "fn": "bonedog",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_batcave",
@@ -1130,7 +1232,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_crowtower",
@@ -1141,7 +1244,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_coffinbed",
@@ -1152,7 +1256,8 @@
   "frames": 2,
   "fn": "graverest",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_candelabra",
@@ -1163,7 +1268,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bonechair",
@@ -1174,7 +1280,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_organ",
@@ -1185,7 +1292,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_soulpot",
@@ -1196,7 +1304,8 @@
   "frames": 2,
   "fn": "souls",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_mirror",
@@ -1207,7 +1316,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_rocker",
@@ -1218,7 +1328,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_graves",
@@ -1229,7 +1340,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bonepath",
@@ -1240,7 +1352,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bog",
@@ -1251,7 +1364,8 @@
   "frames": 2,
   "fn": "slow",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_soulfire",
@@ -1262,7 +1376,8 @@
   "frames": 2,
   "fn": "nightmight",
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_opengrave",
@@ -1273,7 +1388,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_sarcophagus",
@@ -1284,7 +1400,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_deadtree",
@@ -1295,7 +1412,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_lanterntree",
@@ -1306,7 +1424,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_blackwillow",
@@ -1317,7 +1436,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bonetree",
@@ -1328,7 +1448,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_pumpkinvine",
@@ -1339,7 +1460,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_gate",
@@ -1350,7 +1472,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_keepout",
@@ -1361,7 +1484,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_wisplamp",
@@ -1372,7 +1496,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_rustfence",
@@ -1383,7 +1508,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_dragonbones",
@@ -1394,7 +1520,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bonepile",
@@ -1405,7 +1532,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_skullpyramid",
@@ -1416,7 +1544,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_redspider",
@@ -1427,7 +1556,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_blackrose",
@@ -1438,7 +1568,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_ghostlantern",
@@ -1449,7 +1580,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_palelily",
@@ -1460,7 +1592,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_skullflower",
@@ -1471,7 +1604,8 @@
   "frames": 2,
   "fn": "bite",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_soulvine",
@@ -1482,7 +1616,8 @@
   "frames": 2,
   "fn": "soulharvest",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_glowshroom",
@@ -1493,7 +1628,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_ghost",
@@ -1504,7 +1640,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_bats",
@@ -1515,7 +1652,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_crows",
@@ -1526,7 +1664,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_crawlinghand",
@@ -1537,7 +1676,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_catapult",
@@ -1548,7 +1688,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_spit",
@@ -1559,7 +1700,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_statue",
@@ -1570,7 +1712,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_treasurecave",
@@ -1581,7 +1724,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_fountain",
@@ -1592,7 +1736,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_statue",
@@ -1603,7 +1748,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_windmill",
@@ -1614,7 +1760,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_crystals",
@@ -1625,7 +1772,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_gargoyle",
@@ -1636,7 +1784,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_shipwreck",
@@ -1647,7 +1796,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_eagleperch",
@@ -1658,7 +1808,8 @@
   "frames": 1,
   "fn": "eagle",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_soullamp",
@@ -1669,7 +1820,8 @@
   "frames": 2,
   "fn": "soulpen",
   "blocks": false,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "g_tomatotower",
@@ -1680,7 +1832,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "g_trophy",
@@ -1691,7 +1844,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "g_goldthrone",
@@ -1702,7 +1856,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "e_moondial",
@@ -1713,7 +1868,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "e_laurelarch",
@@ -1724,7 +1880,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "e_glowtree",
@@ -1735,7 +1892,8 @@
   "frames": 2,
   "fn": null,
   "blocks": false,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "u_hourglass",
@@ -1746,7 +1904,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "u_bonethrone",
@@ -1757,7 +1916,8 @@
   "frames": 1,
   "fn": null,
   "blocks": false,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "u_ghostbell",
@@ -1768,7 +1928,8 @@
   "frames": 2,
   "fn": null,
   "blocks": true,
-  "limited": "quest"
+  "limited": "quest",
+  "level": null
  },
  {
   "id": "g_fence",
@@ -1779,7 +1940,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "e_fence",
@@ -1790,7 +1952,8 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
  },
  {
   "id": "u_fence",
@@ -1801,6 +1964,1447 @@
   "frames": 1,
   "fn": null,
   "blocks": true,
-  "limited": null
+  "limited": null,
+  "level": null
+ },
+ {
+  "id": "g_lv3_bathtub",
+  "race": "goblin",
+  "name": "木桶澡盆",
+  "category": "furniture",
+  "size": 1,
+  "frames": 2,
+  "fn": "lv_rest",
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "g_lv3_banner",
+  "race": "goblin",
+  "name": "破布戰旗",
+  "category": "sign",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "g_lv3_mushroomlamp",
+  "race": "goblin",
+  "name": "蘑菇燈",
+  "category": "flower",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "g_lv3_woodpile",
+  "race": "goblin",
+  "name": "柴堆",
+  "category": "scene",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "g_lv3_scarecrow",
+  "race": "goblin",
+  "name": "稻草哥布林",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "g_lv6_forge",
+  "race": "goblin",
+  "name": "大熔爐",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": "lv_whet",
+  "blocks": true,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "g_lv6_weaponrack",
+  "race": "goblin",
+  "name": "兵器架",
+  "category": "furniture",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "g_lv6_goatpen",
+  "race": "goblin",
+  "name": "山羊圈",
+  "category": "pen",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "g_lv6_signpost",
+  "race": "goblin",
+  "name": "指路牌",
+  "category": "sign",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "g_lv6_cart",
+  "race": "goblin",
+  "name": "破板車",
+  "category": "scene",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "g_lv9_playpen",
+  "race": "goblin",
+  "name": "小鬼遊樂場",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_nursery",
+  "blocks": true,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "g_lv9_treehouse",
+  "race": "goblin",
+  "name": "樹屋",
+  "category": "tree",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "g_lv9_rockgarden",
+  "race": "goblin",
+  "name": "亂石堆",
+  "category": "scene",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "g_lv9_ratcage",
+  "race": "goblin",
+  "name": "老鼠籠",
+  "category": "pen",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "g_lv9_lanterns",
+  "race": "goblin",
+  "name": "燈籠串",
+  "category": "sign",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "g_lv12_dummy",
+  "race": "goblin",
+  "name": "練武木人",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_might",
+  "blocks": true,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "g_lv12_warhorn",
+  "race": "goblin",
+  "name": "大號角",
+  "category": "furniture",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "g_lv12_maptable",
+  "race": "goblin",
+  "name": "作戰地圖桌",
+  "category": "furniture",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "g_lv12_wolfstatue",
+  "race": "goblin",
+  "name": "狼王石像",
+  "category": "scene",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "g_lv12_stakes",
+  "race": "goblin",
+  "name": "尖樁陣",
+  "category": "scene",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "g_lv15_guardlizard",
+  "race": "goblin",
+  "name": "看門巨蜥",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_ward",
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "g_lv15_stonetower",
+  "race": "goblin",
+  "name": "石頭哨塔",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "g_lv15_trollskull",
+  "race": "goblin",
+  "name": "巨魔頭骨",
+  "category": "bone",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "g_lv15_still",
+  "race": "goblin",
+  "name": "蒸餾鍋",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "g_lv15_warbanners",
+  "race": "goblin",
+  "name": "戰旗陣",
+  "category": "sign",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "g_lv18_mothershrine",
+  "race": "goblin",
+  "name": "多子神龕",
+  "category": "building",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_birth",
+  "blocks": true,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "g_lv18_goldpile",
+  "race": "goblin",
+  "name": "金幣堆",
+  "category": "furniture",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "g_lv18_shroomgrove",
+  "race": "goblin",
+  "name": "巨菇林",
+  "category": "tree",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "g_lv18_blackmarket",
+  "race": "goblin",
+  "name": "黑市攤",
+  "category": "building",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "g_lv18_bearcage",
+  "race": "goblin",
+  "name": "鐵籠熊",
+  "category": "pen",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "g_lv21_nettrap",
+  "race": "goblin",
+  "name": "大網陷阱",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_hold",
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "g_lv21_catapult",
+  "race": "goblin",
+  "name": "投石機",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "g_lv21_dragonskull",
+  "race": "goblin",
+  "name": "龍頭骨",
+  "category": "bone",
+  "size": 4,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "g_lv21_gong",
+  "race": "goblin",
+  "name": "大銅鑼",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "g_lv21_crystal",
+  "race": "goblin",
+  "name": "偷來的水晶",
+  "category": "scene",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "g_lv24_warhall",
+  "race": "goblin",
+  "name": "大酋長戰殿",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": "lv_crown",
+  "blocks": true,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "g_lv24_hoard",
+  "race": "goblin",
+  "name": "金山寶庫",
+  "category": "scene",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "g_lv24_idol",
+  "race": "goblin",
+  "name": "巨型哥布林像",
+  "category": "building",
+  "size": 4,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "g_lv24_firedrake",
+  "race": "goblin",
+  "name": "馴服小火龍",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "g_lv24_portal",
+  "race": "goblin",
+  "name": "異界傳送門",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "e_lv3_dewbed",
+  "race": "elf",
+  "name": "露珠葉床",
+  "category": "furniture",
+  "size": 1,
+  "frames": 1,
+  "fn": "lv_rest",
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "e_lv3_mosslantern",
+  "race": "elf",
+  "name": "苔燈",
+  "category": "sign",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "e_lv3_acornstool",
+  "race": "elf",
+  "name": "橡實凳",
+  "category": "furniture",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "e_lv3_fern",
+  "race": "elf",
+  "name": "捲捲蕨",
+  "category": "flower",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "e_lv3_fairyring",
+  "race": "elf",
+  "name": "精靈蘑菇圈",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "e_lv6_silverforge",
+  "race": "elf",
+  "name": "銀葉鍛台",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_whet",
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "e_lv6_birdbath",
+  "race": "elf",
+  "name": "石雕鳥浴",
+  "category": "scene",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "e_lv6_reedgate",
+  "race": "elf",
+  "name": "蘆葦門",
+  "category": "building",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "e_lv6_topiary",
+  "race": "elf",
+  "name": "樹籬小鹿",
+  "category": "tree",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "e_lv6_stargazer",
+  "race": "elf",
+  "name": "觀星躺椅",
+  "category": "furniture",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "e_lv9_budcradle",
+  "race": "elf",
+  "name": "花苞搖籃",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_nursery",
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "e_lv9_owlhollow",
+  "race": "elf",
+  "name": "貓頭鷹樹洞",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "e_lv9_mapletable",
+  "race": "elf",
+  "name": "楓葉長桌",
+  "category": "furniture",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "e_lv9_glasstulips",
+  "race": "elf",
+  "name": "水晶鬱金香",
+  "category": "flower",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "e_lv9_petalcottage",
+  "race": "elf",
+  "name": "花頂小屋",
+  "category": "building",
+  "size": 4,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "e_lv12_bowrack",
+  "race": "elf",
+  "name": "銀弓架",
+  "category": "furniture",
+  "size": 2,
+  "frames": 1,
+  "fn": "lv_might",
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "e_lv12_banner",
+  "race": "elf",
+  "name": "精靈戰旗",
+  "category": "sign",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "e_lv12_rainbowbridge",
+  "race": "elf",
+  "name": "彩虹小橋",
+  "category": "scene",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "e_lv12_wisteria",
+  "race": "elf",
+  "name": "紫藤樹",
+  "category": "tree",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "e_lv12_foxden",
+  "race": "elf",
+  "name": "白狐窩",
+  "category": "creature",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "e_lv15_whitestag",
+  "race": "elf",
+  "name": "白鹿守衛",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_ward",
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "e_lv15_moonwell",
+  "race": "elf",
+  "name": "月之井",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "e_lv15_crystalspire",
+  "race": "elf",
+  "name": "水晶尖塔",
+  "category": "building",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "e_lv15_aurorafern",
+  "race": "elf",
+  "name": "極光蕨",
+  "category": "plant",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "e_lv15_scrollstand",
+  "race": "elf",
+  "name": "古卷台",
+  "category": "furniture",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "e_lv18_lifebloom",
+  "race": "elf",
+  "name": "生命之花",
+  "category": "plant",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_birth",
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "e_lv18_amphitheater",
+  "race": "elf",
+  "name": "林間劇場",
+  "category": "scene",
+  "size": 4,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "e_lv18_peacock",
+  "race": "elf",
+  "name": "白孔雀",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "e_lv18_goldenapple",
+  "race": "elf",
+  "name": "金蘋果樹",
+  "category": "tree",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "e_lv18_dreamcatcher",
+  "race": "elf",
+  "name": "星辰捕夢網",
+  "category": "sign",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "e_lv21_thornsnare",
+  "race": "elf",
+  "name": "荊棘藤網",
+  "category": "plant",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_hold",
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "e_lv21_moongate",
+  "race": "elf",
+  "name": "水晶月門",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "e_lv21_phoenixperch",
+  "race": "elf",
+  "name": "鳳凰棲木",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "e_lv21_sapling",
+  "race": "elf",
+  "name": "世界樹幼苗",
+  "category": "tree",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "e_lv21_stardust",
+  "race": "elf",
+  "name": "星砂泉",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "e_lv24_kingstree",
+  "race": "elf",
+  "name": "精靈王之樹",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": "lv_crown",
+  "blocks": true,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "e_lv24_unicorn",
+  "race": "elf",
+  "name": "獨角獸林地",
+  "category": "creature",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "e_lv24_jadedragon",
+  "race": "elf",
+  "name": "翡翠幼龍",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "e_lv24_orrery",
+  "race": "elf",
+  "name": "天體儀",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "e_lv24_starlily",
+  "race": "elf",
+  "name": "星辰百合",
+  "category": "flower",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "u_lv3_candles",
+  "race": "undead",
+  "name": "燭光小墳",
+  "category": "scene",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "u_lv3_restslab",
+  "race": "undead",
+  "name": "安息石床",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_rest",
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "u_lv3_lantern",
+  "race": "undead",
+  "name": "鬼火提燈",
+  "category": "sign",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "u_lv3_wreath",
+  "race": "undead",
+  "name": "黑玫瑰花圈",
+  "category": "flower",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "u_lv3_digger",
+  "race": "undead",
+  "name": "掘墓人小屋",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 3
+ },
+ {
+  "id": "u_lv6_grindwheel",
+  "race": "undead",
+  "name": "骨磨輪",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_whet",
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "u_lv6_ossuary",
+  "race": "undead",
+  "name": "骸骨堂",
+  "category": "building",
+  "size": 4,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "u_lv6_ravenbranch",
+  "race": "undead",
+  "name": "烏鴉枯枝",
+  "category": "tree",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "u_lv6_urns",
+  "race": "undead",
+  "name": "骨灰罈",
+  "category": "furniture",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "u_lv6_mosscross",
+  "race": "undead",
+  "name": "青苔十字架",
+  "category": "sign",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 6
+ },
+ {
+  "id": "u_lv9_cradle",
+  "race": "undead",
+  "name": "搖籃棺",
+  "category": "furniture",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_nursery",
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "u_lv9_willow",
+  "race": "undead",
+  "name": "哭泣柳",
+  "category": "tree",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "u_lv9_ghostcat",
+  "race": "undead",
+  "name": "幽靈貓",
+  "category": "creature",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "u_lv9_fountain",
+  "race": "undead",
+  "name": "枯骨噴泉",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "u_lv9_moonlily",
+  "race": "undead",
+  "name": "月影百合",
+  "category": "flower",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 9
+ },
+ {
+  "id": "u_lv12_warbanner",
+  "race": "undead",
+  "name": "骷髏戰旗",
+  "category": "sign",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_might",
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "u_lv12_armory",
+  "race": "undead",
+  "name": "黑鐵武器架",
+  "category": "furniture",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "u_lv12_gargoyle",
+  "race": "undead",
+  "name": "石像鬼",
+  "category": "scene",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "u_lv12_bloodrose",
+  "race": "undead",
+  "name": "血玫瑰叢",
+  "category": "flower",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "u_lv12_mausoleum",
+  "race": "undead",
+  "name": "家族陵墓",
+  "category": "building",
+  "size": 4,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 12
+ },
+ {
+  "id": "u_lv15_knight",
+  "race": "undead",
+  "name": "亡靈騎士",
+  "category": "creature",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_ward",
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "u_lv15_obelisk",
+  "race": "undead",
+  "name": "符文方尖碑",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "u_lv15_cage",
+  "race": "undead",
+  "name": "吊籠",
+  "category": "furniture",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "u_lv15_facetree",
+  "race": "undead",
+  "name": "鬼面樹",
+  "category": "tree",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "u_lv15_skullpile",
+  "race": "undead",
+  "name": "頭骨堆",
+  "category": "bone",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 15
+ },
+ {
+  "id": "u_lv18_soulwell",
+  "race": "undead",
+  "name": "靈魂之泉",
+  "category": "scene",
+  "size": 4,
+  "frames": 2,
+  "fn": "lv_birth",
+  "blocks": true,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "u_lv18_spinearch",
+  "race": "undead",
+  "name": "脊骨拱門",
+  "category": "bone",
+  "size": 4,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "u_lv18_wraith",
+  "race": "undead",
+  "name": "遊蕩怨靈",
+  "category": "creature",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "u_lv18_altar",
+  "race": "undead",
+  "name": "黑曜祭壇",
+  "category": "building",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "u_lv18_nightshade",
+  "race": "undead",
+  "name": "巨顛茄",
+  "category": "plant",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 18
+ },
+ {
+  "id": "u_lv21_hands",
+  "race": "undead",
+  "name": "抓腳亡手",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": "lv_hold",
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "u_lv21_lichspire",
+  "race": "undead",
+  "name": "巫妖尖塔",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "u_lv21_web",
+  "race": "undead",
+  "name": "巨蛛網",
+  "category": "scene",
+  "size": 2,
+  "frames": 1,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "u_lv21_soulcrystal",
+  "race": "undead",
+  "name": "魂晶簇",
+  "category": "plant",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "u_lv21_chainpillar",
+  "race": "undead",
+  "name": "鎖鏈石柱",
+  "category": "bone",
+  "size": 1,
+  "frames": 1,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 21
+ },
+ {
+  "id": "u_lv24_necrohall",
+  "race": "undead",
+  "name": "死靈王殿",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": "lv_crown",
+  "blocks": true,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "u_lv24_bonedragon",
+  "race": "undead",
+  "name": "骨龍",
+  "category": "creature",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "u_lv24_gate",
+  "race": "undead",
+  "name": "亡者之門",
+  "category": "building",
+  "size": 4,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "u_lv24_phylactery",
+  "race": "undead",
+  "name": "命匣",
+  "category": "furniture",
+  "size": 1,
+  "frames": 2,
+  "fn": null,
+  "blocks": false,
+  "limited": null,
+  "level": 24
+ },
+ {
+  "id": "u_lv24_eternalfire",
+  "race": "undead",
+  "name": "永恆冥火",
+  "category": "scene",
+  "size": 2,
+  "frames": 2,
+  "fn": null,
+  "blocks": true,
+  "limited": null,
+  "level": 24
  }
 ]

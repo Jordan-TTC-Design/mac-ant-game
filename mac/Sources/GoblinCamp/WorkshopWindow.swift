@@ -2,7 +2,8 @@ import AppKit
 
 /// The workshop: three pages. 製作 turns materials into gear (for whoever needs it most, or for a goblin you pick); 現有裝備
 /// lists every piece there is, worn or in the stock, to take off, hand over or hold; 修理 mends worn pieces. A switch turns
-/// the handing out of the stock on or off (what you placed by hand is never moved either way).
+/// the handing out of the stock on or off (what you placed by hand is never moved either way). Signed in, residents living
+/// on a held cell or guarding a friend's are in it too (the handing out reaches the towns, and every cell with a second switch).
 final class WorkshopWindow: NSObject, MainPane {
     enum Tab: Int { case make, pieces, repair }
 
@@ -83,7 +84,18 @@ final class WorkshopWindow: NSObject, MainPane {
         auto.sizeToFit()
         auto.frame.origin = NSPoint(x: margin, y: y)
         holder.addSubview(auto)
-        y += auto.frame.height + 8
+        y += auto.frame.height + 4
+        if colony.followsBooks {
+            let far = NSButton(checkboxWithTitle: "自動分配也包含領地（營地和城鎮一定會發）", target: self, action: #selector(farChanged(_:)))
+            far.state = colony.autoGearFar ? .on : .off
+            far.isEnabled = colony.autoGear
+            far.toolTip = "關著時只發給營地和城鎮的居民；打開後每一塊領地的居民也會拿到"
+            far.sizeToFit()
+            far.frame.origin = NSPoint(x: margin + 18, y: y)
+            holder.addSubview(far)
+            y += far.frame.height + 4
+        }
+        y += 4
 
         if !lastMessage.isEmpty {
             y += label(lastMessage, bold: true, color: .systemGreen, in: holder, y: y).frame.height + 8
@@ -99,7 +111,7 @@ final class WorkshopWindow: NSObject, MainPane {
         scroll.contentView.scroll(to: NSPoint(x: 0, y: min(keepScroll.y, max(0, holder.frame.height - scroll.contentView.bounds.height))))
     }
 
-    private var pieceCount: Int { colony.armory.count + colony.ants.reduce(0) { $0 + $1.gear.count } }
+    private var pieceCount: Int { colony.armory.count + (colony.ants + colony.awayResidents.map(\.ant)).reduce(0) { $0 + $1.gear.count } }
 
     @discardableResult
     private func label(_ text: String, size: CGFloat = 12, bold: Bool = false, color: NSColor = .labelColor, in holder: NSView, x: CGFloat? = nil, y: CGFloat, width: CGFloat? = nil) -> NSTextField {
@@ -123,6 +135,16 @@ final class WorkshopWindow: NSObject, MainPane {
         b.frame = NSRect(x: x, y: y, width: width, height: 28)
         holder.addSubview(b)
         return b
+    }
+
+    /// A piece's icon at the left of a row (nothing when the art is missing). Returns how far the text moves right.
+    @discardableResult
+    private func icon(_ id: String, in holder: NSView, y: CGFloat, points: CGFloat) -> CGFloat {
+        guard let image = GearIcons.image(id, points: points) else { return 0 }
+        let view = NSImageView(frame: NSRect(x: margin, y: y, width: points, height: points))
+        view.image = image
+        holder.addSubview(view)
+        return points + 8
     }
 
     private func costText(_ cost: [(String, Int)]) -> NSAttributedString {
@@ -185,7 +207,9 @@ final class WorkshopWindow: NSObject, MainPane {
     private func makeRow(_ gear: Gear, in holder: NSView, y: CGFloat) -> CGFloat {
         let unopened = Gears.unopened.contains(gear.id)
         let affordable = !unopened && colony.canAfford(gear)
-        let width = inner - 110
+        let shift = icon(gear.id, in: holder, y: y + 2, points: 30)
+        let left = margin + shift
+        let width = inner - 110 - shift
         var top = y
         let title = NSMutableAttributedString(string: gear.name, attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.labelColor])
         if let tier = WorkshopWindow.tier(of: gear) {
@@ -195,12 +219,12 @@ final class WorkshopWindow: NSObject, MainPane {
         title.append(NSAttributedString(string: "　\(gear.effectText)", attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]))
         let t = NSTextField(labelWithAttributedString: title)
         t.lineBreakMode = .byTruncatingTail
-        t.frame = NSRect(x: margin, y: top, width: width, height: 17)
+        t.frame = NSRect(x: left, y: top, width: width, height: 17)
         holder.addSubview(t)
         top += 18
-        top += label(gear.blurb + "　（穿著 \(colony.wearers(of: gear))・倉庫 \(colony.inStock(of: gear))）", size: 11, color: .secondaryLabelColor, in: holder, y: top, width: width).frame.height + 2
+        top += label(gear.blurb + "　（穿著 \(colony.wearers(of: gear))・倉庫 \(colony.inStock(of: gear))）", size: 11, color: .secondaryLabelColor, in: holder, x: left, y: top, width: width).frame.height + 2
         let cost = NSTextField(labelWithAttributedString: costText(gear.cost))
-        cost.frame = NSRect(x: margin, y: top, width: width, height: 16)
+        cost.frame = NSRect(x: left, y: top, width: width, height: 16)
         holder.addSubview(cost)
         top += 16
         let b = button(unopened ? "未開放" : affordable ? "製作…" : "材料不足", enabled: affordable, in: holder, x: margin + inner - 96, y: y + (top - y) / 2 - 14) { [weak self] sender in
@@ -214,7 +238,8 @@ final class WorkshopWindow: NSObject, MainPane {
     private func chooseOwner(for gear: Gear, from sender: NSButton) {
         let first: (String, () -> Void)
         if let pick = colony.autoPick(for: gear) {
-            first = ("自動（給最需要的：\(pick.name)）", { [weak self] in self?.make(gear, for: nil) })
+            let where_ = colony.placeLabel(of: pick.id).map { "・\($0)" } ?? ""
+            first = ("自動（給最需要的：\(pick.name)\(where_)）", { [weak self] in self?.make(gear, for: nil) })
         } else if colony.autoGear {
             first = ("自動（現在沒有人需要，先不做）", {})
         } else {
@@ -245,7 +270,7 @@ final class WorkshopWindow: NSObject, MainPane {
         let breeds = colony.breeds
         var any = false
         for slot in GearSlot.allCases {
-            let worn = colony.ants.filter { !$0.isDying }.compactMap { ant in ant.item(in: slot).map { (ant, $0) } }
+            let worn = (colony.ants.filter { !$0.isDying } + colony.awayResidents.map(\.ant)).compactMap { ant in ant.item(in: slot).map { (ant, $0) } }
                 .sorted { ($0.1.gear?.power ?? 0) > ($1.1.gear?.power ?? 0) }
             let stock = colony.armory.enumerated().filter { $0.element.gear?.slot == slot }.sorted { ($0.element.gear?.power ?? 0) > ($1.element.gear?.power ?? 0) }
             guard !worn.isEmpty || !stock.isEmpty else { continue }
@@ -253,8 +278,9 @@ final class WorkshopWindow: NSObject, MainPane {
             y += label("\(slot.label)（\(worn.count + stock.count)）", size: 14, bold: true, in: holder, y: y).frame.height + 6
             for (index, item) in stock {
                 let name = item.gear?.name ?? item.id
+                let shift = icon(item.id, in: holder, y: y + 3, points: 22)
                 label("\(name) \(Int(item.fraction * 100))% — 倉庫" + (item.held ? "　保留" : ""), bold: true, color: item.held ? .systemOrange : .labelColor,
-                      in: holder, y: y + 6, width: inner - 220)
+                      in: holder, x: margin + shift, y: y + 6, width: inner - 220 - shift)
                 _ = button("給…", in: holder, x: margin + inner - 212, y: y, width: 96) { [weak self] sender in
                     guard let self, let gear = item.gear else { return }
                     let menu = GearMenus.residents(colony: self.colony, slot: gear.slot, first: nil) { ant in
@@ -271,8 +297,10 @@ final class WorkshopWindow: NSObject, MainPane {
             }
             for (ant, item) in worn {
                 let breed = breeds[min(ant.breedIndex, breeds.count - 1)].name
-                label("\(item.pinned ? "📌 " : "")\(item.gear?.name ?? item.id) \(Int(item.fraction * 100))% — \(ant.name)（\(breed)）",
-                      in: holder, y: y + 6, width: inner - 120)
+                let place = colony.placeLabel(of: ant.id).map { "・\($0)" } ?? ""
+                let shift = icon(item.id, in: holder, y: y + 3, points: 22)
+                label("\(item.pinned ? "📌 " : "")\(item.gear?.name ?? item.id) \(Int(item.fraction * 100))% — \(ant.name)（\(breed)\(place)）",
+                      in: holder, x: margin + shift, y: y + 6, width: inner - 120 - shift)
                 _ = button("收回倉庫", in: holder, x: margin + inner - 110, y: y, width: 110) { [weak self] _ in
                     self?.colony.unequip(antID: ant.id, slot: slot)
                     self?.lastMessage = "\(item.gear?.name ?? item.id)收回倉庫了（保留）。"
@@ -296,9 +324,10 @@ final class WorkshopWindow: NSObject, MainPane {
         for job in jobs.prefix(40) {
             let gear = job.gear
             let affordable = colony.canAffordRepair(gear)
-            label("\(gear.name)　\(job.owner)　耐久 \(Int(job.item.fraction * 100))%", bold: true, in: holder, y: y, width: inner - 110)
+            let shift = icon(gear.id, in: holder, y: y + 2, points: 30)
+            label("\(gear.name)　\(job.owner)　耐久 \(Int(job.item.fraction * 100))%", bold: true, in: holder, x: margin + shift, y: y, width: inner - 110 - shift)
             let cost = NSTextField(labelWithAttributedString: costText(Colony.repairCost(gear)))
-            cost.frame = NSRect(x: margin, y: y + 17, width: inner - 110, height: 16)
+            cost.frame = NSRect(x: margin + shift, y: y + 17, width: inner - 110 - shift, height: 16)
             holder.addSubview(cost)
             _ = button(affordable ? "修理" : "材料不足", enabled: affordable, in: holder, x: margin + inner - 96, y: y + 3) { [weak self] _ in
                 guard let self else { return }
@@ -330,6 +359,12 @@ final class WorkshopWindow: NSObject, MainPane {
         refresh()
     }
 
+    @objc private func farChanged(_ sender: NSButton) {
+        colony.setAutoGearFar(sender.state == .on)
+        lastMessage = sender.state == .on ? "自動分配也會發給每一塊領地的居民。" : "自動分配只發給營地和城鎮的居民。"
+        refresh()
+    }
+
     @objc private func autoChanged(_ sender: NSButton) {
         colony.setAutoGear(sender.state == .on)
         lastMessage = sender.state == .on ? "倉庫的裝備會自動發給最需要的居民（📌 和保留的不會動）。" : "倉庫的裝備不再自動分配，要自己發。"
@@ -339,7 +374,11 @@ final class WorkshopWindow: NSObject, MainPane {
 
 /// Menus of goblins to hand a piece to (the workshop and the roster use the same one).
 enum GearMenus {
+    /// A blank the size of an icon, so the names line up whether or not one wears something there.
+    static let empty = NSImage(size: NSSize(width: 16, height: 16))
+
     /// Goblins at home (not the young), strongest first: 「名字（品種）力 x 血 y　現在：…」; the 25 strongest, the rest under 更多….
+    /// Signed in, those away from home who can be handed gear follow, one submenu per place (the towns first).
     static func residents(colony: Colony, slot: GearSlot, first: (String, () -> Void)?, pick: @escaping (Ant) -> Void) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -348,24 +387,50 @@ enum GearMenus {
             menu.addItem(.separator())
         }
         let breeds = colony.breeds
-        let ants = colony.ants.filter { !$0.isDying && !$0.isDeparting && !$0.isChild }.sorted { ($0.might + $0.maxHealth) > ($1.might + $1.maxHealth) }
+        let strongest = { (a: Ant, b: Ant) in (a.might + a.maxHealth) > (b.might + b.maxHealth) }
+        let ants = colony.ants.filter { !$0.isDying && !$0.isDeparting && !$0.isChild }.sorted(by: strongest)
         func item(_ ant: Ant) -> NSMenuItem {
             let breed = breeds[min(ant.breedIndex, breeds.count - 1)].name
             let now = ant.item(in: slot).map { "\($0.pinned ? "📌" : "")\($0.gear?.name ?? $0.id) \(Int($0.fraction * 100))%" } ?? "空"
-            return ClosureMenuItem(title: String(format: "%@（%@）力 %.1f 血 %.0f　現在：%@", ant.name, breed, ant.might, ant.maxHealth, now)) { pick(ant) }
+            let entry = ClosureMenuItem(title: String(format: "%@（%@）力 %.1f 血 %.0f　現在：%@", ant.name, breed, ant.might, ant.maxHealth, now)) { pick(ant) }
+            entry.image = ant.item(in: slot).flatMap { GearIcons.image($0.id, points: 16) } ?? GearMenus.empty
+            return entry
         }
-        if ants.isEmpty {
-            let none = NSMenuItem(title: "（沒有可以給的居民）", action: nil, keyEquivalent: "")
-            none.isEnabled = false
-            menu.addItem(none)
+        func note(_ title: String) -> NSMenuItem {
+            let line = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            line.isEnabled = false
+            return line
         }
-        for ant in ants.prefix(25) { menu.addItem(item(ant)) }
-        if ants.count > 25 {
-            let more = NSMenuItem(title: "更多…（\(ants.count - 25)）", action: nil, keyEquivalent: "")
+        /// The 25 strongest of `list`, the rest under 更多….
+        func add(_ list: [Ant], to menu: NSMenu) {
+            for ant in list.prefix(25) { menu.addItem(item(ant)) }
+            if list.count > 25 {
+                let more = NSMenuItem(title: "更多…（\(list.count - 25)）", action: nil, keyEquivalent: "")
+                let sub = NSMenu()
+                for ant in list.dropFirst(25) { sub.addItem(item(ant)) }
+                more.submenu = sub
+                menu.addItem(more)
+            }
+        }
+        let away = Dictionary(grouping: colony.awayResidents, by: \.label)
+        if !away.isEmpty { menu.addItem(note("主營（\(ants.count)）")) }
+        if ants.isEmpty { menu.addItem(note("（沒有可以給的居民）")) }
+        add(ants, to: menu)
+        guard !away.isEmpty else { return menu }
+        menu.addItem(.separator())
+        // towns first, then the held cells in the order they were taken, then those guarding a friend's
+        let order = { (label: String) -> (Int, Int) in
+            let kind = label.hasPrefix("城鎮") ? 0 : label.hasPrefix("領地") ? 1 : 2
+            return (kind, Int(label.split(separator: " ").last ?? "") ?? 0)
+        }
+        for label in away.keys.sorted(by: { order($0) < order($1) }) {
+            let list = away[label]!.map(\.ant).sorted(by: strongest)
+            let place = NSMenuItem(title: "\(label)（\(list.count)）", action: nil, keyEquivalent: "")
             let sub = NSMenu()
-            for ant in ants.dropFirst(25) { sub.addItem(item(ant)) }
-            more.submenu = sub
-            menu.addItem(more)
+            sub.autoenablesItems = false
+            add(list, to: sub)
+            place.submenu = sub
+            menu.addItem(place)
         }
         return menu
     }

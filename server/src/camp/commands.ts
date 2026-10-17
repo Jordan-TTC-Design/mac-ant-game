@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   canAfford,
   cannotWear,
@@ -53,7 +53,7 @@ import { itemRule, materialName, MATERIALS } from "@goblincamp/shared/world";
 import { donationPoints, guildLevelFor } from "@goblincamp/shared";
 import type { Tx } from "../auth/session.ts";
 import { campEvents, campResidents, camps, guildDonations, guildMembers, guilds } from "../db/schema.ts";
-import { addEvent, campRaceLevel, HALF_BREED_LIFESPAN, refundFor } from "./service.ts";
+import { addEvent, campRaceLevel, gearPlaces, HALF_BREED_LIFESPAN, inGearPool, refundFor } from "./service.ts";
 import { questMetrics } from "./quests.ts";
 import { merchantArrivals, merchantBought } from "./merchant.ts";
 
@@ -98,10 +98,21 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
   let extra: Record<string, unknown> = {};
   let gearBefore = new Map<number, string>();
 
+  /** Who the handing out reaches (home, the towns, every held cell with the far switch on): a part of `wearers`. */
+  let pool: Wearer[] = [];
+  /** Everyone who can be handed gear: at home, on a held cell, guarding a friend's (gearPlaces). */
   const loadWearers = async () => {
-    const rows = await tx.select().from(campResidents).where(and(eq(campResidents.userId, camp.userId), eq(campResidents.place, "home"), isNull(campResidents.diedAt)));
+    const places = await gearPlaces(tx, camp.userId);
+    const rows = (
+      await tx
+        .select()
+        .from(campResidents)
+        .where(and(eq(campResidents.userId, camp.userId), or(eq(campResidents.place, "home"), inArray(campResidents.place, ["", ...Object.keys(places)])), isNull(campResidents.diedAt)))
+    ).filter((r) => r.place === "home" || places[r.place]);
     gearBefore = new Map(rows.map((r) => [r.id, JSON.stringify(r.gear ?? {})]));
     wearers = rows.map((r) => ({ id: r.id, breed: r.breed, gear: structuredClone(r.gear ?? {}) as Wearer["gear"] }));
+    const reached = new Set(rows.filter((r) => inGearPool(r.place, places, camp.autoGearFar)).map((r) => r.id));
+    pool = wearers.filter((w) => reached.has(w.id));
     return wearers;
   };
 
@@ -125,28 +136,28 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (command.to !== undefined) {
         // for whoever the player picked (pinned there: the handing out leaves it be)
         const to = all.find((w) => w.id === command.to);
-        if (!to) return { ok: false, code: "not_found", message: "找不到這位居民（可能不在家）。" };
+        if (!to) return { ok: false, code: "not_found", message: "找不到這位居民（可能在路上）。" };
         const why = cannotWear(to, item);
         if (why) return { ok: false, code: "not_allowed", message: why };
         spend(materials, rule.cost);
         give(to, item, store, true);
         resident = to.id;
       } else {
-        const pick = camp.autoGear ? neediest(camp.race, all, item) : null;
+        const pick = camp.autoGear ? neediest(camp.race, pool, item) : null;
         if (camp.autoGear && !pick) return { ok: false, code: "nobody_needs", message: `沒有人需要${rule.name}（大家都有一樣好或更好的）。` };
         spend(materials, rule.cost);
         if (pick) give(pick, item, store);
         else store.push(item); // (the handing out is off: into the store)
         resident = pick?.id; // (the devices say who by name: names come from the seed on them)
       }
-      redistribute(camp.race, all, store, camp.autoGear);
+      redistribute(camp.race, pool, store, camp.autoGear);
       message = resident === undefined ? `做好了${rule.name}，放進倉庫。` : `做好了${rule.name}。`;
       break;
     }
     case "equip": {
       const all = await loadWearers();
       const to = all.find((w) => w.id === command.resident);
-      if (!to) return { ok: false, code: "not_found", message: "找不到這位居民（可能不在家）。" };
+      if (!to) return { ok: false, code: "not_found", message: "找不到這位居民（可能在路上）。" };
       const at = findStock(store, command.stock, command.gear);
       if (at < 0) return { ok: false, code: "not_found", message: "倉庫裡找不到這件。" };
       const item = store[at]!;
@@ -154,7 +165,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (why) return { ok: false, code: "not_allowed", message: why };
       store.splice(at, 1);
       give(to, item, store, true);
-      redistribute(camp.race, all, store, camp.autoGear);
+      redistribute(camp.race, pool, store, camp.autoGear);
       message = `換上了${gearRule(item.id)!.name}。`;
       resident = to.id;
       break;
@@ -175,15 +186,29 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       if (command.held) store[at] = { ...store[at]!, held: true };
       else {
         store[at] = { id: store[at]!.id, left: store[at]!.left };
-        redistribute(camp.race, await loadWearers(), store, camp.autoGear);
+        await loadWearers();
+        redistribute(camp.race, pool, store, camp.autoGear);
       }
       message = command.held ? `${name}保留在倉庫。` : `${name}交給自動分配。`;
       break;
     }
     case "auto-gear": {
       changes.autoGear = command.on;
-      if (command.on) redistribute(camp.race, await loadWearers(), store, true);
+      if (command.on) {
+        await loadWearers();
+        redistribute(camp.race, pool, store, true);
+      }
       message = command.on ? "倉庫的裝備會自動發給最需要的居民（你手動給的、保留的不會動）。" : "倉庫的裝備不再自動分配，要自己發。";
+      break;
+    }
+    case "auto-gear-far": {
+      changes.autoGearFar = command.on;
+      camp.autoGearFar = command.on; // (the pool below follows the new switch)
+      if (command.on && camp.autoGear) {
+        await loadWearers();
+        redistribute(camp.race, pool, store, true);
+      }
+      message = command.on ? "自動分配也會發給每一塊領地的居民。" : "自動分配只發給營地和城鎮的居民。";
       break;
     }
     case "repair": {
@@ -301,7 +326,8 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
       for (const [id, k] of Object.entries(r.materials ?? {})) materials[id] = (materials[id] ?? 0) + k;
       if (r.gear?.length) {
         for (const id of r.gear) store.push({ id, left: gearRule(id)!.durability });
-        redistribute(camp.race, await loadWearers(), store, camp.autoGear);
+        await loadWearers();
+        redistribute(camp.race, pool, store, camp.autoGear);
       }
       if (r.residents) {
         // born at home now, as the race's births are (their own random numbers: "quest:<id>")
@@ -389,7 +415,7 @@ export async function runCommand(tx: Tx, camp: CampRow, command: CampCommand, no
     case "decor-set": {
       // (a kind that is no more, from a Mac with an older catalogue, is simply left out)
       const items = command.items.filter((d) => decorKind(d.kind)).map((d) => ({ kind: d.kind, x: Math.round(d.x), y: Math.round(d.y), ...(d.flip ? { flip: true } : {}) }));
-      const problem = decorProblem(items, camp.race, campStage(camp.race, camp.peak), decorEarned(camp.quests ?? {}, camp.race));
+      const problem = decorProblem(items, camp.race, campStage(camp.race, camp.peak), decorEarned(camp.quests ?? {}, camp.race), await campRaceLevel(tx, camp.userId));
       if (problem) return { ok: false, code: problem.includes("點數") ? "no_room" : "not_allowed", message: problem };
       changes.decor = items;
       message = "";

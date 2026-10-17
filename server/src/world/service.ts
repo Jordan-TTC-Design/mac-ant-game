@@ -1940,6 +1940,11 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
   const owners = new Map<string, WorldOwner>();
   for (const id of ownerIds) owners.set(id, await ownerOf(tx, id));
   const counts = await garrisons(tx, rows.filter((r) => r.owner).map((r) => r.cell));
+  const homes = new Set(
+    rows.some((r) => r.owner)
+      ? (await tx.select({ cell: worldPlayers.homeCell }).from(worldPlayers).where(inArray(worldPlayers.homeCell, rows.filter((r) => r.owner).map((r) => r.cell)))).map((p) => p.cell)
+      : [],
+  );
   const guestCounts = new Map(
     (rows.some((r) => r.owner)
       ? await tx
@@ -1974,6 +1979,7 @@ export async function cellsAround(tx: Tx, point: LatLng, radius: number, now: Da
       garrison: counts.get(cell)?.n ?? 0,
       nest: row ? nestState(row, now) : "none",
       town: row?.town ?? false,
+      ...(row?.owner && homes.has(cell) ? { home: true } : {}),
       landmark: landmarks.get(cell) ?? null,
       guests: guestCounts.get(cell) ?? 0,
       building: row?.owner && row.building ? { kind: row.building.kind, level: row.building.level, busy: workingLevel(row.building, now.getTime()) < row.building.level } : null,

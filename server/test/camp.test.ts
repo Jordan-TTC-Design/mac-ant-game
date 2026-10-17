@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { advance, startHome, type CampView, type RaidReport } from "@goblincamp/shared/camp";
+import { advance, DECOR_KINDS, startHome, type CampView, type RaidReport } from "@goblincamp/shared/camp";
 import type { Database } from "../src/db/client.ts";
 import { bearer, emptyTables, logIn, mac, openTestDatabase, signUp, testApp, type TestApp } from "./helpers.ts";
 
@@ -643,6 +643,16 @@ describe("decorations (DESKTOP.md §5)", () => {
     expect((gone.body.camp as CampView).decor).toEqual([{ kind: "g_well", x: 5, y: 5 }]);
     expect((await cmd(me, { kind: "decor-set", items: [] })).status).toBe(200);
     expect((await view(me)).decor).toEqual([]);
+  });
+
+  it("keeps the race level's decorations for when the race level is there", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    expect((await view(me)).raceLevel).toBe(1); // (the big world not opened yet)
+    const lv3 = DECOR_KINDS.find((k) => k.race === "goblin" && k.level === 3)!;
+    const res = await cmd(me, { kind: "decor-set", items: [{ kind: lv3.id, x: 0, y: 0 }] });
+    expect(res.body.error).toBe("not_allowed");
+    expect(res.body.message).toContain("種族等級 3 級");
   });
 });
 

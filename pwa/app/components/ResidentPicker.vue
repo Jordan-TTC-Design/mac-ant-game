@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// Picking who gets a piece of gear: 「自動」 (whoever needs it most) first, then everyone at home, strongest first, with
-// what each wears in that slot now. A sheet from the bottom of the screen.
+// Picking who gets a piece of gear: 「自動」 (whoever needs it most) first, then everyone who can be handed gear by place
+// (主營 first, then the towns and the other held cells), strongest first, with what each wears in that slot now. A sheet
+// from the bottom of the screen.
 import type { CampResidentView, CampView, GearSlot } from "@goblincamp/shared/camp";
 
 const props = defineProps<{ view: CampView; gear: string; title: string; allowAuto?: boolean; names: Record<string, string> }>();
@@ -11,12 +12,28 @@ const slot = computed(() => rule.value.slot as GearSlot);
 const auto = computed(() => autoPick(props.view, props.gear));
 const nameOf = (r: CampResidentView) => r.name || residentNameFromSeed(props.view.race, r.seed, r.legacySeed);
 const filter = ref("");
+/** 主營 first, then the towns, the held cells in the order taken, then those guarding a friend's. */
+const placeOrder = (r: CampResidentView) => {
+  const label = placeLabel(props.view, r);
+  const kind = r.place === "home" ? 0 : label.startsWith("城鎮") ? 1 : label.startsWith("領地") ? 2 : 3;
+  return kind * 10_000 + (Number(label.split(" ").at(-1)) || 0);
+};
+const place = ref<string>("all");
+const placesHere = computed(() => {
+  const seen = new Map<string, { label: string; n: number; order: number }>();
+  for (const r of gearHolders(props.view)) {
+    const p = seen.get(r.place) ?? { label: placeLabel(props.view, r), n: 0, order: placeOrder(r) };
+    p.n++;
+    seen.set(r.place, p);
+  }
+  return [...seen.entries()].sort((a, b) => a[1].order - b[1].order);
+});
 const everyone = computed(() =>
-  props.view.residents
-    .filter((r) => r.place === "home")
-    .map((r) => ({ r, power: residentPower(props.view.race, r), now: r.gear?.[slot.value] ?? null }))
+  gearHolders(props.view)
+    .filter((r) => place.value === "all" || r.place === place.value)
+    .map((r) => ({ r, power: residentPower(props.view.race, r), now: r.gear?.[slot.value] ?? null, order: placeOrder(r) }))
     .filter(({ r }) => !filter.value || nameOf(r).includes(filter.value) || (props.names[r.breed] ?? r.breed).includes(filter.value))
-    .sort((a, b) => b.power - a.power),
+    .sort((a, b) => a.order - b.order || b.power - a.power),
 );
 const shown = ref(40);
 const blocked = (r: CampResidentView) => slot.value === "shield" && !!gearRule(r.gear?.weapon?.id ?? "")?.twoHanded;
@@ -31,16 +48,24 @@ const blocked = (r: CampResidentView) => slot.value === "shield" && !!gearRule(r
       </header>
       <button v-if="allowAuto" class="who auto" @click="emit('pick', null)">
         <b>自動</b>
-        <small>{{ auto ? `給最需要的：${nameOf(auto)}（${names[auto.breed] ?? auto.breed}）` : view.autoGear === false ? "放進倉庫（自動分配關著）" : "大家這個位置都有一樣好的了" }}</small>
+        <small>{{ auto ? `給最需要的：${nameOf(auto)}（${names[auto.breed] ?? auto.breed}${auto.place === "home" ? "" : `・${placeLabel(view, auto)}`}）` : view.autoGear === false ? "放進倉庫（自動分配關著）" : "大家這個位置都有一樣好的了" }}</small>
       </button>
       <input v-model="filter" class="find" placeholder="找名字或品種" />
+      <div v-if="placesHere.length > 1" class="places">
+        <button :class="{ on: place === 'all' }" @click="place = 'all'">全部</button>
+        <button v-for="[id, p] in placesHere" :key="id" :class="{ on: place === id }" @click="place = id">{{ p.label }} <small>{{ p.n }}</small></button>
+      </div>
       <div class="list">
-        <button v-for="{ r, power, now } in everyone.slice(0, shown)" :key="r.id" class="who" :disabled="blocked(r)" @click="emit('pick', r.id)">
+        <template v-for="({ r, power, now }, i) in everyone.slice(0, shown)" :key="r.id">
+        <h4 v-if="placesHere.length > 1 && (i === 0 || everyone[i - 1]!.r.place !== r.place)">{{ placeLabel(view, r) }}</h4>
+        <button class="who" :disabled="blocked(r)" @click="emit('pick', r.id)">
           <span class="line"><b>{{ nameOf(r) }}</b><small>{{ names[r.breed] ?? r.breed }}</small><span class="grow" /><small>戰力 {{ power }}</small></span>
           <small class="now">
+            <GearIcon v-if="now" :id="now.id" :size="18" />
             {{ SLOT_LABELS[slot] }}：{{ now ? `${gearName(now.id)} ${durabilityText(now)}${now.pinned ? " 📌" : ""}` : "空" }}{{ blocked(r) ? "（拿著雙手武器）" : "" }}
           </small>
         </button>
+        </template>
         <button v-if="everyone.length > shown" class="more" @click="shown += 60">再多列一些（還有 {{ everyone.length - shown }} 隻）</button>
       </div>
     </div>
@@ -61,5 +86,10 @@ header b { flex: 1; font-size: 16px; }
 .who small { color: var(--muted); font-size: 12px; }
 .line { display: flex; gap: 8px; align-items: baseline; }
 .grow { flex: 1; }
+.places { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.places button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; color: inherit; }
+.places button.on { background: #333; color: #fff; }
+.places small { opacity: 0.7; }
+h4 { margin: 6px 2px 0; font-size: 12px; color: var(--muted); }
 .more { border: 0; background: none; color: var(--green); font-weight: 700; padding: 8px; cursor: pointer; }
 </style>

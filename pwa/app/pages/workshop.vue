@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The workshop on the phone: make gear (for whoever needs it most, or for someone picked), every piece there is (worn or
-// in the store: take it off, give it, hold it), and mending. The same commands as the Mac's workshop.
+// in the store: take it off, give it, hold it), and mending. The same commands as the Mac's workshop. Residents on a held
+// cell or guarding a friend's are in it too, with where they are.
 import type { CampResidentView, GearItem, GearRule, GearSlot } from "@goblincamp/shared/camp";
 import { ITEMS, materialName as sharedMaterialName, type ItemRule } from "@goblincamp/shared/world";
 
@@ -15,7 +16,10 @@ if (ok && user.value) void camp.open(user.value.id);
 const view = computed(() => camp.state.saved?.view ?? null);
 const breedNames = computed(() => names.value.races[view.value?.race ?? "goblin"]?.breeds ?? {});
 const materialName = (id: string) => names.value.materials[id] ?? sharedMaterialName(id);
-const home = computed(() => view.value?.residents.filter((r) => r.place === "home") ?? []);
+/** Everyone who can be handed gear: at home, on a held cell, guarding a friend's. */
+const home = computed(() => (view.value ? gearHolders(view.value) : []));
+const whereText = (r: CampResidentView) => (r.place === "home" || !view.value ? "" : `・${placeLabel(view.value, r)}`);
+const hasAway = computed(() => !!view.value && Object.keys(view.value.places ?? {}).length > 0);
 const nameOf = (r: CampResidentView) => r.name || residentNameFromSeed(view.value!.race, r.seed, r.legacySeed);
 
 const tab = ref<"make" | "items" | "have" | "mend">("make");
@@ -105,6 +109,10 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
           <input type="checkbox" :checked="view.autoGear !== false" :disabled="busy" @change="run({ kind: 'auto-gear', on: ($event.target as HTMLInputElement).checked })" />
           自動把倉庫的裝備發給最需要的居民<small>（你手動給的 📌、保留在倉庫的不會動）</small>
         </label>
+        <label v-if="hasAway" class="auto far">
+          <input type="checkbox" :checked="!!view.autoGearFar" :disabled="busy || view.autoGear === false" @change="run({ kind: 'auto-gear-far', on: ($event.target as HTMLInputElement).checked })" />
+          也包含領地<small>（營地和城鎮一定會發）</small>
+        </label>
         <p v-if="message" class="ok">{{ message }}</p>
         <p v-if="problem" class="warn">{{ problem }}</p>
       </div>
@@ -118,6 +126,7 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
         <template v-for="({ g }, i) in recipes" :key="g.id">
           <h3 v-if="i === 0 || recipes[i - 1]!.g.slot !== g.slot">{{ SLOT_LABELS[g.slot] }}</h3>
           <article class="recipe" :class="{ dim: gearTier(g) === '未開放' }">
+            <GearIcon :id="g.id" :size="34" />
             <div class="grow">
               <div class="title"><b>{{ g.name }}</b><span v-if="gearTier(g)" class="tier" :class="{ closed: gearTier(g) === '未開放' }">{{ gearTier(g) }}</span></div>
               <small class="muted">{{ effectText(g) }}{{ counts[g.id] ? `・穿著 ${counts[g.id]!.worn}・倉庫 ${counts[g.id]!.store}` : "" }}</small>
@@ -155,10 +164,11 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
           <template v-if="pieces[slot]?.length">
             <h3>{{ SLOT_LABELS[slot] }} <small>{{ pieces[slot]!.length }} 件</small></h3>
             <article v-for="p in pieces[slot]" :key="`${p.who?.id ?? 'store'}-${p.stock ?? slot}-${p.item.id}`" class="piece">
+              <GearIcon :id="p.item.id" />
               <div class="grow">
                 <b>{{ gearName(p.item.id) }}</b> <small>{{ durabilityText(p.item) }}</small>
                 <small v-if="p.item.pinned"> 📌</small>
-                <div class="muted small">{{ p.who ? `${nameOf(p.who)}（${breedNames[p.who.breed] ?? p.who.breed}）` : p.item.held ? "倉庫・保留" : "倉庫" }}</div>
+                <div class="muted small">{{ p.who ? `${nameOf(p.who)}（${breedNames[p.who.breed] ?? p.who.breed}${whereText(p.who)}）` : p.item.held ? "倉庫・保留" : "倉庫" }}</div>
               </div>
               <template v-if="p.who">
                 <button class="btn" :disabled="busy" @click="run({ kind: 'unequip', resident: p.who.id, slot: slot })">收回倉庫</button>
@@ -176,9 +186,10 @@ const itemOpen = (i: ItemRule) => !i.unlock || (view.value?.questsDone ?? []).in
       <section v-if="tab === 'mend'" class="panel">
         <p class="muted small">耐久低於 75% 的裝備，花三分之一的材料就能修好。</p>
         <article v-for="p in jobs.slice(0, 30)" :key="`${p.who?.id ?? 'store'}-${p.stock ?? ''}-${p.item.id}`" class="piece">
+          <GearIcon :id="p.item.id" />
           <div class="grow">
             <b>{{ gearName(p.item.id) }}</b> <small>{{ durabilityText(p.item) }}</small>
-            <div class="muted small">{{ p.who ? nameOf(p.who) : "倉庫" }}・{{ costText(repairCost(gearRule(p.item.id)!)) }}</div>
+            <div class="muted small">{{ p.who ? nameOf(p.who) + whereText(p.who) : "倉庫" }}・{{ costText(repairCost(gearRule(p.item.id)!)) }}</div>
           </div>
           <button class="btn primary" :disabled="busy || !affordable(repairCost(gearRule(p.item.id)!))"
             @click="run(p.who ? { kind: 'repair', resident: p.who.id, slot: gearRule(p.item.id)!.slot } : { kind: 'repair', stock: p.stock })">修理</button>
@@ -200,6 +211,7 @@ h3 small { font-weight: 400; }
 .status { margin-top: 10px; padding-top: 10px; padding-bottom: 10px; }
 .auto { display: block; font-size: 14px; }
 .auto small { color: var(--muted); }
+.auto.far { margin: 6px 0 0 22px; }
 .only { display: block; margin: 8px 0 0; font-size: 14px; }
 .filter { display: flex; flex-wrap: wrap; gap: 6px; }
 .filter button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; color: inherit; }

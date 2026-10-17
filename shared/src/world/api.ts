@@ -122,6 +122,8 @@ export interface CellView {
   garrison: number;
   nest: "none" | "building" | "ready";
   town: boolean;
+  /** Its holder's home camp stands here (the map draws the camp with the race's flag). */
+  home?: boolean;
   /** A real place standing in it (holdings.ts). */
   landmark?: Landmark | null;
   /** Friends' residents guarding it. */

@@ -19,6 +19,8 @@ struct DecorKindInfo: Decodable {
     let blocks: Bool
     /// "quest": a quest's reward, put down only once earned; nil: free.
     let limited: String?
+    /// Put down only from this race level on (nil: any).
+    let level: Int?
 }
 
 /// One decoration put down: which, where (points from the land's anchor), turned round or not.
@@ -34,11 +36,22 @@ enum DecorCatalog {
         ("fence", "柵欄"), ("building", "建築"), ("pen", "圍欄"), ("furniture", "家具"), ("scene", "場景"), ("tree", "樹"),
         ("sign", "路牌"), ("bone", "骨頭"), ("flower", "花"), ("plant", "魔植"), ("creature", "活物"),
     ]
-    /// Decoration room by the camp's look (shared DECOR_ROOM), and the most things whatever the room.
+    /// Decoration room by the camp's look (shared DECOR_ROOM), and each race level past the first adds this much more.
     static let room = [1: 20, 2: 45, 3: 80]
+    static let roomPerLevel = 5
+    /// The most things whatever the room, and fence pieces (they take no room); each tier the race level opens (every
+    /// `levelStep` levels, up to `maxTiers`) adds `morePerTier` to both (shared decor.ts `decorLimits`).
     static let maxItems = 120
-    /// Fence pieces take no room; this many at most. They sit on a grid of this many points, so rings close.
     static let maxFences = 80
+    static let levelStep = 3
+    static let morePerTier = 10
+    static let maxTiers = 8
+    static func tier(_ raceLevel: Int) -> Int { min(maxTiers, max(0, raceLevel / levelStep)) }
+    static func limits(_ raceLevel: Int) -> (items: Int, fences: Int) {
+        let more = tier(raceLevel) * morePerTier
+        return (maxItems + more, maxFences + more)
+    }
+    /// Fence pieces sit on a grid of this many points, so rings close.
     static let fenceCell = 20.0
     static func isFence(_ id: String) -> Bool { byID[id]?.category == "fence" }
     static let reach = 1200.0
@@ -107,21 +120,26 @@ extension Colony {
 
     /// The camp's look (1–3) for its decoration room: the books' when signed in, else worked out from its peak here.
     var decorStage: Int { booksStage ?? Races.campStage(Characters.current.id, peak: peakAnts) }
-    var decorRoom: Int { DecorCatalog.room[decorStage] ?? 20 }
+    var decorStageRoom: Int { DecorCatalog.room[decorStage] ?? 20 }
+    /// The race level for the decorations (1 signed out: the big world is the books').
+    var decorLevel: Int { booksRaceLevel ?? 1 }
+    var decorRoom: Int { decorStageRoom + max(0, decorLevel - 1) * DecorCatalog.roomPerLevel }
+    var decorLimits: (items: Int, fences: Int) { DecorCatalog.limits(decorLevel) }
     var decorUsed: Int { decor.reduce(0) { $0 + (DecorCatalog.kind($1.kind)?.size ?? 0) } }
 
     /// Why a decoration of this kind cannot go here (nil: it can). `ignoring`: the one being moved.
     func decorProblem(_ kind: String, at p: CGPoint, ignoring: Int? = nil) -> String? {
         guard let info = DecorCatalog.kind(kind) else { return "沒有這種裝飾" }
+        if let level = info.level, decorLevel < level { return "種族等級 \(level) 級才能放" }
         let others = decor.enumerated().filter { $0.offset != ignoring }.map(\.element)
         let used = others.reduce(0) { $0 + (DecorCatalog.kind($1.kind)?.size ?? 0) }
         let fences = others.filter { DecorCatalog.isFence($0.kind) }
         if info.category == "fence" {
-            if ignoring == nil, fences.count >= DecorCatalog.maxFences { return "柵欄最多 \(DecorCatalog.maxFences) 段" }
+            if ignoring == nil, fences.count >= decorLimits.fences { return "柵欄最多 \(decorLimits.fences) 段" }
             if fences.contains(where: { hypot(decorPoint($0).x - p.x, decorPoint($0).y - p.y) < 2 }) { return "這裡已經有柵欄了" }
         }
         if ignoring == nil, used + info.size > decorRoom { return "裝飾點數不夠" }
-        if ignoring == nil, others.count - fences.count >= DecorCatalog.maxItems { return "放太多了" }
+        if ignoring == nil, others.count - fences.count >= decorLimits.items { return "放太多了（最多 \(decorLimits.items) 樣）" }
         guard walkable.contains(where: { $0.contains(p) }) else { return "這裡放不下" }
         if scene?.visiblePonds.contains(where: { $0.blocks(p, margin: 4) }) == true { return "不能放在水裡" }
         if obstacles.contains(where: { $0.blocks(p, margin: 2) }) { return "這裡有水或石頭，放不了" } // (streams, ledges, rocks and trees: where nobody walks)
@@ -318,8 +336,12 @@ extension Colony {
                 if let m = monster(within: 70) { _ = handStrike(creature: m.id); addFloater(fn == "bonedog" ? "喀！" : "汪！", .common, at: p) }
             case "slow": // a bog: what wades in is held a moment
                 if let m = monster(within: 34) { decorHold(creature: m.id, seconds: 1.4) }
-            case "lullaby": // the young near a singing flower grow a little faster
-                for i in ants.indices where ants[i].isChild && !ants[i].isHidden && hypot(ants[i].pos.x - p.x, ants[i].pos.y - p.y) < 80 { ants[i].age += 0.4 }
+            case "lullaby", "lv_nursery": // the young near a singing flower (a race level's nursery: a bit further) grow a little faster
+                for i in ants.indices where ants[i].isChild && !ants[i].isHidden && hypot(ants[i].pos.x - p.x, ants[i].pos.y - p.y) < (fn == "lv_nursery" ? 100 : 80) { ants[i].age += 0.4 }
+            case "lv_ward": // a race level's guardian strikes what comes near
+                if let m = monster(within: 90) { _ = handStrike(creature: m.id); addFloater("守護！", .common, at: p) }
+            case "lv_hold": // a race level's trap holds what comes near a moment
+                if let m = monster(within: 60) { decorHold(creature: m.id, seconds: 1) }
             case "watch", "forecast", "bell", "drum":
                 guard seen.insert("alarm").inserted else { break }
                 let drums = decorHas("drum"), bell = decorHas("bell")
@@ -331,15 +353,21 @@ extension Colony {
         }
     }
 
-    /// How fast gear wears: a whetstone and a smithy each take a tenth off.
-    var decorWear: Double { (decorHas("whet") ? 0.9 : 1) * (decorHas("smithy") ? 0.9 : 1) }
+    /// How fast gear wears: a whetstone, a smithy and a race level's forge each take a tenth off.
+    var decorWear: Double { (decorHas("whet") ? 0.9 : 1) * (decorHas("smithy") ? 0.9 : 1) * (decorHas("lv_whet") ? 0.9 : 1) }
 
-    /// Attack bonus from the totem, the archery target and (at night, the undead) the soul fire: +5% each kind.
+    /// How much faster the hurt heal from a race level's rest and crown (a tenth each), on top of the beds'.
+    var decorLevelHeal: Double { (decorHas("lv_rest") ? 1.1 : 1) * (decorHas("lv_crown") ? 1.1 : 1) }
+
+    /// Attack bonus from the totem, the archery target, (at night, the undead) the soul fire and a race level's war idol and
+    /// crown: +5% each kind.
     var decorMight: Double {
         var bonus = 0.0
         if decorHas("totem") { bonus += 0.05 }
         if decorHas("archery") { bonus += 0.05 }
         if decorHas("nightmight"), Colony.isNight { bonus += 0.05 }
+        if decorHas("lv_might") { bonus += 0.05 }
+        if decorHas("lv_crown") { bonus += 0.05 }
         return 1 + bonus
     }
 
@@ -412,9 +440,18 @@ final class DecorPalette: NSObject, NSWindowDelegate {
         stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
 
         let fences = colony.decor.filter { DecorCatalog.isFence($0.kind) }.count
-        let room = NSTextField(labelWithString: "裝飾點數 \(colony.decorUsed)／\(colony.decorRoom)　柵欄 \(fences)／\(DecorCatalog.maxFences)")
+        let room = NSTextField(labelWithString: "裝飾點數 \(colony.decorUsed)／\(colony.decorRoom)　柵欄 \(fences)／\(colony.decorLimits.fences)")
         room.font = .systemFont(ofSize: 12, weight: .semibold)
         stack.addArrangedSubview(room)
+        // (the race level: what it gives, and what the next tier brings)
+        let level = colony.decorLevel, bonus = colony.decorRoom - colony.decorStageRoom
+        let next = kinds.compactMap(\.level).filter { $0 > level }.min()
+        var lines = ["種族等級 \(level)：點數 +\(bonus)、最多 \(colony.decorLimits.items) 樣"]
+        if let next { lines.append("\(next) 級解鎖 \(kinds.filter { $0.level == next }.count) 樣新裝飾" + (colony.followsBooks ? "" : "（要先登入）")) }
+        let why = NSTextField(labelWithString: lines.joined(separator: "\n"))
+        why.font = .systemFont(ofSize: 10)
+        why.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(why)
 
         let pop = NSPopUpButton(frame: .zero, pullsDown: false)
         for (id, name) in DecorCatalog.categories {
@@ -441,7 +478,8 @@ final class DecorPalette: NSObject, NSWindowDelegate {
                 grid.addArrangedSubview(row!)
             }
             let locked = kind.limited != nil && !colony.decorEarned.contains(kind.id)
-            let button = NSButton(title: (kind.limited != nil ? "🎁" : "") + kind.name + (kind.fn != nil ? " ★" : ""), target: self, action: #selector(pick(_:)))
+            let tooLow = kind.level.map { colony.decorLevel < $0 } ?? false
+            let button = NSButton(title: (kind.limited != nil ? "🎁" : tooLow ? "🔒" : "") + kind.name + (kind.fn != nil ? " ★" : ""), target: self, action: #selector(pick(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(kind.id)
             button.imagePosition = .imageAbove
             button.bezelStyle = .regularSquare
@@ -450,7 +488,8 @@ final class DecorPalette: NSObject, NSWindowDelegate {
             button.font = .systemFont(ofSize: 10)
             button.toolTip = "\(kind.name)・占 \(kind.size) 點" + (kind.fn != nil ? "・★ 有作用" : "")
                 + (locked ? "\n🎁 任務獎勵：在主視窗的「任務」完成任務才能放" + (colony.followsBooks ? "" : "（要先登入）") : kind.limited != nil ? "\n🎁 任務拿到的" : "")
-            button.isEnabled = !locked
+                + (kind.level.map { tooLow ? "\n🔒 種族等級 \($0) 級解鎖（現在 \(colony.decorLevel) 級）" : "\n種族等級 \($0) 級解鎖的" } ?? "")
+            button.isEnabled = !locked && !tooLow
             if let image = DecorCatalog.frames(kind.id).first {
                 let scale = min(2.0, 52.0 / Double(max(image.width, image.height)))
                 let ns = NSImage(cgImage: image, size: NSSize(width: Double(image.width) * scale, height: Double(image.height) * scale))

@@ -7,7 +7,8 @@ import { alongRoute, cellAt, HEX_RADIUS, landmarkRule, type CellView } from "@go
 
 // The big world on the real map (OpenStreetMap, in the game's colours: utils/mapStyle.ts), drawn at a low resolution and
 // scaled up with sharp pixels. Only the cell picked and the held ones are outlined (yours yellow, others' red); each lair
-// shows its strongest monster and level, each held cell its race and how many live there.
+// shows its strongest monster and level, each held cell its race and how many live there; a camp's home and its towns
+// stand as a building (a camp, a castle) flying the race's flag.
 // Drag and pinch to look around; tap a cell.
 const props = defineProps<{
   cells: CellView[];
@@ -105,6 +106,43 @@ function label(text: string, cls = ""): HTMLElement {
   return el;
 }
 
+/** Each race's flag, and the walls and roof its buildings are made of. */
+const RACE_LOOK: Record<string, { flag: string; wall: string; roof: string; stone: string }> = {
+  goblin: { flag: "#5fb030", wall: "#8a5a32", roof: "#5e7a2a", stone: "#9a8a70" },
+  elf: { flag: "#3aa0e0", wall: "#e8dcc0", roof: "#3f8f5a", stone: "#e6e0d0" },
+  undead: { flag: "#9a50d0", wall: "#4a4458", roof: "#2a2638", stone: "#5a5468" },
+};
+
+/**
+ * A camp's home (a hut) or a town (a castle) in pixels, 24 by 24 (the flag above), with a flag in the race's colour bearing its face on
+ * top (the flag sways: .map-flag). Outlined by drawing each part a pixel bigger in black first.
+ */
+function buildingSvg(kind: "home" | "town", race: string): string {
+  const look = RACE_LOOK[race] ?? RACE_LOOK.goblin!;
+  const ink = "#1f1f1f";
+  const box = (x: number, y: number, w: number, h: number, fill: string) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`;
+  const parts: [number, number, number, number, string][] =
+    kind === "town"
+      ? [
+          [2, 9, 6, 14, look.stone], [16, 9, 6, 14, look.stone], [7, 13, 10, 10, look.stone], // towers and the wall
+          [2, 7, 2, 2, look.stone], [6, 7, 2, 2, look.stone], [16, 7, 2, 2, look.stone], [20, 7, 2, 2, look.stone], // merlons
+          [8, 11, 2, 2, look.stone], [14, 11, 2, 2, look.stone],
+        ]
+      : [[5, 16, 14, 7, look.wall]];
+  const outline = parts.map(([x, y, w, h]) => box(x - 1, y - 1, w + 2, h + 2, ink)).join("");
+  const body = parts.map(([x, y, w, h, fill]) => box(x, y, w, h, fill)).join("");
+  const details =
+    kind === "town"
+      ? box(10, 17, 4, 6, ink) + box(11, 16, 2, 1, ink) + box(4, 12, 2, 2, ink) + box(18, 12, 2, 2, ink)
+      : `<polygon points="2,17 12,7 22,17" fill="${ink}"/><polygon points="4,16 12,8.5 20,16" fill="${look.roof}"/>` + box(10, 18, 4, 5, ink);
+  const top = kind === "town" ? 11 : 8; // where the pole meets the building
+  const flag = // (on a pole above the building: drawn from y −6)
+    box(11, -6, 1, top + 6, ink) +
+    `<g class="map-flag">${box(12, -6, 9, 7, ink)}${box(12, -5, 8, 5, look.flag)}` +
+    `<image href="/sprites/${race}/icon.png" x="13.5" y="-5" width="5" height="5" style="image-rendering:pixelated"/></g>`;
+  return `<svg viewBox="0 -6 24 30" width="40" height="50" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${outline}${body}${details}${flag}</svg>`;
+}
+
 /** The icons over the cells (redrawn when the cells change: a hundred or so at a time). */
 function drawMarkers() {
   if (!map) return;
@@ -113,7 +151,12 @@ function drawMarkers() {
   for (const c of props.cells) {
     const el = document.createElement("div");
     el.className = "map-cell";
-    if (c.owner) {
+    if (c.owner && (c.home || c.town)) {
+      const building = document.createElement("span");
+      building.className = "map-building";
+      building.innerHTML = buildingSvg(c.home ? "home" : "town", c.owner.race);
+      el.append(building, label(`${c.garrison}${c.home ? " 營地" : " 城"}`, c.owner.id === props.mine ? "mine" : "theirs"));
+    } else if (c.owner) {
       const face = document.createElement("img");
       face.src = `/sprites/${c.owner.race}/icon.png`;
       face.className = "map-face";
@@ -343,6 +386,11 @@ watch(
 .map { width: 100%; aspect-ratio: 1 / 1.1; border-radius: 14px; border: 3px solid #1f1f1f; overflow: hidden; background: #cdbf8a; }
 .map :deep(canvas) { image-rendering: pixelated; }
 .map :deep(.map-cell) { display: grid; justify-items: center; pointer-events: none; }
+.map :deep(.map-building) { display: block; width: 40px; height: 50px; margin-top: -10px; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35)); }
+.map :deep(.map-building svg) { display: block; overflow: visible; }
+.map :deep(.map-flag) { transform-box: fill-box; transform-origin: left center; animation: map-flag 1.6s ease-in-out infinite alternate; }
+@keyframes map-flag { from { transform: skewY(-6deg) scaleX(0.94); } to { transform: skewY(5deg) scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .map :deep(.map-flag) { animation: none; } }
 .map :deep(.map-face) { width: 22px; height: 22px; image-rendering: pixelated; pointer-events: none; }
 .map :deep(.map-face.party) { width: 22px; height: 22px; filter: drop-shadow(0 0 2px #fff); }
 .map :deep(.map-label) { margin-top: -2px; font-size: 10px; font-weight: 800; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; line-height: 1; }

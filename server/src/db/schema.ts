@@ -145,6 +145,8 @@ export const camps = pgTable("camps", {
   armory: jsonb("armory").$type<{ id: string; left: number; held?: boolean }[]>().notNull().default([]),
   /** Whether the store is handed out by itself (shared/src/camp/gear.ts `redistribute`); off: only by hand. */
   autoGear: boolean("auto_gear").notNull().default(true),
+  /** Whether the handing out reaches every held cell too (off: only home and the towns). */
+  autoGearFar: boolean("auto_gear_far").notNull().default(false),
   /** 任務 claimed (shared/src/camp/quests.ts): quest id → when (ISO). */
   quests: jsonb("quests").$type<Record<string, string>>().notNull().default({}),
   /** Decorations the player put down in the camp window (shared/src/camp/decor.ts): kind, offset from the land's anchor, turned. */

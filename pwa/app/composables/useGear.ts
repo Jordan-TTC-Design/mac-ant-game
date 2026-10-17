@@ -52,12 +52,25 @@ export function residentPower(race: string, r: CampResidentView): number {
   return Math.round(combatPower([f]));
 }
 
+/** Everyone who can be handed gear: at home, on a held cell, guarding a friend's (not those on the road). */
+export const gearHolders = (view: CampView) => view.residents.filter((r) => r.place === "home" || view.places?.[r.place]);
+
+/** Where a resident is, as the workshop says it: 主營, 城鎮 1, 領地 2, 幫某某守. */
+export const placeLabel = (view: CampView, r: CampResidentView) => (r.place === "home" ? "主營" : (view.places?.[r.place]?.label ?? "外面"));
+
+/** Whether the handing out reaches a resident: home and the towns, every held cell with the far switch (as the server). */
+export function reached(view: CampView, r: CampResidentView): boolean {
+  if (r.place === "home") return true;
+  const place = view.places?.[r.place];
+  return !!place && r.place.startsWith("cell:") && (place.town || !!view.autoGearFar);
+}
+
 /** Who the handing out would give a new `gear` to (null: nobody needs it, or the switch is off). */
 export function autoPick(view: CampView, gear: string): CampResidentView | null {
   if (view.autoGear === false) return null;
-  const home = view.residents.filter((r) => r.place === "home");
-  const who = neediest(view.race, home.map((r) => ({ id: r.id, breed: r.breed, gear: (r.gear ?? {}) as never })), { id: gear, left: gearRule(gear)?.durability ?? 1 });
-  return who ? (home.find((r) => r.id === who.id) ?? null) : null;
+  const pool = view.residents.filter((r) => reached(view, r));
+  const who = neediest(view.race, pool.map((r) => ({ id: r.id, breed: r.breed, gear: (r.gear ?? {}) as never })), { id: gear, left: gearRule(gear)?.durability ?? 1 });
+  return who ? (pool.find((r) => r.id === who.id) ?? null) : null;
 }
 
 /** A piece's worth for sorting (the same as the handing out uses). */
@@ -73,7 +86,8 @@ export async function gearCommand(command: Record<string, unknown>): Promise<str
     await useCamp().refresh();
     const view = useCamp().state.saved?.view;
     const who = out.resident !== null && command.kind === "craft" ? view?.residents.find((r) => r.id === out.resident) : undefined;
-    return who ? `${out.message}交給${who.name || residentNameFromSeed(view!.race, who.seed, who.legacySeed)}。` : out.message;
+    const where = who && who.place !== "home" ? `（${placeLabel(view!, who)}）` : "";
+    return who ? `${out.message}交給${who.name || residentNameFromSeed(view!.race, who.seed, who.legacySeed)}${where}。` : out.message;
   } catch (e) {
     await useCamp().refresh();
     throw new Error(e instanceof ApiError ? e.message : String(e));
