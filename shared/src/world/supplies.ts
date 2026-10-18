@@ -7,7 +7,7 @@ import { foodScale } from "../camp/food.ts";
 import type { FightBoosts } from "./battle.ts";
 
 /** How many may go at race level 1; one more for every level after. */
-export const PARTY_BASE: Record<string, number> = { goblin: 6, undead: 5, elf: 4 };
+export const PARTY_BASE: Record<string, number> = { goblin: 6, undead: 5, beast: 5, elf: 4 };
 export const PARTY_MAX = 30;
 
 export function partyCap(race: string, level: number): number {

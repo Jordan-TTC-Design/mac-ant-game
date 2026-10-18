@@ -103,12 +103,27 @@ struct RaceRules: Decodable {
     var lineage: Lineage?
     /// True: the princess's children are born in the soul fire from a bond of souls, not carried (no pregnancy, no maternity dress).
     var soulBond: Bool?
-    /// The terrain their camp stands in (elfwood, graveyard); missing = any of the goblins' four, by the land's seed.
+    /// The terrain their camp stands in (elfwood, graveyard, redrock); missing = any of the goblins' four, by the land's seed.
     var biome: String?
+    /// On full-moon nights they go into a frenzy (the beastfolk, RACES_BEAST.md §4): they hit `might` times as hard and run
+    /// `speed` times as fast, but take `hurt` times the damage; breeds with a `frenzy` sheet change to it.
+    var moon: Moon?
+    /// How keen they are to hunt: this many times as likely to go after an animal they see (the beastfolk: 1.5).
+    var hunts: Double?
+    /// In a fight with a monster: the brutes' first blow lands `charge` times as hard, and anyone who strikes from the side
+    /// while someone else holds its front hits `flank` times as hard (the beastfolk: 1.3, 1.2).
+    var charge: Double?
+    var flank: Double?
 
     struct Lineage: Decodable {
         var bone: [String]
         var soul: [String]
+    }
+
+    struct Moon: Decodable {
+        var might: Double
+        var speed: Double
+        var hurt: Double
     }
 
     func foodScale(_ id: String) -> Double { food?[id] ?? 1 }
@@ -223,6 +238,8 @@ enum Characters {
         let stats: BreedStats?
         let special: Bool?
         let level: Int?
+        /// The full-moon look (the beastfolk), in the same layout as `sheet`.
+        let frenzy: String?
     }
 
     /// Where characters are looked for: inside the app bundle, then in the user's Application Support folder.
@@ -263,9 +280,13 @@ enum Characters {
                 // a breed shares the worker's animation layout and pixel scale, and brings its own sheet
                 let sheet = Manifest.Role(sheet: entry.sheet, pixelScale: manifest.worker.pixelScale, walk: manifest.worker.walk, outfits: nil, poses: nil)
                 guard let sprites = try role(sheet, frame: manifest.frame, folder: folder) else { continue }
+                let frenzy = try entry.frenzy.flatMap {
+                    try role(Manifest.Role(sheet: $0, pixelScale: manifest.worker.pixelScale, walk: manifest.worker.walk, outfits: nil, poses: nil),
+                             frame: manifest.frame, folder: folder)
+                }
                 breeds.append(Breed(id: entry.id, name: entry.name, weight: entry.weight, prosperityBoost: entry.boost ?? 0,
                                     stats: entry.stats ?? BreedStats(), sprites: sprites, blurb: entry.blurb ?? "",
-                                    special: entry.special ?? false, level: entry.level ?? 0))
+                                    special: entry.special ?? false, level: entry.level ?? 0, frenzy: frenzy))
             }
             if breeds.isEmpty {
                 breeds = [Breed(id: "common", name: "平民", weight: 100, prosperityBoost: 0, stats: BreedStats(), sprites: worker, blurb: "")]

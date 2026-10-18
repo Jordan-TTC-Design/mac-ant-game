@@ -138,6 +138,11 @@ enum Reactions {
         case ("undead", "brute"): return order == .fight ? 1 : 0.7
         case ("undead", "sage"): return 0.75
         case ("undead", "golden"): return 0.25
+        case ("beast", "common"): return order == .fight || order == .fell ? 1 : 0.75
+        case ("beast", "scout"): return order == .fight || order == .herd ? 0.95 : 0.55
+        case ("beast", "brute"): return order == .fight || order == .mine ? 1 : 0.6
+        case ("beast", "sage"): return 0.8
+        case ("beast", "golden"): return order == .fight ? 0.6 : 0.2
         default: return 0.6
         }
     }
@@ -159,6 +164,7 @@ enum Reactions {
         switch race {
         case "elf": return heir ? elfHeir(gesture) : elf(breed, gesture)
         case "undead": return heir ? undeadHeir(gesture) : undead(breed, gesture)
+        case "beast": return heir ? beastHeir(gesture) : beast(breed, gesture)
         default: return heir ? goblinHeir(gesture) : goblin(breed, gesture)
         }
     }
@@ -273,6 +279,66 @@ enum Reactions {
         case .pester: return Response(.none, 1.8, ["嗚——（低吼）", "吼！"], "💢")
         case .pet: return Response(.shake, 2.2, ["（尾巴猛搖）", "嗚嗚～"], "♥")
         case .lift: return Response(.none, 0, ["嗚！"])
+        case .land: return Response(.hop, 1.4, ["（四腳著地）"])
+        case .obey: return Response(.hop, 1.2, ["嗷！"])
+        case .refuse: return Response(.none, 1.5, ["嗚…"])
+        }
+    }
+
+    // MARK: The beastfolk
+
+    // Rough and gruff, never mean: a wolf growls before it lets you scratch its ears (RACES_BEAST.md: 生猛但不兇).
+    private static func beast(_ breed: String, _ g: Gesture) -> Response {
+        switch (breed, g) {
+        case ("scout", .poke): return Response(.dodge, 1, ["嘿，摸不到", "（甩了甩尾巴）"])
+        case ("scout", .pester): return Response(.flee, 2, ["換個地方玩", "抓得到再說"])
+        case ("scout", .pet): return Response(.shake, 2, ["（尾巴蓬起來了）", "……還不錯"], "♥")
+        case ("scout", .lift): return Response(.none, 0, ["放我下來！", "我自己會跳"])
+        case ("scout", .land): return Response(.hop, 1.2, ["（輕輕落地）"])
+        case ("scout", .obey): return Response(.hop, 1.2, ["交給我", "我鼻子最靈"])
+        case ("scout", .refuse): return Response(.none, 1.5, ["我在聞東西"])
+
+        case ("brute", .poke): return Response(.none, 1.6, ["哞？", "（噴了一口氣）"])
+        case ("brute", .pester): return Response(.punch, 1.6, ["哞——！", "再戳試試看"], "💢")
+        case ("brute", .pet): return Response(.blush, 2, ["……哞。", "（鼻環晃了晃）"])
+        case ("brute", .lift): return Response(.none, 0, ["你搬得動？", "哞！"])
+        case ("brute", .land): return Response(.proud, 1.6, ["轟！"])
+        case ("brute", .obey): return Response(.proud, 1.2, ["哞！", "讓開，我來"])
+        case ("brute", .refuse): return Response(.none, 1.6, ["……（不動）", "等一下"])
+
+        case ("sage", .poke): return Response(.think, 1.6, ["年輕人，什麼事？", "嗯？"])
+        case ("sage", .pester): return Response(.sparkle, 2.5, ["老狐狸不跟你計較"])
+        case ("sage", .pet): return Response(.sparkle, 2.2, ["呵呵，祖靈保佑你"])
+        case ("sage", .lift): return Response(.none, 0, ["老骨頭了，輕點"])
+        case ("sage", .land): return Response(.none, 1.6, ["（拄著手杖站穩）"])
+        case ("sage", .obey): return Response(.bow, 1.2, ["好、好"])
+        case ("sage", .refuse): return Response(.none, 1.5, ["有人受傷時我得在"])
+
+        case ("golden", .poke): return Response(.none, 1.4, ["……", "（低低哼了一聲）"])
+        case ("golden", .pester): return Response(.glowEyes, 1.8, ["夠了。"])
+        case ("golden", .pet): return Response(.none, 1.6, ["……"]) // (from the sixth pat of the day it nods: see `pet`)
+        case ("golden", .lift): return Response(.none, 0, ["放下。"])
+        case ("golden", .land): return Response(.proud, 1.4, ["……"])
+        case ("golden", .obey): return Response(.none, 1.2, ["……好。"])
+        case ("golden", .refuse): return Response(.none, 1.6, ["部落的事我自己決定"])
+
+        case (_, .poke): return Response(.shake, 1.2, ["嗯？", "（耳朵豎起來）"])
+        case (_, .pester): return Response(.none, 1.8, ["嗚——（低吼）", "別鬧"], "💢")
+        case (_, .pet): return Response(.shake, 2.4, ["（尾巴搖起來了）", "……再一下"], "♥")
+        case (_, .lift): return Response(.none, 0, ["喂！", "我會咬人喔"])
+        case (_, .land): return Response(.hop, 1.4, ["（四腳著地）", "哼"])
+        case (_, .obey): return Response(.hop, 1.2, ["嗷！", "走"])
+        case (_, .refuse): return Response(.none, 1.6, ["在忙", "晚點"])
+        }
+    }
+
+    /// The forest children of the white wolf king and the elf princess.
+    private static func beastHeir(_ g: Gesture) -> Response {
+        switch g {
+        case .poke: return Response(.shake, 1, ["（白耳朵抖了一下）"])
+        case .pester: return Response(.none, 1.8, ["嗷嗚——", "不要！"], "💢")
+        case .pet: return Response(.hearts, 2.2, ["（尾巴猛搖）", "嘿嘿～"])
+        case .lift: return Response(.none, 0, ["哇～飛高高！"])
         case .land: return Response(.hop, 1.4, ["（四腳著地）"])
         case .obey: return Response(.hop, 1.2, ["嗷！"])
         case .refuse: return Response(.none, 1.5, ["嗚…"])

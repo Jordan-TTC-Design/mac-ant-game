@@ -167,7 +167,7 @@ export const QUESTS: readonly Quest[] = [
   { id: "gear_100", chapter: "營地", title: "百件兵器", text: "身上加倉庫一共有一百件裝備。", goal: (m) => n(m.gearOwned, 100), reward: { gear: ["bat_lord_boots"], materials: { crystal_shard: 4 } }, after: "gear_50" },
   { id: "raids_300", chapter: "營地", title: "銅牆鐵壁", text: "打倒三百隻來營地搗亂的魔獸。", goal: (m) => n(m.raidKills, 300), reward: { residents: 5, materials: { slime_core: 3 } }, after: "raids_100" },
   { id: "raids_1000", chapter: "營地", title: "千魔不侵", text: "打倒一千隻來營地搗亂的魔獸。", goal: (m) => n(m.raidKills, 1000), reward: { residents: 10, materials: { golden_frog_eye: 2, night_heart: 1 } }, after: "raids_300" },
-  { id: "home_full", chapter: "營地", title: "滿屋子", text: "營地曾經住滿（哥布林 300、精靈 180、死靈 240）。", goal: (m) => n(m.peak, m.homeCap), reward: { materials: { ration_jerky: 20, food_meat: 20 } }, after: "pop_120" },
+  { id: "home_full", chapter: "營地", title: "滿屋子", text: "營地曾經住滿（哥布林 300、精靈 180、死靈 240、獸人 240）。", goal: (m) => n(m.peak, m.homeCap), reward: { materials: { ration_jerky: 20, food_meat: 20 } }, after: "pop_120" },
   { id: "people_250", chapter: "營地", title: "大家族", text: "營地加上所有領地、路上的，一共有兩百五十隻居民。", goal: (m) => n(m.population, 250), reward: { materials: { crystal_shard: 4, food_cheese: 5 } }, after: "pop_120" },
   { id: "people_400", chapter: "營地", title: "一方之主", text: "營地加上所有領地、路上的，一共有四百隻居民。", goal: (m) => n(m.population, 400), reward: { materials: { crystal_shard: 8, item_tonic: 4 } }, after: "people_250" },
   // 大世界
@@ -202,11 +202,11 @@ export const QUESTS: readonly Quest[] = [
   { id: "pvp_5", chapter: "大世界", title: "征服者", text: "打贏其他玩家的領地五次。", goal: (m) => n(m.pvpWins, 5), reward: { residents: 8, materials: { war_banner: 2 } }, after: "pvp_1" },
   // 專注 (focus.ts: the pomodoro's focus rounds that ran to the end, from the Mac or the phone)
   { id: "focus_1", chapter: "專注", title: "第一輪專注", text: "用番茄鐘專注完一輪（跳過的不算）。", goal: (m) => n(m.focusRounds, 1), reward: { materials: { ration_bread: 3, food_honey: 2 } } },
-  { id: "focus_day4", chapter: "專注", title: "專心的一天", text: "一天裡專注完四輪。", goal: (m) => n(m.focusBestDay, 4), reward: { decor: { goblin: "g_tomatotower", elf: "e_moondial", undead: "u_hourglass" } }, after: "focus_1" },
+  { id: "focus_day4", chapter: "專注", title: "專心的一天", text: "一天裡專注完四輪。", goal: (m) => n(m.focusBestDay, 4), reward: { decor: { goblin: "g_tomatotower", elf: "e_moondial", undead: "u_hourglass", beast: "g_tomatotower" } }, after: "focus_1" },
   { id: "focus_20", chapter: "專注", title: "二十輪", text: "一共專注完二十輪。", goal: (m) => n(m.focusRounds, 20), reward: { residents: 3, materials: { crystal_shard: 2 } }, after: "focus_1" },
-  { id: "focus_day6", chapter: "專注", title: "全神貫注", text: "一天裡專注完六輪。", goal: (m) => n(m.focusBestDay, 6), reward: { decor: { goblin: "g_goldthrone", elf: "e_glowtree", undead: "u_bonethrone" } }, after: "focus_day4" },
+  { id: "focus_day6", chapter: "專注", title: "全神貫注", text: "一天裡專注完六輪。", goal: (m) => n(m.focusBestDay, 6), reward: { decor: { goblin: "g_goldthrone", elf: "e_glowtree", undead: "u_bonethrone", beast: "g_goldthrone" } }, after: "focus_day4" },
   { id: "focus_100", chapter: "專注", title: "百輪老手", text: "一共專注完一百輪。", goal: (m) => n(m.focusRounds, 100), reward: { residents: 8, materials: { crystal_shard: 6, amber: 2 } }, after: "focus_20" },
-  { id: "ranch_8", chapter: "營地", title: "牧場主人", text: "牧場裡養著八隻動物。", goal: (m) => n(m.ranchAnimals, 8), reward: { decor: { goblin: "g_trophy", elf: "e_laurelarch", undead: "u_ghostbell" } } },
+  { id: "ranch_8", chapter: "營地", title: "牧場主人", text: "牧場裡養著八隻動物。", goal: (m) => n(m.ranchAnimals, 8), reward: { decor: { goblin: "g_trophy", elf: "e_laurelarch", undead: "u_ghostbell", beast: "g_trophy" } } },
   // 夥伴
   { id: "friend_3", chapter: "夥伴", title: "三五好友", text: "有三位好友。", goal: (m) => n(m.friends, 3), reward: { materials: { food_honey: 5, food_cheese: 3 } }, after: "friend_1" },
   { id: "friend_5", chapter: "夥伴", title: "朋友遍天下", text: "有五位好友。", goal: (m) => n(m.friends, 5), reward: { residents: 5, materials: { item_tonic: 3 } }, after: "friend_3" },
@@ -240,7 +240,7 @@ export const QUESTS: readonly Quest[] = [
   { id: "slot2_1", chapter: "大世界", title: "雙棟並立", text: "在城鎮或其他中心蓋第二棟建築。", goal: (m) => n(m.secondBuildings ?? 0, 1), reward: { materials: { scrap_wood: 80, stone: 60 } }, after: "town_1" },
   { id: "cells_30", chapter: "大世界", title: "三十格領地", text: "營地以外佔著三十格。", goal: (m) => n(m.cells - 1, 30), reward: { residents: 15, materials: { stone: 150, log: 150 } }, after: "cells_20" },
   { id: "region_12", chapter: "大世界", title: "大一統", text: "十二格自己的格子連在一起：一區可以有三個中心了。", goal: (m) => n(m.region, 12), reward: { residents: 10, materials: { scrap_iron: 80, crystal_shard: 6 } }, after: "region_8" },
-  { id: "plunder_1", chapter: "大世界", title: "打家劫舍", text: "用「🏴‍☠️ 劫掠」打贏一次（要先點哥布林掠奪樹頂端的天賦）。", goal: (m) => n(m.plunders ?? 0, 1), reward: { materials: { stolen_coin: 5, food_meat: 10 } }, after: "pvp_1" },
+  { id: "plunder_1", chapter: "大世界", title: "打家劫舍", text: "用「🏴‍☠️ 劫掠」打贏一次（要先點哥布林掠奪樹或獸人蠻力樹頂端的天賦）。", goal: (m) => n(m.plunders ?? 0, 1), reward: { materials: { stolen_coin: 5, food_meat: 10 } }, after: "pvp_1" },
   { id: "plunder_10", chapter: "大世界", title: "江洋大盜", text: "用劫掠打贏十次。", goal: (m) => n(m.plunders ?? 0, 10), reward: { residents: 10, materials: { stolen_coin: 15, crystal_shard: 6 } }, after: "plunder_1" },
   // 營地：★ 精良裝備
   { id: "refined_1", chapter: "營地", title: "拼裝大師", text: "擁有一件 ★ 精良裝備（哥布林工匠樹頂端「拼裝改造」，在工坊「★ 改造」）。", goal: (m) => n(m.refined ?? 0, 1), reward: { materials: { scrap_iron: 30, leather_strap: 4 } }, after: "gear_20" },

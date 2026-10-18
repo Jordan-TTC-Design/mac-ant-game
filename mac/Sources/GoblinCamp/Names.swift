@@ -94,6 +94,7 @@ enum Names {
         switch Characters.current.rules.names {
         case "elf": return elf(seed: seed)
         case "undead": return undead(seed: seed)
+        case "beast": return beast(seed: seed)
         default: return goblin(seed: seed)
         }
     }
@@ -129,6 +130,26 @@ enum Names {
         case 30..<55: h = mix(h); let s = pick(soulSounds); return s + s                   // 幽幽
         case 55..<80: h = mix(h); return pick(boneSounds + soulSounds) + pick(undeadEnds)  // 骨丸、冥露
         default: h = mix(h); return pick(soulSounds) + pick(boneSounds) + pick(undeadEnds) // 霧喀兒
+        }
+    }
+
+    // The beastfolk: short, rough tribal names, a look and a body part (灰牙、裂耳、霜鬃…); the old ones by their age (老爪、阿吼).
+    // The same tables and odds as pwa/app/utils/seedNames.ts.
+    private static let beastFirsts = ["灰", "赤", "霜", "岩", "烈", "鐵", "黑", "白", "裂", "斷", "疤", "野", "暴", "狂", "沙", "雷", "血", "石", "火", "夜",
+                                      "銀", "獨", "碎", "長"]
+    private static let beastSeconds = ["牙", "耳", "鬃", "爪", "吼", "風", "蹄", "角", "尾", "鼻", "眼", "骨", "皮", "掌", "嚎", "背", "脊", "拳", "鬚", "齒"]
+    private static let beastElders = ["老", "大", "小", "阿"]
+
+    static func beast(seed: UInt64) -> String {
+        var h = mix(seed ^ 0xBEA57)
+        func pick(_ list: [String]) -> String {
+            let item = list[Int(h % UInt64(list.count))]
+            h = mix(h)
+            return item
+        }
+        switch Int(h % 100) {
+        case 0..<85: h = mix(h); return pick(beastFirsts) + pick(beastSeconds)              // 灰牙
+        default: h = mix(h); return pick(beastElders) + pick(beastSeconds)                  // 老爪
         }
     }
 

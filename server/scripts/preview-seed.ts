@@ -1,7 +1,7 @@
 // Fills a throwaway database with camps to look at the phone app with (pwa/scripts/preview.sh): never the real one.
 //   PREVIEW_DATABASE_URL=postgres://goblin:goblin@localhost:5433/goblin_preview tsx scripts/preview-seed.ts
 // Logs in as demo@example.com / goblin preview: a goblin camp at race level 50 with its talents (掠奪, 工匠), cells round its
-// camp (a town, a 瞭望塔, a 營火廣場), gear in its store; an elf camp with 伏擊 and an undead one with 腐化大地 next door.
+// camp (a town, a 瞭望塔, a 營火廣場), gear in its store; an elf camp with 伏擊, an undead one with 腐化大地 and a beast one with 夜襲 next door.
 import { neighbors, cellAt } from "@goblincamp/shared/world";
 import { cannotLearn, TALENTS, type TalentPicks } from "@goblincamp/shared/world";
 import { bearer, emptyTables, logIn, mac, signUp, testApp } from "../test/helpers.ts";
@@ -68,6 +68,9 @@ await hold(elf.id, neighbors(elf.home)[3]!, { building: "sacred" });
 const undead = await camp("undead@example.com", "undead", { lat: DAAN.lat - 0.012, lng: DAAN.lng }, ["u_crypt", "u_dread"]);
 const beside = neighbors(ring[2]!).find((c) => c !== demo.home && !ring.includes(c))!;
 await hold(undead.id, beside);
+// west: a beast camp with 夜襲 (狼群 and 月), holding a 獵手小屋
+const beast = await camp("beast@example.com", "beast", { lat: DAAN.lat, lng: DAAN.lng - 0.012 }, ["b_pack", "b_moon"]);
+await hold(beast.id, neighbors(beast.home)[0]!, { building: "lodge" });
 // the undead camp has a party on its way to the demo's town (set out now: still walking when you look)
 t.advance(Date.now() - t.now().getTime());
 const home = ((await t.call("GET", "/camp", undefined, undead.auth)).body.residents as { place: string }[]).filter((r) => r.place === "home").length;

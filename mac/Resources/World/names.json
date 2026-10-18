@@ -73,7 +73,8 @@
     "crystal_shard"
    ],
    "home": [
-    "goblin"
+    "goblin",
+    "beast"
    ]
   },
   "river": {
@@ -134,7 +135,8 @@
    "home": [
     "goblin",
     "elf",
-    "undead"
+    "undead",
+    "beast"
    ]
   },
   "industrial": {
@@ -158,7 +160,8 @@
     "river_pearl"
    ],
    "home": [
-    "elf"
+    "elf",
+    "beast"
    ]
   },
   "coast": {
@@ -183,7 +186,8 @@
    "home": [
     "goblin",
     "elf",
-    "undead"
+    "undead",
+    "beast"
    ]
   },
   "temple": {
@@ -207,7 +211,8 @@
    "home": [
     "goblin",
     "elf",
-    "undead"
+    "undead",
+    "beast"
    ]
   },
   "military": {
@@ -220,7 +225,8 @@
    "home": [
     "goblin",
     "elf",
-    "undead"
+    "undead",
+    "beast"
    ]
   },
   "railway": {
@@ -232,7 +238,8 @@
    "home": [
     "goblin",
     "elf",
-    "undead"
+    "undead",
+    "beast"
    ]
   }
  },
@@ -281,7 +288,8 @@
    "name": {
     "goblin": "城鎮",
     "elf": "城鎮",
-    "undead": "城鎮"
+    "undead": "城鎮",
+    "beast": "城鎮"
    }
   },
   {
@@ -290,7 +298,8 @@
    "name": {
     "goblin": "要塞",
     "elf": "要塞",
-    "undead": "要塞"
+    "undead": "要塞",
+    "beast": "要塞"
    }
   },
   {
@@ -299,7 +308,8 @@
    "name": {
     "goblin": "工坊鎮",
     "elf": "工坊鎮",
-    "undead": "工坊鎮"
+    "undead": "工坊鎮",
+    "beast": "工坊鎮"
    }
   },
   {
@@ -308,7 +318,8 @@
    "name": {
     "goblin": "聖地",
     "elf": "聖地",
-    "undead": "墓城"
+    "undead": "墓城",
+    "beast": "聖地"
    }
   }
  ],
@@ -316,222 +327,266 @@
   "academy": {
    "goblin": "學院",
    "elf": "學院",
-   "undead": "學院"
+   "undead": "學院",
+   "beast": "學院"
   },
   "altar": {
    "goblin": "祭壇",
    "elf": "祭壇",
-   "undead": "祭壇"
+   "undead": "祭壇",
+   "beast": "祭壇"
   },
   "armory": {
    "goblin": "軍械庫",
    "elf": "軍械庫",
-   "undead": "軍械庫"
+   "undead": "軍械庫",
+   "beast": "軍械庫"
   },
   "barracks": {
    "goblin": "營舍",
    "elf": "營舍",
-   "undead": "營舍"
+   "undead": "營舍",
+   "beast": "營舍"
   },
   "bathhouse": {
    "goblin": "溫泉旅館",
    "elf": "溫泉旅館",
-   "undead": "溫泉旅館"
+   "undead": "溫泉旅館",
+   "beast": "溫泉旅館"
   },
   "blessing": {
    "goblin": "祈福台",
    "elf": "祈福台",
-   "undead": "祈福台"
+   "undead": "祈福台",
+   "beast": "祈福台"
   },
   "bonetower": {
    "goblin": "骨塔",
    "elf": "骨塔",
-   "undead": "骨塔"
+   "undead": "骨塔",
+   "beast": "骨塔"
   },
   "campfire": {
    "goblin": "營火廣場",
    "elf": "營火廣場",
-   "undead": "營火廣場"
+   "undead": "營火廣場",
+   "beast": "營火廣場"
   },
   "dock": {
    "goblin": "碼頭",
    "elf": "碼頭",
-   "undead": "碼頭"
+   "undead": "碼頭",
+   "beast": "碼頭"
   },
   "farmstead": {
    "goblin": "農莊",
    "elf": "農莊",
-   "undead": "農莊"
+   "undead": "農莊",
+   "beast": "農莊"
   },
   "ferry": {
    "goblin": "渡口",
    "elf": "渡口",
-   "undead": "渡口"
+   "undead": "渡口",
+   "beast": "渡口"
   },
   "field": {
    "goblin": "田",
    "elf": "田",
-   "undead": "田"
+   "undead": "田",
+   "beast": "田"
   },
   "fieldhospital": {
    "goblin": "野戰醫院",
    "elf": "野戰醫院",
-   "undead": "野戰醫院"
+   "undead": "野戰醫院",
+   "beast": "野戰醫院"
   },
   "fishery": {
    "goblin": "漁場",
    "elf": "漁場",
-   "undead": "醃肉棚"
+   "undead": "醃肉棚",
+   "beast": "漁場"
   },
   "foundry": {
    "goblin": "鍛造廠",
    "elf": "鍛造廠",
-   "undead": "鍛造廠"
+   "undead": "鍛造廠",
+   "beast": "鍛造廠"
   },
   "freightyard": {
    "goblin": "貨運站",
    "elf": "貨運站",
-   "undead": "貨運站"
+   "undead": "貨運站",
+   "beast": "貨運站"
   },
   "frogpond": {
    "goblin": "蛙池",
    "elf": "蛙池",
-   "undead": "蛙池"
+   "undead": "蛙池",
+   "beast": "蛙池"
   },
   "geotherm": {
    "goblin": "地熱工坊",
    "elf": "地熱工坊",
-   "undead": "地熱工坊"
+   "undead": "地熱工坊",
+   "beast": "地熱工坊"
   },
   "granary": {
    "goblin": "穀倉",
    "elf": "穀倉",
-   "undead": "穀倉"
+   "undead": "穀倉",
+   "beast": "穀倉"
   },
   "harbour": {
    "goblin": "漁港",
    "elf": "漁港",
-   "undead": "漁港"
+   "undead": "漁港",
+   "beast": "漁港"
   },
   "hillfort": {
    "goblin": "山寨",
    "elf": "山寨",
-   "undead": "山寨"
+   "undead": "山寨",
+   "beast": "山寨"
   },
   "inn": {
    "goblin": "驛站",
    "elf": "驛站",
-   "undead": "驛站"
+   "undead": "驛站",
+   "beast": "驛站"
   },
   "library": {
    "goblin": "圖書館",
    "elf": "圖書館",
-   "undead": "圖書館"
+   "undead": "圖書館",
+   "beast": "圖書館"
   },
   "lighthouse": {
    "goblin": "燈塔",
    "elf": "燈塔",
-   "undead": "燈塔"
+   "undead": "燈塔",
+   "beast": "燈塔"
   },
   "lodge": {
    "goblin": "獵人小屋",
    "elf": "射手小屋",
-   "undead": "獵人小屋"
+   "undead": "獵人小屋",
+   "beast": "獵手小屋"
   },
   "mine": {
    "goblin": "礦坑",
    "elf": "礦坑",
-   "undead": "礦坑"
+   "undead": "礦坑",
+   "beast": "礦坑"
   },
   "orchard": {
    "goblin": "採集園",
    "elf": "採集園",
-   "undead": "採集園"
+   "undead": "採集園",
+   "beast": "採集園"
   },
   "ossuary": {
    "goblin": "靈堂",
    "elf": "靈堂",
-   "undead": "靈堂"
+   "undead": "靈堂",
+   "beast": "靈堂"
   },
   "outpost": {
    "goblin": "哨站",
    "elf": "哨站",
-   "undead": "哨站"
+   "undead": "哨站",
+   "beast": "哨站"
   },
   "pharmacy": {
    "goblin": "藥房",
    "elf": "藥房",
-   "undead": "藥房"
+   "undead": "藥房",
+   "beast": "藥房"
   },
   "reedmaze": {
    "goblin": "蘆葦迷陣",
    "elf": "蘆葦迷陣",
-   "undead": "蘆葦迷陣"
+   "undead": "蘆葦迷陣",
+   "beast": "蘆葦迷陣"
   },
   "repairshop": {
    "goblin": "修理廠",
    "elf": "修理廠",
-   "undead": "修理廠"
+   "undead": "修理廠",
+   "beast": "修理廠"
   },
   "sacred": {
    "goblin": "聖樹",
    "elf": "聖樹",
-   "undead": "聖樹"
+   "undead": "聖樹",
+   "beast": "聖樹"
   },
   "sandfort": {
    "goblin": "沙堡哨",
    "elf": "沙堡哨",
-   "undead": "沙堡哨"
+   "undead": "沙堡哨",
+   "beast": "沙堡哨"
   },
   "sawmill": {
    "goblin": "伐木營地",
    "elf": "伐木營地",
-   "undead": "伐木營地"
+   "undead": "伐木營地",
+   "beast": "伐木營地"
   },
   "shellhut": {
    "goblin": "拾貝屋",
    "elf": "拾貝屋",
-   "undead": "拾貝屋"
+   "undead": "拾貝屋",
+   "beast": "拾貝屋"
   },
   "shrine": {
    "goblin": "香火廟",
    "elf": "香火廟",
-   "undead": "香火廟"
+   "undead": "香火廟",
+   "beast": "香火廟"
   },
   "station": {
    "goblin": "車站",
    "elf": "車站",
-   "undead": "車站"
+   "undead": "車站",
+   "beast": "車站"
   },
   "storehouse": {
    "goblin": "倉庫",
    "elf": "倉庫",
-   "undead": "倉庫"
+   "undead": "倉庫",
+   "beast": "倉庫"
   },
   "stronghold": {
    "goblin": "要塞堡壘",
    "elf": "要塞堡壘",
-   "undead": "要塞堡壘"
+   "undead": "要塞堡壘",
+   "beast": "要塞堡壘"
   },
   "tollgate": {
    "goblin": "關卡",
    "elf": "關卡",
-   "undead": "關卡"
+   "undead": "關卡",
+   "beast": "關卡"
   },
   "watchtower": {
    "goblin": "瞭望塔",
    "elf": "瞭望塔",
-   "undead": "瞭望塔"
+   "undead": "瞭望塔",
+   "beast": "瞭望塔"
   },
   "watermill": {
    "goblin": "水車",
    "elf": "水車",
-   "undead": "水車"
+   "undead": "水車",
+   "beast": "水車"
   },
   "workshop": {
    "goblin": "工坊",
    "elf": "工坊",
-   "undead": "工坊"
+   "undead": "工坊",
+   "beast": "工坊"
   }
  },
  "foes": {

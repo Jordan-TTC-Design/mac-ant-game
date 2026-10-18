@@ -8,7 +8,7 @@ import { planRaid, raceRules } from "@goblincamp/shared/camp";
 import { pickWeighted, randomFrom } from "@goblincamp/shared/world";
 import { resolveRaid } from "../src/camp/raids.ts";
 
-for (const race of ["goblin", "elf", "undead"]) {
+for (const race of ["goblin", "elf", "undead", "beast"]) {
   for (const size of [40, 90, 150, 250]) {
     const rules = raceRules(race);
     const r = randomFrom(size * 7 + race.length);

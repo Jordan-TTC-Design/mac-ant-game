@@ -468,7 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             log("encode avatar: \(String(data: (try? enc.encode(AvatarKit.standard("goblin", "f"))) ?? Data(), encoding: .utf8) ?? "?")")
             log("encode undead avatar: \(String(data: (try? enc.encode(AvatarKit.standard("undead", "m"))) ?? Data(), encoding: .utf8) ?? "?")")
             var kit: [String: Any] = [:]
-            for race in ["goblin", "elf", "undead"] {
+            for race in ["goblin", "elf", "undead", "beast"] {
                 for sex in ["m", "f"] {
                     let o = AvatarKit.options(race, sex)
                     let std = (try? JSONSerialization.jsonObject(with: enc.encode(AvatarKit.standard(race, sex)))) ?? [:]
@@ -1318,7 +1318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             after(1) {
                 let size = CGSize(width: 900, height: 640)
                 let world = CGRect(x: 54, y: 54, width: size.width - 108, height: size.height - 108)
-                let columns: [(String, Biome)] = [("goblin", .meadow), ("elf", .elfwood), ("undead", .graveyard)]
+                let columns: [(String, Biome)] = [("goblin", .meadow), ("elf", .elfwood), ("undead", .graveyard), ("beast", .redrock)]
                 let cw = 450, ch = 320
                 guard let sheet = CGContext(data: nil, width: cw * columns.count, height: ch * 5, bitsPerComponent: 8, bytesPerRow: 0,
                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue) else { return }
@@ -1331,7 +1331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         scene.farmLevel = level
                         scene.farmRace = race
                         if env["CAMP_TEST_SITES"] != nil { // every site this race may build, at level 0 to 3 down the rows
-                            let kinds = ["lumber", "quarry", "mine", "traps", "fishery", "hunter", race == "elf" ? "grove" : race == "undead" ? "soulwell" : "scrapyard"]
+                            let kinds = ["lumber", "quarry", "mine", "traps", "fishery", "hunter", race == "elf" ? "grove" : race == "undead" ? "soulwell" : race == "beast" ? "huntground" : "scrapyard"]
                             scene.sites = kinds.enumerated().map { (id: $0.offset + 2, kind: $0.element, level: min(3, max(0, level - 2 + ($0.offset == 0 ? -1 : 0)))) }
                         }
                         if let image = scene.render(size: size, origin: .zero, scale: 1, hour: 12) {

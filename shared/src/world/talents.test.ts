@@ -3,7 +3,7 @@ import { cannotLearn, pointsSpent, TALENT_TREES, TALENTS, talentBonus, talentPoi
 
 describe("種族天賦", () => {
   it("gives each race four trees of its own (the camp's one of them), each laid out in rows with a top talent", () => {
-    for (const race of ["goblin", "elf", "undead"]) {
+    for (const race of ["goblin", "elf", "undead", "beast"]) {
       const trees = treesFor(race);
       expect(trees).toHaveLength(4);
       for (const tree of trees) {
@@ -13,7 +13,7 @@ describe("種族天賦", () => {
         for (const x of talents) if (x.requires) expect(talentRule(x.requires)!.row).toBeLessThan(x.row);
       }
     }
-    expect(new Set(TALENT_TREES.map((x) => x.id)).size).toBe(12);
+    expect(new Set(TALENT_TREES.map((x) => x.id)).size).toBe(16);
     expect(new Set(TALENTS.map((x) => x.id)).size).toBe(TALENTS.length);
   });
 

@@ -539,7 +539,7 @@ final class Colony {
         case .huntNewsDelivered(let id):
             guard let i = creatures.firstIndex(where: { $0.id == id }) else { return }
             creatures[i].reported = true
-            recruitHunters(for: id, count: 5 + Int(creatures[i].hp / 3) + ants[index].traits.recruit)
+            recruitHunters(for: id, count: Int(Double(5 + Int(creatures[i].hp / 3) + ants[index].traits.recruit) * (Characters.current.rules.hunts ?? 1)))
         case .attack(let id):
             attack(creature: id, by: index)
         case .reached(let target): herdReached(target, by: index)
@@ -906,7 +906,11 @@ final class Colony {
     private func attack(creature id: Int, by index: Int) {
         guard let ci = creatures.firstIndex(where: { $0.id == id }) else { return }
         let rules = Characters.current.rules
-        creatures[ci].hp -= ants[index].might * (1 + 0.2 * boost(.meat)) * (Colony.isNight ? rules.nightMight ?? 1 : 1) * decorMight
+        // the beastfolk's ways: a brute's first blow is a charge; a blow from the side, while another holds its front, bites deeper
+        let charging = rules.charge.map { creatures[ci].engaged <= 0 && Characters.current.breeds[min(ants[index].breedIndex, Characters.current.breeds.count - 1)].id == "brute" ? $0 : 1 } ?? 1
+        let flanking = rules.flank.map { hunters(of: id) >= 2 ? $0 : 1 } ?? 1
+        let frenzy = Colony.frenzied ? rules.moon?.might ?? 1 : 1
+        creatures[ci].hp -= ants[index].might * (1 + 0.2 * boost(.meat)) * (Colony.isNight ? rules.nightMight ?? 1 : 1) * decorMight * charging * flanking * frenzy
         wear(.weapon, of: index, by: 1)
         ants[index].swing = Ant.swingTime
         ants[index].swingHeading = atan2(creatures[ci].pos.y - ants[index].pos.y, creatures[ci].pos.x - ants[index].pos.x)
@@ -1012,7 +1016,7 @@ final class Colony {
             hits.append((pos: ants[index].pos, age: 0))
             return
         }
-        ants[index].health -= 1
+        ants[index].health -= Colony.frenzied ? Characters.current.rules.moon?.hurt ?? 1 : 1 // (in a frenzy they take no care)
         hits.append((pos: ants[index].pos, age: 0))
         if ants[index].health <= 0, followsBooks, doomed.remove(ants[index].id) != nil { // the books say it fell in this raid
             ants[index].ageless = false
@@ -1468,6 +1472,23 @@ final class Colony {
         let hour = Scenery.currentHour
         return hour >= 20 || hour < 6
     }
+
+    /// The moon is full (or nearly) tonight: the real moon, from the date, so every camp sees the same one. About three nights
+    /// a month. `CAMP_TEST_FULLMOON=1` makes every night one.
+    static var isFullMoon: Bool {
+        if ProcessInfo.processInfo.environment["CAMP_TEST_FULLMOON"] == "1" { return true }
+        return moonLight(at: Date()) >= 0.96
+    }
+
+    /// How much of the moon is lit, 0 (new) to 1 (full): days since a known new moon (2000-01-06 18:14 UTC), in synodic months.
+    static func moonLight(at date: Date) -> Double {
+        let synodic = 29.530588853 * 86400
+        let age = (date.timeIntervalSince1970 - 947_182_440).truncatingRemainder(dividingBy: synodic)
+        return (1 - cos(2 * .pi * age / synodic)) / 2
+    }
+
+    /// A full-moon night for a race that goes into a frenzy (the beastfolk, RACES_BEAST.md §4).
+    static var frenzied: Bool { Characters.current.rules.moon != nil && isNight && isFullMoon }
 
     /// Pairs goblins up for a friendly scuffle, and gives the golden ones somebody to wait on them. Done every couple of seconds.
     private func matchmake(world: AntWorld) {
@@ -2374,6 +2395,8 @@ final class Colony {
         world.healers = healer.map { i in ants.filter { $0.breedIndex == i && !$0.isHidden }.map(\.pos) } ?? []
         let raceRules = Characters.current.rules
         world.speedBoost = (1 + 0.15 * boost(.carrot)) * (Colony.isNight ? raceRules.nightSpeed ?? 1 : raceRules.daySpeed ?? 1)
+            * (Colony.frenzied ? raceRules.moon?.speed ?? 1 : 1)
+        world.huntKeen = raceRules.hunts ?? 1
         world.workBoost = 1 + 0.3 * boost(.bread)
         world.fishBoost = 1 + 0.3 * boost(.fish)
         world.rangedReach = Characters.current.rules.ranged ?? 0

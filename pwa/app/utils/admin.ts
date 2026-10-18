@@ -7,7 +7,7 @@ export const errText = (e: unknown) => (e instanceof ApiError ? e.message : Stri
 export const bytes = (n: number) =>
   n >= 1_073_741_824 ? `${(n / 1_073_741_824).toFixed(1)} GB` : n >= 1_048_576 ? `${(n / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 
-export const RACES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
+export const RACES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" };
 
 export const ACTIONS: Record<string, string> = {
   disable: "停用",

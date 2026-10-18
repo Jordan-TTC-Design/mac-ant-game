@@ -50,6 +50,8 @@ struct Breed {
     /// A special resident (DESKTOP.md §10.0): only comes as a visitor, from race level `level`.
     var special = false
     var level = 0
+    /// What it looks like on a full-moon night (the beastfolk: wolves and foxes on all fours…); nil = as ever.
+    var frenzy: SpriteRole? = nil
 
     static let plain = Breed(id: "common", name: "平民", weight: 100, prosperityBoost: 0, stats: BreedStats(), sprites: nil, blurb: "")
 }

@@ -5,6 +5,7 @@ import {
   AVATAR_FACES,
   AVATAR_HAIR_COLORS,
   AVATAR_LABELS,
+  avatarArtRace,
   avatarOptions,
   defaultAvatar,
   GUILD_OUTFITS,
@@ -98,7 +99,7 @@ function draw() {
 const opts = computed(() => (look.value ? avatarOptions(look.value.race, look.value.sex) : null));
 /** One colour per option for the swatches: the art's middle shade. */
 function swatch(channel: string, option: string): string | undefined {
-  const r = manifest?.recolor[channel]?.options[channel === "skin" ? `${look.value!.race}_${look.value!.sex}_${option}` : option];
+  const r = manifest?.recolor[channel]?.options[channel === "skin" ? `${avatarArtRace(look.value!.race)}_${look.value!.sex}_${option}` : option];
   return r?.[Math.min(1, r.length - 1)];
 }
 type Part = "face" | "eyes" | "brows" | "mouth" | "hair" | "hairColor" | "skin" | "flame";

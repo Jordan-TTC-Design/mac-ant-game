@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // A small camp for the phone, drawn with the Mac's own pieces: the race's ground (a meadow, the elves' ancient forest, the
-// undead's graveyard), a line of trees behind, the camp look for its stage with the race's things round it (fire, tents,
+// undead's graveyard, the beasts' red-rock valley), a line of trees behind, the camp look for its stage with the race's things round it (fire, tents,
 // lanterns, graves…), grass and stones about, and some of the residents (every rare breed first) wandering among them with
 // the Mac's sprite sheets (16×16 frames: row 1 facing you, row 2 away, row 3 facing right).
 // Only for looking at: who is where is made up here (the same every visit for a camp); the numbers are the server's.
@@ -23,8 +23,12 @@ function measure(event: Event) {
 
 // MARK: The scenery
 
-const BIOME: Record<string, string> = { goblin: "meadow", elf: "elfwood", undead: "graveyard" };
-const biome = computed(() => BIOME[props.race] ?? "meadow");
+const BIOME: Record<string, string> = { goblin: "meadow", elf: "elfwood", undead: "graveyard", beast: "redrock" };
+/** The race's biome, or the meadow while its pieces are not copied over yet (scripts/copy-sprites.mjs). */
+const biome = computed(() => {
+  const own = BIOME[props.race] ?? "meadow";
+  return !Object.keys(pieces.value).length || pieces.value[`ground-${own}`] ? own : "meadow";
+});
 /** Each piece's size in pixels (written by scripts/copy-sprites.mjs). */
 const pieces = ref<Record<string, [number, number]>>({});
 onMounted(async () => {
@@ -110,6 +114,19 @@ const scenery = computed<Piece[]>(() => {
     put("log", 40, 80);
     if (stage >= 2) put("tent", 25, 76);
     if (stage >= 3) put("menhir", 82, 74);
+  } else if (props.race === "beast") {
+    // the red-rock valley: the fire, the meat-drying rack, the wolf totem, the howling rock, ox skulls and rock pillars
+    put("firepit", 50, 70);
+    put("firewood", 60, 72);
+    put("rack", 29, 56);
+    put("totem", 66, 52);
+    put("howl", 84, 46);
+    put("pillar", 16, 50);
+    put("spears", 36, 50);
+    put("oxskull", 71, 80);
+    put("log", 41, 82);
+    if (stage >= 2) put("trophy", 23, 68);
+    if (stage >= 3) put("trophy", 79, 64);
   } else {
     put("grave", 26, 56);
     put("grave", 33, 64);
@@ -285,6 +302,7 @@ function spriteStyle(w: Walker) {
 }
 .scene.elfwood { background-color: #4f9a55; }
 .scene.graveyard { background-color: #45495a; }
+.scene.redrock { background-color: #b98a5a; }
 /* the woods behind are darker, and the scene's edges a little too */
 .shade {
   position: absolute; inset: 0; pointer-events: none; z-index: 2000;

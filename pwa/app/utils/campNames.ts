@@ -19,7 +19,7 @@ export function loadArtNames(): Promise<ArtNames> {
 }
 
 /** Each race's camp look on the phone (the Mac lets the player pick; these are the ones that fit the race). */
-export const CAMP_LOOK: Record<string, string> = { goblin: "mound", elf: "stump", undead: "soultower" };
+export const CAMP_LOOK: Record<string, string> = { goblin: "mound", elf: "stump", undead: "soultower", beast: "den" };
 
 /** The Mac's Food.swift names. */
 export const FOOD_NAMES: Record<string, string> = {

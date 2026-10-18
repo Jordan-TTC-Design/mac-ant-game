@@ -542,6 +542,7 @@ enum WorldText {
         switch race {
         case "elf": return Names.elf(seed: s)
         case "undead": return Names.undead(seed: s)
+        case "beast": return Names.beast(seed: s)
         default: return Names.goblin(seed: s)
         }
     }
@@ -605,6 +606,7 @@ enum WorldArt {
         switch race {
         case "elf": return (c(0x3aa0e0), c(0xe8dcc0), c(0x3f8f5a), c(0xe6e0d0))
         case "undead": return (c(0x9a50d0), c(0x4a4458), c(0x2a2638), c(0x5a5468))
+        case "beast": return (c(0xc0532e), c(0x8a5a3a), c(0x6a3a26), c(0xb07a5a))
         default: return (c(0x5fb030), c(0x8a5a32), c(0x5e7a2a), c(0x9a8a70))
         }
     }

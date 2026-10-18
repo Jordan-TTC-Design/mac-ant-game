@@ -35,7 +35,7 @@ import {
   type HubKind,
 } from "../src/world/index.ts";
 
-const RACES = ["goblin", "elf", "undead"] as const;
+const RACES = ["goblin", "elf", "undead", "beast"] as const;
 const byRace = (name: (race: string) => string) => Object.fromEntries(RACES.map((r) => [r, name(r)]));
 
 export function worldNames() {

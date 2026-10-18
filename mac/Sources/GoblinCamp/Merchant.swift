@@ -39,7 +39,7 @@ enum MerchantRules {
     static let gapMinutes = 60.0
 
     static func name(_ race: String) -> String {
-        ["goblin": "狗頭人行商", "elf": "松鼠商隊", "undead": "冥河擺渡人"][race] ?? "狗頭人行商"
+        ["goblin": "狗頭人行商", "elf": "松鼠商隊", "undead": "冥河擺渡人", "beast": "荒野禿鷹商人"][race] ?? "狗頭人行商"
     }
 
     private struct Deal { let give: [String: Int]; let get: [String: Int]; let weight: Double }
@@ -63,6 +63,8 @@ enum MerchantRules {
                 Deal(give: ["feather": 8], get: ["ancient_bark": 2], weight: 1.2), Deal(give: ["food_honey": 4, "log": 20], get: ["amber": 2], weight: 0.8)],
         "undead": [Deal(give: ["stone": 50], get: ["ectoplasm": 2], weight: 1.5), Deal(give: ["bone_shard": 10], get: ["night_dust": 3], weight: 1.5),
                    Deal(give: ["night_dust": 6, "scrap_iron": 8], get: ["cursed_steel": 1], weight: 1), Deal(give: ["night_dust": 10], get: ["night_heart": 1], weight: 0.5)],
+        "beast": [Deal(give: ["food_meat": 6], get: ["wolf_pelt": 3], weight: 1.5), Deal(give: ["stone": 40, "rabbit_fur": 4], get: ["boar_tusk": 2], weight: 1.5),
+                  Deal(give: ["food_meat": 8, "scrap_iron": 6], get: ["bear_claw": 1], weight: 1), Deal(give: ["wolf_pelt": 6, "food_meat": 6], get: ["werewolf_fur": 1], weight: 0.5)],
     ]
 
     static func gift(stage: Int) -> [String: Int] {

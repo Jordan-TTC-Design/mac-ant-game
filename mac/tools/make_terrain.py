@@ -974,6 +974,23 @@ def site_soulwell(rnd):
     return img
 
 
+def site_huntground(rnd):
+    """The beastfolk's hunting ground: a rack of spears, a kill hung head down from a frame of poles, horns over the gate."""
+    img = new(32, 22)
+    rect(img, 2, 6, 1, 15, WOOD); rect(img, 14, 6, 1, 15, WOOD); rect(img, 1, 5, 15, 2, WOOD_LIGHT)   # the frame
+    rect(img, 6, 7, 1, 2, (90, 70, 50))                                  # a rope, and the kill on it
+    blob(img, 7, 13, 3, 4, [(120, 86, 56), (156, 114, 74), (186, 144, 100)], rnd)
+    put(img, 6, 17, (120, 86, 56)); put(img, 8, 17, (120, 86, 56))
+    put(img, 7, 9, (150, 20, 24)); put(img, 7, 19, (150, 20, 24))       # (a drop of blood under it)
+    for x, y in ((0, 3), (1, 4), (15, 4), (16, 3)):                       # horns over the frame
+        put(img, x, y, (236, 228, 206))
+    for k, x in enumerate((20, 23, 26, 29)):                              # spears leaning on a rail
+        rect(img, x + (k % 2), 3, 1, 17, WOOD_LIGHT); rect(img, x - 1 + (k % 2), 1, 3, 2, (196, 202, 212))
+    rect(img, 18, 12, 14, 1, WOOD)
+    outline(img, (52, 30, 22))
+    return img
+
+
 def site_building(rnd):
     img = new(24, 14)
     for x in (2, 21):
@@ -1008,7 +1025,8 @@ def make_sites():
     return {"site-lumber": site_lumber(rnd), "site-quarry": site_quarry(rnd), "site-mine": site_mine(rnd), "site-traps": site_traps(rnd),
             "site-fishery": site_fishery(rnd), "site-jerky": site_jerky(rnd), "site-hunter": site_hunter(rnd), "site-archer": site_archer(rnd),
             "site-scrapyard": site_scrapyard(rnd), "site-grove": site_grove(rnd), "site-soulwell": site_soulwell(rnd),
-            "site-building": site_building(rnd), "site-crates": site_crates(rnd), "site-banner": site_banner(rnd)}
+            "site-building": site_building(rnd), "site-crates": site_crates(rnd), "site-banner": site_banner(rnd),
+            "site-huntground": site_huntground(rnd)}
 
 
 def make_seasonal():

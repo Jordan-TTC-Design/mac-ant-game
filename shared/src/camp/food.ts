@@ -17,9 +17,10 @@ export function placeableFoods(race: string): readonly FoodId[] {
   return race === "undead" ? SOULS : FOODS;
 }
 
-/** How strongly a food works for a race (elves: fruit and honey 1.5, meat and fish nothing). */
+/** How strongly a food works for a race (elves: fruit and honey 1.5, meat and fish nothing; beasts: meat and fish 1.5, fruit and honey 0.5). */
 export function foodScale(race: string, food: string): number {
   if (race === "elf") return { honey: 1.5, berries: 1.5, water: 1.5, meat: 0, fish: 0 }[food] ?? 1;
+  if (race === "beast") return { meat: 1.5, fish: 1.5, honey: 0.5, berries: 0.5 }[food] ?? 1;
   return 1;
 }
 

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DECOR_KINDS, DECOR_LEVEL_STEP, DECOR_MAX_FENCES, DECOR_MAX_ITEMS, DECOR_ROOM, DECOR_ROOM_PER_LEVEL, decorLimits, decorProblem, decorRoom, decorRoomUsed } from "./decor.ts";
+import { DECOR_KINDS, DECOR_LEVEL_STEP, DECOR_MAX_FENCES, DECOR_MAX_ITEMS, DECOR_ROOM, DECOR_ROOM_PER_LEVEL, decorLimits, decorProblem, decorRace, decorRoom, decorRoomUsed } from "./decor.ts";
 
 const mac = new URL("../../../mac/Resources/Decor/", import.meta.url);
 
@@ -40,14 +40,14 @@ describe("decorations", () => {
 
   it("open five more a race every three race levels, one of them doing something", () => {
     const fns = ["lv_rest", "lv_whet", "lv_nursery", "lv_might", "lv_ward", "lv_birth", "lv_hold", "lv_crown"];
-    for (const race of ["goblin", "elf", "undead"]) {
+    for (const race of ["goblin", "elf", "undead", "beast"]) {
       fns.forEach((fn, i) => {
-        const tier = DECOR_KINDS.filter((k) => k.race === race && k.level === (i + 1) * DECOR_LEVEL_STEP);
+        const tier = DECOR_KINDS.filter((k) => k.race === decorRace(race) && k.level === (i + 1) * DECOR_LEVEL_STEP);
         expect(tier, `${race} ${(i + 1) * DECOR_LEVEL_STEP}`).toHaveLength(5);
         expect(tier.filter((k) => k.fn).map((k) => k.fn)).toEqual([fn]);
         for (const k of tier) expect(k.limited).toBeNull();
       });
-      expect(DECOR_KINDS.filter((k) => k.race === race && k.level)).toHaveLength(40);
+      expect(DECOR_KINDS.filter((k) => k.race === decorRace(race) && k.level)).toHaveLength(40);
     }
     const crown = DECOR_KINDS.find((k) => k.race === "goblin" && k.fn === "lv_crown")!;
     expect(decorProblem([{ kind: crown.id, x: 0, y: 0 }], "goblin", 3, new Set(), 23)).toContain("要種族等級 24 級");

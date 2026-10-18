@@ -1,7 +1,7 @@
 import { api } from "~/utils/api";
 
 const KEY = "gc-race";
-const NOUNS: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
+const NOUNS: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" };
 let asked = false;
 // (a plain ref, not useState: it is also set from inside useCamp's fetch, outside any component)
 const race = ref<string>(saved());

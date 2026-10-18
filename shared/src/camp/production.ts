@@ -38,10 +38,11 @@ const FARM_LOOKS: Record<string, { farm: string; parts: [string, string, string,
   goblin: { farm: "田地", parts: ["菜園", "麥田", "蜂箱", "羊圈", "豐收"] },
   elf: { farm: "田地", parts: ["菜園", "果園", "蜂箱", "羊圈", "豐收"], level2: "ration_berry" },
   undead: { farm: "墓園", parts: ["墓園菜圃", "骨粉田", "夜蜂箱", "骷髏羊圈", "豐收"], level2: "ration_jerky" },
+  beast: { farm: "曬肉場", parts: ["野菜圃", "曬肉架", "蜂巢樹", "圈羊欄", "豐收"], level2: "ration_jerky" },
 };
 const looks = (race: string) => FARM_LOOKS[race] ?? FARM_LOOKS.goblin!;
 
-/** What the farm is called for a race (田地; the undead's 墓園), and what each level adds. */
+/** What the farm is called for a race (田地; the undead's 墓園, the beasts' 曬肉場), and what each level adds. */
 export function farmName(race: string): string {
   return looks(race).farm;
 }
@@ -49,7 +50,7 @@ export function farmPartName(race: string, level: number): string {
   return looks(race).parts[level - 1] ?? "";
 }
 
-/** The crops a race's farm grows at `level` (elves grow berries, the undead jerky, where goblins grow bread). */
+/** The crops a race's farm grows at `level` (elves grow berries, the undead and the beasts jerky, where goblins grow bread). */
 export function farmCrops(race: string, level: number): Crop[] {
   const out: Crop[] = [];
   for (const l of FARM_LEVELS) {

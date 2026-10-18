@@ -38,6 +38,17 @@ const PLAIN_STATS: Record<string, Record<string, { might?: number; health?: numb
     half_mix: { speed: 1.1, might: 1.4, health: 4 },
     half_hum: { speed: 1.2, might: 1.2, health: 3.5 },
   },
+  // (mac/tools/make_beast.py BREEDS)
+  beast: {
+    common: { might: 1.2, health: 3.5 },
+    scout: { speed: 1.4, might: 1, health: 2.5 },
+    brute: { speed: 0.75, might: 2, health: 7 },
+    sage: { speed: 0.95, might: 1, health: 3 },
+    golden: { speed: 1.15, might: 1.7, health: 6 },
+    half_gob: { speed: 1.1, might: 1.9, health: 6.5 },
+    half_mix: { speed: 1.15, might: 1.6, health: 5 },
+    half_hum: { speed: 1.1, might: 1.4, health: 4 },
+  },
 };
 
 /** With each race's 14 terrain breeds (world/details.ts TERRAIN_BREEDS): its common's stats, × theirs. */
@@ -53,7 +64,7 @@ export const BREED_STATS: Record<string, Record<string, { might?: number; health
 );
 
 /** How a race fights as a whole (elves shoot from the back). */
-export const RACE_RANGE: Record<string, number> = { goblin: 0, elf: 34, undead: 0 };
+export const RACE_RANGE: Record<string, number> = { goblin: 0, elf: 34, undead: 0, beast: 0 };
 
 /**
  * A resident as a fighter for the battle rules (world/battle.ts), with what it wears: weapon and gauntlets add to its

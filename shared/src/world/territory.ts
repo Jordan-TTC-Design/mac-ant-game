@@ -10,7 +10,7 @@ import { cellDistance, type CellId } from "./grid.ts";
 
 // Every number that depends on the race comes from the camp's race table (camp/races.ts, server/CAMP.md §11).
 
-/** A camp may open the big world once it has ever had its race's third look (goblins 150, elves 90, undead 120). */
+/** A camp may open the big world once it has ever had its race's third look (goblins 150, elves 90, undead and beasts 120). */
 export function worldUnlockPeak(race: string): number {
   return raceRules(race).stage3;
 }
@@ -21,12 +21,12 @@ export function canOpenWorld(race: string, peakResidents: number): boolean {
 
 // --- holding cells -------------------------------------------------------------------------------------------------
 
-/** Residents that must live on a cell to hold it (goblins 5, elves 3, undead 4; more hold it better). */
+/** Residents that must live on a cell to hold it (goblins 5, elves 3, undead and beasts 4; more hold it better). */
 export function garrisonMin(race: string): number {
   return raceRules(race).cellMin;
 }
 
-/** Most residents one cell can house (goblins 50, elves 30, undead 40); a town cell twice that. */
+/** Most residents one cell can house (goblins 50, elves 30, undead and beasts 40); a town cell twice that. */
 export function cellCapacity(race: string, town = false): number {
   const r = raceRules(race);
   return town ? r.townCap : r.cellCap;
@@ -81,7 +81,7 @@ export function maxCells(race: string, spareResidents: number): number {
 /** What a nest costs (material ids the camp already collects) and how long it takes. */
 export const NEST_COST: Record<string, number> = { scrap_wood: 30, scrap_iron: 10, scrap_rag: 10 };
 export const NEST_BUILD_HOURS = 2;
-/** A cell with a finished nest raises a new resident this often (goblins 15, elves 30, undead 22.5 minutes; a town as fast as the home camp). */
+/** A cell with a finished nest raises a new resident this often (goblins 15, elves 30, undead 22.5, beasts 20 minutes; a town as fast as the home camp). */
 export function nestBirthMinutes(race: string, town = false): number {
   const r = raceRules(race);
   return town ? r.townBirthMinutes : r.nestBirthMinutes;

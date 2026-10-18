@@ -1082,7 +1082,7 @@ struct Ant {
             return .foundFood(food.id)
         }
         // Notice an animal only by walking into it (and not while hurt).
-        if !isWounded, let animal = world.creatures.first(where: { !world.spared.contains($0.id) && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.radius + 20 * traits.sense }) { // (not the ones being caught for the pens)
+        if !isWounded, let animal = world.creatures.first(where: { !world.spared.contains($0.id) && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < $0.radius + 20 * traits.sense * world.huntKeen }) { // (not the ones being caught for the pens)
             if animal.alerted {
                 mode = .hunting(creature: animal.id, cooldown: 0) // the others know already: join in
                 return nil

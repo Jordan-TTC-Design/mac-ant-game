@@ -346,6 +346,17 @@ describe("the camp's sites (server/FARM.md §11)", () => {
     expect(camp.materials.ration_jerky).toBe(1); // (0.33 an hour for the six hours since it was built: 1.98)
   });
 
+  it("gives the beasts a 曬肉場 and a 狩獵場 of their own", async () => {
+    const me = await campWith({ log: 100, stone: 40 }, 50, "beast");
+    expect((await cmd(me, { kind: "site-build", site: "soulwell" })).body.error).toBe("not_allowed");
+    expect((await cmd(me, { kind: "site-build", site: "huntground" })).body.message).toContain("狩獵場");
+    t.advance(7 * HOUR);
+    const camp = await view(me);
+    expect(camp.race).toBe("beast");
+    expect(camp.production!.sites[0]!.name).toBe("曬肉場");
+    expect(camp.materials.food_meat).toBeGreaterThanOrEqual(2); // (0.4 an hour for the six hours since it was built)
+  });
+
   it("works the hands out hour by hour: a camp too small slows every site", async () => {
     const me = await campWith({ log: 100, stone: 40 }, 5);
     await cmd(me, { kind: "site-build", site: "lumber" });

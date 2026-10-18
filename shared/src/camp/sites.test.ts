@@ -20,6 +20,9 @@ describe("the camp's sites", () => {
     expect(buildableKinds("goblin")).toEqual([...shared, "scrapyard"]);
     expect(buildableKinds("elf")).toEqual([...shared, "scrapyard", "grove"]);
     expect(buildableKinds("undead")).toEqual([...shared, "scrapyard", "soulwell"]);
+    expect(buildableKinds("beast")).toEqual([...shared, "scrapyard", "huntground"]);
+    expect(siteName("beast", "farm")).toBe("曬肉場");
+    expect(sitePerHour("beast", { kind: "huntground", level: 1 }).makes.food_meat).toBeGreaterThan(sitePerHour("beast", { kind: "hunter", level: 1 }).makes.food_meat!);
     expect(siteName("elf", "scrapyard")).toBe("拾荒棚");
     expect(sitePerHour("elf", { kind: "scrapyard", level: 1 }).makes.scrap_rag).toBeCloseTo(0.7);
     expect(siteName("undead", "fishery")).toBe("醃肉窖");
@@ -87,7 +90,7 @@ describe("the camp's sites", () => {
   });
 
   it("makes only materials that exist, and opens the T−1 gear", () => {
-    for (const race of ["goblin", "elf", "undead"]) {
+    for (const race of ["goblin", "elf", "undead", "beast"]) {
       for (const kind of buildableKinds(race)) {
         const { makes, finds } = sitePerHour(race, { kind, level: 3 });
         for (const id of [...Object.keys(makes), ...Object.keys(finds)]) expect(MATERIALS[id], `${kind} makes ${id}`).toBeDefined();

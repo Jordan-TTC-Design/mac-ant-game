@@ -81,9 +81,10 @@ export const DETAIL_YIELD: Record<TerrainDetail, Yield[]> = {
 
 /** The races at home on a detail: their garrison there hits harder (DETAIL_HOME_ATTACK). */
 export const DETAIL_RACES: Record<TerrainDetail, readonly string[]> = {
-  mountain: ["goblin"], river: ["elf"], farmland: ["elf"], cemetery: ["undead"], wetland: ["elf"], campus: ["goblin", "elf", "undead"],
-  industrial: ["goblin"], sand: ["elf"], coast: ["elf"], hotspring: ["goblin", "elf", "undead"], temple: ["goblin", "elf"],
-  hospital: ["goblin", "elf", "undead"], military: ["goblin", "elf", "undead"], railway: ["goblin", "elf", "undead"],
+  // (the beasts, RACES_BEAST.md §6: dry red-rock valleys — the mountains and the sands)
+  mountain: ["goblin", "beast"], river: ["elf"], farmland: ["elf"], cemetery: ["undead"], wetland: ["elf"], campus: ["goblin", "elf", "undead", "beast"],
+  industrial: ["goblin"], sand: ["elf", "beast"], coast: ["elf"], hotspring: ["goblin", "elf", "undead", "beast"], temple: ["goblin", "elf"],
+  hospital: ["goblin", "elf", "undead", "beast"], military: ["goblin", "elf", "undead", "beast"], railway: ["goblin", "elf", "undead", "beast"],
 };
 export const DETAIL_HOME_ATTACK = 0.1;
 
@@ -297,20 +298,20 @@ type Stats = { might?: number; health?: number; speed?: number };
  * one way fitting the ground.
  */
 export const TERRAIN_BREEDS: Record<TerrainDetail, { names: Record<string, string>; stats: Stats }> = {
-  mountain: { names: { goblin: "岩膚", elf: "山風", undead: "石棺" }, stats: { health: 1.4 } },
-  river: { names: { goblin: "泳河", elf: "溪語", undead: "溺魂" }, stats: { speed: 1.2 } },
-  farmland: { names: { goblin: "田耕", elf: "穀穗", undead: "稻草" }, stats: { health: 1.25, might: 1.05 } },
-  cemetery: { names: { goblin: "掘墓", elf: "守靈", undead: "夜哭" }, stats: { might: 1.2 } },
-  wetland: { names: { goblin: "泥沼", elf: "蘆影", undead: "沼魂" }, stats: { health: 1.2, speed: 1.1 } },
-  campus: { names: { goblin: "書蟲", elf: "學士", undead: "書靈" }, stats: { might: 1.1, speed: 1.05 } },
-  industrial: { names: { goblin: "鐵手", elf: "鋼弦", undead: "鐵骨" }, stats: { might: 1.25 } },
-  sand: { names: { goblin: "沙行", elf: "浪蹄", undead: "沙骸" }, stats: { speed: 1.25 } },
-  coast: { names: { goblin: "潮汐", elf: "海歌", undead: "沉船" }, stats: { health: 1.2, might: 1.1 } },
-  hotspring: { names: { goblin: "泡湯", elf: "溫泉", undead: "蒸骨" }, stats: { health: 1.35 } },
-  temple: { names: { goblin: "拜拜", elf: "祈福", undead: "背誓" }, stats: { might: 1.15, health: 1.1 } },
-  hospital: { names: { goblin: "白衣", elf: "醫葉", undead: "縫屍" }, stats: { health: 1.3, speed: 1.05 } },
-  military: { names: { goblin: "鐵衛", elf: "衛兵", undead: "骨衛" }, stats: { might: 1.2, health: 1.2 } },
-  railway: { names: { goblin: "疾行", elf: "風行", undead: "幽軌" }, stats: { speed: 1.35 } },
+  mountain: { names: { goblin: "岩膚", elf: "山風", undead: "石棺", beast: "岩鬃" }, stats: { health: 1.4 } },
+  river: { names: { goblin: "泳河", elf: "溪語", undead: "溺魂", beast: "浪鬃" }, stats: { speed: 1.2 } },
+  farmland: { names: { goblin: "田耕", elf: "穀穗", undead: "稻草", beast: "穗尾" }, stats: { health: 1.25, might: 1.05 } },
+  cemetery: { names: { goblin: "掘墓", elf: "守靈", undead: "夜哭", beast: "夜嚎" }, stats: { might: 1.2 } },
+  wetland: { names: { goblin: "泥沼", elf: "蘆影", undead: "沼魂", beast: "泥爪" }, stats: { health: 1.2, speed: 1.1 } },
+  campus: { names: { goblin: "書蟲", elf: "學士", undead: "書靈", beast: "書狐" }, stats: { might: 1.1, speed: 1.05 } },
+  industrial: { names: { goblin: "鐵手", elf: "鋼弦", undead: "鐵骨", beast: "鐵爪" }, stats: { might: 1.25 } },
+  sand: { names: { goblin: "沙行", elf: "浪蹄", undead: "沙骸", beast: "沙狐" }, stats: { speed: 1.25 } },
+  coast: { names: { goblin: "潮汐", elf: "海歌", undead: "沉船", beast: "海狼" }, stats: { health: 1.2, might: 1.1 } },
+  hotspring: { names: { goblin: "泡湯", elf: "溫泉", undead: "蒸骨", beast: "湯狐" }, stats: { health: 1.35 } },
+  temple: { names: { goblin: "拜拜", elf: "祈福", undead: "背誓", beast: "祭牙" }, stats: { might: 1.15, health: 1.1 } },
+  hospital: { names: { goblin: "白衣", elf: "醫葉", undead: "縫屍", beast: "白爪" }, stats: { health: 1.3, speed: 1.05 } },
+  military: { names: { goblin: "鐵衛", elf: "衛兵", undead: "骨衛", beast: "戰牙" }, stats: { might: 1.2, health: 1.2 } },
+  railway: { names: { goblin: "疾行", elf: "風行", undead: "幽軌", beast: "疾風" }, stats: { speed: 1.35 } },
 };
 
 /** The 細分地形 a breed is the terrain breed of (null: not one). */

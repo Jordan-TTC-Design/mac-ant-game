@@ -3,8 +3,9 @@ import AppKit
 /// What kind of place the camp window is: the ground, the trees, the rocks and the water all follow it.
 enum Biome: String, CaseIterable {
     case meadow, forest, snow, swamp
-    /// The races' own (RACES.md): the elves' ancient forest (giant trees, terraces, lanterns) and the undead's graveyard.
-    case elfwood, graveyard
+    /// The races' own (RACES.md): the elves' ancient forest (giant trees, terraces, lanterns) and the undead's graveyard; the
+    /// beastfolk's dry red rock valley (RACES_BEAST.md §6).
+    case elfwood, graveyard, redrock
 
     /// The four the goblins' land is picked from.
     static let common: [Biome] = [.meadow, .forest, .snow, .swamp]
@@ -17,6 +18,7 @@ enum Biome: String, CaseIterable {
         case .swamp: return "沼澤"
         case .elfwood: return "精靈古林"
         case .graveyard: return "死靈墓地"
+        case .redrock: return "赤岩荒谷"
         }
     }
 
@@ -37,6 +39,7 @@ enum Biome: String, CaseIterable {
         case .forest: return (NSColor(calibratedRed: 0.02, green: 0.08, blue: 0.04, alpha: 1), 0.12)
         case .elfwood: return (NSColor(calibratedRed: 0.02, green: 0.12, blue: 0.08, alpha: 1), 0.2)
         case .graveyard: return (NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.22, alpha: 1), 0.45)
+        case .redrock: return (NSColor(calibratedRed: 0.62, green: 0.4, blue: 0.26, alpha: 1), 0.4)
         case .meadow: return nil
         }
     }
@@ -754,6 +757,8 @@ final class TerrainScene {
                                       NSColor(calibratedRed: 0.5, green: 0.42, blue: 0.2, alpha: 0.16)]
         case .graveyard: patchColors = [NSColor(calibratedRed: 0.2, green: 0.2, blue: 0.24, alpha: 0.3), NSColor(calibratedRed: 0.42, green: 0.38, blue: 0.3, alpha: 0.22),
                                         NSColor(calibratedRed: 0.3, green: 0.34, blue: 0.3, alpha: 0.2)]
+        case .redrock: patchColors = [NSColor(calibratedRed: 0.62, green: 0.4, blue: 0.26, alpha: 0.24), NSColor(calibratedRed: 0.86, green: 0.72, blue: 0.5, alpha: 0.26),
+                                      NSColor(calibratedRed: 0.5, green: 0.3, blue: 0.2, alpha: 0.2)]
         }
         for _ in 0..<Int(canvas.width * canvas.height / 14000) {
             let c = CGPoint(x: canvas.minX + CGFloat(rng.next()) * canvas.width, y: canvas.minY + CGFloat(rng.next()) * canvas.height)
@@ -769,6 +774,7 @@ final class TerrainScene {
         case .snow: pondCount = Int(Double([0, 1, 1, 2][rng.int(0...3)]) * areaFactor * 0.85 + (rng.chance(0.5) ? 1 : 0))
         case .elfwood: pondCount = max(1, Int(Double([0, 1, 1][rng.int(0...2)]) * areaFactor * 0.85)) // (always the moon pool)
         case .graveyard: pondCount = Int(Double([0, 1, 1][rng.int(0...2)]) * areaFactor * 0.7)
+        case .redrock: pondCount = rng.chance(0.6) ? 1 : 0 // (dry country: one waterhole at most)
         }
         if big {
             for i in 0..<pondCount {
@@ -792,7 +798,7 @@ final class TerrainScene {
         }
 
         // rocks: single boulders and little heaps of two or three
-        let rockGroups = Int(Double(biome == .snow ? rng.int(3...6) : biome == .swamp ? rng.int(1...3) : rng.int(2...5)) * areaFactor)
+        let rockGroups = Int(Double(biome == .redrock ? rng.int(6...10) : biome == .snow ? rng.int(3...6) : biome == .swamp ? rng.int(1...3) : rng.int(2...5)) * areaFactor)
         for _ in 0..<rockGroups {
             guard let c = spot(34) else { continue }
             for k in 0..<rng.int(1...3) {
@@ -813,11 +819,12 @@ final class TerrainScene {
         case .swamp: groves = Int(Double(rng.int(2...4)) * areaFactor)
         case .elfwood: groves = Int(Double(rng.int(6...12)) * areaFactor) // twice a forest's
         case .graveyard: groves = Int(Double(rng.int(2...4)) * areaFactor)
+        case .redrock: groves = Int(Double(rng.int(1...3)) * areaFactor) // a few dead snags
         }
         let treeKinds = biome == .forest ? 4 : biome == .swamp ? 5 : 3
         for _ in 0..<groves {
             guard let c = spot(46, in: CGRect(x: inner.minX + 30, y: inner.minY + 10, width: inner.width - 60, height: inner.height - 70)) else { continue }
-            let count = biome == .swamp ? rng.int(2...5) : rng.int(3...9)
+            let count = biome == .swamp ? rng.int(2...5) : biome == .redrock ? rng.int(1...3) : rng.int(3...9)
             var placed: [CGPoint] = []
             for _ in 0..<count {
                 for _ in 0..<12 {
@@ -845,7 +852,7 @@ final class TerrainScene {
         }
 
         // undergrowth: ferns and tufts of grass, stumps, and (now and then) a ring of standing stones
-        let fernCount = Int(Double(biome == .forest || biome == .elfwood ? rng.int(14...28) : biome == .swamp ? rng.int(8...16) : biome == .meadow ? rng.int(4...10) : rng.int(2...5)) * areaFactor)
+        let fernCount = Int(Double(biome == .forest || biome == .elfwood ? rng.int(14...28) : biome == .swamp ? rng.int(8...16) : biome == .meadow ? rng.int(4...10) : biome == .redrock ? 0 : rng.int(2...5)) * areaFactor)
         for _ in 0..<fernCount {
             guard let c = spot(8, tries: 8) else { continue }
             lying.append(TerrainItem(sprite: "fern-\(biome.rawValue)-\(rng.int(0...1))", foot: c))
@@ -925,6 +932,29 @@ final class TerrainScene {
             for _ in 0..<Int(Double(rng.int(3...6)) * areaFactor) {
                 guard let c = spot(14, tries: 10) else { continue }
                 lying.append(TerrainItem(sprite: "bonepile-graveyard", foot: c))
+            }
+        case .redrock:
+            for _ in 0..<rng.int(50...90) { // scree and pebbles fallen from the rock, dry blades of grass
+                dots.append((CGPoint(x: inner.minX + CGFloat(rng.next()) * inner.width, y: inner.minY + CGFloat(rng.next()) * inner.height),
+                             rng.chance(0.6) ? NSColor(calibratedRed: 0.56, green: 0.4, blue: 0.3, alpha: 1) : NSColor(calibratedRed: 0.82, green: 0.72, blue: 0.44, alpha: 1)))
+            }
+            for _ in 0..<Int(Double(rng.int(3...6)) * areaFactor) { // banded red rock pillars, the valley's landmarks
+                guard let c = spot(16, tries: 12) else { continue }
+                standing.append(TerrainItem(sprite: "pillar-redrock-\(rng.int(0...2))", foot: c))
+                solids.append(Solid(center: CGPoint(x: c.x, y: c.y + 3), radius: 9))
+            }
+            for _ in 0..<Int(Double(rng.int(0...2)) * areaFactor) { // a warning to whoever comes into the valley: a head on a pillar
+                guard let c = spot(14, tries: 12) else { continue }
+                standing.append(TerrainItem(sprite: "trophy-redrock-\(rng.int(0...1))", foot: c))
+                solids.append(Solid(center: CGPoint(x: c.x, y: c.y + 3), radius: 9))
+            }
+            for _ in 0..<Int(Double(rng.int(2...4)) * areaFactor) {
+                guard let c = spot(10, tries: 10) else { continue }
+                lying.append(TerrainItem(sprite: "oxskull-redrock", foot: c))
+            }
+            if big, let c = spot(40, tries: 20, in: inner.insetBy(dx: 50, dy: 30)) { // the howling rock, where the wolves stand at the full moon
+                standing.append(TerrainItem(sprite: "howl-redrock", foot: c))
+                solids.append(Solid(center: CGPoint(x: c.x, y: c.y + 8), radius: 26))
             }
         }
 
@@ -1510,7 +1540,7 @@ final class TerrainScene {
                 case .meadow, .forest: name = plant.variant == 0 ? "tree-\(b)-\(plant.kind % 2)" : "tree-\(b)-\(biome == .forest && plant.kind == 2 ? 3 : 2)"
                 case .snow: name = "tree-snow-\(plant.kind % 3)"
                 case .swamp: name = plant.variant == 0 ? "tree-swamp-\(plant.kind % 3)" : "tree-swamp-\(3 + plant.kind % 2)"
-                case .elfwood, .graveyard: name = "tree-\(b)-\(plant.kind % 3)"
+                case .elfwood, .graveyard, .redrock: name = "tree-\(b)-\(plant.kind % 3)"
                 }
                 up.append(TerrainItem(sprite: name, foot: foot))
             case .fallen:

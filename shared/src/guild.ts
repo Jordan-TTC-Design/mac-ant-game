@@ -142,13 +142,21 @@ export const AVATAR_OPTIONS: Record<"goblin" | "elf" | "undead", AvatarOptions> 
 /** The spirit's skins (the undead women). */
 const SPIRIT_SKINS = ["pale_blue", "ice", "pale_violet", "lavender", "pale_green", "rose"] as const;
 
+/**
+ * Whose avatar art (and options) a race's avatar uses: its own, or, for a race whose art is not drawn yet (the beasts,
+ * RACES_BEAST.md §7), the goblins'. The avatar still says its own race (it must match the camp's).
+ */
+export function avatarArtRace(race: string): "goblin" | "elf" | "undead" {
+  return race === "elf" || race === "undead" ? race : "goblin";
+}
+
 export function avatarOptions(race: string, sex: AvatarSex): { hair: readonly string[]; skin: readonly string[]; mouth: readonly string[]; flame: readonly string[] } {
-  const o = AVATAR_OPTIONS[race as keyof typeof AVATAR_OPTIONS] ?? AVATAR_OPTIONS.goblin;
+  const o = AVATAR_OPTIONS[avatarArtRace(race)];
   return { hair: o.hair[sex], skin: race === "undead" && sex === "f" ? SPIRIT_SKINS : o.skin, mouth: o.mouth[sex], flame: o.flame[sex] };
 }
 
 export const avatarSchema = z.object({
-  race: z.enum(["goblin", "elf", "undead"]),
+  race: z.enum(["goblin", "elf", "undead", "beast"]),
   sex: z.enum(["m", "f"]),
   face: z.enum(AVATAR_FACES),
   eyes: z.enum(AVATAR_EYES),
@@ -192,7 +200,7 @@ export function avatarOutfitProblem(a: Avatar, owned: readonly string[]): string
 
 /** The approved look of each race's two avatars (docs/images/guild/avatars_preview.png). */
 export function defaultAvatar(race: string, sex: AvatarSex): Avatar {
-  const r = (["goblin", "elf", "undead"] as const).find((x) => x === race) ?? "goblin";
+  const r = (["goblin", "elf", "undead", "beast"] as const).find((x) => x === race) ?? "goblin";
   const o = avatarOptions(r, sex);
   const look: Record<string, Partial<Avatar>> = {
     goblinm: { hairColor: "darkbrown", skin: "grass", brows: "faint" },
@@ -202,7 +210,7 @@ export function defaultAvatar(race: string, sex: AvatarSex): Avatar {
     undeadm: { hairColor: "black", skin: "bone", flame: "cyan" },
     undeadf: { hairColor: "mint", skin: "pale_blue", eyes: "lashes" },
   };
-  return { race: r, sex, face: "round", eyes: "round", brows: "none", mouth: o.mouth[0]!, hair: o.hair[0]!, hairColor: "black", skin: o.skin[0]!, ...(o.flame.length ? { flame: o.flame[0] } : {}), ...look[r + sex] };
+  return { race: r, sex, face: "round", eyes: "round", brows: "none", mouth: o.mouth[0]!, hair: o.hair[0]!, hairColor: "black", skin: o.skin[0]!, ...(o.flame.length ? { flame: o.flame[0] } : {}), ...look[avatarArtRace(r) + sex] };
 }
 
 /** Hair colours that go badly with a skin, left out when choosing at random (GUILD.md §2: 配色會避開太難看的組合). */

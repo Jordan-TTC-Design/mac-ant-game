@@ -47,6 +47,14 @@ public enum Races {
         "undead": RaceRules(homeBirthMinutes: 7.5, homeCap: 240, stage2: 40, stage3: 120, ages: false, raidEveryMinutes: 90,
                             cellCap: 40, cellMin: 4, nestBirthMinutes: 22.5, townCap: 80, townBirthMinutes: 7.5,
                             breeds: goblinBreeds.map { BreedRule(id: $0.id, weight: $0.weight, lifespan: 1) }),
+        "beast": RaceRules(homeBirthMinutes: 6.5, homeCap: 240, stage2: 40, stage3: 120, ages: true, raidEveryMinutes: 100,
+                           cellCap: 40, cellMin: 4, nestBirthMinutes: 20, townCap: 80, townBirthMinutes: 6.5, breeds: [
+                            BreedRule(id: "common", weight: 100, lifespan: 1.5),
+                            BreedRule(id: "scout", weight: 10, lifespan: 1.4),
+                            BreedRule(id: "brute", weight: 8, lifespan: 1.6),
+                            BreedRule(id: "sage", weight: 5, lifespan: 1.8),
+                            BreedRule(id: "golden", weight: 1, lifespan: 2.5),
+                           ]),
     ]
 
     public static func rules(_ race: String) -> RaceRules { all[race] ?? all["goblin"]! }

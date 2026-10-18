@@ -32,7 +32,7 @@ describe("births and deaths", () => {
   });
 
   it("never goes over the cap, and fills again after deaths", () => {
-    for (const race of ["goblin", "elf", "undead"] as const) {
+    for (const race of ["goblin", "elf", "undead", "beast"] as const) {
       const { place, population } = startHome(race, 3, T0);
       for (let h = 1; h <= 24 * 10; h += 5) {
         advance(place, population, 3, T0 + h * HOUR);

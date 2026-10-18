@@ -17,13 +17,14 @@ const ORDER: Record<string, SiteKind[]> = {
   goblin: ["lumber", "quarry", "traps", "mine", "scrapyard", "fishery"],
   elf: ["lumber", "quarry", "traps", "mine", "scrapyard", "grove"],
   undead: ["lumber", "quarry", "traps", "scrapyard", "mine", "soulwell"],
+  beast: ["lumber", "quarry", "traps", "huntground", "mine", "scrapyard"],
 };
 const kit = [GEAR.find((g) => g.id === "short_sword")!, GEAR.find((g) => g.id === "leather_armor")!];
 const kitCost: Record<string, number> = {};
 for (const g of kit) for (const [id, n] of Object.entries(g.cost)) kitCost[id] = (kitCost[id] ?? 0) + n;
 const name = (id: string) => MATERIALS[id]?.name ?? id;
 
-for (const race of ["goblin", "elf", "undead"]) {
+for (const race of ["goblin", "elf", "undead", "beast"]) {
   const { place, population } = startHome(race, 1, T0);
   let sites: Site[] = [{ id: 1, kind: "farm", level: 1 }];
   const store: Record<string, number> = {};

@@ -38,7 +38,7 @@ export interface MerchantVisit {
   bought: number[];
 }
 
-export const MERCHANT_NAMES: Record<string, string> = { goblin: "狗頭人行商", elf: "松鼠商隊", undead: "冥河擺渡人" };
+export const MERCHANT_NAMES: Record<string, string> = { goblin: "狗頭人行商", elf: "松鼠商隊", undead: "冥河擺渡人", beast: "荒野禿鷹商人" };
 
 export function merchantName(race: string): string {
   return MERCHANT_NAMES[race] ?? MERCHANT_NAMES.goblin!;
@@ -98,6 +98,12 @@ const OWN_DEALS: Record<string, Deal[]> = {
     { give: { night_dust: 6, scrap_iron: 8 }, get: { cursed_steel: 1 }, weight: 1 },
     { give: { night_dust: 10 }, get: { night_heart: 1 }, weight: 0.5 },
   ],
+  beast: [ // the vulture of the wilds: what the hunt and the dry valley leave behind
+    { give: { food_meat: 6 }, get: { wolf_pelt: 3 }, weight: 1.5 },
+    { give: { stone: 40, rabbit_fur: 4 }, get: { boar_tusk: 2 }, weight: 1.5 },
+    { give: { food_meat: 8, scrap_iron: 6 }, get: { bear_claw: 1 }, weight: 1 },
+    { give: { wolf_pelt: 6, food_meat: 6 }, get: { werewolf_fur: 1 }, weight: 0.5 },
+  ],
 };
 
 /** A visit on a day of much focus (focus.ts FOCUS_RARE_ROUNDS) has this at the end of its id, and one rare find more. */
@@ -134,6 +140,10 @@ const RARE_DEALS: Record<string, Deal[]> = {
   undead: [
     { give: { night_dust: 8, bone_shard: 10 }, get: { night_heart: 1 }, weight: 1 },
     { give: { ectoplasm: 4, stone: 40 }, get: { naiad_tear: 1 }, weight: 1 },
+  ],
+  beast: [
+    { give: { wolf_pelt: 6, food_meat: 10 }, get: { alpha_mane: 1 }, weight: 1 },
+    { give: { werewolf_fur: 2, wolf_fang: 6 }, get: { alpha_fang: 1 }, weight: 1 },
   ],
 };
 

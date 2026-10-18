@@ -35,6 +35,14 @@ export const DECOR_REACH = 1200;
 
 const BY_ID = new Map(DECOR_KINDS.map((k) => [k.id, k]));
 
+/**
+ * Whose decorations a race puts down: its own, or, for a race whose own are not drawn yet (the beasts, RACES_BEAST.md §6:
+ * tents, totems and bones like the goblins'), the goblins'. Once the catalogue has the race's own, they are used instead.
+ */
+export function decorRace(race: string): string {
+  return DECOR_KINDS.some((k) => k.race === race) ? race : "goblin";
+}
+
 export function decorKind(id: string): DecorKind | undefined {
   return BY_ID.get(id);
 }
@@ -67,7 +75,7 @@ export function decorProblem(items: readonly DecorPlaced[], race: string, stage:
   for (const d of items) {
     const kind = BY_ID.get(d.kind);
     if (!kind) return "沒有這種裝飾。";
-    if (kind.race !== race) return `${kind.name}不是這個種族的裝飾。`;
+    if (kind.race !== decorRace(race)) return `${kind.name}不是這個種族的裝飾。`;
     if (kind.limited && !earned.has(kind.id)) return `${kind.name}是任務獎勵，還沒拿到。`;
     if (kind.level && raceLevel < kind.level) return `${kind.name}要種族等級 ${kind.level} 級才能放。`;
     if (!Number.isFinite(d.x) || !Number.isFinite(d.y) || Math.abs(d.x) > DECOR_REACH || Math.abs(d.y) > DECOR_REACH) return "裝飾放得太遠了。";

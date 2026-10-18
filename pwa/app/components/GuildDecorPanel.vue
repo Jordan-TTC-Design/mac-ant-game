@@ -63,7 +63,7 @@ const emit = defineEmits<{
 }>();
 const tile = (file: string) => ({ backgroundImage: `url(/guild-hall/${file})` });
 
-const RACE_NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
+const RACE_NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" };
 /** The tabs of the holiday pieces and the merchant's, in front of the categories (when there are any). */
 const HOLIDAY = "節日限定";
 const MERCHANT = "商人限定";

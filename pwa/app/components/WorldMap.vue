@@ -115,6 +115,7 @@ const RACE_LOOK: Record<string, { flag: string; wall: string; roof: string; ston
   goblin: { flag: "#5fb030", wall: "#8a5a32", roof: "#5e7a2a", stone: "#9a8a70" },
   elf: { flag: "#3aa0e0", wall: "#e8dcc0", roof: "#3f8f5a", stone: "#e6e0d0" },
   undead: { flag: "#9a50d0", wall: "#4a4458", roof: "#2a2638", stone: "#5a5468" },
+  beast: { flag: "#c0532e", wall: "#8a5a3a", roof: "#6a3a26", stone: "#b07a5a" }, // (赭紅, and the red rock of their valley)
 };
 
 /**

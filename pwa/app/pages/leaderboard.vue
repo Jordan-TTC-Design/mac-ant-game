@@ -15,7 +15,7 @@ onMounted(async () => {
     problem.value = e instanceof ApiError ? e.message : String(e);
   }
 });
-const RACES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
+const RACES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" };
 const rows = computed(() => (tab.value === "all" ? board.value?.all : board.value?.byRace[tab.value]) ?? []);
 // someone on the board: ask them to be friends (or go and write to them), as on their cell in the big world
 const live = useLive();

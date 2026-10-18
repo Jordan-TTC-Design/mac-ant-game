@@ -20,6 +20,9 @@ const elfNatureEnds = ["語", "歌", "影", "羽", "紋", "息", "芽", "鈴", "
 const boneSounds = ["咔", "啦", "喀", "噠", "嘎", "骨", "叩", "嗑", "咯", "喳"];
 const soulSounds = ["幽", "冥", "朧", "魅", "霧", "嗚", "颯", "螢", "影", "寂", "夜", "燐"];
 const undeadEnds = ["丸", "仔", "露", "兒", "寶", "醬", "嚕", "啾", "米", "妮"];
+const beastFirsts = ["灰", "赤", "霜", "岩", "烈", "鐵", "黑", "白", "裂", "斷", "疤", "野", "暴", "狂", "沙", "雷", "血", "石", "火", "夜", "銀", "獨", "碎", "長"];
+const beastSeconds = ["牙", "耳", "鬃", "爪", "吼", "風", "蹄", "角", "尾", "鼻", "眼", "骨", "皮", "掌", "嚎", "背", "脊", "拳", "鬚", "齒"];
+const beastElders = ["老", "大", "小", "阿"];
 
 const M = (1n << 64n) - 1n;
 /** splitmix64, as Names.mix */
@@ -94,8 +97,16 @@ function undead(seed: bigint): string {
   return p.pick(soulSounds) + p.pick(boneSounds) + p.pick(undeadEnds);
 }
 
+function beast(seed: bigint): string {
+  const p = picker(mix(seed ^ 0xbea57n));
+  const roll = p.mod(100);
+  p.step();
+  if (roll < 85) return p.pick(beastFirsts) + p.pick(beastSeconds);
+  return p.pick(beastElders) + p.pick(beastSeconds);
+}
+
 /** A resident's name as the Mac has it: from its old 64-bit seed if it came from an old save, else its seed. */
 export function residentNameFromSeed(race: string, seed: number, legacySeed?: string | null): string {
   const s = (legacySeed ? BigInt(legacySeed) : BigInt(Math.max(0, Math.floor(seed)))) & M;
-  return race === "elf" ? elf(s) : race === "undead" ? undead(s) : goblin(s);
+  return race === "elf" ? elf(s) : race === "undead" ? undead(s) : race === "beast" ? beast(s) : goblin(s);
 }

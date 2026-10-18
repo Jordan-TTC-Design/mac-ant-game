@@ -11,7 +11,7 @@ import { RANCH_KINDS } from "./ranch.ts";
 import { campBoss, campFoe, MONSTER_VARIANTS, type MonsterVariant } from "./raids.ts";
 
 /** What a race's residents are called. */
-export const RACE_NOUNS: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
+export const RACE_NOUNS: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" };
 
 export interface FeedEntry {
   seq: number;

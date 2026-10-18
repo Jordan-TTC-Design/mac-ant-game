@@ -123,6 +123,46 @@
             "lifespan": 1
           }
         ]
+      },
+      "beast": {
+        "homeBirthMinutes": 6.5,
+        "homeCap": 240,
+        "stage2": 40,
+        "stage3": 120,
+        "ages": true,
+        "raidEveryMinutes": 100,
+        "cellCap": 40,
+        "cellMin": 4,
+        "nestBirthMinutes": 20,
+        "townCap": 80,
+        "townBirthMinutes": 6.5,
+        "breeds": [
+          {
+            "id": "common",
+            "weight": 100,
+            "lifespan": 1.5
+          },
+          {
+            "id": "scout",
+            "weight": 10,
+            "lifespan": 1.4
+          },
+          {
+            "id": "brute",
+            "weight": 8,
+            "lifespan": 1.6
+          },
+          {
+            "id": "sage",
+            "weight": 5,
+            "lifespan": 1.8
+          },
+          {
+            "id": "golden",
+            "weight": 1,
+            "lifespan": 2.5
+          }
+        ]
       }
     }
   },
@@ -702,6 +742,195 @@
           "seed": 2875303797,
           "bornAt": 1790815500000,
           "diesAt": null,
+          "diedAt": null
+        }
+      ]
+    },
+    {
+      "race": "beast",
+      "firstResidents": [
+        {
+          "id": 1,
+          "breed": "common",
+          "seed": 1053652887,
+          "bornAt": 1790812800000,
+          "diesAt": 1791063688300,
+          "diedAt": null
+        },
+        {
+          "id": 2,
+          "breed": "common",
+          "seed": 1199600635,
+          "bornAt": 1790812800000,
+          "diesAt": 1791096611626,
+          "diedAt": null
+        },
+        {
+          "id": 3,
+          "breed": "common",
+          "seed": 3961092105,
+          "bornAt": 1790813190000,
+          "diesAt": 1791053756564,
+          "diedAt": null
+        },
+        {
+          "id": 4,
+          "breed": "scout",
+          "seed": 3966314380,
+          "bornAt": 1790813580000,
+          "diesAt": 1791056363441,
+          "diedAt": null
+        },
+        {
+          "id": 5,
+          "breed": "common",
+          "seed": 1436896206,
+          "bornAt": 1790813970000,
+          "diesAt": 1791067844438,
+          "diedAt": null
+        },
+        {
+          "id": 6,
+          "breed": "common",
+          "seed": 1815339818,
+          "bornAt": 1790814360000,
+          "diesAt": 1791057744311,
+          "diedAt": null
+        },
+        {
+          "id": 7,
+          "breed": "common",
+          "seed": 2438743022,
+          "bornAt": 1790814750000,
+          "diesAt": 1791080238974,
+          "diedAt": null
+        }
+      ],
+      "checkpoints": [
+        {
+          "hours": 1,
+          "born": 9,
+          "died": 0,
+          "alive": 11,
+          "peak": 11,
+          "nextId": 12,
+          "nextSlot": 10,
+          "lastBorn": {
+            "id": 11,
+            "breed": "common",
+            "seed": 1561650549,
+            "bornAt": 1790816310000,
+            "diesAt": 1791051359901,
+            "diedAt": 1791051359901
+          }
+        },
+        {
+          "hours": 12,
+          "born": 101,
+          "died": 0,
+          "alive": 112,
+          "peak": 112,
+          "nextId": 113,
+          "nextSlot": 111,
+          "lastBorn": {
+            "id": 112,
+            "breed": "common",
+            "seed": 540129015,
+            "bornAt": 1790855700000,
+            "diesAt": 1791095770876,
+            "diedAt": 1791095770876
+          }
+        },
+        {
+          "hours": 30,
+          "born": 128,
+          "died": 0,
+          "alive": 240,
+          "peak": 240,
+          "nextId": 241,
+          "nextSlot": 278,
+          "lastBorn": {
+            "id": 240,
+            "breed": "common",
+            "seed": 506547581,
+            "bornAt": 1790905620000,
+            "diesAt": 1791158983262,
+            "diedAt": 1791158983262
+          }
+        },
+        {
+          "hours": 72,
+          "born": 19,
+          "died": 20,
+          "alive": 239,
+          "peak": 240,
+          "nextId": 260,
+          "nextSlot": 665,
+          "lastBorn": {
+            "id": 259,
+            "breed": "common",
+            "seed": 1173850836,
+            "bornAt": 1791071760000,
+            "diesAt": 1791343433779,
+            "diedAt": 1791343433779
+          }
+        },
+        {
+          "hours": 168,
+          "born": 415,
+          "died": 415,
+          "alive": 239,
+          "peak": 240,
+          "nextId": 675,
+          "nextSlot": 1551,
+          "lastBorn": {
+            "id": 674,
+            "breed": "common",
+            "seed": 2169813938,
+            "bornAt": 1791416520000,
+            "diesAt": 1791696289937,
+            "diedAt": null
+          }
+        }
+      ],
+      "battle": {
+        "fallen": [
+          3,
+          4,
+          5
+        ],
+        "bornAfter": 9,
+        "alive": 63,
+        "nextSlot": 65
+      },
+      "sanctuary": {
+        "alive": 199,
+        "nextId": 200,
+        "nextSlot": 277
+      },
+      "nestResidents": [
+        {
+          "id": 100,
+          "breed": "common",
+          "seed": 1365703899,
+          "bornAt": 1790812800000,
+          "diesAt": 1791093182334,
+          "diedAt": null
+        },
+        {
+          "id": 101,
+          "breed": "scout",
+          "seed": 3692290978,
+          "bornAt": 1790814000000,
+          "diesAt": 1791050160542,
+          "diedAt": null
+        },
+        {
+          "id": 102,
+          "breed": "common",
+          "seed": 2875303797,
+          "bornAt": 1790815200000,
+          "diesAt": 1791077806535,
           "diedAt": null
         }
       ]

@@ -88,7 +88,7 @@ export const campCommand = z.discriminatedUnion("kind", [
   /** The princess's story as the Mac has it now (kept as it is; it does not count for the ranking). */
   z.object({ requestId, kind: z.literal("story"), romance: z.unknown() }),
   /** Builds a site on a free plot (its cost is taken now; it works once built: sites.ts). */
-  z.object({ requestId, kind: z.literal("site-build"), site: z.enum(["lumber", "quarry", "mine", "traps", "fishery", "hunter", "scrapyard", "grove", "soulwell"]) }),
+  z.object({ requestId, kind: z.literal("site-build"), site: z.enum(["lumber", "quarry", "mine", "traps", "fishery", "hunter", "scrapyard", "grove", "soulwell", "huntground"]) }),
   /** Raises a site a level (it goes on working meanwhile). */
   z.object({ requestId, kind: z.literal("site-upgrade"), site: z.number().int().min(1) }),
   /** Takes a site down (not the farm): the plot is free at once, half of what it cost comes back. */

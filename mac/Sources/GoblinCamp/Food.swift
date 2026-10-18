@@ -584,6 +584,8 @@ struct AntWorld {
     var fishBoost = 1.0
     /// How far off this race fights from (archers), in points on top of what a weapon adds.
     var rangedReach = 0.0
+    /// How keen they are to hunt: an animal is noticed from this many times as far (the beastfolk: 1.5).
+    var huntKeen = 1.0
     /// Night time (goblins sleep more), and whether they may start something to pass the time (not while it rains, in a crowd, or at the campfire party).
     var night = false
     /// How much likelier quiet sitting is (a harp, a meditation stone put down: twice).

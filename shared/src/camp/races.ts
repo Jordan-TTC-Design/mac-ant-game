@@ -3,8 +3,8 @@
  * fixtures in fixtures.json check that the two agree. First version: change them here (and there) as play shows.
  */
 
-export type RaceId = "goblin" | "elf" | "undead";
-export const RACES: readonly RaceId[] = ["goblin", "elf", "undead"];
+export type RaceId = "goblin" | "elf" | "undead" | "beast";
+export const RACES: readonly RaceId[] = ["goblin", "elf", "undead", "beast"];
 
 export interface BreedRule {
   id: string;
@@ -36,7 +36,7 @@ export interface RaceRules {
   breeds: readonly BreedRule[];
 }
 
-/** A plain resident lives this long; each breed multiplies it (elves' multipliers already include their ×2). */
+/** A plain resident lives this long; each breed multiplies it (elves' multipliers already include their ×2, beasts' their ×1.5). */
 export const BASE_LIFESPAN_HOURS = 48;
 
 const goblinBreeds: BreedRule[] = [
@@ -95,6 +95,26 @@ export const RACE_RULES: Record<RaceId, RaceRules> = {
     townCap: 80,
     townBirthMinutes: 7.5,
     breeds: goblinBreeds.map((b) => ({ ...b, lifespan: 1 })), // (they do not age; the number is not used)
+  },
+  beast: {
+    homeBirthMinutes: 6.5,
+    homeCap: 240,
+    stage2: 40,
+    stage3: 120,
+    ages: true,
+    raidEveryMinutes: 100,
+    cellCap: 40,
+    cellMin: 4,
+    nestBirthMinutes: 20,
+    townCap: 80,
+    townBirthMinutes: 6.5,
+    breeds: [
+      { id: "common", weight: 100, lifespan: 1.5 },
+      { id: "scout", weight: 10, lifespan: 1.4 },
+      { id: "brute", weight: 8, lifespan: 1.6 },
+      { id: "sage", weight: 5, lifespan: 1.8 },
+      { id: "golden", weight: 1, lifespan: 2.5 },
+    ],
   },
 };
 

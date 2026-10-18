@@ -109,10 +109,14 @@ export const TALENT_TREES: readonly TalentTree[] = [
   { id: "u_legion", race: "undead", name: "亡軍", icon: "💀", blurb: "數量壓倒一切、不怕死" },
   { id: "u_dread", race: "undead", name: "恐懼", icon: "🦇", blurb: "讓活人害怕：攻城與守城" },
   { id: "u_crypt", race: "undead", name: "墓園", icon: "⚰️", blurb: "不吃不喝、物盡其用" },
+  { id: "b_pack", race: "beast", name: "狼群", icon: "🐺", blurb: "成群奔襲、包抄圍獵" },
+  { id: "b_brawn", race: "beast", name: "蠻力", icon: "🪓", blurb: "皮粗肉厚、正面硬打" },
+  { id: "b_moon", race: "beast", name: "月", icon: "🌕", blurb: "夜裡出獵、聞風知敵" },
   // the camp's own tree, the same for every race under its own name (its effects are worked by the camp)
   { id: "g_camp", race: "goblin", name: "營火", icon: "🔥", blurb: "營地：產出、生養、守營" },
   { id: "e_camp", race: "elf", name: "家園", icon: "🏡", blurb: "營地：產出、生養、守營" },
   { id: "u_camp", race: "undead", name: "墓地", icon: "🪦", blurb: "營地：產出、生養、守營" },
+  { id: "b_camp", race: "beast", name: "部落", icon: "🦴", blurb: "營地：產出、生養、守營" },
 ];
 
 /** The camp tree's talents, the same in each race's camp tree (ids `<tree>.camp_…`). */
@@ -210,9 +214,37 @@ export const TALENTS: readonly Talent[] = [
   t("u_crypt", 2, 2, "reliquary", "聖物匣", "market", 0.04, 2, "embalm"),
   t("u_crypt", 3, 1, "tomes", "禁書", "xp", 0.06),
   t("u_crypt", 4, 1, "blight", "腐化大地", "blight", 1, 1, "tomes"),
+  // 獸人・狼群 (RACES_BEAST.md §7: walking, party size, flanking)
+  t("b_pack", 0, 0, "lope", "疾奔", "travel", 0.04),
+  t("b_pack", 0, 2, "flank", "包抄", "attack", 0.03),
+  t("b_pack", 1, 0, "pack", "成群結隊", "party", 1),
+  t("b_pack", 1, 2, "trails", "獸徑", "regionTravel", 0.1),
+  t("b_pack", 2, 0, "howl", "群嚎", "reinforce", 1, 2, "pack"),
+  t("b_pack", 2, 2, "longrun", "長途奔襲", "travel", 0.05, 2, "trails"),
+  t("b_pack", 3, 1, "encircle", "合圍", "lairAttack", 0.05),
+  t("b_pack", 4, 1, "ambush", "伏擊", "ambush", 1, 1, "encircle"),
+  // 獸人・蠻力 (attack, hit points, lairs)
+  t("b_brawn", 0, 0, "claws", "利爪", "attack", 0.03),
+  t("b_brawn", 0, 2, "hide", "厚皮", "hp", 0.03),
+  t("b_brawn", 1, 0, "gore", "牛角衝撞", "lairAttack", 0.04),
+  t("b_brawn", 1, 2, "scars", "滿身傷疤", "fort", 0.04),
+  t("b_brawn", 2, 0, "smash", "破城", "pvpAttack", 0.05, 2, "gore"),
+  t("b_brawn", 2, 2, "bulk", "壯如牛", "hp", 0.04, 2, "scars"),
+  t("b_brawn", 3, 1, "trophies", "獸首戰利品", "loot", 0.08),
+  t("b_brawn", 4, 1, "plunder", "劫掠", "plunder", 1, 1, "trophies"),
+  // 獸人・月 (night, the hunt by moonlight, seeing raids coming; the full moon's own bonus is the race's, not a talent's)
+  t("b_moon", 0, 0, "omen", "月兆", "xp", 0.05),
+  t("b_moon", 0, 2, "vigil", "守夜", "homeFort", 0.05),
+  t("b_moon", 1, 0, "nighthunt", "夜獵", "loot", 0.08),
+  t("b_moon", 1, 2, "den", "岩穴", "fort", 0.04),
+  t("b_moon", 2, 0, "frenzy", "狂暴", "attack", 0.04, 2, "nighthunt"),
+  t("b_moon", 2, 2, "cubs", "狼崽", "nest", 0.06, 2, "den"),
+  t("b_moon", 3, 1, "scent", "聞風", "intel", 1, 1),
+  t("b_moon", 4, 1, "nightraid", "夜襲", "nightRaid", 1, 1, "scent"),
   ...campTree("g_camp"),
   ...campTree("e_camp"),
   ...campTree("u_camp"),
+  ...campTree("b_camp"),
 ];
 
 const BY_ID = new Map(TALENTS.map((x) => [x.id, x]));

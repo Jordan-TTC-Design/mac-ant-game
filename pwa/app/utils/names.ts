@@ -25,6 +25,12 @@ const undead = {
   ends: chars("丸仔露兒寶醬嚕啾米妮"),
 };
 
+const beast = {
+  firsts: chars("灰赤霜岩烈鐵黑白裂斷疤野暴狂沙雷血石火夜銀獨碎長"),
+  seconds: chars("牙耳鬃爪吼風蹄角尾鼻眼骨皮掌嚎背脊拳鬚齒"),
+  elders: chars("老大小阿"),
+};
+
 export function residentName(race: string): string {
   const roll = Math.random() * 100;
   if (race === "elf") {
@@ -32,6 +38,7 @@ export function residentName(race: string): string {
     if (roll < 75) return pick(elf.starts) + pick(elf.ends);
     return pick(elf.nature) + pick(elf.natureEnds);
   }
+  if (race === "beast") return roll < 85 ? pick(beast.firsts) + pick(beast.seconds) : pick(beast.elders) + pick(beast.seconds);
   if (race === "undead") {
     if (roll < 30) return pick(undead.bone) + pick(undead.bone);
     if (roll < 55) {

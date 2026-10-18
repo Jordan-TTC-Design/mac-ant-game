@@ -87,6 +87,7 @@ export const HALF_BREED_LIFESPAN: Record<string, Record<string, number>> = {
   goblin: { half_gob: 1.4, half_mix: 1.5, half_hum: 1.6 },
   elf: { half_gob: 2.8, half_mix: 3, half_hum: 3 },
   undead: { half_gob: 1, half_mix: 1, half_hum: 1 },
+  beast: { half_gob: 2, half_mix: 2.3, half_hum: 2.8 }, // (森之子: the white wolf king's and the elf princess's)
 };
 
 function homePlace(camp: CampRow): Place {

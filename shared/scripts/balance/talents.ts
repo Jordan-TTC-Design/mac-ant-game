@@ -21,8 +21,8 @@ import {
   type TalentPicks,
 } from "../../src/world/talents.ts";
 
-const RACES = ["goblin", "elf", "undead"] as const;
-const RACE_NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈" };
+const RACES = ["goblin", "elf", "undead", "beast"] as const;
+const RACE_NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" };
 const pct = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n * 100)}%`;
 const x = (n: number) => `×${n.toFixed(2)}`;
 

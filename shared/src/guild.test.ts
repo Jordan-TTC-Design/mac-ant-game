@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AVATAR_OPTIONS, avatarProblem, BADGE_PALETTE, BADGE_SIZE, badgeSchema, DEFAULT_BADGE, defaultAvatar, GUILD_LEVELS, guildLevel, presenceNow, PRESENCE_TTL_SECONDS, randomAvatar } from "./guild.ts";
+import { AVATAR_OPTIONS, avatarOptions, avatarProblem, BADGE_PALETTE, BADGE_SIZE, badgeSchema, DEFAULT_BADGE, defaultAvatar, GUILD_LEVELS, guildLevel, presenceNow, PRESENCE_TTL_SECONDS, randomAvatar } from "./guild.ts";
 
 describe("guild rules", () => {
   it("levels grow to 30 members", () => {
@@ -22,9 +22,10 @@ describe("guild rules", () => {
   it("every race has 14 hairstyles per sex, and its defaults and random avatars are allowed", () => {
     let seed = 1;
     const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-    for (const race of ["goblin", "elf", "undead"] as const) {
+    for (const race of ["goblin", "elf", "undead", "beast"] as const) {
       for (const sex of ["m", "f"] as const) {
-        expect(new Set(AVATAR_OPTIONS[race].hair[sex]).size).toBe(14);
+        expect(new Set(avatarOptions(race, sex).hair).size).toBe(14);
+        expect(defaultAvatar(race, sex).race).toBe(race);
         expect(avatarProblem(defaultAvatar(race, sex))).toBeNull();
         for (let i = 0; i < 200; i++) expect(avatarProblem(randomAvatar(race, sex, rand))).toBeNull();
       }

@@ -12,8 +12,9 @@ const camps = join(here, "../public/camps");
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
 const names = { races: {}, materials: {} };
-for (const race of ["goblin", "elf", "undead"]) {
+for (const race of ["goblin", "elf", "undead", "beast"]) {
   const from = join(resources, "Characters", race);
+  if (!existsSync(join(from, "manifest.json"))) continue; // (a race whose art is still being drawn)
   const to = join(sprites, race);
   mkdirSync(to, { recursive: true });
   for (const file of readdirSync(from)) if (file.endsWith(".png")) copyFileSync(join(from, file), join(to, file));

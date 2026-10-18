@@ -26,7 +26,7 @@ final class RacePicker: NSObject, NSWindowDelegate {
     private init(current id: String?, onPick: @escaping (Character) -> Void) {
         self.onPick = onPick
         // the goblins first (the race everyone knows), then the others as they were found
-        let order = ["goblin", "elf", "undead"]
+        let order = ["goblin", "elf", "undead", "beast"]
         let races = Characters.all.filter { $0.id != "none" }.sorted { (order.firstIndex(of: $0.id) ?? 9) < (order.firstIndex(of: $1.id) ?? 9) }
         let cardW: CGFloat = 240, cardH: CGFloat = 420, gap: CGFloat = 14
         let count = CGFloat(races.count + Self.coming.count)

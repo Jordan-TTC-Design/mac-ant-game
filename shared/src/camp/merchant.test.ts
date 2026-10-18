@@ -4,7 +4,7 @@ import { merchantGift, merchantStock, merchantVisit, taipeiDay } from "./merchan
 
 describe("the merchant's rules", () => {
   it("only ever asks for and gives materials that exist", () => {
-    for (const race of ["goblin", "elf", "undead"]) {
+    for (const race of ["goblin", "elf", "undead", "beast"]) {
       for (let k = 0; k < 300; k++) {
         for (const offer of merchantStock(`v${k}`, race)) {
           for (const id of [...Object.keys(offer.give), ...Object.keys(offer.get)]) expect(MATERIALS[id], id).toBeDefined();

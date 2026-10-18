@@ -892,6 +892,7 @@ final class AntView: NSView {
     private func drawSpriteWorkers(_ character: Character, scale: CGFloat, onScreen: CGRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let lastBreed = character.breeds.count - 1
+        let frenzied = Colony.frenzied
         ctx.saveGState()
         ctx.interpolationQuality = .none // keep the pixels sharp
         var minded = Set<Int>() // young ones being minded (they get a heart)
@@ -913,7 +914,8 @@ final class AntView: NSView {
                 standing.removeFirst()
             }
             var p = local(ant.pos)
-            guard onScreen.contains(p), let role = character.breeds[min(ant.breedIndex, lastBreed)].sprites else { continue }
+            let breed = character.breeds[min(ant.breedIndex, lastBreed)]
+            guard onScreen.contains(p), let role = frenzied && !ant.isChild ? breed.frenzy ?? breed.sprites : breed.sprites else { continue }
             // an attack: it lunges toward what it hits, and a slash flashes there
             let swingProgress = ant.swing > 0 ? CGFloat(1 - ant.swing / Ant.swingTime) : 0
             if ant.swing > 0 {

@@ -1,4 +1,4 @@
-import type { Avatar } from "@goblincamp/shared";
+import { avatarArtRace, type Avatar } from "@goblincamp/shared";
 
 /**
  * The guild avatars' art (mac/tools/make_avatars.py → public/avatars): its manifest, and each look put together from its
@@ -48,8 +48,8 @@ async function compose(m: AvatarManifest, a: Avatar): Promise<ImageBitmap> {
 }
 
 async function layered(m: AvatarManifest, a: Avatar): Promise<HTMLCanvasElement> {
-  const who = `${a.race}_${a.sex}`;
-  const type = m.bodyType[who] ?? a.race;
+  const who = `${avatarArtRace(a.race)}_${a.sex}`; // (a race without avatar art of its own yet wears the goblins')
+  const type = m.bodyType[who] ?? avatarArtRace(a.race);
   const files = m.files as Record<string, Record<string, string>>;
   // (clothes worn: the outfit's picture for this body, else the body's own clothes; a hat flattens the hair: manifest render.hats)
   const clothes = (slot: "top" | "bottom" | "shoes") => files[slot]?.[`${who}_${a[slot] ?? "default"}`] ?? files[slot]?.[`${who}_default`];
@@ -150,7 +150,7 @@ function outline(g: CanvasRenderingContext2D, w: number, h: number, colour: stri
 /** Whether this body has a picture of this piece of clothing (a body that cannot wear it has none). */
 export function outfitFits(m: AvatarManifest, a: Pick<Avatar, "race" | "sex">, slot: string, id: string): boolean {
   const files = m.files as Record<string, Record<string, string>>;
-  return slot === "hat" ? !!files.hat?.[id] : !!files[slot]?.[`${a.race}_${a.sex}_${id}`];
+  return slot === "hat" ? !!files.hat?.[id] : !!files[slot]?.[`${avatarArtRace(a.race)}_${a.sex}_${id}`];
 }
 
 export function useAvatarArt() {

@@ -11,6 +11,7 @@ const BREED_NAMES: Record<string, Record<string, string>> = {
   goblin: { common: "哥布林", scout: "敏捷哥布林", brute: "壯碩哥布林", sage: "聰明哥布林", golden: "金皮哥布林" },
   elf: { common: "精靈", scout: "綠斗篷精靈", brute: "樹皮精靈", sage: "鹿角精靈", golden: "銀月精靈" },
   undead: { common: "骷髏", scout: "幽影", brute: "巨骨", sage: "鬼火", golden: "黑曜骨" },
+  beast: { common: "灰狼", scout: "赤狐", brute: "牛頭人", sage: "銀狐", golden: "白狼王" },
 };
 
 /**

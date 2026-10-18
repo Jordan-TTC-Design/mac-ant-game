@@ -7,7 +7,7 @@ import { seeded } from "../world/random.ts";
 import { campStage } from "./races.ts";
 import { FARM_KEEP, FARM_LEVELS, FARM_MAX, farmName, farmPartName, farmPerHour } from "./production.ts";
 
-export type SiteKind = "farm" | "lumber" | "quarry" | "mine" | "traps" | "fishery" | "hunter" | "scrapyard" | "grove" | "soulwell";
+export type SiteKind = "farm" | "lumber" | "quarry" | "mine" | "traps" | "fishery" | "hunter" | "scrapyard" | "grove" | "soulwell" | "huntground";
 
 /** A site as the books keep it. `level` 0: still being built. `busyUntil`: being built or raised a level, done then (ISO). */
 export interface Site {
@@ -97,14 +97,21 @@ export const SITE_RULES: readonly SiteRule[] = [
   {
     kind: "hunter",
     base: { name: "獵人小屋", makes: { food_meat: lv(0.2, 0.35, 0.5), rabbit_fur: lv(0.15, 0.3, 0.45) } },
-    races: { elf: { name: "射手小屋", makes: { feather: lv(0.2, 0.35, 0.5), rabbit_fur: lv(0.15, 0.3, 0.45) } } }, // (elves eat no meat)
+    races: {
+      elf: { name: "射手小屋", makes: { feather: lv(0.2, 0.35, 0.5), rabbit_fur: lv(0.15, 0.3, 0.45) } }, // (elves eat no meat)
+      beast: { name: "獵手小屋", makes: { food_meat: lv(0.3, 0.5, 0.75), rabbit_fur: lv(0.15, 0.3, 0.45) } }, // (beasts hunt keenly)
+    },
     costs: [{ log: 40, stone: 10 }, { log: 100, stone: 40, fox_tail: 2 }, { log: 200, stone: 100, orc_tusk: 2 }],
   },
   {
     // every race may pick odds and ends up (2026-09-29: elves and the undead had no rags or chips but the raids'); goblins best
     kind: "scrapyard",
     base: { name: "廢料場", makes: SCRAPS },
-    races: { elf: { name: "拾荒棚", makes: scaled(SCRAPS, 0.7) }, undead: { name: "拾骨場", makes: scaled(SCRAPS, 0.7) } },
+    races: {
+      elf: { name: "拾荒棚", makes: scaled(SCRAPS, 0.7) },
+      undead: { name: "拾骨場", makes: scaled(SCRAPS, 0.7) },
+      beast: { name: "拾荒坡", makes: scaled(SCRAPS, 0.7) },
+    },
     costs: [{ log: 40, stone: 20 }, { log: 100, stone: 50 }, { log: 200, stone: 120, leather_strap: 2 }],
   },
   {
@@ -117,6 +124,13 @@ export const SITE_RULES: readonly SiteRule[] = [
     kind: "soulwell",
     only: ["undead"],
     base: { name: "魂井", makes: { night_dust: lv(0.1, 0.2, 0.3) }, finds: { crystal_shard: lv(0.03, 0.05, 0.08) } },
+    costs: [{ log: 40, stone: 20 }, { log: 100, stone: 50 }, { log: 200, stone: 120, leather_strap: 2 }],
+  },
+  {
+    // the beasts' own (RACES_BEAST.md §6): more hunting, more meat, and a pelt or a tail now and then
+    kind: "huntground",
+    only: ["beast"],
+    base: { name: "狩獵場", makes: { food_meat: lv(0.4, 0.7, 1.05), rabbit_fur: lv(0.1, 0.2, 0.3) }, finds: { fox_tail: lv(0.03, 0.05, 0.08) } },
     costs: [{ log: 40, stone: 20 }, { log: 100, stone: 50 }, { log: 200, stone: 120, leather_strap: 2 }],
   },
 ];

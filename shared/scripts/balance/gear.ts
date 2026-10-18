@@ -80,8 +80,8 @@ for (const size of [40, 90, 150, 250]) {
 }
 console.log(`\n## 每種場地每天的產量（人手滿；碎晶是期望值）`);
 console.log("種族\t場地\tLv1\tLv2\tLv3");
-for (const race of ["goblin", "elf", "undead"]) {
-  for (const kind of ["lumber", "quarry", "mine", "traps", "fishery", "hunter", "scrapyard", "grove", "soulwell"] as const) {
+for (const race of ["goblin", "elf", "undead", "beast"]) {
+  for (const kind of ["lumber", "quarry", "mine", "traps", "fishery", "hunter", "scrapyard", "grove", "soulwell", "huntground"] as const) {
     const cells = [1, 2, 3].map((level) => {
       const { makes, finds } = sitePerHour(race, { kind, level });
       return Object.entries({ ...makes, ...finds }).map(([id, n]) => `${MATERIALS[id]?.name ?? id} ${(n * 24).toFixed(1)}`).join(" ");

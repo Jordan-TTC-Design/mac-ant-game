@@ -21,12 +21,12 @@ export interface SpecialResident {
   effect: string;
 }
 export const SPECIAL_RESIDENTS: readonly SpecialResident[] = [
-  { id: "healer", level: 8, names: { goblin: "巫醫", elf: "德魯伊", undead: "死靈醫者" }, effect: "身邊的居民回血快一半" },
-  { id: "champion", level: 10, names: { goblin: "勇者", elf: "遊俠隊長", undead: "骷髏騎士" }, effect: "打突襲時大家攻擊 +10%" },
-  { id: "artisan", level: 12, names: { goblin: "工匠", elf: "月工匠", undead: "骨匠" }, effect: "工地產量 +10%" },
-  { id: "beastmaster", level: 14, names: { goblin: "馴獸師", elf: "馴鹿人", undead: "亡獸師" }, effect: "牧場產出 +15%" },
-  { id: "bard", level: 16, names: { goblin: "鼓手", elf: "吟遊詩人", undead: "哀歌者" }, effect: "出生快 10%" },
-  { id: "sentinel", level: 20, names: { goblin: "哨兵", elf: "守林人", undead: "守墓人" }, effect: "突襲的魔獸血少 10%" },
+  { id: "healer", level: 8, names: { goblin: "巫醫", elf: "德魯伊", undead: "死靈醫者", beast: "薩滿" }, effect: "身邊的居民回血快一半" },
+  { id: "champion", level: 10, names: { goblin: "勇者", elf: "遊俠隊長", undead: "骷髏騎士", beast: "狼騎士" }, effect: "打突襲時大家攻擊 +10%" },
+  { id: "artisan", level: 12, names: { goblin: "工匠", elf: "月工匠", undead: "骨匠", beast: "骨雕匠" }, effect: "工地產量 +10%" },
+  { id: "beastmaster", level: 14, names: { goblin: "馴獸師", elf: "馴鹿人", undead: "亡獸師", beast: "馴獸人" }, effect: "牧場產出 +15%" },
+  { id: "bard", level: 16, names: { goblin: "鼓手", elf: "吟遊詩人", undead: "哀歌者", beast: "鼓手" }, effect: "出生快 10%" },
+  { id: "sentinel", level: 20, names: { goblin: "哨兵", elf: "守林人", undead: "守墓人", beast: "守崖人" }, effect: "突襲的魔獸血少 10%" },
 ];
 const SPECIAL_BY_ID = new Map(SPECIAL_RESIDENTS.map((s) => [s.id, s]));
 
@@ -39,6 +39,7 @@ const BREED_NAMES: Record<string, Record<string, string>> = {
   goblin: { common: "平民", scout: "敏捷", brute: "壯碩", sage: "聰明", golden: "金皮" },
   elf: { common: "林民", scout: "綠斗篷", brute: "樹皮", sage: "鹿角", golden: "銀月" },
   undead: { common: "骷髏", scout: "幽影", brute: "巨骨", sage: "鬼火", golden: "黑曜骨" },
+  beast: { common: "灰狼", scout: "赤狐", brute: "牛頭人", sage: "銀狐", golden: "白狼王" },
 };
 
 /** A breed's name for this race ("居民" for one not known here). */
@@ -48,7 +49,7 @@ export function breedName(race: string, breed: string): string {
   return specialResident(breed)?.names[race] ?? BREED_NAMES[race]?.[breed] ?? "居民";
 }
 
-/** A special lives this many times a plain resident (the undead don't age anyway). */
+/** A special lives this many times a plain resident (times the race's plain lifespan: a beast's 4.5; the undead don't age anyway). */
 export const SPECIAL_LIFESPAN = 3;
 
 /** What the camp's specials at home add up to (each counts once, however many). */

@@ -60,7 +60,7 @@ export interface CellBuildingRule {
   room?: ByLevel;
   /** Parties setting out from the cell may be this many bigger. */
   party?: ByLevel;
-  /** A race's own version where it differs (elves eat no meat; the undead do not fish). */
+  /** A race's own version where it differs (elves eat no meat; the undead do not fish; beasts hunt more). */
   races?: Record<string, { name?: string; blurb?: string; makes?: Record<string, ByLevel> }>;
 }
 
@@ -75,7 +75,10 @@ export const CELL_BUILDINGS: readonly CellBuildingRule[] = [
     name: "獵人小屋",
     blurb: "每次產出多給烤肉和兔毛",
     makes: { food_meat: lv(1, 1, 2), rabbit_fur: lv(1, 1, 2) },
-    races: { elf: { name: "射手小屋", blurb: "每次產出多給羽毛和兔毛", makes: { feather: lv(1, 2, 3), rabbit_fur: lv(1, 1, 2) } } },
+    races: {
+      elf: { name: "射手小屋", blurb: "每次產出多給羽毛和兔毛", makes: { feather: lv(1, 2, 3), rabbit_fur: lv(1, 1, 2) } },
+      beast: { name: "獵手小屋", blurb: "每次產出多給很多烤肉和兔毛", makes: { food_meat: lv(1, 2, 3), rabbit_fur: lv(1, 1, 2) } }, // (beasts hunt keenly)
+    },
   },
   { kind: "orchard", terrain: "park", name: "採集園", blurb: "每次產出多給莓果乾和蜂蜜", makes: { ration_berry: lv(1, 2, 3), food_honey: lv(0, 1, 1) } },
   { kind: "campfire", terrain: "park", name: "營火廣場", blurb: "這一格可以多住一些", room: lv(5, 10, 15) },

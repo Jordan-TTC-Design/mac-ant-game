@@ -177,6 +177,8 @@ export const TURNOVER_MAX_SHARE: Record<string, Record<string, number>> = {
   elf: { scout: 0.12, brute: 0.1, sage: 0.07, golden: 0.02 },
   // the undead never die of age, so what turns over stays for good: the least
   undead: { scout: 0.07, brute: 0.06, sage: 0.04, golden: 0.012 },
+  // beasts live half again as long as goblins and run to brawn and the hunt: bulls and red foxes, few old silver foxes
+  beast: { scout: 0.12, brute: 0.13, sage: 0.05, golden: 0.02 },
 };
 
 /** How much of those at home a breed may come to by turning over, for this race. */
