@@ -1186,13 +1186,13 @@ export async function sendExpedition(
   await addEvent(tx, userId, now, "expedition", { id: row!.id, setOut: true, to: input.to, party: party.length, arriveAt: row!.arriveAt.toISOString() });
   await bumpVersion(tx, camp);
   // the camp attacked hears of it at once (warnDefender pushes it to its phones): it has till they get there to do something
-  // (its books changed: bumped without locking its camp, which another party of its own may hold)
   if (gate) await addEvent(tx, userId, now, "world", { moonGate: { from: fromCell, to: input.to } });
   if (row!.kind === "attack" && row!.defender && !carried?.hidden) {
     const where = await cellLabel(tx, row!.defender, input.to, await homeCellOf(tx, row!.defender));
     const by = await ownerOf(tx, userId);
     await addEvent(tx, row!.defender, now, "expedition", { id: row!.id, incoming: true, to: input.to, where: where.label, by: by.name, party: party.length, arriveAt: row!.arriveAt.toISOString() });
-    await tx.update(camps).set({ version: sql`${camps.version} + 1` }).where(eq(camps.userId, row!.defender));
+    // (its camp's version is bumped by warnDefender, after this commits: bumping it here locked the defender's camp row
+    // while holding its cell, the opposite order to the defender's own requests (camp, then its cells): a deadlock)
   }
   return summary(row!);
 }
@@ -1204,6 +1204,7 @@ export async function warnDefender(deps: Pick<AppDeps, "database" | "hub" | "pus
   if (!row || row.kind !== "attack" || !row.defender || row.boosts?.hidden) return; // (夜襲: unseen)
   const [by, where] = await db.transaction(async (tx) => [await ownerOf(tx, row.userId), await cellLabel(tx, row.defender!, row.toCell, await homeCellOf(tx, row.defender!))] as const);
   const minutes = Math.max(1, Math.round((row.arriveAt.getTime() - now.getTime()) / MINUTE));
+  await db.update(camps).set({ version: sql`${camps.version} + 1` }).where(eq(camps.userId, row.defender)); // (its books changed: the incoming event)
   await notifyCamp(deps, row.defender);
   await pushNews(deps, {
     user: row.defender,
