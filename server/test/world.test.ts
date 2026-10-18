@@ -706,6 +706,21 @@ describe("a garrison overrun falls back", () => {
     expect((await t.call("POST", "/world/expeditions", { to: cellAt(DAAN), count: 6 }, b)).status).toBe(201);
   });
 
+  it("sending a party against a camp while that camp is busy does not deadlock", async () => {
+    // (the attacker held the defender's cell and then wanted its camp row; the defender's own requests take its camp and then
+    // its cells: run both at once many times, nothing may fail)
+    const { a, b, cells } = await setUp([25]);
+    const versionBefore = (await t.call("GET", "/camp", undefined, a)).body.version as number;
+    const results = await Promise.all([
+      t.call("POST", "/world/expeditions", { to: cells[0], count: 6 }, b),
+      ...Array.from({ length: 8 }, () => t.call("GET", "/world", undefined, a)),
+      ...Array.from({ length: 4 }, () => t.call("GET", "/world/territory", undefined, a)),
+    ]);
+    for (const r of results) expect(r.status).toBeLessThan(500);
+    expect(results[0]!.status).toBe(201);
+    expect((await t.call("GET", "/camp", undefined, a)).body.version).toBeGreaterThan(versionBefore); // (told of the party coming)
+  });
+
   it("is warned the moment a party sets out against it", async () => {
     const { a, b, cells } = await setUp([25]);
     const res = await t.call("POST", "/world/expeditions", { to: cells[0], count: 6 }, b);
