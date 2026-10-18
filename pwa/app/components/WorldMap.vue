@@ -458,8 +458,10 @@ onUnmounted(() => {
 });
 
 // each kind of change redraws only its own part (a tap on a cell changes only which one is outlined)
-watch(() => [props.cells, props.mine, foeSheet.value, props.alerts], refreshCells);
-watch(() => [props.selected, props.walkingTo], markCells);
+// (alerts and walkingTo come as a new array on every render of the page, whose clock ticks each second: watch what they hold,
+// or every cell is sent to the map again once a second)
+watch(() => [props.cells, props.mine, foeSheet.value, props.alerts?.join(",")], refreshCells);
+watch(() => [props.selected, props.walkingTo.join(",")], markCells);
 watch(() => [props.parties, props.plan], refreshRoads);
 // the page moves the map (to the camp, to a great monster): fly there if it is not where we are looking already
 watch(
