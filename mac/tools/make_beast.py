@@ -629,7 +629,7 @@ def chief_sword(c, view, phase):
 # id, name, weight, boost, blurb, stats, sheet, drawer, palette
 BREEDS = [
     ("common", "灰狼", 100, 0, "部落裡最多的狼族，壯、臉上畫著戰紋，空手就很能打，愛吃肉、愛打獵。",
-     {"lifespan": 1.5, "might": 1.2, "health": 3.5}, "worker.png",
+     {"lifespan": 1.5, "might": 1.0, "health": 3.5}, "worker.png",
      lambda v, p: warrior(v, p, w_head, behind=w_tail("wolf")), palette("wolf")),
     ("scout", "赤狐", 10, 1.0, "紅毛狐狸，比狼小一號，圍著紅頭巾，跑得快、鼻子靈，遠遠就聞到獵物。",
      {"speed": 1.4, "sense": 1.4, "rest": 0.8, "lifespan": 1.4, "might": 1.0, "health": 2.5}, "scout.png",

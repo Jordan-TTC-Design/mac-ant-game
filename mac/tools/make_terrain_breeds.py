@@ -74,7 +74,7 @@ GOOD = {"mountain": "比較耐打", "river": "走得快一點", "farmland": "一
         "coast": "看得比較遠", "hotspring": "休息得少一點", "temple": "活得久一點", "hospital": "比較耐打",
         "military": "打得比較痛", "railway": "跑得最快"}
 COMMON_STATS = {"goblin": {}, "elf": {"lifespan": 2.0, "might": 1.3, "health": 3.5}, "undead": {"lifespan": 50.0, "might": 1.1, "health": 3},
-                "beast": {"lifespan": 1.5, "might": 1.2, "health": 3.5}}
+                "beast": {"lifespan": 1.5, "might": 1.0, "health": 3.5}}
 
 
 def terrain_stats(race, detail):

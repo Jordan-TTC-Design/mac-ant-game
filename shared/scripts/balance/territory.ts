@@ -34,7 +34,7 @@ import {
 } from "../../src/world/index.ts";
 import { MATERIALS } from "../../src/world/drops.ts";
 
-const RACE = "goblin";
+const RACE = process.env.RACE ?? "goblin"; // (RACE=beast npm run balance:territory for another race)
 const TERRAINS: Terrain[] = ["forest", "park", "water", "urban", "open", "road"];
 const YIELDS_A_DAY = 24 / YIELD_HOURS;
 const DAYS = 30;

@@ -30,7 +30,7 @@ function party(race: string, n: number, kit: keyof typeof KIT, geared: number, b
     residentFighter(residentAsFighter(race, { id: i + 1, breed: "common", gear: i < geared ? (KIT[kit] as never) : null }), "attack", { id: race, ranged: RACE_RANGE[race] ?? 0 }, boosts),
   );
 }
-const setups: [string, string, number, keyof typeof KIT, number][] = [
+const setups: [string, string, number, keyof typeof KIT, number, FightBoosts?][] = [
   ["精靈4 無裝", "elf", 4, "none", 0],
   ["精靈6 乾糧4", "elf", 6, "none", 0],
   ["精靈4 2把彈弓", "elf", 4, "sling", 2],
@@ -41,14 +41,19 @@ const setups: [string, string, number, keyof typeof KIT, number][] = [
   ["哥布林6 木棍樹皮", "goblin", 6, "wood", 6],
   ["精靈4 木棍樹皮", "elf", 4, "wood", 4],
   ["死靈5 無裝", "undead", 5, "none", 0],
+  ["獸人5 無裝", "beast", 5, "none", 0],
+  ["獸人5 木棍樹皮", "beast", 5, "wood", 5],
+  ["獸人5 新手全套", "beast", 5, "full", 5],
+  ["獸人5 新手全套 滿月", "beast", 5, "full", 5, { frenzy: 1 }], // (moon.ts: a full-moon night)
+  ["獸人5 營地裝T0", "beast", 5, "camp", 5],
 ];
 console.log(`巢穴 | 戰力 | ${setups.map((s) => s[0]).join(" | ")}`);
 for (const [key, lair] of [...seen.entries()].sort((a, b) => combatPower(lairFighters(a[1])) - combatPower(lairFighters(b[1])))) {
   const foes = lairFighters(lair);
-  const cells = setups.map(([, race, n, kit, g]) => {
-    const r = estimateBattle(party(race, n, kit, g), foes, 60);
+  const cells = setups.map(([, race, n, kit, g, boosts]) => {
+    const r = estimateBattle(party(race, n, kit, g, boosts), foes, 60);
     return `${Math.round(r.win * 100)}%/${r.fallen.toFixed(1)}`;
   });
   console.log(`${lair.name} ${key.split(" ").slice(1).join(" ")} | ${combatPower(foes)} | ${cells.join(" | ")}`);
 }
-console.log("\n我方戰力：" + setups.map(([n, race, k, kit, g]) => `${n} ${combatPower(party(race, k, kit, g))}`).join("、"));
+console.log("\n我方戰力：" + setups.map(([n, race, k, kit, g, boosts]) => `${n} ${combatPower(party(race, k, kit, g, boosts))}`).join("、"));

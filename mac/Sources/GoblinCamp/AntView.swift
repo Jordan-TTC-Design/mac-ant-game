@@ -762,7 +762,7 @@ final class AntView: NSView {
         }
 
         drawHandEffects()
-        if isMap { drawHoliday() }
+        if isMap { drawHoliday(); drawMoon() }
         if isMap, colony.decorating { drawDecorMode() }
         if colony.hand.press == nil, let target = colony.hand.hover {
             switch target {
@@ -2420,6 +2420,49 @@ extension AntView {
         "qingming": "🌿", "children_qingming": "🎈", "labor": "🛠", "dragon_boat": "🐉", "qixi": "💕", "ghost": "🏮", "mid_autumn": "🌕",
         "teachers": "📚", "double_ninth": "⛰", "national": "🎆", "dongzhi": "🥣", "weiya": "🍻", "christmas": "🎄",
     ]
+
+    /// For a race that goes into a frenzy on full-moon nights (the beastfolk): the moon at the top of the window at night, in its
+    /// phase by the lunar date, and a little sign in the corner as the full moon draws near ("再 2 天滿月", "滿月之夜：狂暴中").
+    fileprivate func drawMoon() {
+        guard Characters.current.rules.moon != nil else { return }
+        let now = Date(), test = ProcessInfo.processInfo.environment["CAMP_TEST_FULLMOON"] == "1"
+        let day = test ? 15 : Colony.lunarDay(at: now), toFull = test ? 0 : Colony.daysToFullMoon(at: now)
+        if Colony.isNight {
+            // lit share by the lunar day: new on the 1st, full on the 15th; the dark side on the left while it waxes, on the right as it wanes
+            let lit = (1 - cos(2 * .pi * Double(day - 1) / 29.5)) / 2
+            let r: CGFloat = toFull == 0 ? 11 : 9, c = NSPoint(x: bounds.maxX - 190, y: bounds.maxY - 26) // (clear of the 建設 and 裝飾 buttons)
+            if toFull == 0 { // a halo round the full moon
+                NSColor(calibratedRed: 1, green: 0.96, blue: 0.8, alpha: 0.18).setFill()
+                NSBezierPath(ovalIn: NSRect(x: c.x - r * 2.2, y: c.y - r * 2.2, width: r * 4.4, height: r * 4.4)).fill()
+            }
+            NSColor(calibratedRed: 0.98, green: 0.96, blue: 0.86, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
+            if lit < 0.97 { // the shadow: a dark disc slid off to one side, further the more is lit
+                let shift = CGFloat(lit) * 2 * r * (day <= 15 ? 1 : -1)
+                ctxClip(NSRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)) {
+                    NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.24, alpha: 0.88).setFill()
+                    NSBezierPath(ovalIn: NSRect(x: c.x - r - shift, y: c.y - r, width: 2 * r, height: 2 * r)).fill()
+                }
+            }
+            NSColor(calibratedRed: 0.86, green: 0.84, blue: 0.74, alpha: 1).setFill() // a couple of craters
+            NSRect(x: c.x + r * 0.2, y: c.y + r * 0.2, width: 3, height: 3).fill()
+            NSRect(x: c.x - r * 0.4, y: c.y - r * 0.45, width: 2, height: 2).fill()
+        }
+        guard toFull <= 3 else { return }
+        let text = toFull == 0 ? (Colony.frenzied ? "🌕 滿月之夜：狂暴中" : "🌕 今晚滿月") : "🌔 再 \(toFull) 天滿月"
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        let y = bounds.maxY - (Holidays.today == nil ? 16 : 40) // (under the day's name when there is one)
+        drawPill(text, center: NSPoint(x: bounds.minX + 22 + width / 2, y: y), fontSize: 11,
+                 tint: toFull == 0 ? NSColor(calibratedRed: 0.75, green: 0.32, blue: 0.18, alpha: 1) : nil)
+    }
+
+    private func ctxClip(_ rect: NSRect, _ draw: () -> Void) {
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(ovalIn: rect).addClip()
+        draw()
+        NSGraphicsContext.restoreGraphicsState()
+    }
 
     /// The day's name in the corner of the camp window, and the fireworks over the camp on a fireworks night.
     fileprivate func drawHoliday() {

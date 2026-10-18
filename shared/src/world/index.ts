@@ -17,3 +17,4 @@ export * from "./terrain.ts";
 export * from "./territory.ts";
 export * from "./events.ts";
 export * from "./details.ts";
+export * from "./moon.ts";

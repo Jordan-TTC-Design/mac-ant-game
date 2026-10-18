@@ -25,6 +25,7 @@ import {
   talentBonus,
   hasAbility,
   nightAt,
+  moonFrenzy,
   TALENT_ABILITIES,
   GUESTS_MAX,
   WORLD_SEED,
@@ -108,7 +109,9 @@ function toggleBoost(id: string) {
 }
 
 const traits = computed(() => ({ id: props.race, ranged: RACE_RANGE[props.race] ?? 0 }));
-const fighter = (r: Resident) => residentFighter(residentAsFighter(props.race, { id: r.id, breed: r.breed, gear: r.gear as never }, r.name ?? ""), "attack", traits.value);
+/** 滿月狂暴 (moon.ts): a beast camp on a full-moon night hits harder, walks quicker, and is hurt more (the server counts the moment it arrives). */
+const frenzy = moonFrenzy(props.race, new Date());
+const fighter = (r: Resident) => residentFighter(residentAsFighter(props.race, { id: r.id, breed: r.breed, gear: r.gear as never }, r.name ?? ""), "attack", traits.value, { frenzy });
 const power = (r: Resident) => Math.round(combatPower([fighter(r)]));
 /** Everyone at the starting place, strongest first. */
 const available = computed(() =>
@@ -213,7 +216,7 @@ const ground = computed(() => groundFight(props.target.detail, { attackerRace: p
 const fightBoosts = computed(() => {
   const tf = talentFight(talentBonus(props.me.talents?.picks), props.target.owner ? "player" : "lair");
   const g = props.target.lair ? ground.value.attack : { power: 0, vigor: 0 };
-  return { ...plan.value.boosts, power: tf.power + g.power, vigor: tf.vigor + g.vigor };
+  return { ...plan.value.boosts, power: tf.power + g.power, vigor: tf.vigor + g.vigor, frenzy };
 });
 const armed = computed(() => party.value.map((a) => residentFighter(residentAsFighter(props.race, { id: a.r.id, breed: a.r.breed, gear: a.r.gear as never }), "attack", traits.value, fightBoosts.value)));
 const ourPower = computed(() => Math.round(combatPower(armed.value)));
@@ -355,6 +358,7 @@ useModal();
             <div v-else-if="target.owner"><small>對方守軍</small><b>{{ target.garrison }} 隻</b></div>
             <div v-if="minutes !== null"><small>{{ moonGate ? `月光傳送（今天還有 ${me.moonGatesLeft} 次）` : nightRaid ? "夜襲：對方看不到" : detour ? `繞路 +${detour} 分` : "走過去" }}</small><b>{{ moonGate ? "瞬間到" : `${minutes} 分` }}</b></div>
           </div>
+          <p v-if="frenzy && kind !== 'settle'" class="muted small">滿月狂暴（農曆十四到十六的晚上 8 點到早上 6 點）：攻擊 +40%、走路快 15%，但受傷 +25%。到的時候已經天亮就沒有了。</p>
           <p v-if="noWay" class="warn">{{ way?.blockedBy?.name ?? "別人" }}的領地（有巢穴、建築或城鎮）擋在路上，繞不過去：先把擋路的那一格打下來，或從別的地方出發。</p>
           <p v-else-if="wayProblem" class="warn">{{ wayProblem }}</p>
           <div v-if="scouted" class="odds"><i :style="{ width: `${scouted.win * 100}%` }" /></div>

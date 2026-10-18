@@ -17,7 +17,7 @@ const ORDER: Record<string, SiteKind[]> = {
   goblin: ["lumber", "quarry", "traps", "mine", "scrapyard", "fishery"],
   elf: ["lumber", "quarry", "traps", "mine", "scrapyard", "grove"],
   undead: ["lumber", "quarry", "traps", "scrapyard", "mine", "soulwell"],
-  beast: ["lumber", "quarry", "traps", "huntground", "mine", "scrapyard"],
+  beast: ["lumber", "quarry", "traps", "mine", "scrapyard", "huntground"],
 };
 const kit = [GEAR.find((g) => g.id === "short_sword")!, GEAR.find((g) => g.id === "leather_armor")!];
 const kitCost: Record<string, number> = {};

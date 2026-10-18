@@ -3,6 +3,7 @@
  * for a while. The server keeps both as end times. Only the boosts that change a fight are used by the server so far
  * (meat, cheese, carrot; the undead's blue soul); the rest (honey, mushroom…) are the Mac's to show.
  */
+import { moonFrenzy } from "../world/moon.ts";
 export const FOODS = ["water", "honey", "bread", "meat", "cheese", "carrot", "mushroom", "berries", "fish", "cake"] as const;
 export const SOULS = ["soul_blue", "soul_green", "soul_purple"] as const;
 export type FoodId = (typeof FOODS)[number] | (typeof SOULS)[number];
@@ -24,8 +25,12 @@ export function foodScale(race: string, food: string): number {
   return 1;
 }
 
-/** The fight boosts on at `at` (for the battle rules' FightBoosts: 0…1.5). The undead's blue soul acts as meat. */
-export function fightBoosts(race: string, boosts: Record<string, string>, at: number): { meat?: number; cheese?: number; carrot?: number } {
+/**
+ * The fight boosts on at `at` (for the battle rules' FightBoosts: 0…1.5). The undead's blue soul acts as meat. A beast camp
+ * on a full-moon night is in its frenzy (world/moon.ts; `at` is the moment of the fight, or of setting out for the walk).
+ */
+export function fightBoosts(race: string, boosts: Record<string, string>, at: number): { meat?: number; cheese?: number; carrot?: number; frenzy?: number } {
   const on = (food: string) => (boosts[food] && Date.parse(boosts[food]!) > at ? foodScale(race, food) : 0);
-  return { meat: Math.max(on("meat"), on("soul_blue")), cheese: on("cheese"), carrot: on("carrot") };
+  const frenzy = moonFrenzy(race, at);
+  return { meat: Math.max(on("meat"), on("soul_blue")), cheese: on("cheese"), carrot: on("carrot"), ...(frenzy ? { frenzy } : {}) };
 }

@@ -23,10 +23,10 @@ afterAll(async () => {
 });
 
 let macs = 0;
-async function account(email: string) {
+async function account(email: string, race = "goblin") {
   const password = await signUp(t, email);
   const auth = bearer((await logIn(t, email, password, mac(++macs))).body.token);
-  await t.call("POST", "/camp/start", { race: "goblin" }, auth);
+  await t.call("POST", "/camp/start", { race }, auth);
   return auth;
 }
 const me = async (auth: Record<string, string>) => (await t.call("GET", "/world", undefined, auth)).body as WorldMe;
@@ -37,8 +37,8 @@ async function clear(cells: string[]) {
   for (const c of cells) await database.sql`insert into world_cells (cell, cleared_at) values (${c}, ${at}::timestamptz) on conflict (cell) do update set cleared_at = ${at}::timestamptz`;
 }
 /** Two camps grown together, in the big world a few cells apart; the first a veteran (big parties). */
-async function twoCamps() {
-  const a = await account("a@example.com");
+async function twoCamps(race = "goblin") {
+  const a = await account("a@example.com", race);
   const b = await account("b@example.com");
   t.advance(16 * HOUR);
   const home = cellAt(DAAN);
@@ -144,5 +144,24 @@ describe("planning a party before sending it (the Mac's dispatch window)", () =>
     const all = (await t.call("POST", "/world/expeditions/plan", { to: far, kind: "attack", residents: p.residents.filter((r) => !party.includes(r.id)).slice(0, 100).map((r) => r.id) }, a)).body as ExpeditionPlan;
     expect(all.problem).toBeTruthy();
     expect(all.minutes).toBeNull();
+  });
+});
+
+describe("the full moon (RACES_BEAST.md §4)", () => {
+  it("puts a beast camp in a frenzy on a full-moon night, counted at the moment asked: harder hitting, quicker walking", async () => {
+    // (2026-10-23 is the lunar 14th: its night, 20:00 to 6:00 in Taiwan, is a full-moon night)
+    t = testApp(database, { start: new Date("2026-10-22T09:00:00Z") });
+    const { a, far } = await twoCamps("beast");
+    expect(t.now().toISOString()).toBe("2026-10-23T01:00:00.000Z"); // (9:00 in Taiwan: day)
+    const list = (await t.call("POST", "/world/expeditions/plan", { to: far, kind: "attack" }, a)).body as ExpeditionPlan;
+    const party = list.residents.slice(0, 6).map((r) => r.id); // (the same six both times)
+    const ask = async () => (await t.call("POST", "/world/expeditions/plan", { to: far, kind: "attack", residents: party }, a)).body as ExpeditionPlan;
+    const day = await ask();
+    expect(day.fullMoon).toBe(false);
+    t.advance(11 * HOUR); // (20:00 in Taiwan)
+    const night = await ask();
+    expect(night.fullMoon).toBe(true);
+    expect(night.power / day.power).toBeGreaterThan(1.05); // (√(1.4 × quicker ÷ 1.25): about 1.08)
+    expect(night.minutes!).toBeLessThan(day.minutes!);
   });
 });

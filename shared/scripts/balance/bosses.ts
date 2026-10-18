@@ -15,7 +15,7 @@ const KIT: Record<string, object> = {
   orc: { weapon: { id: "great_sword", left: 240 }, chest: { id: "iron_plate", left: 36 }, head: { id: "iron_helm", left: 30 } },
 };
 const party = (race: string, n: number, kit: string) => Array.from({ length: n }, (_, i) => residentFighter(residentAsFighter(race, { id: i + 1, breed: "common", gear: KIT[kit] as never }), "attack", { id: race, ranged: RACE_RANGE[race] ?? 0 }));
-const setups: [string, string, number, string][] = [["哥布林8 T0", "goblin", 8, "camp"], ["哥布林10 新手全套", "goblin", 10, "full"], ["哥布林10 T1上", "goblin", 10, "orc"], ["精靈8 T1上", "elf", 8, "orc"], ["哥布林15 T1上", "goblin", 15, "orc"]];
+const setups: [string, string, number, string][] = [["哥布林8 T0", "goblin", 8, "camp"], ["哥布林10 新手全套", "goblin", 10, "full"], ["哥布林10 T1上", "goblin", 10, "orc"], ["精靈8 T1上", "elf", 8, "orc"], ["獸人8 T1上", "beast", 8, "orc"], ["獸人10 新手全套", "beast", 10, "full"], ["哥布林15 T1上", "goblin", 15, "orc"]];
 console.log(`魔王 | 戰力 | ${setups.map((s) => s[0]).join(" | ")}`);
 for (const k of LAIRS.filter((l) => l.boss)) for (const level of [2, 3, 4]) {
   const n = Math.round((k.group[0] + k.group[1]) / 2);

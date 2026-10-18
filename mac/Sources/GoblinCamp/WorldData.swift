@@ -269,6 +269,8 @@ struct WorldPlan: Decodable {
     let detour: Int
     let moonGate: Bool
     let nightRaid: Bool
+    /// 滿月狂暴 (shared moon.ts): a beast camp on a full-moon night; already counted in `power` and `minutes`. Older servers leave it out.
+    let fullMoon: Bool?
     let canPlunder: Bool
     let way: WorldRoute
     let problem: String?

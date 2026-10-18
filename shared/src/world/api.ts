@@ -87,6 +87,9 @@ export interface ExpeditionPlan {
   detour: number;
   moonGate: boolean;
   nightRaid: boolean;
+  /** 滿月狂暴 (moon.ts): a beast camp on a full-moon night now (attack ×1.4, walk ×1.15, hits taken ×1.25: in `power` and
+   * `minutes`); the fight itself counts the moment the party arrives. */
+  fullMoon: boolean;
   canPlunder: boolean;
   way: RoutePreview;
   /** Why sending it now would be refused (the server's own sentence), or null. */

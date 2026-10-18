@@ -38,9 +38,9 @@ const PLAIN_STATS: Record<string, Record<string, { might?: number; health?: numb
     half_mix: { speed: 1.1, might: 1.4, health: 4 },
     half_hum: { speed: 1.2, might: 1.2, health: 3.5 },
   },
-  // (mac/tools/make_beast.py BREEDS)
+  // (mac/tools/make_beast.py BREEDS; 2026-10-18 balance: the common's might 1.2 → 1.0, BALANCE.md §6: "平常生猛但不兇，狂暴才兇")
   beast: {
-    common: { might: 1.2, health: 3.5 },
+    common: { might: 1, health: 3.5 },
     scout: { speed: 1.4, might: 1, health: 2.5 },
     brute: { speed: 0.75, might: 2, health: 7 },
     sage: { speed: 0.95, might: 1, health: 3 },

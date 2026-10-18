@@ -10,6 +10,7 @@
  */
 import { FOES } from "./contents.ts";
 import type { Lair } from "./contents.ts";
+import { BEAST_MOON } from "./moon.ts";
 import { randomFrom, type Random } from "./random.ts";
 
 export type Side = "attack" | "defend";
@@ -33,6 +34,8 @@ export interface Fighter {
   lead: number;
   /** Attack × this at night (the dark ones). */
   night: number;
+  /** Hits on it × this (a beast in its full-moon frenzy: BEAST_MOON.hurt); left out, 1. */
+  frailty?: number;
   /** 狂化: once it is down to RAGE_BELOW of its hit points it goes berserk — attack +this share, and quicker (a 初期魔王). */
   rage?: number;
   /**
@@ -90,6 +93,8 @@ export interface FightBoosts {
   sticky?: number;
   luck?: number;
   lantern?: number;
+  /** 滿月狂暴 (moon.ts moonFrenzy: a beast on a full-moon night, 0 or 1): attack and speed × BEAST_MOON, hits taken × its hurt. */
+  frenzy?: number;
   /** 種族天賦 (talents.ts): attack and hit points +these shares. */
   power?: number;
   vigor?: number;
@@ -133,6 +138,7 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
   const sturdy = r.breed === "brute" || r.breed === "half_hum";
   const shooter = race.ranged > 0 && !sturdy;
   const range = shooter ? race.ranged + (r.gearReach ?? 0) : (r.gearReach ?? 0);
+  const frenzy = boosts.frenzy ?? 0;
   return {
     id: r.id,
     name: r.name,
@@ -140,14 +146,15 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
     row: healer || range > 0 ? "back" : "front",
     hp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.vigor ?? 0))),
     maxHp: Math.round((r.health * HP_PER_HEALTH + (r.gearHp ?? 0)) * (1 + 0.2 * (boosts.honey ?? 0) + (boosts.fort ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.vigor ?? 0))),
-    attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.power ?? 0)),
+    attack: (r.might * ATTACK_PER_MIGHT + (r.gearAttack ?? 0)) * (1 + 0.2 * (boosts.meat ?? 0) + 0.1 * (boosts.tonic ?? 0) + (boosts.power ?? 0)) * (1 + (BEAST_MOON.might - 1) * frenzy),
     range,
-    speed: r.speed * (1 + 0.15 * (boosts.carrot ?? 0)),
+    speed: r.speed * (1 + 0.15 * (boosts.carrot ?? 0)) * (1 + (BEAST_MOON.speed - 1) * frenzy),
     heal: healer ? Math.round(r.might * 5 * (1 + (boosts.healing ?? 0))) : 0,
     guard: Math.min(0.6, (r.gearGuard ?? 0) + 0.2 * (boosts.cheese ?? 0) + 0.1 * (boosts.bandage ?? 0)),
     lead: leader ? LEAD_PER_LEADER : 0,
     night: 1,
     focus: RESIDENT_FOCUS,
+    ...(frenzy ? { frailty: 1 + (BEAST_MOON.hurt - 1) * frenzy } : {}),
   };
 }
 
@@ -312,7 +319,7 @@ export function simulateBattle(attackers: Fighter[], defenders: Fighter[], optio
         continue;
       }
       const power = actor.attack * (actor.raging ? 1 + (actor.rage ?? 0) : 1) * (1 + leadOf(all, actor.side)) * (options.night ? actor.night : 1) * (0.8 + random() * 0.4);
-      const amount = Math.max(1, Math.round(power * (1 - target.guard)));
+      const amount = Math.max(1, Math.round(power * (1 - target.guard) * (target.frailty ?? 1)));
       target.hp = Math.max(0, target.hp - amount);
       events.push({ round, actor: actor.id, target: target.id, kind: "hit", amount });
       if (target.hp === 0) events.push({ round, actor: actor.id, target: target.id, kind: "down" });
@@ -342,7 +349,7 @@ export function combatPower(fighters: Fighter[]): number {
   // (quicker ones strike first and more often before they fall; a share of blows turned aside makes hit points last longer)
   // (a berserker is wild for about half the fight)
   const hitting = fighters.reduce((total, f) => total + (f.attack * (1 + (f.rage ?? 0) / 2) * lead + f.heal) * (f.range > 0 ? 1.1 : 1) * (1 + 0.3 * (f.speed - 1)), 0);
-  const lasting = fighters.reduce((total, f) => total + f.hp / (1 - Math.min(0.6, f.guard)), 0);
+  const lasting = fighters.reduce((total, f) => total + f.hp / (1 - Math.min(0.6, f.guard)) / (f.frailty ?? 1), 0);
   return Math.round(Math.sqrt(hitting * lasting));
 }
 

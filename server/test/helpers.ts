@@ -24,10 +24,11 @@ export async function emptyTables(database: Database) {
 }
 
 /** An app with its own clock, mailbox and rate limits, plus shortcuts for requests. */
-export function testApp(database: Database, extra: { backups?: Backups } = {}) {
+export function testApp(database: Database, options: { backups?: Backups; start?: Date } = {}) {
+  const { start, ...extra } = options;
   const mailer = new MemoryMailer();
   const push = new MemoryPushSender();
-  let clock = new Date("2026-10-01T09:00:00Z");
+  let clock = start ?? new Date("2026-10-01T09:00:00Z");
   const app = createApp({
     database,
     mailer,

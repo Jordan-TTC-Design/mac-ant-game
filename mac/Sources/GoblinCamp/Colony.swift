@@ -1481,11 +1481,19 @@ final class Colony {
         return fullMoonNight(at: Date())
     }
 
-    static func fullMoonNight(at date: Date) -> Bool {
+    static func fullMoonNight(at date: Date) -> Bool { (14...16).contains(lunarDay(at: date)) }
+
+    /// The day of the lunar month (1–30) of the evening this moment belongs to (until 6 in the morning, the day before), Taiwan time.
+    static func lunarDay(at date: Date) -> Int {
         var lunar = Calendar(identifier: .chinese)
         lunar.timeZone = TimeZone(identifier: "Asia/Taipei") ?? .current
-        let evening = date.addingTimeInterval(-6 * 3600)
-        return (14...16).contains(lunar.component(.day, from: evening))
+        return lunar.component(.day, from: date.addingTimeInterval(-6 * 3600))
+    }
+
+    /// Whole days until the next full-moon night (0 = tonight is one).
+    static func daysToFullMoon(at date: Date) -> Int {
+        let day = lunarDay(at: date)
+        return (14...16).contains(day) ? 0 : day < 14 ? 14 - day : 30 - day + 14
     }
 
     /// A full-moon night for a race that goes into a frenzy (the beastfolk, RACES_BEAST.md §4).

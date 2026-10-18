@@ -440,6 +440,7 @@ final class WorldDispatch: WorldSheet {
             numbers.append((small, p.moonGate ? "瞬間到" : "\(m) 分"))
         }
         add(compare(numbers))
+        if p.fullMoon == true { add(note("🌕 滿月狂暴：攻擊 +40%、走路快 15%，但受傷 +25%（已算進上面的戰力與時間）")) }
         let noWay = p.way.waypoints.isEmpty
         if noWay { add(text("\(p.way.blockedBy?.name ?? "別人")的領地（有巢穴、建築或城鎮）擋在路上，繞不過去：先把擋路的那一格打下來，或從別的地方出發。", color: .systemRed)) }
         if let e = p.estimate, !party.isEmpty {
