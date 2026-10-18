@@ -1,0 +1,32 @@
+{
+  "id": "den",
+  "name": "岩壁獸穴",
+  "blurb": "紅岩上挖出來的獸穴，洞口掛著長角的獸頭骨，門口一圈尖骨圍籬。",
+  "pixelScale": 1.5,
+  "stages": [
+    {
+      "sheet": "stage1.png",
+      "minCount": 0,
+      "entrance": [
+        25,
+        24
+      ]
+    },
+    {
+      "sheet": "stage2.png",
+      "minCount": 30,
+      "entrance": [
+        29,
+        28
+      ]
+    },
+    {
+      "sheet": "stage3.png",
+      "minCount": 90,
+      "entrance": [
+        33,
+        32
+      ]
+    }
+  ]
+}

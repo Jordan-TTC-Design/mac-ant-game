@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""The terrain breeds (2026-10-17, WORLD.md §29): one resident per terrain detail per race, 14 × 3 = 42 of them. A camp's
+"""The terrain breeds (2026-10-17, WORLD.md §29): one resident per terrain detail per race, 14 × 4 = 56 of them. A camp's
 residents on the big world can be born of the land they hold: a goblin from a mountain cell grows stony skin, an elf from a
 river cell has wet, blue-green hair. They are never drawn by the normal birth roll (weight 0); the server picks them.
 
-They are drawn on the race's own plain body (make_goblin / make_elf / make_undead), with the land's colours, clothes and a
+They are drawn on the race's own plain body (make_goblin / make_elf / make_undead / make_beast), with the land's colours, clothes and a
 small prop laid over it; for the undead some are bones and some are ghosts (make_undead's skeleton / ghost / wisp).
 
 The race generators call `write(race, root)` and add `manifest_entries(race)` to their breeds, like make_specials.
-    python3 tools/make_terrain_breeds.py --preview /path/preview.png   # common + the 14, front and side, all three races
+    python3 tools/make_terrain_breeds.py --preview /path/preview.png   # common + the 14, front and side, every race
 """
 import os
 import sys
@@ -33,6 +33,9 @@ NAMES = {
     "undead": {"mountain": "石棺", "river": "溺魂", "farmland": "稻草", "cemetery": "夜哭", "wetland": "沼魂", "campus": "書靈",
                "industrial": "鐵骨", "sand": "沙骸", "coast": "沉船", "hotspring": "蒸骨", "temple": "背誓", "hospital": "縫屍",
                "military": "骨衛", "railway": "幽軌"},
+    "beast": {"mountain": "岩鬃", "river": "浪鬃", "farmland": "穗尾", "cemetery": "夜嚎", "wetland": "泥爪", "campus": "書狐",
+              "industrial": "鐵爪", "sand": "沙狐", "coast": "海狼", "hotspring": "湯狐", "temple": "祭牙", "hospital": "白爪",
+              "military": "戰牙", "railway": "疾風"},
 }
 # What it looks like, per race (the first half of the blurb).
 LOOKS = {
@@ -57,13 +60,21 @@ LOOKS = {
                "coast": "從沉船爬上來的骷髏，穿條紋衫、披著海草、扛著船錨", "hotspring": "泡得粉粉的骨頭頂著毛巾，一直冒蒸氣",
                "temple": "穿著紅袍、額頭貼著一張破符", "hospital": "滿身縫線、纏著繃帶的骷髏",
                "military": "戴鋼盔的大骨架，扛著長矛", "railway": "戴著列車長帽的藍色幽魂，提著燈飄得飛快"},
+    "beast": {"mountain": "一身石灰色的硬毛，扛著十字鎬", "river": "毛色青灰、總是濕淋淋的狼，手拿蘆葦",
+              "farmland": "麥穗色的毛、戴著草帽，抱著一束麥子", "cemetery": "全身黑毛的狼，提著一盞燈，夜裡會嚎",
+              "wetland": "滿身泥巴、爪子沾著泥，頭上頂著睡蓮", "campus": "戴著眼鏡和方帽的狐狸，抱著一本書",
+              "industrial": "一隻爪子包著鐵、毛上沾著煤灰，拿著扳手", "sand": "沙色的狐狸，包著頭巾、掛著貝殼項鍊",
+              "coast": "海灰色的狼，戴著水手帽，拿著海螺", "hotspring": "泡得毛蓬蓬的狐狸，頭頂毛巾、一直冒熱氣",
+              "temple": "披著紅布、掛著念珠的狼，牙上綁著紅繩", "hospital": "一身白毛、戴著護士帽，拿著一片藥葉",
+              "military": "戴著鋼盔的大塊頭狼，扛著長矛", "railway": "戴著列車長帽的藍灰色狼，提著燈跑得最快"},
 }
 # What it is better at, and the stat that says so (one thing each, a little better than the race's common resident).
 GOOD = {"mountain": "比較耐打", "river": "走得快一點", "farmland": "一次搬兩份", "cemetery": "眼睛比較尖",
         "wetland": "不太需要休息", "campus": "很會叫同伴來幫忙", "industrial": "力氣大一點", "sand": "走得快一點",
         "coast": "看得比較遠", "hotspring": "休息得少一點", "temple": "活得久一點", "hospital": "比較耐打",
         "military": "打得比較痛", "railway": "跑得最快"}
-COMMON_STATS = {"goblin": {}, "elf": {"lifespan": 2.0, "might": 1.3, "health": 3.5}, "undead": {"lifespan": 50.0, "might": 1.1, "health": 3}}
+COMMON_STATS = {"goblin": {}, "elf": {"lifespan": 2.0, "might": 1.3, "health": 3.5}, "undead": {"lifespan": 50.0, "might": 1.1, "health": 3},
+                "beast": {"lifespan": 1.5, "might": 1.2, "health": 3.5}}
 
 
 def terrain_stats(race, detail):
@@ -814,7 +825,85 @@ def undead_design(detail):
     return draw, gear, dict(pal, **T)
 
 
-DESIGNS = {"goblin": goblin_design, "elf": elf_design, "undead": undead_design}
+# --- the beastfolk -------------------------------------------------------------------------------------------------------
+# make_beast's calm warrior body: head rows 1-6 (cols 4-11, side 4-13 with the snout), shoulders row 7, fists row 11.
+# The land shows in the fur's colour, the loincloth and what they carry; the wet, clever or warm ones are foxes.
+BEAST_FOX = ("river", "campus", "sand", "hotspring")
+
+
+def beast_design(detail):
+    import make_beast as mb
+    fur = {
+        "mountain": ((150, 150, 146), (110, 110, 106), (196, 196, 190)), "river": ((110, 150, 156), (80, 112, 120), (200, 226, 230)),
+        "farmland": ((214, 176, 104), (170, 132, 70), (246, 226, 170)), "cemetery": ((60, 56, 66), (40, 36, 46), (120, 116, 128)),
+        "wetland": ((120, 100, 70), (90, 72, 50), (170, 150, 116)), "campus": ((176, 110, 60), (136, 80, 40), (240, 220, 196)),
+        "industrial": ((112, 108, 108), (78, 74, 74), (170, 166, 166)), "sand": ((226, 192, 136), (190, 154, 100), (250, 236, 206)),
+        "coast": ((126, 140, 160), (92, 104, 124), (210, 220, 232)), "hotspring": ((236, 160, 120), (200, 120, 90), (255, 230, 214)),
+        "temple": ((130, 84, 62), (96, 60, 44), (204, 170, 146)), "hospital": ((240, 240, 244), (196, 200, 212), (255, 255, 255)),
+        "military": ((140, 128, 100), (104, 94, 70), (196, 184, 156)), "railway": ((100, 112, 140), (72, 82, 108), (180, 190, 214)),
+    }[detail]
+    cloth = {
+        "mountain": ((120, 136, 156), (88, 102, 124)), "river": ((70, 150, 150), (48, 112, 116)), "farmland": ((112, 146, 70), (82, 110, 50)),
+        "cemetery": ((62, 56, 80), (42, 38, 56)), "wetland": ((134, 102, 64), (100, 74, 44)), "campus": ((54, 60, 96), (36, 40, 70)),
+        "industrial": ((96, 92, 96), (66, 62, 66)), "sand": ((244, 232, 196), (210, 194, 150)), "coast": ((246, 246, 240), (60, 100, 176)),
+        "hotspring": ((160, 196, 236), (120, 156, 206)), "temple": ((206, 52, 58), (150, 34, 42)), "hospital": ((248, 248, 244), (206, 208, 206)),
+        "military": ((176, 154, 96), (132, 114, 66)), "railway": ((46, 56, 100), (28, 32, 62)),
+    }[detail]
+    pal = dict(mb.BASE, F=fur[0], f=fur[1], L=fur[2], H=mb.HORN[0], h=mb.HORN[1], c1=cloth[0], c2=cloth[1])
+    fox = detail in BEAST_FOX
+    build = "big" if detail in ("mountain", "military") else "lean" if fox else "norm"
+    top = "robe" if detail in ("campus", "hotspring", "temple", "hospital") else "bare"
+
+    def draw(view, phase):
+        c = mb.warrior(view, phase, lambda cc, v: mb.w_head(cc, v, ears="fox" if fox else "wolf", paint=detail not in ("hospital", "campus")),
+                       build=build, top=top, cloth="c1", behind=mb.w_tail("fox" if fox else "wolf"))
+        if detail == "hospital" and view != "side":
+            dab(c, [(7, 9), (6, 10), (7, 10), (8, 10), (7, 11)], "t_red")
+        elif detail == "campus" and view == "front":                              # glasses
+            c.cells([(4, 3), (5, 3), (6, 3), (9, 3), (10, 3), (11, 3)], "t_glass")
+        elif detail == "campus" and view == "side":
+            c.cells([(7, 3), (8, 3), (9, 3)], "t_glass")
+        elif detail == "industrial" and view == "front":                          # a steel-wrapped paw, soot
+            paint(c, 12, 8, 13, 11, "t_iron", only=("F", "f")); dab(c, [(10, 5), (11, 5)], "t_soot", only=("F", "L"))
+        elif detail == "sand" and view == "front":
+            dab(c, [(6, 8), (7, 9), (8, 9), (9, 8)], "t_shell"); dab(c, [(8, 9)], "t_shell2")
+        elif detail == "coast" and view != "side":                                # a striped sash
+            dab(c, [(5, 8), (6, 9), (7, 10)], "t_blue")
+        elif detail == "mountain" and view == "front":                            # the rope across the chest
+            dab(c, [(5, 8), (6, 9), (7, 10), (8, 10)], "t_rope")
+        elif detail == "wetland":
+            paint(c, 0, 13, 15, 14, "t_mud", only=("f", "F"))
+        elif detail == "temple" and view == "front":
+            dab(c, [(6, 6), (9, 6)], "t_red", only=("b",))                       # red cord tied round the fangs
+        return c
+
+    def gear(view, phase):
+        g = ms.Gear()
+        side = view == "side"
+        x0, x1, top = 4, 11, 1
+        if detail in HATS:
+            HATS[detail](g.front, x0, x1, top, view)
+        item = {"mountain": pick, "river": reed, "farmland": sheaf, "cemetery": lantern, "wetland": None, "campus": book,
+                "industrial": wrench, "sand": None, "coast": conch, "hotspring": None, "temple": beads, "hospital": leaf,
+                "military": spear, "railway": lantern}[detail]
+        if item:
+            held(g, "beast", view, phase, item)
+        if detail == "industrial":
+            goggles(g.front, 4, 11, 1, view)
+        if detail == "river":
+            drips(g, phase)
+        if detail == "hotspring":
+            steam(g, phase)
+        if detail == "railway":
+            speed_lines(g, view, phase)
+        if detail == "cemetery" and not side:                                      # a howl: two notes in the air
+            g.loose += [(1, 1 + phase % 2, "t_tear"), (14, 2 - phase % 2, "t_tear")]
+        return g
+
+    return draw, gear, dict(pal, **T)
+
+
+DESIGNS = {"goblin": goblin_design, "elf": elf_design, "undead": undead_design, "beast": beast_design}
 
 
 def terrain_sheet(race, detail):
@@ -850,9 +939,10 @@ def preview(path, zoom=3):
     """Each race a row: the common resident, then the fourteen, each front and side (phase 0)."""
     import make_elf as me
     import make_undead as mu
+    import make_beast as mb
     commons = {"goblin": mg.build_sheet(False, mg.BREEDS[0][7]), "elf": me.breed_sheet(me.BREEDS[0][7], me.BREEDS[0][8]),
-               "undead": mu.breed_sheet(mu.BREEDS[0][7], mu.BREEDS[0][8])}
-    races = ("goblin", "elf", "undead")
+               "undead": mu.breed_sheet(mu.BREEDS[0][7], mu.BREEDS[0][8]), "beast": mb.breed_sheet(mb.BREEDS[0][7], mb.BREEDS[0][8])}
+    races = ("goblin", "elf", "undead", "beast")
     cols = 15 * 2
     gap = 4
     cw = SIZE + gap

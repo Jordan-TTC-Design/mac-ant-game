@@ -1,0 +1,639 @@
+{
+  "id": "beast",
+  "name": "獸人",
+  "noun": "獸人",
+  "emoji": "🐺",
+  "icon": "icon.png",
+  "nestName": "獸穴",
+  "frame": 16,
+  "defaultMaxCount": 200,
+  "tagline": "狼、狐、牛頭人的部落，住在乾燥的紅岩荒谷；吃肉、愛打獵，滿月的晚上狂暴。",
+  "features": [
+    "吃肉：烤肉、烤魚的加成 ×1.5，果實、野莓、蜂蜜只有一半",
+    "愛打獵：看到動物會主動去追，打到的肉直接進食材櫃",
+    "滿月的晚上狂暴：灰狼、赤狐四足狂奔，牛頭人低頭衝鋒，白狼王拔出大劍；打得更痛，但也傷得更重",
+    "打魔獸時包抄：牛頭人正面擋，狼和狐從旁邊咬，銀狐在後面補血",
+    "首領是精靈公主；和白狼王的孩子是森之子"
+  ],
+  "rules": {
+    "names": "beast",
+    "noDecor": [
+      "tent"
+    ],
+    "spawnScale": 1.3,
+    "food": {
+      "meat": 1.5,
+      "fish": 1.5,
+      "fruit": 0.5,
+      "berries": 0.5,
+      "honey": 0.5
+    },
+    "moon": {
+      "might": 1.4,
+      "speed": 1.15,
+      "hurt": 1.25
+    },
+    "hunts": 1.5,
+    "charge": 1.3,
+    "flank": 1.2,
+    "camp": "den",
+    "biome": "redrock",
+    "princessNames": [
+      "艾琳",
+      "月芽",
+      "希雅",
+      "琳恩",
+      "薇拉",
+      "露米",
+      "雪絲",
+      "菲歐",
+      "星語",
+      "蘿婭"
+    ]
+  },
+  "worker": {
+    "sheet": "worker.png",
+    "pixelScale": 1.5,
+    "walk": {
+      "down": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "up": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "side": [
+        8,
+        9,
+        10,
+        11
+      ]
+    }
+  },
+  "breeds": [
+    {
+      "id": "common",
+      "name": "灰狼",
+      "weight": 100,
+      "boost": 0,
+      "blurb": "部落裡最多的狼族，壯、臉上畫著戰紋，空手就很能打，愛吃肉、愛打獵。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5
+      },
+      "sheet": "worker.png",
+      "frenzy": "frenzy_common.png"
+    },
+    {
+      "id": "scout",
+      "name": "赤狐",
+      "weight": 10,
+      "boost": 1.0,
+      "blurb": "紅毛狐狸，比狼小一號，圍著紅頭巾，跑得快、鼻子靈，遠遠就聞到獵物。",
+      "stats": {
+        "speed": 1.4,
+        "sense": 1.4,
+        "rest": 0.8,
+        "lifespan": 1.4,
+        "might": 1.0,
+        "health": 2.5
+      },
+      "sheet": "scout.png",
+      "frenzy": "frenzy_scout.png"
+    },
+    {
+      "id": "brute",
+      "name": "牛頭人",
+      "weight": 8,
+      "boost": 1.0,
+      "blurb": "大塊頭，一對粗角、重鼻環、扛著雙刃斧，走得慢，一次搬兩份，站在最前面。",
+      "stats": {
+        "speed": 0.75,
+        "sense": 0.9,
+        "carry": 2,
+        "rest": 1.2,
+        "lifespan": 1.6,
+        "might": 2.0,
+        "health": 7
+      },
+      "sheet": "brute.png",
+      "frenzy": "frenzy_brute.png"
+    },
+    {
+      "id": "sage",
+      "name": "銀狐",
+      "weight": 5,
+      "boost": 1.5,
+      "blurb": "年紀大的銀毛狐狸，拄著骷髏手杖、頭上插羽毛，會補血，也很會叫同伴。",
+      "stats": {
+        "speed": 0.95,
+        "sense": 1.3,
+        "recruit": 3,
+        "lifespan": 1.8,
+        "might": 1.0,
+        "health": 3
+      },
+      "sheet": "sage.png",
+      "frenzy": "frenzy_sage.png"
+    },
+    {
+      "id": "golden",
+      "name": "白狼王",
+      "weight": 1,
+      "boost": 3.0,
+      "blurb": "罕見的白狼，長鬃、骨冠、一眼帶疤、紅色獸皮披風，部落的首領；滿月時才拔出骨製大劍。每一方面都好一點。",
+      "stats": {
+        "speed": 1.15,
+        "sense": 1.2,
+        "recruit": 1,
+        "lifespan": 2.5,
+        "might": 1.7,
+        "health": 6
+      },
+      "sheet": "golden.png",
+      "frenzy": "frenzy_golden.png"
+    },
+    {
+      "id": "half_gob",
+      "name": "森之子・偏獸",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "白狼王與精靈公主的孩子，偏向狼族：白毛小狼，耳後別著一片葉子，力氣大又耐打。",
+      "stats": {
+        "speed": 1.1,
+        "sense": 1.2,
+        "carry": 2,
+        "lifespan": 2.0,
+        "might": 1.9,
+        "health": 6.5
+      },
+      "sheet": "half_gob.png"
+    },
+    {
+      "id": "half_mix",
+      "name": "森之子",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "白狼王與精靈公主的孩子，各半：精靈的臉、白頭髮、琥珀色的狼眼、白狼耳和尾巴，什麼都好一點。",
+      "stats": {
+        "speed": 1.15,
+        "sense": 1.3,
+        "lifespan": 2.3,
+        "might": 1.6,
+        "health": 5,
+        "recruit": 1
+      },
+      "sheet": "half_mix.png"
+    },
+    {
+      "id": "half_hum",
+      "name": "森之子・偏精靈",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "白狼王與精靈公主的孩子，偏向精靈：長耳朵、背著弓，但戴著有狼耳的白狼毛兜帽，琥珀色的狼眼、一顆小獠牙、白狼尾巴。是獸人裡少數的遠程。",
+      "stats": {
+        "speed": 1.1,
+        "sense": 1.5,
+        "lifespan": 2.8,
+        "might": 1.4,
+        "health": 4,
+        "recruit": 1
+      },
+      "sheet": "half_hum.png"
+    },
+    {
+      "id": "healer",
+      "name": "薩滿",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 8 級）。拄著發光的法杖，附近的同伴傷好得快。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.0,
+        "sense": 1.2,
+        "rest": 0.9,
+        "might": 1.0,
+        "health": 4,
+        "lifespan": 4.5
+      },
+      "sheet": "healer.png",
+      "special": true,
+      "level": 8
+    },
+    {
+      "id": "champion",
+      "name": "狼騎士",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 10 級）。提劍持盾、披著斗篷，突襲時站在最前面，大家的攻擊都強一點。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.05,
+        "sense": 1.1,
+        "rest": 0.9,
+        "might": 2.0,
+        "health": 7,
+        "lifespan": 4.5
+      },
+      "sheet": "champion.png",
+      "special": true,
+      "level": 10
+    },
+    {
+      "id": "artisan",
+      "name": "骨雕匠",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 12 級）。圍著皮圍裙、拿著鐵鎚，有他在，工地做得多一點。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 0.95,
+        "carry": 2,
+        "rest": 1.0,
+        "might": 1.3,
+        "health": 5,
+        "lifespan": 4.5
+      },
+      "sheet": "artisan.png",
+      "special": true,
+      "level": 12
+    },
+    {
+      "id": "beastmaster",
+      "name": "馴獸人",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 14 級）。腰上掛著鞭子，身邊跟著一隻小寵物，牧場的動物都聽他的。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.1,
+        "sense": 1.3,
+        "rest": 0.9,
+        "might": 1.3,
+        "health": 4,
+        "lifespan": 4.5
+      },
+      "sheet": "beastmaster.png",
+      "special": true,
+      "level": 14
+    },
+    {
+      "id": "bard",
+      "name": "鼓手",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 16 級）。走到哪裡都在唱、在敲，營地熱熱鬧鬧，小孩生得快一點。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 1.05,
+        "sense": 1.1,
+        "recruit": 3,
+        "might": 1.0,
+        "health": 4,
+        "lifespan": 4.5
+      },
+      "sheet": "bard.png",
+      "special": true,
+      "level": 16
+    },
+    {
+      "id": "sentinel",
+      "name": "守崖人",
+      "weight": 0,
+      "boost": 2.0,
+      "blurb": "特殊居民（種族 20 級）。戴著頭盔、扛著長矛守在營地邊，魔獸一靠近就被他戳一下。只會自己來營地拜訪、問能不能住下來，營地裡最多一位。",
+      "stats": {
+        "speed": 0.95,
+        "sense": 1.5,
+        "rest": 0.9,
+        "might": 1.6,
+        "health": 7,
+        "lifespan": 4.5
+      },
+      "sheet": "sentinel.png",
+      "special": true,
+      "level": 20
+    },
+    {
+      "id": "d_mountain",
+      "name": "岩鬃",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "山地的居民。一身石灰色的硬毛，扛著十字鎬，比較耐打。不會在營地自己生出來，只從大世界的山地領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 5.5
+      },
+      "sheet": "d_mountain.png",
+      "terrain": "mountain"
+    },
+    {
+      "id": "d_river",
+      "name": "浪鬃",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "河川的居民。毛色青灰、總是濕淋淋的狼，手拿蘆葦，走得快一點。不會在營地自己生出來，只從大世界的河川領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "speed": 1.15
+      },
+      "sheet": "d_river.png",
+      "terrain": "river"
+    },
+    {
+      "id": "d_farmland",
+      "name": "穗尾",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "農田的居民。麥穗色的毛、戴著草帽，抱著一束麥子，一次搬兩份。不會在營地自己生出來，只從大世界的農田領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "carry": 2
+      },
+      "sheet": "d_farmland.png",
+      "terrain": "farmland"
+    },
+    {
+      "id": "d_cemetery",
+      "name": "夜嚎",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "墓地的居民。全身黑毛的狼，提著一盞燈，夜裡會嚎，眼睛比較尖。不會在營地自己生出來，只從大世界的墓地領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "sense": 1.25
+      },
+      "sheet": "d_cemetery.png",
+      "terrain": "cemetery"
+    },
+    {
+      "id": "d_wetland",
+      "name": "泥爪",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "濕地的居民。滿身泥巴、爪子沾著泥，頭上頂著睡蓮，不太需要休息。不會在營地自己生出來，只從大世界的濕地領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "rest": 0.85
+      },
+      "sheet": "d_wetland.png",
+      "terrain": "wetland"
+    },
+    {
+      "id": "d_campus",
+      "name": "書狐",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "校園的居民。戴著眼鏡和方帽的狐狸，抱著一本書，很會叫同伴來幫忙。不會在營地自己生出來，只從大世界的校園領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "recruit": 2
+      },
+      "sheet": "d_campus.png",
+      "terrain": "campus"
+    },
+    {
+      "id": "d_industrial",
+      "name": "鐵爪",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "工業區的居民。一隻爪子包著鐵、毛上沾著煤灰，拿著扳手，力氣大一點。不會在營地自己生出來，只從大世界的工業區領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.5,
+        "health": 3.5
+      },
+      "sheet": "d_industrial.png",
+      "terrain": "industrial"
+    },
+    {
+      "id": "d_sand",
+      "name": "沙狐",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "沙灘的居民。沙色的狐狸，包著頭巾、掛著貝殼項鍊，走得快一點。不會在營地自己生出來，只從大世界的沙灘領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "speed": 1.1
+      },
+      "sheet": "d_sand.png",
+      "terrain": "sand"
+    },
+    {
+      "id": "d_coast",
+      "name": "海狼",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "海岸的居民。海灰色的狼，戴著水手帽，拿著海螺，看得比較遠。不會在營地自己生出來，只從大世界的海岸領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "sense": 1.2
+      },
+      "sheet": "d_coast.png",
+      "terrain": "coast"
+    },
+    {
+      "id": "d_hotspring",
+      "name": "湯狐",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "溫泉的居民。泡得毛蓬蓬的狐狸，頭頂毛巾、一直冒熱氣，休息得少一點。不會在營地自己生出來，只從大世界的溫泉領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "rest": 0.8
+      },
+      "sheet": "d_hotspring.png",
+      "terrain": "hotspring"
+    },
+    {
+      "id": "d_temple",
+      "name": "祭牙",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "廟宇區的居民。披著紅布、掛著念珠的狼，牙上綁著紅繩，活得久一點。不會在營地自己生出來，只從大世界的廟宇區領地來。",
+      "stats": {
+        "lifespan": 1.95,
+        "might": 1.2,
+        "health": 3.5
+      },
+      "sheet": "d_temple.png",
+      "terrain": "temple"
+    },
+    {
+      "id": "d_hospital",
+      "name": "白爪",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "醫院的居民。一身白毛、戴著護士帽，拿著一片藥葉，比較耐打。不會在營地自己生出來，只從大世界的醫院領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 5.0
+      },
+      "sheet": "d_hospital.png",
+      "terrain": "hospital"
+    },
+    {
+      "id": "d_military",
+      "name": "戰牙",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "軍事區的居民。戴著鋼盔的大塊頭狼，扛著長矛，打得比較痛。不會在營地自己生出來，只從大世界的軍事區領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.45,
+        "health": 3.5
+      },
+      "sheet": "d_military.png",
+      "terrain": "military"
+    },
+    {
+      "id": "d_railway",
+      "name": "疾風",
+      "weight": 0,
+      "boost": 0,
+      "blurb": "鐵道的居民。戴著列車長帽的藍灰色狼，提著燈跑得最快，跑得最快。不會在營地自己生出來，只從大世界的鐵道領地來。",
+      "stats": {
+        "lifespan": 1.5,
+        "might": 1.2,
+        "health": 3.5,
+        "speed": 1.2
+      },
+      "sheet": "d_railway.png",
+      "terrain": "railway"
+    }
+  ],
+  "queen": {
+    "sheet": "queen.png",
+    "pixelScale": 2.0,
+    "walk": {
+      "down": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "up": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "side": [
+        8,
+        9,
+        10,
+        11
+      ]
+    },
+    "poses": {
+      "tea": [
+        12,
+        13,
+        14,
+        15
+      ],
+      "exercise": [
+        16,
+        17,
+        18,
+        19
+      ],
+      "read": [
+        20,
+        21,
+        22,
+        23
+      ],
+      "water": [
+        24,
+        25,
+        26,
+        27
+      ],
+      "comb": [
+        28,
+        29,
+        30,
+        31
+      ],
+      "sing": [
+        32,
+        33,
+        34,
+        35
+      ],
+      "dance": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "wave": [
+        40,
+        41,
+        42,
+        43
+      ],
+      "yawn": [
+        44,
+        45
+      ],
+      "think": [
+        48,
+        49
+      ],
+      "hug": [
+        52,
+        53,
+        54,
+        55
+      ]
+    },
+    "outfits": [
+      {
+        "id": "tribe",
+        "name": "部落長裙",
+        "sheet": "queen.png"
+      },
+      {
+        "id": "winter",
+        "name": "白狼毛斗篷",
+        "sheet": "queen_winter.png"
+      },
+      {
+        "id": "maternity1",
+        "name": "孕婦裝（初期）",
+        "sheet": "queen_maternity1.png"
+      },
+      {
+        "id": "maternity2",
+        "name": "孕婦裝（後期）",
+        "sheet": "queen_maternity2.png"
+      },
+      {
+        "id": "pajamas",
+        "name": "睡衣",
+        "sheet": "queen_pajamas.png"
+      }
+    ]
+  }
+}

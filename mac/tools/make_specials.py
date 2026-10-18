@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """The special residents (2026-10-17, the camp × race level plan): six roles for every race, each unlocked at a race level and
 only ever arriving as a visitor who asks to move in. They are drawn on the race's own plain body (make_goblin / make_elf /
-make_undead) with the role's gear laid over it, plus a twinkle round them so they stand out from the common breeds:
+make_undead / make_beast) with the role's gear laid over it, plus a twinkle round them so they stand out from the common breeds:
 
     healer       a staff with a glowing orb, a crown of herbs
     champion     a sword and a shield, a cape
     artisan      a hammer, a leather apron, a headband
     beastmaster  a coiled whip and a little pet at their feet
-    bard         a drum (goblins) or a lute
+    bard         a drum (goblins, beastfolk) or a lute
     sentinel     a spear and a helmet
 
 The race generators call `special_breeds(race)` and write the sheets and the manifest entries with their own breeds.
-    python3 tools/make_specials.py --preview /path/preview.png   # a contact sheet of all eighteen next to the common ones
+    python3 tools/make_specials.py --preview /path/preview.png   # a contact sheet of all twenty-four next to the common ones
 """
 import os
 import sys
@@ -42,6 +42,7 @@ NAMES = {
     "goblin": {"healer": "巫醫", "champion": "勇者", "artisan": "工匠", "beastmaster": "馴獸師", "bard": "鼓手", "sentinel": "哨兵"},
     "elf": {"healer": "德魯伊", "champion": "遊俠隊長", "artisan": "月工匠", "beastmaster": "馴鹿人", "bard": "吟遊詩人", "sentinel": "守林人"},
     "undead": {"healer": "死靈醫者", "champion": "骷髏騎士", "artisan": "骨匠", "beastmaster": "亡獸師", "bard": "哀歌者", "sentinel": "守墓人"},
+    "beast": {"healer": "薩滿", "champion": "狼騎士", "artisan": "骨雕匠", "beastmaster": "馴獸人", "bard": "鼓手", "sentinel": "守崖人"},
 }
 WHAT = {
     "healer": "拄著發光的法杖，附近的同伴傷好得快。",
@@ -61,7 +62,7 @@ STATS = {
     "sentinel": {"speed": 0.95, "sense": 1.5, "rest": 0.9, "might": 1.6, "health": 7},
 }
 # A special lives three times as long as the race's plain resident (the undead never age: their number is not used).
-LIFESPAN = {"goblin": 3.0, "elf": 6.0, "undead": 50.0}
+LIFESPAN = {"goblin": 3.0, "elf": 6.0, "undead": 50.0, "beast": 4.5}
 
 
 # --- where the hands are, per race ------------------------------------------------------------------------------
@@ -70,7 +71,9 @@ HANDS = {
     "goblin": {"L": 4, "R": 11, "y": 11, "side": {0: 9, 1: 10, 2: 9, 3: 6}, "head": (2, 7), "chest": (5, 10), "hip": 11},
     "elf": {"L": 5, "R": 10, "y": 12, "side": {0: 8, 1: 9, 2: 8, 3: 6}, "head": (1, 8), "chest": (6, 9), "hip": 11},
     "undead": {"L": 4, "R": 11, "y": 11, "side": {0: 8, 1: 9, 2: 8, 3: 6}, "head": (1, 7), "chest": (5, 10), "hip": 12},
+    "beast": {"L": 3, "R": 12, "y": 11, "side": {0: 9, 1: 10, 2: 9, 3: 8}, "head": (1, 6), "chest": (4, 11), "hip": 10},
 }
+DRUMMERS = ("goblin", "beast")                               # the bard drums; the others play a lute
 SWING = {0: 0, 1: -1, 2: 0, 3: 1}
 
 
@@ -156,8 +159,9 @@ def lute(c, x, y):
 
 
 def pet(c, phase, kind):
-    """A little pet at the feet, bottom left: a pup (goblins), a fawn (elves) or a bone pup (the undead)."""
-    body, shade = {"goblin": ("i_steel2", "i_wood2"), "elf": ("i_leather", "i_white"), "undead": ("i_white", "i_steel2")}[kind]
+    """A little pet at the feet, bottom left: a pup (goblins), a fawn (elves), a bone pup (the undead) or a wolf cub (beastfolk)."""
+    body, shade = {"goblin": ("i_steel2", "i_wood2"), "elf": ("i_leather", "i_white"), "undead": ("i_white", "i_steel2"),
+                   "beast": ("i_steel2", "i_white")}[kind]
     c.rect(0, 12, 2, 13, body)
     c.put(3, 11, body)
     c.put(3, 12, body)
@@ -173,11 +177,11 @@ def gear(race, role, view, phase):
     r_dy, l_dy = -SWING[phase], SWING[phase]
     if view == "side":
         x = h["side"][phase] + 1
-        held = {"healer": staff, "champion": sword, "artisan": hammer, "beastmaster": whip, "bard": lute if race != "goblin" else drum_sticks,
+        held = {"healer": staff, "champion": sword, "artisan": hammer, "beastmaster": whip, "bard": lute if race not in DRUMMERS else drum_sticks,
                 "sentinel": spear}[role]
         target = g.back if held in (staff, spear) else g.front                # long poles stand behind the head
         held(target, x, h["y"])
-        if role == "bard" and race == "goblin":
+        if role == "bard" and race in DRUMMERS:
             g.front.rect(8, h["hip"] - 2, 10, h["hip"], "i_red")              # the drum, seen from the side
             g.front.rect(8, h["hip"] - 2, 10, h["hip"] - 2, "i_white")
         if role == "champion":
@@ -186,12 +190,12 @@ def gear(race, role, view, phase):
             pet(g.back, phase, race)
     else:
         layer = mg.Canvas()                                                   # drawn as from the front, mirrored for the back
-        held = {"healer": staff, "champion": sword, "artisan": hammer, "beastmaster": whip, "bard": lute if race != "goblin" else drum_sticks,
+        held = {"healer": staff, "champion": sword, "artisan": hammer, "beastmaster": whip, "bard": lute if race not in DRUMMERS else drum_sticks,
                 "sentinel": spear}[role]
         held(layer, h["R"] + (2 if held in (staff, spear) else 1), h["y"] + r_dy)   # (a pole a pixel clear of the arm, so it reads)
         if role == "champion":
             shield(layer, h["L"], h["y"] + l_dy)
-        if role == "bard" and race == "goblin":
+        if role == "bard" and race in DRUMMERS:
             drum_sticks(layer, h["L"] - 2, h["y"] + l_dy)
         if view == "front":
             g.front = layer
@@ -199,7 +203,7 @@ def gear(race, role, view, phase):
             if role == "artisan":                                             # the apron over the chest and the loins
                 g.front.rect(x0 + 1, 9, x1 - 1, h["hip"] + 1, "i_leather")
                 g.front.rect(x0 + 1, 9, x1 - 1, 9, "i_leather2")
-            if role == "bard" and race == "goblin":
+            if role == "bard" and race in DRUMMERS:
                 g.front.rect(x0 + 1, h["hip"] - 2, x1 - 1, h["hip"], "i_red")
                 g.front.rect(x0 + 1, h["hip"] - 2, x1 - 1, h["hip"] - 2, "i_white")
             if role == "champion":
@@ -276,7 +280,26 @@ def undead_body(role):
     return draw, pal
 
 
-BODIES = {"goblin": goblin_body, "elf": elf_body, "undead": undead_body}
+BEAST_CLOTH = {"healer": ((150, 104, 64), (112, 76, 46)), "champion": ((178, 54, 48), (130, 36, 34)),
+               "artisan": ((150, 104, 64), (112, 76, 46)), "beastmaster": ((120, 96, 70), (88, 70, 52)),
+               "bard": ((200, 120, 60), (150, 86, 40)), "sentinel": ((96, 90, 84), (70, 64, 60))}
+
+
+def beast_body(role):
+    """The beastfolk's calm warrior body (make_beast): the old silver fox for the shaman, a red fox for the drummer, wolves
+    for the rest (big for the wolf rider and the cliff guard)."""
+    import make_beast as mb
+    cloth, shade = BEAST_CLOTH[role]
+    fur = {"healer": "silver", "bard": "fox"}.get(role, "wolf")
+    pal = dict(mb.palette(fur), c1=cloth, c2=shade)
+    fox = fur in ("silver", "fox")
+    build = "big" if role in ("champion", "sentinel") else "lean" if fox else "norm"
+    return (lambda view, phase: mb.warrior(view, phase, lambda c, v: mb.w_head(c, v, ears="fox" if fox else "wolf"), build=build,
+                                           top="robe" if role == "healer" else "bare", cloth="c1",
+                                           behind=mb.w_tail("fox" if fox else "wolf"))), pal
+
+
+BODIES = {"goblin": goblin_body, "elf": elf_body, "undead": undead_body, "beast": beast_body}
 
 
 def special_sheet(race, role):
@@ -318,10 +341,11 @@ def preview(path, zoom=6):
     """Every race: its common resident, then the six specials, each front/back/side in phases 0 and 1."""
     import make_elf as me
     import make_undead as mu
+    import make_beast as mb
     commons = {"goblin": mg.build_sheet(False, mg.BREEDS[0][7]), "elf": me.breed_sheet(me.BREEDS[0][7], me.BREEDS[0][8]),
-               "undead": mu.breed_sheet(mu.BREEDS[0][7], mu.BREEDS[0][8])}
+               "undead": mu.breed_sheet(mu.BREEDS[0][7], mu.BREEDS[0][8]), "beast": mb.breed_sheet(mb.BREEDS[0][7], mb.BREEDS[0][8])}
     rows = []
-    for race in ("goblin", "elf", "undead"):
+    for race in ("goblin", "elf", "undead", "beast"):
         rows.append(commons[race])
         rows += [special_sheet(race, role) for role in ROLES]
     cols = 6
