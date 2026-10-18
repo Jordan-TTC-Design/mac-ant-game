@@ -306,6 +306,108 @@
     "w": 12,
     "h": 28
    }
+  },
+  "beast": {
+   "warehouse_1": {
+    "file": "beast/warehouse_1.png",
+    "w": 24,
+    "h": 22
+   },
+   "warehouse_2": {
+    "file": "beast/warehouse_2.png",
+    "w": 30,
+    "h": 26
+   },
+   "warehouse_3": {
+    "file": "beast/warehouse_3.png",
+    "w": 46,
+    "h": 30
+   },
+   "clinic_1": {
+    "file": "beast/clinic_1.png",
+    "w": 20,
+    "h": 21
+   },
+   "clinic_2": {
+    "file": "beast/clinic_2.png",
+    "w": 26,
+    "h": 25
+   },
+   "clinic_3": {
+    "file": "beast/clinic_3.png",
+    "w": 32,
+    "h": 29
+   },
+   "training_1": {
+    "file": "beast/training_1.png",
+    "w": 28,
+    "h": 26
+   },
+   "training_2": {
+    "file": "beast/training_2.png",
+    "w": 36,
+    "h": 26
+   },
+   "training_3": {
+    "file": "beast/training_3.png",
+    "w": 44,
+    "h": 26
+   },
+   "banquet_1": {
+    "file": "beast/banquet_1.png",
+    "w": 28,
+    "h": 30
+   },
+   "banquet_2": {
+    "file": "beast/banquet_2.png",
+    "w": 36,
+    "h": 28
+   },
+   "banquet_3": {
+    "file": "beast/banquet_3.png",
+    "w": 44,
+    "h": 31
+   },
+   "watchtower_1": {
+    "file": "beast/watchtower_1.png",
+    "w": 22,
+    "h": 40
+   },
+   "watchtower_2": {
+    "file": "beast/watchtower_2.png",
+    "w": 24,
+    "h": 48
+   },
+   "watchtower_3": {
+    "file": "beast/watchtower_3.png",
+    "w": 28,
+    "h": 56
+   },
+   "wall_1": {
+    "file": "beast/wall_1.png",
+    "w": 16,
+    "h": 12
+   },
+   "wall_2": {
+    "file": "beast/wall_2.png",
+    "w": 16,
+    "h": 14
+   },
+   "wall_2_tower": {
+    "file": "beast/wall_2_tower.png",
+    "w": 12,
+    "h": 22
+   },
+   "wall_3": {
+    "file": "beast/wall_3.png",
+    "w": 16,
+    "h": 17
+   },
+   "wall_3_tower": {
+    "file": "beast/wall_3_tower.png",
+    "w": 12,
+    "h": 28
+   }
   }
  }
 }

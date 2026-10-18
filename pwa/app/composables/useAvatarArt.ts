@@ -48,7 +48,7 @@ async function compose(m: AvatarManifest, a: Avatar): Promise<ImageBitmap> {
 }
 
 async function layered(m: AvatarManifest, a: Avatar): Promise<HTMLCanvasElement> {
-  const who = `${avatarArtRace(a.race)}_${a.sex}`; // (a race without avatar art of its own yet wears the goblins')
+  const who = `${avatarArtRace(a.race)}_${a.sex}`; // (every race has its own art; one the art does not know wears the goblins')
   const type = m.bodyType[who] ?? avatarArtRace(a.race);
   const files = m.files as Record<string, Record<string, string>>;
   // (clothes worn: the outfit's picture for this body, else the body's own clothes; a hat flattens the hair: manifest render.hats)

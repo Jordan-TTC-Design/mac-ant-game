@@ -2996,6 +2996,721 @@ def _(c, f):
     c.cells([(3, 8 + y), (10, 8 + y)], "pink")
 
 
+# ---------------------------------------------------------------------------------------------------------------------- beast
+# The beastfolk's great hall (RACES_BEAST.md): wolves, foxes and minotaurs of the red-rock valley. Rugged, not cute (user: 「生猛」):
+# red rock, hide, fur, bone and ochre, ox skulls, trophy heads with blood, fire and meat. Like the goblins nothing is engineered,
+# but it is heavier and prouder: big horns, whole pelts, a full moon.
+RACE[0] = "beast"
+_BEAST_COLORS = {
+    "bs_rock": (186, 110, 72), "bs_rock_l": (214, 142, 96), "bs_rock_d": (150, 84, 56), "bs_rock_x": (116, 62, 44),
+    "bs_gore": (150, 20, 24), "bs_gore_d": (110, 12, 18), "bs_gore_l": (190, 44, 40),
+    "bs_flesh": (226, 186, 156), "bs_flesh_d": (196, 156, 130), "bs_hair": (96, 64, 40),
+    "bs_wolf": (150, 152, 164), "bs_wolf_d": (112, 114, 128), "bs_wolf_l": (196, 198, 208),
+    "bs_bear": (112, 74, 46), "bs_bear_d": (82, 52, 32), "bs_bear_l": (146, 100, 64),
+    "bs_fox": (226, 124, 54), "bs_fox_d": (180, 88, 36), "bs_fox_l": (250, 236, 220),
+    "bs_boar": (100, 72, 58), "bs_boar_d": (72, 52, 42), "bs_boar_l": (134, 100, 80), "bs_snout": (200, 140, 130),
+    "bs_ochre": (204, 104, 52), "bs_ochre_d": (160, 76, 38), "bs_ochre_l": (230, 150, 86),
+    "bs_sage": (118, 134, 100), "bs_sage_d": (88, 102, 76), "bs_sage_l": (150, 166, 120),
+    "bs_cac": (96, 150, 90), "bs_cac_d": (64, 112, 68), "bs_cac_l": (140, 188, 116),
+    "bs_meat": (168, 64, 56), "bs_meat_d": (120, 40, 38), "bs_fat": (236, 210, 190),
+    "bs_roast": (170, 94, 50), "bs_roast_d": (122, 62, 34), "bs_roast_l": (212, 144, 80),
+    "bs_dust": (200, 160, 112), "bs_dust_d": (170, 128, 88),
+    "bs_vult": (66, 54, 52), "bs_vult_d": (44, 36, 36), "bs_vult_l": (102, 88, 80), "bs_neck": (214, 150, 140),
+    "bs_snake": (196, 164, 104), "bs_snake_d": (138, 104, 62), "bs_snake_l": (226, 204, 150),
+    "bs_moon": (255, 246, 206), "bs_sky": (52, 40, 58), "bs_sky_l": (78, 60, 82),
+}
+for _k, _v in _BEAST_COLORS.items():
+    assert _k not in P, f"colour {_k} is taken"
+    P[_k] = _v
+
+
+def rock_lump(c, cx, cy, r, ry=None):
+    """A red rock boulder: dark underside, light top, a couple of strata."""
+    ry = ry or r
+    circle(c, cx, cy, r, "bs_rock_d", ry)
+    circle(c, cx - 0.6, cy - 0.8, r - 0.8, "bs_rock", ry - 0.8)
+    for dy in (-ry * 0.35, ry * 0.25):
+        y = int(cy + dy)
+        for x in range(int(cx - r + 2), int(cx + r - 1)):
+            if 0 <= y < c.h and 0 <= x < c.w and c.px[y][x] == "bs_rock":
+                c.put(x, y, "bs_rock_l" if dy < 0 else "bs_rock_d")
+    c.cells([(int(cx - r * 0.5), int(cy - ry * 0.6)), (int(cx - r * 0.5) + 1, int(cy - ry * 0.6))], "bs_rock_l")
+
+
+def ox_skull(c, cx, y, span=5, k="bone"):
+    """A bleached ox skull from the front, long horns sweeping out and up; (cx, y) is the top middle of the brow."""
+    R(c, cx - 3, y, cx + 3, y + 3, k); R(c, cx - 2, y + 4, cx + 2, y + 6, k); R(c, cx - 1, y + 7, cx + 1, y + 8, k)
+    R(c, cx + 3, y + 1, cx + 3, y + 3, k + "_d"); R(c, cx + 2, y + 4, cx + 2, y + 6, k + "_d"); c.put(cx + 1, y + 8, k + "_d")
+    R(c, cx - 2, y + 2, cx - 1, y + 3, "black"); R(c, cx + 1, y + 2, cx + 2, y + 3, "black")
+    c.put(cx, y + 5, k + "_d"); c.cells([(cx - 1, y + 8), (cx + 1, y + 8)], "bone_x")
+    for side in (-1, 1):
+        for i in range(span):
+            x = cx + side * (4 + i)
+            yy = y + 1 - (i * i) // max(1, span - 1)
+            c.put(x, yy, k if i < span - 1 else "bone_d")
+            if i < span // 2 + 1:
+                c.put(x, yy + 1, "bone_d")
+        c.put(cx + side * (3 + span), y + 1 - span - 1 + (1 if span < 4 else 0), "bone_d")
+
+
+def human_head(c, cx, top, hair="bs_hair"):
+    """A severed human head, eyes shut, the neck cut and bleeding (the valley's warning, RACES_BEAST.md §6)."""
+    R(c, cx - 3, top + 1, cx + 2, top + 6, "bs_flesh"); R(c, cx + 2, top + 2, cx + 2, top + 6, "bs_flesh_d")
+    R(c, cx - 2, top + 7, cx + 1, top + 7, "bs_flesh_d")
+    R(c, cx - 3, top, cx + 2, top + 1, hair); c.cells([(cx - 3, top + 2), (cx - 3, top + 3), (cx + 2, top + 2)], hair)
+    c.cells([(cx - 2, top + 3), (cx - 1, top + 3), (cx + 1, top + 3)], "ink")
+    R(c, cx - 1, top + 5, cx, top + 5, "bs_gore_d")
+    R(c, cx - 2, top + 8, cx + 1, top + 8, "bs_gore"); c.put(cx - 1, top + 7, "bs_gore"); c.put(cx - 3, top + 6, "bs_gore_d")
+
+
+def drip(c, x, y0, y1, k="bs_gore"):
+    for y in range(y0, y1 + 1):
+        c.put(x, y, k if y % 4 else "bs_gore_d")
+
+
+def wolf_head(c, cx, y, k="bs_wolf", eye="yellow"):
+    """A mounted wolf head from the front, lips drawn back."""
+    c.cells([(cx - 4, y), (cx - 4, y + 1), (cx - 3, y + 1), (cx + 4, y), (cx + 4, y + 1), (cx + 3, y + 1)], k + "_d")
+    R(c, cx - 4, y + 2, cx + 4, y + 6, k); R(c, cx - 5, y + 4, cx - 4, y + 7, k + "_l"); R(c, cx + 4, y + 4, cx + 5, y + 7, k + "_d")
+    R(c, cx - 2, y + 6, cx + 2, y + 9, k + "_l"); R(c, cx + 2, y + 6, cx + 2, y + 9, k)
+    c.cells([(cx - 3, y + 3), (cx - 2, y + 3), (cx + 2, y + 3), (cx + 3, y + 3)], k + "_d")         # the brow pressed down
+    c.cells([(cx - 2, y + 4), (cx + 2, y + 4)], eye)
+    R(c, cx - 1, y + 6, cx + 1, y + 6, "black")
+    R(c, cx - 2, y + 9, cx + 2, y + 9, "bs_gore_d"); c.cells([(cx - 2, y + 8), (cx + 2, y + 8), (cx - 1, y + 10), (cx + 1, y + 10)], "bone")
+
+
+def boar_head(c, cx, y):
+    """A mounted boar head from the front: bristly, small mean eyes, tusks."""
+    c.cells([(cx - 4, y), (cx - 4, y + 1), (cx + 4, y), (cx + 4, y + 1)], "bs_boar_d")
+    R(c, cx - 4, y + 2, cx + 4, y + 7, "bs_boar"); R(c, cx + 4, y + 2, cx + 4, y + 7, "bs_boar_d")
+    for x in range(cx - 3, cx + 4, 2):
+        c.put(x, y + 1, "bs_boar_d")                                                      # the bristly crest
+    c.cells([(cx - 2, y + 4), (cx + 2, y + 4)], "red_l")
+    R(c, cx - 2, y + 7, cx + 2, y + 9, "bs_snout"); c.cells([(cx - 1, y + 8), (cx + 1, y + 8)], "bs_boar_d")
+    c.cells([(cx - 3, y + 8), (cx - 4, y + 7), (cx - 4, y + 6), (cx + 3, y + 8), (cx + 4, y + 7), (cx + 4, y + 6)], "bone")
+
+
+def claw_marks(c, x, y, n=3, h=6, k="bs_rock_x"):
+    for i in range(n):
+        for j in range(h):
+            c.put(x + i * 2 + j // 3, y + j, k)
+
+
+def handprint(c, x, y, k="bs_ochre"):
+    R(c, x, y + 3, x + 3, y + 6, k)
+    for i in range(4):
+        R(c, x + i, y + (0 if i in (1, 2) else 1), x + i, y + 2, k)
+    R(c, x - 1, y + 4, x - 1, y + 5, k)
+
+
+def fur_edge(c, x0, x1, y, k):
+    """A ragged fringe of fur hanging under row y."""
+    for x in range(x0, x1 + 1):
+        if x % 2 == 0:
+            c.put(x, y + 1, k)
+        if x % 4 == 1:
+            c.put(x, y + 2, k)
+
+
+def spear(c, x, top, bottom, k="wood_d"):
+    c.cells([(x, top), (x, top + 1), (x - 1, top + 2), (x + 1, top + 2), (x - 1, top + 3), (x + 1, top + 3)], "iron_l")
+    c.cells([(x, top + 2), (x, top + 3)], "iron"); R(c, x, top + 4, x, bottom, k)
+    R(c, x - 1, top + 5, x + 1, top + 6, "hide"); c.put(x + 1, top + 7, "feather")
+
+
+@item("bst_slab_desk", "紅岩石板桌", C1, 4, 44, 26, note="一塊紅岩石板架在兩顆大石頭上；上面攤著獸皮獵圖，插著一把刀")
+def _(c, f):
+    rock_lump(c, 7, 20, 6, 5); rock_lump(c, 36, 20, 6, 5)
+    R(c, 1, 9, 42, 11, "bs_rock_l"); R(c, 1, 12, 42, 14, "bs_rock"); R(c, 1, 15, 42, 15, "bs_rock_d"); R(c, 42, 10, 42, 15, "bs_rock_d")
+    c.cells([(6, 10), (7, 10), (25, 11), (33, 10), (34, 10)], "bs_rock")
+    claw_marks(c, 17, 12, 3, 4)
+    R(c, 3, 6, 13, 9, "hide"); R(c, 3, 6, 13, 6, "hide_l"); c.clear([(3, 6), (13, 9)])                 # the hunting map
+    c.cells([(5, 8), (6, 7), (8, 7), (9, 8), (11, 7)], "bs_ochre"); c.cells([(11, 8), (12, 7)], "bs_gore")
+    R(c, 21, 3, 21, 8, "iron_l"); R(c, 22, 4, 22, 8, "iron"); R(c, 20, 1, 23, 1, "bone_d"); R(c, 21, 0, 22, 2, "bone")   # a knife stuck in
+    for i in range(7):                                                                                        # a horn cup
+        R(c, 28 + i, 5 + i // 3, 28 + i, 8, "bone" if i < 5 else "bone_d")
+    R(c, 28, 5, 28, 8, "bone_d"); R(c, 29, 6, 29, 7, "bs_gore_d"); c.cells([(35, 6), (36, 5)], "bone_d")
+    R(c, 38, 7, 40, 8, "bs_meat"); c.put(41, 8, "bone")                                                       # a gnawed rib
+
+
+@item("bst_hide_throne", "骨皮王座", C1, 2, 26, 38, seat=True, note="兩根長骨撐起一張熊皮，頂上一副長角牛頭骨；座位鋪狼皮")
+def _(c, f):
+    h = 38
+    sy = h - 1 - SEAT_UP
+    R(c, 6, 11, 19, sy - 2, "bs_bear"); R(c, 6, 11, 19, 11, "bs_bear_l"); R(c, 19, 12, 19, sy - 2, "bs_bear_d")
+    for y in range(13, sy - 2, 3):
+        c.put(8 + (y % 5), y, "bs_bear_d"); c.put(15 - (y % 3), y + 1, "bs_bear_l")
+    claw_marks(c, 9, 15, 3, 7, "bs_ochre")
+    for x in (3, 21):
+        R(c, x, 8, x + 1, h - 1, "bone"); R(c, x + 1, 8, x + 1, h - 1, "bone_d")
+        circle(c, x + 0.5, 7, 1.6, "bone"); circle(c, x + 0.5, h - 2, 1.6, "bone_d", 1)
+    ox_skull(c, 12, 2, 7)
+    R(c, 1, sy - 1, 24, sy, "bs_wolf_l"); R(c, 1, sy + 1, 24, sy + 1, "bs_wolf"); fur_edge(c, 1, 24, sy + 1, "bs_wolf_d")
+    c.cells([(5, sy - 1), (12, sy), (19, sy - 1)], "bs_wolf")
+
+
+@item("bst_horn_stool", "牛角樹樁凳", C1, 1, 18, 14, seat=True, note="樹樁上鋪狐皮，兩邊插一對牛角當扶手")
+def _(c, f):
+    h = 14
+    sy = h - 1 - SEAT_UP
+    R(c, 3, sy + 1, 14, h - 1, "wood"); R(c, 3, sy + 1, 3, h - 1, "wood_d"); R(c, 14, sy + 1, 14, h - 1, "wood_d")
+    c.cells([(2, h - 1), (15, h - 1)], "wood_d"); c.cells([(7, sy + 2), (10, sy + 3)], "wood_d")
+    R(c, 3, sy - 1, 14, sy, "bs_fox"); R(c, 3, sy - 1, 14, sy - 1, "bs_fox_l"); fur_edge(c, 3, 14, sy, "bs_fox_d")
+    for side in (-1, 1):
+        x0 = 2 if side < 0 else 15
+        c.cells([(x0, sy + 1), (x0, sy), (x0 + side, sy - 1), (x0 + side, sy - 2), (x0 + side * 2, sy - 3), (x0 + side, sy - 4) if False else (x0 + side * 2, sy - 4)], "bone")
+        c.cells([(x0, sy + 2), (x0, sy + 3)], "bone_d")
+
+
+@item("bst_weapon_rack", "長矛斧頭架", C2, 2, 30, 38, note="原木架子靠著長矛、牛頭人的雙刃斧和狼牙骨棒")
+def _(c, f):
+    R(c, 1, 34, 28, 37, "wood"); R(c, 1, 34, 28, 34, "wood_l"); R(c, 1, 37, 28, 37, "wood_d")
+    for x in (2, 27):
+        R(c, x, 12, x + 1, 33, "wood_d"); R(c, x, 12, x, 33, "wood")
+    stick(c, 1, 13, 28, 13, "wood"); lash(c, 2, 12); lash(c, 27, 12)
+    for x, top in ((6, 0), (10, 3)):                                                                     # two spears, leaf blades
+        c.cells([(x, top), (x - 1, top + 1), (x, top + 1), (x + 1, top + 1), (x - 1, top + 2), (x + 1, top + 2), (x - 1, top + 3), (x + 1, top + 3), (x, top + 4)], "iron_l")
+        c.cells([(x, top + 2), (x, top + 3), (x + 1, top + 4)], "iron")
+        R(c, x, top + 5, x, 33, "wood_d"); R(c, x - 1, top + 6, x + 1, top + 8, "bs_wolf"); c.cells([(x - 1, top + 9), (x + 1, top + 9)], "bs_wolf_d")
+        c.put(x + 1, top + 10, "feather")
+    R(c, 18, 4, 19, 33, "wood"); R(c, 19, 4, 19, 33, "wood_d")                                         # the double axe
+    for side in (-1, 1):
+        x0 = 18 if side < 0 else 19
+        for i in range(1, 6):
+            hh = 1 + i
+            R(c, x0 + side * i, 9 - hh, x0 + side * i, 9 + hh, "iron_l" if i < 5 else "iron")
+    R(c, 17, 7, 20, 11, "iron"); R(c, 17, 8, 20, 10, "bone"); c.cells([(13, 12), (13, 13)], "bs_gore"); c.put(14, 14, "bs_gore_d")
+    R(c, 23, 6, 25, 17, "bone"); R(c, 25, 6, 25, 17, "bone_d"); R(c, 24, 18, 24, 33, "bone_d"); circle(c, 24, 6, 1.5, "bone")   # a spiked club
+    for y in (8, 11, 14):
+        c.cells([(22, y), (26, y + 1)], "iron_l")
+    skull(c, 8, 28)
+
+
+@item("bst_hide_chest", "獸皮箱", C2, 1, 18, 16, note="木箱包著獸皮，骨頭扣，蓋子上有爪痕")
+def _(c, f):
+    R(c, 1, 6, 16, 15, "dark"); R(c, 16, 7, 16, 15, "dark_d"); R(c, 1, 15, 16, 15, "dark_d")
+    circle(c, 8.5, 5, 8, "hide", 3); R(c, 1, 5, 16, 6, "hide"); R(c, 1, 4, 16, 4, "hide_l"); c.clear([(0, 5), (17, 5)])
+    fur_edge(c, 1, 16, 6, "hide_d")
+    for x in (4, 13):
+        R(c, x, 3, x, 15, "rope")
+    R(c, 7, 7, 10, 9, "bone"); c.put(8, 8, "black")
+    claw_marks(c, 9, 10, 3, 4, "dark_d")
+
+
+@item("bst_horn_shelf", "角骨架", C2, 2, 28, 34, note="長骨綁成的架子，放牛角、頭骨、牙項鍊和一罐油脂")
+def _(c, f):
+    for x in (2, 25):
+        R(c, x, 1, x, 33, "bone"); R(c, x + 1, 1, x + 1, 33, "bone_d"); circle(c, x + 0.5, 1, 1.5, "bone")
+    for y in (12, 22, 32):
+        R(c, 1, y, 26, y, "wood"); R(c, 1, y + 1, 26, y + 1, "wood_d"); lash(c, 2, y - 1); lash(c, 25, y - 1)
+    for i in range(6):                                                                                   # a pair of ox horns
+        c.put(6 + i, 11 - i // 2, "bone"); c.put(6 + i, 10 - i // 2, "bone_d") if i < 3 else None
+        c.put(21 - i, 11 - i // 2, "bone"); c.put(21 - i, 10 - i // 2, "bone_d") if i < 3 else None
+    skull(c, 14, 7)
+    pot(c, 8, 21, 7, 7, "pot"); R(c, 6, 15, 10, 15, "bs_ochre"); R(c, 6, 14, 9, 14, "bs_fat")
+    for i, x in enumerate(range(14, 23)):                                                                 # a tooth necklace
+        y = 16 + int(3 * math.sin(math.pi * (x - 14) / 8))
+        c.put(x, y, "rope")
+        if i % 2 == 0:
+            c.put(x, y + 1, "bone")
+    hide_patch(c, 5, 27, 13, 31); R(c, 15, 28, 22, 31, "bs_wolf"); R(c, 15, 28, 22, 28, "bs_wolf_l")
+    R(c, 15, 25, 22, 27, "bs_bear"); R(c, 15, 25, 22, 25, "bs_bear_l")
+
+
+@item("bst_hide_map", "獸皮獵圖", C3, 1, 18, 14, note="獸皮上用赭土畫的獵場：路線、水窪、叉叉是獵物")
+def _(c, f):
+    for y in range(4, 12):
+        sh = (11 - y) // 3
+        R(c, 1 + sh, y, 15 + sh, y, "hide")
+    R(c, 2, 4, 16, 4, "hide_l"); R(c, 1, 11, 15, 11, "hide_d"); c.clear([(2, 4), (16, 4), (1, 11)])
+    c.cells([(3, 10), (4, 9), (5, 9), (6, 8), (8, 8), (9, 7), (11, 6)], "bs_ochre")
+    c.cells([(12, 5), (14, 7), (13, 6), (14, 5), (12, 7)], "bs_gore")
+    R(c, 5, 6, 6, 6, "water"); c.put(4, 7, "bs_rock_d")
+    R(c, 8, 0, 8, 5, "iron_l"); R(c, 7, 0, 9, 0, "bone_d"); c.put(8, 12, "hide_d")
+
+
+@item("bst_horn_cups", "角杯", C3, 1, 16, 14, note="兩隻牛角杯插在骨頭架上，一杯是血紅的酒")
+def _(c, f):
+    R(c, 1, 11, 14, 12, "bone"); R(c, 1, 12, 14, 12, "bone_d"); circle(c, 1, 11.5, 1.2, "bone"); circle(c, 14, 11.5, 1.2, "bone")
+    for x0, k, d in ((2, "bs_gore", 1), (8, "bs_roast_d", 1)):
+        pts = [(x0 + 1, 10), (x0 + 1, 9), (x0 + 2, 8), (x0 + 2, 7), (x0 + 3, 6), (x0 + 3, 5)]          # the tip in the stand, curving up
+        for i, (x, y) in enumerate(pts):
+            w = i // 2
+            R(c, x - w, y, x + w, y, "bone"); c.put(x + w, y, "bone_d")
+        R(c, x0 + 1, 3, x0 + 5, 4, "bone"); R(c, x0 + 5, 3, x0 + 5, 4, "bone_d"); R(c, x0 + 2, 3, x0 + 4, 3, k)
+        R(c, x0 + 1, 5, x0 + 4, 5, "bs_ochre")
+
+
+@item("bst_whetstone", "磨刀石", C3, 1, 18, 14, 2, 3, note="紅岩磨刀石，刀磨得冒火花")
+def _(c, f):
+    R(c, 1, 10, 16, 13, "wood"); R(c, 1, 10, 16, 10, "wood_l"); R(c, 16, 11, 16, 13, "wood_d")
+    R(c, 3, 7, 14, 9, "bs_rock"); R(c, 3, 7, 14, 7, "bs_rock_l"); R(c, 14, 8, 14, 9, "bs_rock_d")
+    x = 4 if f == 0 else 8
+    R(c, x, 5, x + 6, 6, "iron_l"); R(c, x, 6, x + 6, 6, "iron"); R(c, x + 7, 5, x + 9, 6, "bone")
+    if f:
+        c.cells([(x - 1, 4), (x - 2, 3), (x - 3, 5), (x - 1, 2)], "f1"); c.put(x - 2, 5, "f2")
+    else:
+        c.cells([(2, 5), (1, 4)], "f2")
+
+
+@item("bst_horn_chandelier", "牛角吊燈", C4, 4, 40, 26, 3, 6, ceiling=True, note="木輪上插一圈牛角，角尖燒著油脂火；下面吊一顆牛頭骨")
+def _(c, f):
+    stick(c, 8, 0, 14, 11, "rope"); stick(c, 31, 0, 25, 11, "rope"); stick(c, 19, 0, 19, 11, "rope")
+    circle(c, 19.5, 13.5, 16, "wood_d", 2.5); circle(c, 19.5, 13, 15, "wood", 1.6)
+    for i, x in enumerate((7, 13, 19, 26, 32)):
+        lean = (x - 19.5) / 8
+        for j in range(5):
+            c.put(x + lean * j / 2, 11 - j, "bone" if j < 4 else "bone_d")
+        flame(c, int(x + lean * 2), 6, 4, f + i, 0)
+    for x in (5, 34):
+        R(c, x, 15, x, 18, "rope"); c.cells([(x, 19), (x, 20)], "bone")
+    R(c, 19, 16, 19, 17, "rope"); ox_skull(c, 19, 17, 4)
+
+
+@item("bst_skull_firepit", "牛頭骨火坑", C4, 2, 28, 24, 3, 6, note="紅岩圍成的火坑，旁邊架著一副長角牛頭骨")
+def _(c, f):
+    stick(c, 20, 23, 22, 4, "wood_d"); ox_skull(c, 22, 2, 4)
+    for i, (x, y) in enumerate(((3, 20), (7, 22), (12, 22), (17, 22), (22, 21), (25, 18), (4, 16))):
+        rock_lump(c, x, y, 2.6, 2.2)
+    R(c, 7, 17, 20, 19, "char"); R(c, 8, 16, 19, 16, "wood_d"); stick(c, 8, 18, 19, 14, "wood")
+    for x, h in ((9, 6), (13, 10), (17, 7)):
+        flame(c, x, 16, h + f % 2, f + x, 1)
+
+
+@item("bst_hide_lantern", "獸皮燈籠", C4, 1, 16, 32, 2, 3, note="骨頭彎鉤吊一盞薄獸皮燈籠，畫著狼頭")
+def _(c, f):
+    rock_lump(c, 7.5, 29, 5, 2.5)
+    R(c, 4, 4, 5, 28, "bone"); R(c, 5, 4, 5, 28, "bone_d"); stick(c, 5, 3, 11, 3, "bone"); c.put(12, 4, "bone")
+    R(c, 11, 5, 11, 6, "rope")
+    glow = "f1" if f else "f2"
+    R(c, 8, 8, 14, 18, "hide_l"); R(c, 9, 9, 13, 17, glow); R(c, 8, 7, 14, 7, "hide_d"); R(c, 8, 19, 14, 19, "hide_d")
+    c.cells([(9, 10), (13, 10), (10, 11), (12, 11)], "bs_roast_d"); R(c, 10, 12, 12, 14, "bs_roast_d"); c.put(11, 15, "bs_roast_d")
+    c.cells([(10, 12), (12, 12)], "f4" if f else "f1")
+    c.cells([(9, 20), (11, 21), (13, 20)], "bone")
+
+
+@item("bst_trophy_wall", "戰利品頭牆", C5, 4, 46, 28, wall=True, note="木板上掛野豬頭、狼頭和長角牛頭骨，剛掛上去的還在滴血")
+def _(c, f):
+    R(c, 1, 6, 44, 20, "dark"); R(c, 1, 6, 44, 6, "dark_l"); R(c, 1, 20, 44, 20, "dark_d")
+    for y in (10, 15):
+        R(c, 1, y, 44, y, "dark_d")
+    for x in (2, 43):
+        c.cells([(x, 8), (x, 18)], "iron_l")
+    boar_head(c, 9, 9); drip(c, 8, 20, 24); drip(c, 10, 20, 22, "bs_gore_d")
+    wolf_head(c, 23, 6)
+    ox_skull(c, 37, 8, 5)
+    c.cells([(15, 12), (16, 11), (30, 12)], "feather")
+
+
+@item("bst_moon_tapestry", "滿月掛毯", C5, 2, 28, 34, wall=True, note="染黑的獸皮：滿月下，狼站在紅岩上嚎")
+def _(c, f):
+    R(c, 1, 1, 26, 2, "bone"); R(c, 1, 2, 26, 2, "bone_d"); circle(c, 1, 1.5, 1.4, "bone"); circle(c, 26, 1.5, 1.4, "bone")
+    R(c, 3, 3, 24, 28, "bs_sky"); R(c, 24, 3, 24, 28, "night_d"); R(c, 3, 3, 24, 3, "bs_sky_l")
+    for x in range(3, 25, 2):
+        c.put(x, 29 + (x % 4 == 1), "bs_sky")
+    for x in range(4, 24, 3):
+        R(c, x, 30, x, 32, "bs_ochre"); c.put(x, 33, "bone")
+    circle(c, 15.5, 12, 7, "bs_moon"); c.cells([(18, 9), (19, 14), (16, 16)], "moon_d")
+    for x, y in ((6, 6), (22, 21), (5, 13), (8, 4)):
+        c.put(x, y, "white")
+    for y in range(19, 29):                                                                            # the red rock, a ledge
+        R(c, 3, y, min(24, 6 + (y - 18) * 2 + (6 if y < 21 else 0)), y, "bs_rock" if y % 3 else "bs_rock_l")
+    R(c, 3, 19, 14, 19, "bs_rock_l")
+    R(c, 7, 15, 13, 17, "black"); c.cells([(7, 18), (8, 18), (12, 18), (13, 18)], "black")              # a wolf howling at the moon
+    c.cells([(13, 14), (14, 13), (14, 14), (15, 12), (15, 13), (16, 11), (16, 12), (17, 10), (14, 12), (15, 11)], "black")
+    c.cells([(6, 15), (5, 14), (4, 14)], "black")
+
+
+@item("bst_handprint_banner", "赭紅手印旗", C5, 1, 16, 36, wall=True, note="骨頭橫桿掛一條獸皮旗：赭紅手印和三道爪痕")
+def _(c, f):
+    R(c, 0, 2, 15, 3, "bone"); R(c, 0, 3, 15, 3, "bone_d"); c.cells([(7, 0), (8, 0), (7, 1), (8, 1)], "rope")
+    for y in range(4, 33):
+        half = 6 if y < 25 else 6 - (y - 24)
+        if half >= 0:
+            R(c, 8 - half - 1, y, 7 + half, y, "hide")
+            c.put(7 + half, y, "hide_d")
+    handprint(c, 5, 6, "bs_ochre")
+    for i in range(3):
+        for j in range(7):
+            c.put(4 + i * 3 + j // 3, 16 + j, "bs_gore")
+    c.cells([(1, 4), (1, 5), (14, 4), (14, 5), (1, 6)], "bs_wolf"); c.cells([(1, 7), (14, 6)], "bone")
+
+
+@item("bst_bear_rug", "熊皮地毯", C6, 4, 46, 30, flat=True, note="一整張熊皮，張著嘴，四隻腳的爪子還在")
+def _(c, f):
+    circle(c, 22.5, 17, 14, "bs_bear_d", 10); circle(c, 22.5, 16.5, 13, "bs_bear", 9)
+    for x0, y0, dx, dy in ((9, 9, -1, -1), (36, 9, 1, -1), (9, 24, -1, 1), (36, 24, 1, 1)):           # legs splayed
+        for i in range(6):
+            R(c, x0 + dx * i, y0 + dy * (i // 2), x0 + dx * i + 2, y0 + dy * (i // 2) + 2, "bs_bear")
+        for j in range(3):
+            c.put(x0 + dx * 7 + (j - 1) * 0, y0 + dy * 3 + j - 1, "bone")
+    for x in range(12, 34, 3):
+        c.put(x, 17 + (x % 2), "bs_bear_d"); c.put(x + 1, 13, "bs_bear_l")
+    circle(c, 22.5, 4.5, 5.5, "bs_bear", 4.5); circle(c, 17.5, 1.5, 1.5, "bs_bear_d"); circle(c, 27.5, 1.5, 1.5, "bs_bear_d")
+    R(c, 20, 6, 25, 9, "bs_bear_l"); R(c, 21, 8, 24, 9, "bs_gore_d"); c.cells([(21, 8), (24, 8), (21, 9), (24, 9)], "bone")
+    c.put(22, 6, "black"); c.put(23, 6, "black"); c.cells([(20, 3), (25, 3)], "black")
+    c.put(22.5, 29, "bs_bear_d")
+
+
+@item("bst_wolf_pelt", "狼皮毯", C6, 2, 36, 22, flat=True, note="灰狼皮，頭、爪子和尾巴都留著")
+def _(c, f):
+    circle(c, 18, 11, 10, "bs_wolf_d", 6.5); circle(c, 18, 10.5, 9, "bs_wolf", 5.5)
+    for x0, y0, dx, dy in ((12, 7, -1, -1), (24, 7, 1, -1), (12, 15, -1, 1), (24, 15, 1, 1)):
+        for i in range(4):
+            R(c, x0 + dx * i, y0 + dy * (i // 2 + 1), x0 + dx * i + 1, y0 + dy * (i // 2 + 1) + 1, "bs_wolf")
+        c.cells([(x0 + dx * 5, y0 + dy * 3), (x0 + dx * 5, y0 + dy * 3 + 1)], "bone")
+    circle(c, 6, 11, 3.5, "bs_wolf", 3); R(c, 1, 10, 3, 12, "bs_wolf_l"); c.put(1, 11, "black")
+    c.cells([(7, 7), (8, 7), (7, 15), (8, 15)], "bs_wolf_d"); c.cells([(5, 9), (5, 13)], "yellow")
+    for i, x in enumerate(range(27, 35)):
+        R(c, x, 10 - (i < 6), x, 11 + (i < 6), "bs_wolf" if i < 6 else "bs_wolf_l")
+    for x in range(11, 26, 2):
+        c.put(x, 8 + (x % 3 == 0), "bs_wolf_l"); c.put(x + 1, 13, "bs_wolf_d")
+    R(c, 10, 11, 26, 11, "bs_wolf_d")
+
+
+@item("bst_ochre_mat", "赭紅圖紋墊", C6, 1, 18, 12, flat=True, note="鞣過的皮墊，畫著赭紅鋸齒和爪印")
+def _(c, f):
+    R(c, 1, 1, 16, 10, "hide_l"); R(c, 1, 10, 16, 10, "hide_d"); c.clear([(1, 1), (16, 1), (1, 10), (16, 10)])
+    for x in range(2, 16):
+        c.put(x, 2 + (x % 2), "bs_ochre"); c.put(x, 8 + (x % 2), "bs_ochre")
+    c.cells([(7, 5), (8, 4), (10, 4), (11, 5), (9, 6), (9, 7), (8, 6), (10, 6)], "bs_gore")
+
+
+@item("bst_sage_pot", "山艾陶盆", C7, 1, 16, 18, note="荒谷的山艾，灰綠色、聞起來很嗆")
+def _(c, f):
+    pot(c, 8, 17, 10, 7, "pot"); R(c, 4, 13, 11, 13, "bs_ochre"); c.cells([(5, 15), (8, 15), (11, 15)], "bs_ochre_d")
+    blob(c, 5, 7, 4, "bs_sage", "bs_sage_d", "bs_sage_l"); blob(c, 11, 6, 4, "bs_sage", "bs_sage_d", "bs_sage_l")
+    blob(c, 8, 4, 3.5, "bs_sage", "bs_sage_d", "bs_sage_l")
+    c.cells([(6, 3), (10, 2), (12, 5)], "straw")
+
+
+@item("bst_cactus_pot", "仙人掌陶盆", C7, 1, 16, 26, note="裂了一角的陶盆裡長一棵帶手臂的仙人掌")
+def _(c, f):
+    pot(c, 8, 25, 10, 7, "pot"); c.cells([(10, 20), (10, 21), (11, 22)], "pot_d"); R(c, 4, 21, 11, 21, "bs_ochre")
+    R(c, 6, 3, 9, 18, "bs_cac"); R(c, 9, 3, 9, 18, "bs_cac_d"); R(c, 6, 3, 6, 18, "bs_cac_l"); c.clear([(6, 3), (9, 3)])
+    R(c, 2, 9, 3, 14, "bs_cac"); R(c, 4, 13, 5, 14, "bs_cac"); R(c, 12, 6, 13, 11, "bs_cac"); R(c, 10, 10, 11, 11, "bs_cac")
+    R(c, 2, 9, 2, 14, "bs_cac_l"); R(c, 13, 6, 13, 11, "bs_cac_d")
+    for x, y in ((7, 6), (8, 10), (7, 14), (3, 11), (12, 8)):
+        c.put(x, y, "bs_cac_d")
+    c.cells([(7, 2), (8, 2)], "red"); c.put(7, 1, "red_l")
+
+
+@item("bst_yucca", "絲蘭", C7, 2, 24, 34, note="一叢尖葉子插在大陶甕裡，抽出一根白花穗")
+def _(c, f):
+    pot(c, 12, 33, 14, 9, "pot"); R(c, 6, 28, 17, 28, "bs_ochre"); R(c, 6, 30, 17, 30, "bs_ochre_d")
+    for i, a in enumerate(range(-80, 81, 20)):
+        L = 11 - abs(a) // 30
+        for j in range(L):
+            x = 12 + math.sin(math.radians(a)) * j
+            y = 24 - math.cos(math.radians(a)) * j * 0.9
+            c.put(x, y, "bs_sage_l" if j < 2 else ("bs_sage" if i % 2 else "bs_sage_d"))
+    R(c, 12, 2, 12, 14, "bs_sage_d")
+    for y in range(2, 10, 2):
+        c.cells([(11, y), (13, y + 1)], "cloth"); c.put(12, y - 1, "cloth")
+
+
+@item("bst_wolf_totem", "狼頭圖騰柱", C8, 2, 26, 46, note="頂上是齜牙的狼頭，下面是牛頭人的臉；橫桿掛著骨頭和獸皮條")
+def _(c, f):
+    rock_lump(c, 12.5, 43, 9, 3)
+    R(c, 8, 11, 17, 41, "wood"); R(c, 17, 11, 17, 41, "wood_d"); R(c, 8, 11, 8, 41, "wood_l")
+    wolf_head(c, 12, 0, "wood", "bs_ochre_l")
+    R(c, 9, 14, 16, 14, "bs_ochre"); R(c, 2, 16, 23, 17, "wood_d"); R(c, 2, 16, 23, 16, "wood")
+    for x, k in ((3, "bone"), (6, "hide"), (19, "hide"), (22, "bone")):
+        R(c, x, 18, x, 22 if k == "hide" else 20, k); c.put(x, 21 if k == "bone" else 23, k + ("_d" if k == "hide" else ""))
+    y0 = 23                                                                                             # a minotaur face
+    c.cells([(6, y0), (7, y0 - 1), (5, y0 - 1), (18, y0), (19, y0 - 1), (20, y0 - 1)], "bone")
+    c.cells([(10, y0 + 3), (15, y0 + 3)], "black"); R(c, 10, y0 + 6, 15, y0 + 8, "wood_d")
+    c.cells([(11, y0 + 7), (14, y0 + 7)], "black"); c.cells([(12, y0 + 9), (13, y0 + 9), (11, y0 + 9), (14, y0 + 9)], "gold")
+    R(c, 9, y0 + 2, 11, y0 + 2, "bs_ochre"); R(c, 14, y0 + 2, 16, y0 + 2, "bs_ochre")
+    for y in range(35, 41, 2):
+        R(c, 9, y, 16, y, "bs_gore_d" if y % 4 == 1 else "bs_ochre")
+
+
+@item("bst_head_pillar", "人頭石柱", C8, 2, 20, 44, note="示威用：紅岩石柱頂上插著砍下來的人頭，血從柱身流下來")
+def _(c, f):
+    top = 9
+    for y in range(top, 43):
+        half = 5 + (2 if y > 37 else 0) - (1 if y < top + 4 else 0)
+        band = "bs_rock_l" if ((y - top) // 5) % 2 == 0 else "bs_rock"
+        R(c, 10 - half, y, 9 + half, y, band); R(c, 9 + half - 2, y, 9 + half, y, "bs_rock_d")
+    R(c, 5, top, 14, top, "bs_gore_d")
+    human_head(c, 10, 0)
+    for x, n in ((6, 22), (8, 12), (11, 28), (13, 9)):
+        drip(c, x, top + 1, top + n)
+    R(c, 2, 43, 17, 43, "bs_rock_x"); c.cells([(10, 43), (11, 43), (12, 42)], "bs_gore_d")
+
+
+@item("bst_moon_altar", "滿月祭壇", C8, 4, 42, 38, 2, 2, note="紅岩立石上嵌一塊月白圓石；石台上擺牛頭骨、油脂燭和一碗血")
+def _(c, f):
+    for y in range(2, 24):
+        half = 12 - max(0, 5 - y) * 2
+        R(c, 21 - half, y, 20 + half, y, "bs_rock" if (y // 4) % 2 else "bs_rock_l")
+        R(c, 18 + half, y, 20 + half, y, "bs_rock_d")
+    circle(c, 20.5, 11, 7.5, "bone_d"); circle(c, 20.5, 11, 6.5, "bs_moon" if f else "moon")
+    c.cells([(18, 9), (23, 13), (19, 14)], "moon_d")
+    if f:
+        for x, y in ((11, 4), (30, 4), (10, 15), (31, 16)):
+            c.put(x, y, "bs_moon")
+    R(c, 3, 24, 38, 26, "bs_rock_l"); R(c, 3, 27, 38, 33, "bs_rock"); R(c, 3, 34, 38, 34, "bs_rock_d"); R(c, 38, 25, 38, 34, "bs_rock_d")
+    for x in range(6, 36, 6):
+        c.put(x, 30, "bs_rock_x"); c.put(x + 1, 29, "bs_rock_x")
+    R(c, 1, 35, 40, 37, "bs_rock_x")
+    ox_skull(c, 20, 15, 6)
+    for x in (6, 34):
+        R(c, x, 19, x + 2, 25, "bs_fat"); R(c, x + 2, 20, x + 2, 25, "bone_d"); flame(c, x + 1, 18, 4, f + x, 0)
+    circle(c, 28.5, 24, 3, "pot_d", 1.4); R(c, 26, 23, 31, 23, "bs_gore"); drip(c, 30, 27, 31)
+    R(c, 10, 22, 14, 24, "bs_meat"); c.put(15, 23, "bone"); c.put(9, 23, "bone")
+
+
+@item("bst_war_drums", "戰鼓", C9, 2, 30, 30, 2, 3, note="一高一矮兩面原木鼓，鼓皮上畫赭紅手印；骨頭鼓槌")
+def _(c, f):
+    def drum(x0, x1, top, k):
+        cx, rx = (x0 + x1) / 2, (x1 - x0) / 2
+        R(c, x0, top + 1, x1, 29, "wood"); R(c, x1 - 1, top + 1, x1, 29, "wood_d"); R(c, x0, top + 1, x0, 29, "wood_l")
+        for x in range(x0 + 1, x1, 3):
+            stick(c, x, top + 3, x + 1, 27, "rope")
+        R(c, x0, 27, x1, 27, "wood_d")
+        circle(c, cx, top, rx, "hide_l", 2); R(c, int(cx - 2), top - 1, int(cx + 1), top, k)
+    drum(1, 14, 8, "bs_ochre"); drum(16, 28, 15, "bs_gore_d")
+    up = f % 2
+    stick(c, 6, 2 + up * 2, 11, 6 - up, "bone"); circle(c, 6, 2 + up * 2, 1.2, "bone_d")
+    stick(c, 27, 10 - up * 2, 22, 12, "bone"); circle(c, 27, 10 - up * 2, 1.2, "bone_d")
+    if not up:
+        c.cells([(3, 3), (2, 4), (24, 9), (25, 8)], "white")
+
+
+@item("bst_axe_target", "擲斧靶", C9, 2, 26, 32, note="原木圓片當靶，正中紅心插著一把斧頭")
+def _(c, f):
+    stick(c, 4, 31, 9, 18); stick(c, 21, 31, 16, 18); stick(c, 12, 31, 12, 22, "wood")
+    circle(c, 12.5, 12, 11, "wood_d"); circle(c, 12.5, 11.5, 10, "wood_l"); circle(c, 12.5, 11.5, 7, "bs_ochre")
+    circle(c, 12.5, 11.5, 5.5, "wood_l"); circle(c, 12.5, 11.5, 3, "bs_gore"); circle(c, 12.5, 11.5, 1.2, "bs_gore_d")
+    for x, y in ((6, 6), (19, 17), (5, 15)):
+        c.put(x, y, "wood")
+    stick(c, 13, 11, 21, 3, "wood_d"); R(c, 11, 9, 13, 13, "iron_l"); c.put(12, 13, "iron")      # the axe in the bullseye
+    stick(c, 18, 17, 24, 22, "wood_d"); R(c, 16, 15, 18, 18, "iron_l")                                    # one off target
+    claw_marks(c, 4, 7, 3, 4, "wood_d")
+
+
+@item("bst_fur_bed", "毛皮臥鋪", C9, 2, 36, 20, seat=True, note="原木框裡堆滿熊皮、狼皮和狐皮，枕著一捲獸皮")
+def _(c, f):
+    R(c, 1, 13, 34, 17, "wood"); R(c, 1, 13, 34, 13, "wood_l"); R(c, 1, 17, 34, 17, "wood_d"); R(c, 1, 18, 2, 19, "wood_d"); R(c, 33, 18, 34, 19, "wood_d")
+    circle(c, 1.5, 15, 2, "wood_d"); circle(c, 34, 15, 2, "wood_d")
+    for x, r, k in ((9, 6, "bs_bear"), (17, 7, "bs_wolf"), (26, 6, "bs_bear"), (30, 4, "bs_fox")):         # a heap of pelts
+        circle(c, x, 11, r, k + "_d", 3.5); circle(c, x - 0.5, 10.5, r - 1, k, 2.8)
+        for dx in range(-r + 2, r - 1, 3):
+            c.put(x + dx, 9 + (dx % 2), k + "_l")
+    fur_edge(c, 11, 24, 13, "bs_wolf_d"); fur_edge(c, 2, 8, 13, "bs_bear_d")
+    R(c, 3, 5, 9, 9, "hide"); R(c, 3, 5, 9, 5, "hide_l"); circle(c, 3, 7, 2, "hide_d"); R(c, 4, 7, 8, 7, "rope")
+    c.cells([(33, 11), (34, 12), (35, 13), (35, 14)], "bs_fox"); c.put(35, 15, "bs_fox_l")
+
+
+@item("bst_boar_spit", "烤全豬", C10, 4, 44, 28, 3, 6, note="一整頭野豬串在長矛上烤，油滴進火裡")
+def _(c, f):
+    for x in (4, 39):
+        stick(c, x - 3, 27, x, 7); stick(c, x + 3, 27, x, 7); lash(c, x, 6)
+    stick(c, 1, 9, 42, 9, "wood_d"); R(c, 41, 6, 42, 12, "wood")
+    turn = f % 3
+    circle(c, 21, 10, 11, "bs_roast_d", 5); circle(c, 21, 9.5 - (turn == 1) * 0.4, 10, "bs_roast", 4)
+    R(c, 13, 6, 27, 6, "bs_roast_l"); c.cells([(16 + turn, 7), (24 - turn, 8)], "bs_roast_l")
+    circle(c, 31, 10, 3.5, "bs_roast", 3); R(c, 33, 10, 35, 11, "bs_roast_d"); c.cells([(34, 9), (35, 9), (35, 12)], "bone")
+    c.cells([(30, 6), (29, 5)], "bs_roast_d"); c.put(31, 9, "black")
+    for x in (14, 18, 24, 27):
+        R(c, x, 15, x + 1, 17, "bs_roast_d")
+    c.cells([(10, 9), (9, 8), (8, 9)], "bs_roast_d")
+    for i, (x, y) in enumerate(((11, 25), (16, 26), (26, 26), (31, 25))):
+        rock_lump(c, x, y, 2.4, 2)
+    R(c, 14, 23, 28, 24, "wood_d")
+    for x, h in ((16, 5), (21, 7), (26, 5)):
+        flame(c, x, 22, h + f % 2, f + x, 1)
+    c.put(19, 16 + f * 2, "bs_fat")
+
+
+@item("bst_jerky_rack", "曬肉架", C10, 2, 32, 30, note="樹枝架上晾著一條條肉乾，還有一張剛剝的皮")
+def _(c, f):
+    for x in (3, 28):
+        stick(c, x - 2, 29, x + 1, 2); stick(c, x + 2, 29, x - 1, 2); lash(c, x, 2)
+    for y in (4, 15):
+        stick(c, 1, y, 30, y, "wood"); c.put(30, y, "wood_d")
+    for i, x in enumerate(range(6, 26, 3)):
+        L = 6 + (i * 5) % 4
+        R(c, x, 5, x + 1, 5 + L, "bs_meat" if i % 2 else "bs_meat_d"); c.put(x, 6 + L // 2, "bs_fat")
+        c.put(x, 5, "rope")
+    hide_patch(c, 8, 16, 22, 26); c.cells([(10, 18), (15, 22), (20, 19)], "hide_d"); R(c, 13, 16, 17, 16, "bs_gore_d")
+    c.cells([(15, 27), (15, 28)], "bs_gore_d")
+
+
+@item("bst_rock_trough", "石槽飲水", C10, 2, 26, 20, 2, 2, note="挖空的紅岩石槽裝著水，邊上掛一把牛角勺")
+def _(c, f):
+    R(c, 1, 8, 24, 18, "bs_rock"); R(c, 1, 8, 24, 9, "bs_rock_l"); R(c, 24, 9, 24, 18, "bs_rock_d"); R(c, 1, 18, 24, 18, "bs_rock_d")
+    c.clear([(1, 8), (24, 8), (1, 18), (24, 18)])
+    R(c, 3, 9, 22, 11, "water"); R(c, 3, 9, 22, 9, "bs_rock_d")
+    c.cells([(6 + f * 3, 10), (7 + f * 3, 10), (16 - f * 2, 11), (17 - f * 2, 11)], "water_l")
+    for x in range(4, 22, 5):
+        c.put(x, 14, "bs_rock_x"); c.put(x + 1, 15, "bs_rock_x")
+    for i in range(6):                                                                                   # a horn ladle
+        c.put(19 + i // 2, 7 - i, "bone"); c.put(20 + i // 2, 7 - i, "bone_d") if i < 2 else None
+    R(c, 18, 7, 20, 9, "bone")
+    if f:
+        c.put(1, 12, "water_l"); c.put(0, 14, "water")
+
+
+@item("bst_bone_fence", "骨頭圍籬", C11, 2, 34, 26, note="一根根彎長牙插在土裡，用獸皮繩綁住，中間掛一副牛頭骨")
+def _(c, f):
+    stick(c, 0, 12, 33, 12, "wood_d"); stick(c, 0, 19, 33, 19, "wood_d")
+    for i, x in enumerate(range(2, 33, 5)):
+        bend = 1 if i % 2 else -1
+        for y in range(3 + (i * 3) % 3, 25):
+            off = bend * int(((25 - y) / 22) ** 2 * 3)
+            c.put(x + off, y, "bone"); c.put(x + off + 1, y, "bone_d")
+        lash(c, x, 11); lash(c, x, 18)
+    ox_skull(c, 17, 5, 5)
+    R(c, 0, 25, 33, 25, "bs_rock_d")
+
+
+@item("bst_den_mouth", "獸穴洞口", C11, 4, 44, 44, wall=True, note="紅岩挖出來的洞口，上面掛長角牛頭骨，岩面三道爪痕")
+def _(c, f):
+    for y in range(4, 44):
+        R(c, 1, y, 42, y, "bs_rock" if (y // 4) % 2 else "bs_rock_l")
+    R(c, 1, 4, 42, 5, "bs_rock_l"); c.clear([(1, 4), (42, 4), (2, 4), (41, 4)]); R(c, 40, 6, 42, 43, "bs_rock_d")
+    circle(c, 21.5, 26, 11, "bs_rock_x", 12); R(c, 10, 26, 33, 43, "bs_rock_x")
+    circle(c, 21.5, 27, 9.5, "black", 10.5); R(c, 12, 27, 31, 43, "black"); R(c, 14, 34, 29, 43, "night_d")
+    claw_marks(c, 34, 14, 3, 9)
+    ox_skull(c, 21, 6, 8)
+    for x in (6, 36):
+        for y in range(28, 44):
+            c.put(x + (43 - y) // 8 * (1 if x < 20 else -1), y, "bone" if y < 32 else "bone_d")
+    c.cells([(6, 27), (36, 27)], "bone")
+    R(c, 3, 41, 9, 42, "bs_rock_x"); c.cells([(4, 40), (8, 40)], "bs_gore_d")
+
+
+@item("bst_hide_screen", "骨架獸皮屏風", C11, 2, 34, 32, note="三片骨頭框繃著獸皮，畫著狼頭、月亮和爪痕")
+def _(c, f):
+    for i in range(3):
+        x0 = 1 + i * 11
+        hide_patch(c, x0 + 1, 3, x0 + 9, 26)
+        R(c, x0, 1, x0, 30, "bone"); R(c, x0 + 10, 1, x0 + 10, 30, "bone_d"); R(c, x0, 2, x0 + 10, 2, "bone")
+        circle(c, x0, 1, 1.2, "bone"); circle(c, x0 + 10, 1, 1.2, "bone")
+        for y in (5, 12, 19, 25):
+            c.cells([(x0 + 1, y), (x0 + 9, y)], "rope")
+    c.cells([(4, 8), (4, 9), (5, 9), (8, 8), (8, 9), (7, 9)], "char"); R(c, 4, 10, 8, 13, "char"); R(c, 5, 14, 7, 16, "char")
+    c.cells([(5, 11), (7, 11)], "bs_ochre"); c.cells([(5, 16), (7, 16)], "bone")
+    circle(c, 17, 11, 3.5, "bs_ochre"); circle(c, 18, 10, 2.5, "hide"); R(c, 14, 20, 20, 20, "bs_ochre")
+    claw_marks(c, 25, 8, 3, 9, "bs_gore")
+
+
+@item("bst_howl_rock", "嚎月岩", C12, 4, 46, 40, note="伸出一片平台的紅岩，滿月時狼族站上去嚎")
+def _(c, f):
+    pts = [(4, 39), (8, 22), (14, 12), (40, 8), (44, 12), (34, 16), (38, 39)]
+    for y in range(40):
+        xs = []
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
+            if (y0 <= y < y1) or (y1 <= y < y0):
+                xs.append(x0 + (y - y0) * (x1 - x0) / (y1 - y0))
+        xs.sort()
+        for a, b in zip(xs[::2], xs[1::2]):
+            R(c, int(a), y, int(b), y, "bs_rock")
+    for y in range(12, 39, 5):
+        for x in range(4, 44):
+            if c.px[y][x] == "bs_rock":
+                c.put(x, y, "bs_rock_l")
+    for y in range(14, 40):
+        for x in range(26, 44):
+            if c.px[y][x] is not None and x > 26 + (40 - y) * 0.35:
+                c.put(x, y, "bs_rock_d")
+    for x in range(14, 41):
+        if c.px[9][x] or c.px[10][x]:
+            c.put(x, 9 if c.px[9][x] else 10, "bs_rock_l")
+    blob(c, 6, 36, 3, "bs_sage", "bs_sage_d", "bs_sage_l"); blob(c, 40, 37, 2.5, "bs_sage", "bs_sage_d", "bs_sage_l")
+    claw_marks(c, 16, 22, 3, 6)
+
+
+@item("bst_rock_pile", "紅岩大石", C12, 2, 32, 24, note="層層的紅岩石塊，腳下半埋著一顆牛頭骨")
+def _(c, f):
+    rock_lump(c, 11, 14, 9, 8); rock_lump(c, 23, 17, 7, 6); rock_lump(c, 16, 5, 5, 4)
+    blob(c, 28, 20, 3, "bs_sage", "bs_sage_d", "bs_sage_l"); blob(c, 3, 20, 2.5, "bs_sage", "bs_sage_d", "bs_sage_l")
+    R(c, 1, 22, 30, 23, "bs_dust_d")
+    ox_skull(c, 15, 17, 4); R(c, 9, 23, 21, 23, "bs_dust_d"); R(c, 12, 22, 18, 22, "bs_dust")
+
+
+@item("bst_bone_cage", "獸籠", C12, 2, 30, 32, note="原木籠子，骨頭當欄杆，裡面只剩一堆骨頭")
+def _(c, f):
+    R(c, 1, 27, 28, 30, "wood"); R(c, 1, 27, 28, 27, "wood_l"); R(c, 1, 30, 28, 30, "wood_d")
+    R(c, 1, 3, 28, 5, "wood"); R(c, 1, 3, 28, 3, "wood_l"); R(c, 1, 5, 28, 5, "wood_d")
+    c.cells([(8, 25), (9, 24), (10, 25), (11, 26), (13, 25), (14, 26), (19, 25), (20, 26)], "bone"); skull(c, 16, 22)
+    for x in range(2, 28, 4):
+        R(c, x, 6, x, 26, "bone"); R(c, x + 1, 6, x + 1, 26, "bone_d")
+    R(c, 1, 3, 2, 30, "wood_d"); R(c, 27, 3, 28, 30, "wood_d")
+    for y in (8, 24):
+        lash(c, 1, y); lash(c, 28, y)
+    stick(c, 14, 0, 14, 3, "iron"); c.cells([(13, 0), (15, 0)], "iron_l")
+    claw_marks(c, 5, 28, 3, 2, "wood_d")
+
+
+@item("bst_vulture", "禿鷹", C13, 1, 20, 26, 4, 3, note="停在骨頭架上的禿鷹，偶爾張開翅膀")
+def _(c, f):
+    R(c, 9, 14, 10, 25, "bone"); R(c, 10, 14, 10, 25, "bone_d"); R(c, 4, 14, 15, 15, "bone"); R(c, 4, 15, 15, 15, "bone_d")
+    rock_lump(c, 9.5, 24, 5, 1.8)
+    spread = f == 2
+    hop = 1 if f == 3 else 0
+    R(c, 6, 5 - hop, 13, 13 - hop, "bs_vult"); R(c, 6, 5 - hop, 13, 5 - hop, "bs_vult_l"); R(c, 13, 6 - hop, 13, 13 - hop, "bs_vult_d")
+    R(c, 7, 4 - hop, 12, 5 - hop, "bs_fox_l")                                                          # the ruff
+    R(c, 9, 0 - hop + 1, 11, 3 - hop, "bs_neck"); c.put(11, 1 - hop + 1, "black"); R(c, 12, 2 - hop, 13, 3 - hop, "bone_d")
+    c.put(13, 4 - hop, "bone_x")
+    if spread:
+        for i in range(6):
+            R(c, 5 - i // 2, 6 + i // 2, 5 - i // 2, 11, "bs_vult_d"); R(c, 14 + i // 2, 6 + i // 2, 14 + i // 2, 11, "bs_vult_d")
+        c.cells([(2, 12), (17, 12)], "bs_vult")
+    R(c, 7, 13 - hop, 8, 13, "bs_neck"); R(c, 11, 13 - hop, 12, 13, "bs_neck")
+
+
+@item("bst_wolf_cub", "啃骨頭的狼崽", C13, 1, 22, 14, 4, 4, note="趴著啃骨頭，尾巴甩來甩去")
+def _(c, f):
+    gnaw = f % 2
+    R(c, 6, 7, 17, 11, "bs_wolf"); R(c, 6, 7, 17, 7, "bs_wolf_l"); R(c, 6, 11, 17, 11, "bs_wolf_d")
+    R(c, 7, 12, 9, 12, "bs_wolf_d"); R(c, 14, 12, 16, 12, "bs_wolf_d")
+    circle(c, 4, 7 + gnaw, 3.4, "bs_wolf", 3); c.cells([(2, 3 + gnaw), (2, 4 + gnaw), (6, 3 + gnaw), (6, 4 + gnaw)], "bs_wolf_d")
+    R(c, 0, 8 + gnaw, 2, 9 + gnaw, "bs_wolf_l"); c.put(0, 8 + gnaw, "black"); c.put(3, 6 + gnaw, "yellow")
+    R(c, 0, 11, 5, 11, "bone"); c.cells([(0, 10), (0, 12), (5, 10), (5, 12)], "bone")
+    tail = [(18, 8), (19, 7), (20, 6), (21, 6)] if f in (0, 1) else [(18, 9), (19, 9), (20, 10), (21, 10)]
+    c.cells(tail, "bs_wolf"); c.put(*tail[-1], "bs_wolf_l")
+    c.cells([(10, 8), (13, 9)], "bs_wolf_d")
+
+
+@item("bst_rattlesnake", "響尾蛇", C13, 1, 22, 14, 4, 6, note="盤成一團，頭抬起來吐信，尾巴的響環一直抖")
+def _(c, f):
+    rock_lump(c, 18.5, 10, 3.5, 3)
+    circle(c, 10, 10.5, 6.5, "bs_snake_d", 3); circle(c, 10, 10, 5.5, "bs_snake", 2.3); circle(c, 10.5, 9.5, 3, "bs_snake_d", 1.2)
+    circle(c, 10.5, 9.3, 2, "bs_snake", 0.6)
+    for x in range(5, 16, 3):
+        c.put(x, 11 + (x % 2), "bs_snake_d"); c.put(x + 1, 8, "bs_snake_l")
+    sway = [0, 1, 0, -1][f]
+    neck = [(7, 8), (6, 7), (6, 6), (7, 5), (7, 4)]                                                     # raised in an S
+    for x, y in neck:
+        c.put(x + (sway if y < 6 else 0), y, "bs_snake"); c.put(x + 1 + (sway if y < 6 else 0), y, "bs_snake_d")
+    hx = 6 + sway
+    R(c, hx - 1, 1, hx + 3, 3, "bs_snake"); R(c, hx - 1, 1, hx + 3, 1, "bs_snake_l"); c.put(hx + 3, 3, "bs_snake_d")
+    c.put(hx, 2, "black")
+    if f % 2:
+        c.cells([(hx - 2, 2), (hx - 3, 1), (hx - 3, 3)], "bs_gore_l")
+    sh = f % 2
+    R(c, 15, 6 - sh, 15, 9, "bs_snake_d"); c.cells([(15, 5 - sh), (15, 4 - sh), (15, 3 - sh)], "bs_snake_l"); c.put(16 - sh * 2, 3, "bone_d")
+
+
+@item("bst_boarlet", "小野豬", C13, 1, 20, 14, 4, 6, note="身上有條紋的小野豬，用鼻子拱土")
+def _(c, f):
+    dip = 1 if f in (1, 2) else 0
+    R(c, 5, 4, 15, 10, "bs_boar_l"); R(c, 5, 4, 15, 4, "bs_dust"); R(c, 5, 10, 15, 10, "bs_boar")
+    for x in (7, 10, 13):
+        R(c, x, 5, x, 9, "bs_boar_d")
+    R(c, 1, 5 + dip, 5, 9 + dip, "bs_boar_l"); R(c, 0, 8 + dip, 1, 9 + dip, "bs_snout"); c.put(2, 6 + dip, "black")
+    c.cells([(3, 4 + dip), (4, 3 + dip)], "bs_boar")
+    for i, x in enumerate((6, 8, 12, 14)):
+        R(c, x, 11, x, 12 if (i + f) % 2 else 13, "bs_boar_d")
+    c.cells([(16, 5), (17, 4 + f % 2)], "bs_boar")
+    if dip:
+        c.cells([(0, 11), (1, 12), (2, 11)], "bs_dust_d")
+
+
 RACE[0] = None
 
 
@@ -3195,7 +3910,7 @@ def main():
     pages = overview(shared)
     for i, p in enumerate(pages):
         p.save(os.path.join(DOCS, f"decor_shared_overview_{i + 1}.png"))
-    names = {"goblin": "哥布林", "elf": "精靈", "undead": "死靈"}
+    names = {"goblin": "哥布林", "elf": "精靈", "undead": "死靈", "beast": "獸人"}
     for race, rname in names.items():
         mine = [(it, fr) for it, fr in rendered if it.race == race]
         img = overview_compact(mine, f"{rname}套組 總覽（{len(mine)} 樣；×3；公會裡有{rname}就解鎖）")
@@ -3226,7 +3941,7 @@ def main():
         mine = [(it, fr) for it, fr in rendered if it.merchant]
         overview_compact(mine, f"公會商人限定（{len(mine)} 樣；×3；商人帶來時用貢獻換，換到的整個公會都能擺）").save(os.path.join(DOCS, "decor_merchant_overview.png"))
         merchant.write_merchant()
-    for race in (None, "goblin", "elf", "undead"):
+    for race in (None, "goblin", "elf", "undead", "beast"):
         its = [it for it in ITEMS if it.race == race]
         print(race or "shared", len(its), {c: sum(1 for it in its if it.cat == c) for c in CATS})
 

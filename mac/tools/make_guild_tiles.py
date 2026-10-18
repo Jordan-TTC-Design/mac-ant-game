@@ -249,6 +249,72 @@ def undead_gothic():
     return w, side, ("black_l", "black_x", "black")
 
 
+# --- beast (RACES_BEAST.md): the red-rock valley's dust and rock, and the hides they tan -----------------------------------------
+P.update({
+    "rearth": (176, 112, 76), "rearth_d": (150, 92, 62), "rearth_l": (198, 134, 94), "rpeb": (206, 180, 150), "rpeb_d": (140, 120, 104),
+    "rrock": (186, 110, 72), "rrock_l": (214, 142, 96), "rrock_d": (150, 84, 56), "rrock_x": (116, 62, 44),
+    "bhide": (178, 130, 88), "bhide_l": (202, 156, 112), "bhide_d": (140, 98, 62), "bfur": (150, 152, 164), "bfur_d": (112, 114, 128),
+    "gore": (130, 24, 26),
+})
+
+
+def beast_redearth():
+    t = Tile(fill="rearth")
+    rng = random.Random(14)
+    for _ in range(24):
+        t.put(rng.randrange(16), rng.randrange(16), rng.choice(["rearth_d", "rearth_l", "rearth_d"]))
+    for x, y in ((2, 3), (10, 7), (5, 12), (13, 13)):                       # pebbles, lit from the top
+        t.put(x, y, "rpeb"); t.put(x + 1, y, "rpeb"); t.put(x, y + 1, "rpeb_d"); t.put(x + 1, y + 1, "rpeb_d")
+    t.put(14, 2, "rpeb"); t.put(7, 6, "rpeb_d"); t.put(1, 9, "rpeb")
+    for x, y in ((8, 1), (9, 2), (9, 3), (10, 4)):                          # a dry crack
+        t.put(x, y, "rrock_x")
+    return t
+
+
+def beast_hides():
+    seeds = [(3, 3), (12, 2), (7, 9), (14, 12), (1, 13)]
+    cell, edge = voronoi(seeds)
+    shades = ["bhide", "bhide_l", "bhide_d", "bhide_l", "bhide"]
+    t = Tile()
+    for y in range(T):
+        for x in range(T):
+            t.put(x, y, "rearth_d" if edge[y][x] else shades[cell[y][x]])
+    for y in range(T):                                                      # rawhide stitches across the seams
+        for x in range(T):
+            if edge[y][x] and (x + y) % 3 == 0:
+                t.put(x, y, "rpeb")
+    for i, (sx, sy) in enumerate(seeds):                                    # a worn spot on each piece
+        if not edge[sy][sx]:
+            t.put(sx, sy, "bhide_l" if shades[i] != "bhide_l" else "bhide")
+    t.put(10, 6, "bfur"); t.put(11, 6, "bfur"); t.put(10, 7, "bfur_d")    # a tuft of fur left on
+    return t
+
+
+def beast_redrock():
+    w = wall_base()
+    w.rect(0, 0, 15, 3, "rrock_l"); w.rect(0, 3, 15, 3, "rrock_d")
+    for x in (2, 7, 12):
+        w.put(x, 1, "rrock")
+    for y in range(4, 29):                                                  # red rock in layers
+        w.rect(0, y, 15, y, "rrock" if ((y - 4) // 4) % 2 else "rrock_l")
+    for y in (8, 16, 24):
+        w.rect(0, y - 1, 15, y - 1, "rrock_d")
+    w.put(3, 10, "rrock_x"); w.put(12, 21, "rrock_x"); w.put(6, 26, "rrock_d")
+    for i in range(3):                                                      # three claw marks
+        for j in range(5):
+            w.put(9 + i * 2 + j // 3, 9 + j, "rrock_x")
+    w.rect(1, 18, 5, 19, "bhide"); w.rect(1, 20, 5, 21, "bhide_d")         # a strip of hide on a bone peg
+    w.put(3, 17, "bone"); w.put(3, 16, "bone"); w.put(1, 22, "bhide_d"); w.put(5, 22, "bhide_d")
+    w.put(10, 20, "gore"); w.put(10, 21, "gore")
+    w.rect(0, 29, 15, 31, "rrock_x"); w.rect(0, 29, 15, 29, "rrock_d")
+    w.put(4, 30, "bone"); w.put(11, 30, "rpeb_d")
+    side = Tile(16, 16, fill="rrock_l", wrap=False)
+    for y in (4, 9, 14):
+        side.rect(0, y, 15, y, "rrock")
+    side.put(5, 2, "rrock_d"); side.put(11, 7, "rrock_d")
+    return w, side, ("rrock", "rrock_x", "rrock_l")
+
+
 # --- plain styles (shared): calm, low-contrast backdrops (user, 2026-10-08: 素雅，不要花俏) ---------------------------------------
 P.update({
     "pw": (208, 184, 150), "pw_s": (196, 172, 138), "pw_g": (202, 178, 144), "pw_l": (214, 190, 156),
@@ -337,11 +403,13 @@ FLOORS = [("plain_wood", "素木地板", None, plain_wood_floor), ("plain_stone"
           ("plain_plaster", "灰泥地", None, plain_plaster_floor),
           ("goblin_mud", "夯土地", "goblin", goblin_mud), ("goblin_flagstone", "粗石板", "goblin", goblin_flagstone),
           ("elf_moss", "苔蘚地", "elf", elf_moss), ("elf_roots", "樹根木紋", "elf", elf_roots),
-          ("undead_blackstone", "黑石磚", "undead", undead_blackstone), ("undead_bone", "骨片馬賽克", "undead", undead_bone)]
+          ("undead_blackstone", "黑石磚", "undead", undead_blackstone), ("undead_bone", "骨片馬賽克", "undead", undead_bone),
+          ("beast_redearth", "赤土碎石地", "beast", beast_redearth), ("beast_hides", "縫皮地", "beast", beast_hides)]
 WALLS = [("plain_plaster", "白灰泥牆", None, plain_plaster_wall), ("plain_wood", "素木牆", None, plain_wood_wall),
          ("plain_stone", "素石牆", None, plain_stone_wall),
          ("goblin_hide", "獸皮帳幕牆", "goblin", goblin_hide), ("elf_vines", "活藤樹牆", "elf", elf_vines),
-         ("undead_gothic", "哥德拱窗黑石牆", "undead", undead_gothic)]
+         ("undead_gothic", "哥德拱窗黑石牆", "undead", undead_gothic),
+         ("beast_redrock", "紅岩爪痕牆", "beast", beast_redrock)]
 SHARED_NAMES = {"floors": {"oak": "橡木地板", "stone": "石磚", "carpet": "紅地毯", "marble": "棋盤格大理石"},
                 "walls": {"stone": "灰石牆", "wood": "木板牆"}}
 
@@ -360,7 +428,7 @@ def overview(man):
     img = Image.new("RGBA", (W, H), (236, 222, 196, 255))
     d = ImageDraw.Draw(img)
     d.text((16, 12), "據點地板與牆壁（地板 4×3 格、牆 4 格一段；×3）", font=font(30), fill=(50, 30, 15))
-    label = lambda k, kind: man["names"][kind][k] + ("" if k not in man["race"] else f"（{ {'goblin': '哥布林', 'elf': '精靈', 'undead': '死靈'}[man['race'][k]] }）")  # noqa: E731,E501
+    label = lambda k, kind: man["names"][kind][k] + ("" if k not in man["race"] else f"（{ {'goblin': '哥布林', 'elf': '精靈', 'undead': '死靈', 'beast': '獸人'}[man['race'][k]] }）")  # noqa: E731,E501
     y = 64
     for i, (fid, rel) in enumerate(floors):
         x = 16 + (i % cols) * cell_w

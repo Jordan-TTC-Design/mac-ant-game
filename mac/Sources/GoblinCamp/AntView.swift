@@ -326,7 +326,8 @@ final class AntView: NSView {
         // a forest all around the clearing, however big the window is: a row of trees behind at the top, a column down each side, and
         // the edge with the grass along the bottom
         let size = 54
-        if let tile = Scenery.tile(style: "forest", size: size, side: .bottom) {
+        let edge = colony.scene?.biome == .redrock ? "canyon" : "forest" // (the beastfolk's valley is walled by red rock, not trees)
+        if let tile = Scenery.tile(style: edge, size: size, side: .bottom) {
             let h = CGFloat(tile.height)
             // the top row: the same trees with their grass cut off, standing at the top edge
             ctx.saveGState()
@@ -335,7 +336,7 @@ final class AntView: NSView {
             ctx.restoreGState()
             Scenery.drawStrip(tile, in: CGRect(x: 0, y: 0, width: bounds.width, height: h), side: .bottom, into: ctx)
         }
-        if let left = Scenery.tile(style: "forest", size: 42, side: .left), let right = Scenery.tile(style: "forest", size: 42, side: .right) {
+        if let left = Scenery.tile(style: edge, size: 42, side: .left), let right = Scenery.tile(style: edge, size: 42, side: .right) {
             Scenery.drawStrip(left, in: CGRect(x: 0, y: 0, width: CGFloat(left.width), height: bounds.height), side: .left, into: ctx)
             Scenery.drawStrip(right, in: CGRect(x: bounds.maxX - CGFloat(right.width), y: 0, width: CGFloat(right.width), height: bounds.height), side: .right, into: ctx)
         }
@@ -2593,6 +2594,16 @@ extension AntView {
             NSBezierPath(ovalIn: NSRect(x: p.x + flip * (-14) * u - 8 * u, y: p.y + 2 * u, width: 16 * u, height: 16 * u)).fill()
             px(-15, 13, 1, 3, rgb(60, 60, 60)); px(-16, 8, 3, 5, rgb(40, 40, 40)); px(-15.5, 9, 2, 3, glow) // the lantern
             px(-8, 10, 2, 3, cloak)
+        case "beast": // the vulture of the wilds: a hunched bald-headed bird in a ragged poncho, hung about with pelts and teeth
+            let feather = rgb(70, 52, 44), dark = rgb(44, 32, 28), skin = rgb(214, 150, 130), poncho = rgb(176, 120, 76)
+            px(-3, 0 + step, 1.5, 3, rgb(190, 160, 90)); px(1, 0, 1.5, 3, rgb(190, 160, 90)) // scaly legs
+            px(-7, 3, 13, 10, feather); px(-8, 6, 2, 8, dark); px(-9, 10, 2, 3, dark) // the body and a folded wing, hunched
+            px(-6, 6, 11, 6, poncho); px(-6, 6, 11, 1, rgb(140, 92, 56)); px(-1, 7, 1.5, 4, rgb(236, 228, 206)) // the poncho, a tooth necklace
+            px(-3, 13, 7, 2, rgb(236, 226, 214)) // the white ruff of a vulture's neck
+            px(1, 15, 3, 5, skin); px(3, 17, 4, 3, skin); px(6, 16, 2, 2, rgb(230, 200, 120)); px(7, 15.5, 1, 1.5, rgb(230, 200, 120)) // bald head, hooked beak
+            px(3, 18.5, 1, 1, .black)
+            px(-14, 0, 6, 6, rgb(150, 110, 70)); px(-14, 6, 6, 2, rgb(120, 86, 56)); px(-13, 2, 2, 2, rgb(236, 228, 206)) // a bundle of pelts and bones
+            px(-12, 8, 1, 6, rgb(110, 80, 50)); px(-13, 13, 3, 2, rgb(236, 228, 206)) // a horned skull on a stick
         default: // a kobold peddler and its donkey
             let hide = rgb(170, 110, 60), snout = rgb(210, 160, 110), pack = rgb(150, 100, 60)
             // the donkey behind
@@ -2940,8 +2951,8 @@ extension AntView {
         guard bounds.insetBy(dx: -30, dy: -30).intersects(r) else { return }
         let race = Characters.current.id
         func c(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> NSColor { NSColor(calibratedRed: r / 255, green: g / 255, blue: b / 255, alpha: 1) }
-        let post = race == "undead" ? c(60, 60, 72) : race == "elf" ? c(110, 150, 90) : c(110, 74, 40)
-        let rail = race == "undead" ? c(84, 84, 98) : race == "elf" ? c(140, 180, 110) : c(150, 104, 60)
+        let post = race == "undead" ? c(60, 60, 72) : race == "elf" ? c(110, 150, 90) : race == "beast" ? c(226, 218, 196) : c(110, 74, 40)
+        let rail = race == "undead" ? c(84, 84, 98) : race == "elf" ? c(140, 180, 110) : race == "beast" ? c(166, 124, 82) : c(150, 104, 60)
         let dark = c(40, 28, 20)
         func px(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ col: NSColor) { col.setFill(); NSRect(x: x, y: y, width: w, height: h).fill() }
         let mid = r.midX, base = r.minY + 2
@@ -2963,6 +2974,7 @@ extension AntView {
         }
         px(mid - 2.5, base - 1, 5, 19, dark); px(mid - 1.5, base, 3, 17, post)
         if race == "undead" { px(mid - 0.5, base + 17, 1, 3, c(110, 110, 124)) } // a spike
+        if race == "beast" { px(mid - 1, base + 17, 2, 2, c(246, 240, 224)); px(mid - 1.5, base + 7, 3, 2, c(166, 124, 82)) } // a sharpened bone, lashed with hide
         if race == "elf" { px(mid - 2, base + 15, 2, 2, c(246, 190, 210)); px(mid + 1, base + 9, 2, 2, c(250, 240, 150)) } // flowers in the hedge
     }
 

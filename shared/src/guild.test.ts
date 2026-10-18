@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AVATAR_OPTIONS, avatarOptions, avatarProblem, BADGE_PALETTE, BADGE_SIZE, badgeSchema, DEFAULT_BADGE, defaultAvatar, GUILD_LEVELS, guildLevel, presenceNow, PRESENCE_TTL_SECONDS, randomAvatar } from "./guild.ts";
+import { AVATAR_LABELS, AVATAR_OPTIONS, avatarArtRace, avatarOptions, avatarProblem, BADGE_PALETTE, BADGE_SIZE, badgeSchema, DEFAULT_BADGE, defaultAvatar, GUILD_LEVELS, guildLevel, presenceNow, PRESENCE_TTL_SECONDS, randomAvatar } from "./guild.ts";
 
 describe("guild rules", () => {
   it("levels grow to 30 members", () => {
@@ -34,6 +34,18 @@ describe("guild rules", () => {
     expect(defaultAvatar("undead", "m").flame).toBe("cyan");
     expect(defaultAvatar("goblin", "m").flame).toBeUndefined();
     expect(avatarProblem({ ...defaultAvatar("elf", "m"), hair: "mohawk" })).not.toBeNull();
+  });
+
+  it("the beastfolk wear their own art (manes, fur), and every option has a name", () => {
+    expect(avatarArtRace("beast")).toBe("beast");
+    expect(avatarOptions("beast", "m").skin).toContain("wolf_grey");
+    expect(avatarProblem({ ...defaultAvatar("beast", "f"), hair: "mohawk" })).not.toBeNull();
+    expect(avatarProblem({ ...defaultAvatar("beast", "m"), hair: "skull_cap", skin: "night_black" })).toBeNull();
+    for (const race of ["goblin", "elf", "undead", "beast"] as const)
+      for (const sex of ["m", "f"] as const) {
+        const o = avatarOptions(race, sex);
+        for (const id of [...o.hair, ...o.skin, ...o.mouth]) expect(AVATAR_LABELS[id], id).toBeTruthy();
+      }
   });
 
   it("random keeps the parts asked for", () => {

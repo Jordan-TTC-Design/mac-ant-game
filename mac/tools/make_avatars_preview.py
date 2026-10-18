@@ -8,6 +8,7 @@ For each avatar: front idle, two front walk frames, two side walk frames, back, 
 computer (from the side, and from the front as seen in the top-down hall).
 
     python3 make_avatars_preview.py            # writes avatars_preview.png into docs/images/guild/
+    python3 make_avatars_preview.py out.png    # (or anywhere else)
 """
 import os
 import sys
@@ -15,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pixelart import Art, FONT_CJK  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
+import avatar_beast as bst  # noqa: E402  (the beastfolk's ears, muzzle, tail, pelts and manes)
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs", "images", "guild", "avatars_preview.png")
 W, H = 24, 30
@@ -103,6 +105,15 @@ PALS = {
               "Q": (152, 236, 222), "q": (104, 194, 196), "Z": (224, 255, 248), "K": (138, 120, 198), "P": (178, 160, 228)},
 }
 
+# the beastfolk (RACES_BEAST.md §7): a grey wolf with a black mane, a red fox with dark brown braids
+def _beast_pal(pid, fur, hair):
+    return dict(bst.PALS[pid], **dict(zip("Ssx", bst.FUR[fur])), **dict(zip("JHh", hair)), W=(238, 228, 200), w=(200, 186, 150),
+                d=(40, 34, 54), a=(255, 255, 255), **bst.HAIR_KEYS)
+
+
+PALS["bst_m"] = _beast_pal("bst_m", "wolf_grey", [(34, 30, 42), (54, 48, 62), (96, 90, 108)])
+PALS["bst_f"] = _beast_pal("bst_f", "fox_red", [(46, 30, 22), (70, 46, 32), (112, 78, 52)])
+
 SWING = {0: 0, 1: -1, 2: 0, 3: 1}
 
 HEAD = {0: (8, 15), 1: (7, 16), 10: (7, 16), 11: (8, 15)}            # row offset from the top of the head -> span
@@ -119,6 +130,9 @@ def head_shape(c, oy, key="s"):
 # --- ears ---------------------------------------------------------------------------------------------------------------
 def ears(c, a, view, oy):
     kind = a["ears"]
+    if kind == "wolf":
+        bst.ears(c, view, oy)
+        return
     if kind == "goblin":
         left = [(3, 7), (4, 7), (5, 7), (1, 8), (2, 8), (3, 8), (4, 8), (5, 8), (2, 9), (3, 9), (4, 9), (5, 9), (4, 10), (5, 10)]
         inner = [(3, 8), (4, 8), (4, 9)]
@@ -154,8 +168,24 @@ def eyes_front(c, oy, girl=False, look="open"):
         c.cells([(7, oy + 8), (16, oy + 8)], "L")
 
 
+def beast_brows(c, a, view, oy):
+    if a["girl"]:
+        return
+    if view == "front":                                                   # heavy brows (the "thick" brows)
+        c.rect(7, oy + 7, 9, oy + 7, "J"); c.rect(14, oy + 7, 16, oy + 7, "J"); c.cells([(9, oy + 6), (14, oy + 6)], "J")
+    else:
+        c.rect(13, oy + 7, 16, oy + 7, "J"); c.put(14, oy + 6, "J")
+
+
 def face_front(c, a, oy, look="open"):
     race = a["race"]
+    if race == "beast":
+        bst.muzzle(c, "front", oy)
+        eyes_front(c, oy, a["girl"], look)
+        c.cells([(11, oy + 12), (12, oy + 12)], "m")
+        bst.fang(c, "front", oy)
+        beast_brows(c, a, "front", oy)
+        return
     if race == "skeleton":
         for x0 in (8, 14):
             c.rect(x0, oy + 8, x0 + 1, oy + 10, "d")
@@ -182,6 +212,19 @@ def face_front(c, a, oy, look="open"):
 
 def face_side(c, a, oy, look="open"):
     race = a["race"]
+    if race == "beast":
+        bst.muzzle(c, "side", oy)
+        if look == "down":
+            c.rect(14, oy + 10, 15, oy + 10, "L")
+        else:
+            c.rect(14, oy + 8, 15, oy + 8, "L"); c.rect(14, oy + 9, 15, oy + 10, "i"); c.rect(14, oy + 10, 15, oy + 10, "I")
+            c.put(15, oy + 9, "w")
+            if a["girl"]:
+                c.put(16, oy + 8, "L")
+        c.put(16, oy + 12, "m")
+        bst.fang(c, "side", oy)
+        beast_brows(c, a, "side", oy)
+        return
     if race == "skeleton":
         c.rect(14, oy + 8, 15, oy + 10, "d")
         c.put(15, oy + 9, "e" if look == "open" else "d")
@@ -210,8 +253,18 @@ def face_side(c, a, oy, look="open"):
 
 
 # --- hair, hood ---------------------------------------------------------------------------------------------------------
+def beast_hair(c, a, view, layer, oy):
+    bst.STYLES[a["hair"]](view, layer, c, oy)
+    if layer == "front" and a["hair"] not in bst.NO_EARS:
+        ears(c, a, view, oy)                                               # (the ears stand up through the mane)
+
+
 def hair_behind(c, a, view, oy, sit=False):
     st = a["hair"]
+    if a.get("race") == "beast":
+        bst.tail(c, view, oy - (SIT_DROP if sit else 0), sit=sit)
+        beast_hair(c, a, view, "back", oy)
+        return
     if st == "long" or st == "wavy":
         bottom = oy + (20 if st == "long" else 19)
         if view == "front":
@@ -246,6 +299,9 @@ def hair_behind(c, a, view, oy, sit=False):
 def hair_front(c, a, oy):
     st = a["hair"]
     y = oy
+    if a.get("race") == "beast":
+        beast_hair(c, a, "front", "front", oy)
+        return
     if st == "tuft":
         c.cells([(10, y + 1), (13, y + 1), (11, y + 2), (12, y + 0)], "H")
         c.rect(9, y + 2, 14, y + 2, "H"); c.rect(8, y + 3, 15, y + 3, "H"); c.rect(7, y + 4, 16, y + 4, "H")
@@ -314,6 +370,9 @@ def hood(c, oy, view):
 def hair_side(c, a, oy):
     st = a["hair"]
     y = oy
+    if a.get("race") == "beast":
+        beast_hair(c, a, "side", "front", oy)
+        return
     if st == "hood":
         hood(c, oy, "side")
         return
@@ -344,6 +403,10 @@ def hair_side(c, a, oy):
 def hair_back(c, a, oy):
     st = a["hair"]
     y = oy
+    if a.get("race") == "beast":
+        beast_hair(c, a, "back", "front", oy)
+        bst.tail(c, "back", oy)
+        return
     if st == "hood":
         rows = {1: (9, 14), 2: (7, 16), 3: (6, 17), 13: (6, 17), 14: (7, 16), 15: (7, 16)}
         for r in range(1, 16):
@@ -582,6 +645,8 @@ def front(a, phase=0, oy=0):
     legs_front(c, a, oy, phase)
     torso_front(c, a, oy)
     arms_front(c, a, oy, phase)
+    if a.get("pelt"):
+        bst.pelt(c, a, "front", oy)
     ears(c, a, "front", oy)
     head_shape(c, oy)
     face_front(c, a, oy)
@@ -598,6 +663,8 @@ def back(a, phase=0):
     if a.get("cape"):
         c.rect(7, 15, 16, 22, "C"); c.rect(7, 22, 16, 22, "c"); c.rect(16, 15, 16, 21, "c")
     arms_front(c, a, 0, phase)
+    if a.get("pelt"):
+        bst.pelt(c, a, "back", 0)
     ears(c, a, "back", 0)
     head_shape(c, 0)
     hair_back(c, a, 0)
@@ -621,6 +688,8 @@ def side(a, phase=0):
     if a["hair"] == "hood":
         face_side(c, a, oy)
     arm_side(c, a, oy, phase)
+    if a.get("pelt"):
+        bst.pelt(c, a, "side", oy)
     return c.outline()
 
 
@@ -932,6 +1001,10 @@ AVATARS = [
          buckle=True, cuff=True, name="死靈・男（骨系）", note="圓圓的骷髏頭、青色眼火、微微臉紅；紫色連帽小披肩、藍綠長袖衫、魂火腰扣、細骨頭腿"),
     dict(id="und_f", pal="und_f", race="ghost", girl=True, ears=None, hair="wavy", outfit="spirit", belt=20, sleeve="long",
          name="死靈・女（魂系）", note="淡藍發光的靈魂少女，波浪薄荷色長髮、魂火髮夾；薰衣草洋裝，下身化成飄著的靈尾"),
+    dict(id="bst_m", pal="bst_m", race="beast", girl=False, ears="wolf", hair="mane", outfit="tunic", pelt=True, buckle=True,
+         name="獸人・男", note="灰狼：立耳、淺色口鼻、黑鼻頭、一顆尖牙、粗眉、蓬尾巴；黑鬃毛；獸皮背心、毛皮護肩、骨牙項鍊、皮綁腿、裹腳布"),
+    dict(id="bst_f", pal="bst_f", race="beast", girl=True, ears="wolf", hair="bead_braids", outfit="dress", pelt=True,
+         name="獸人・女", note="赤狐：立耳、淺色口鼻、一顆尖牙、蓬尾巴；深棕骨珠雙辮；獸皮短袍到膝、毛皮護肩、骨牙項鍊、紅腰繩、裹腳布"),
 ]
 
 
@@ -987,7 +1060,7 @@ def main():
     total_h = title_h + row_h * len(AVATARS) + 4
     art = Art(total_w, total_h, scale=S, color=(228, 198, 152, 255))
     wood_floor(art)
-    ptext(art, "公會角色 預覽：3 種族 × 男女（24×30 點陣，營地居民是 16×16）", 6, 5, 34,
+    ptext(art, "公會角色 預覽：4 種族 × 男女（24×30 點陣，營地居民是 16×16）", 6, 5, 34,
           (70, 44, 24, 255), stroke=(250, 236, 210, 255))
     for r, a in enumerate(AVATARS):
         y0 = title_h + r * row_h
@@ -1006,7 +1079,7 @@ def main():
             x += w + gap
         ptext(art, a["name"], left, y0 + H * hero_scale + 4, 30, (60, 36, 20, 255), stroke=(250, 236, 210, 255))
         ptext(art, a["note"], left + 62, y0 + H * hero_scale + 5, 24, (80, 52, 30, 255))
-    art.save(OUT)
+    art.save(sys.argv[1] if len(sys.argv) > 1 else OUT)
 
 
 if __name__ == "__main__":

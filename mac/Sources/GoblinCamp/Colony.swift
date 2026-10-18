@@ -1148,7 +1148,7 @@ final class Colony {
         var pieces = (fish + veg + egg) * 2 + Int.random(in: 0...3)
         let roll = Double.random(in: 0..<1)
         let message: String
-        let bigPot = decorHas("cook") // (a big cauldron put down: nothing burns or tips over)
+        let bigPot = decorHas("cook") || decorHas("roast") // (a big cauldron, the beasts' roasting spit, put down: nothing burns or tips over)
         if roll < 0.05, !bigPot { pieces = 0; message = "打翻了鍋子…" }
         else if roll < 0.22, !bigPot { pieces = max(1, pieces / 2); message = "\(name)燒焦了" }
         else if roll > 0.85 { pieces = pieces * 3 / 2; message = "香噴噴的\(name)！" }
@@ -1360,7 +1360,7 @@ final class Colony {
             life.setPlot(index) { $0 = PlotState(state: 2, crop: crop, density: thin ? Int.random(in: 3...4) : Int.random(in: 5...8), changed: now, progress: 0, pace: Double.random(in: 0.8...1.3)) }
             message = thin ? "種子撒得稀稀的" : "播下了種子"
         case 3:
-            if life.state.plots[index].state == 3, Double.random(in: 0..<1) < (decorHas("well") ? 1 : 0.8) { // (a well: watering always takes)
+            if life.state.plots[index].state == 3, Double.random(in: 0..<1) < (decorHas("well") || decorHas("spring") ? 1 : 0.8) { // (a well, the beasts' waterhole: watering always takes)
                 life.setPlot(index) { $0.progress += Double.random(in: 1...3) * 3600 }
                 message = "澆了水"
             }
@@ -1503,7 +1503,7 @@ final class Colony {
 
         // a scuffle: the strong ones start it most; the clever and the golden do not take part (nobody fights a golden one)
         let scuffling = ants.filter { if case .activity(.scuffle, _) = $0.mode { return true } else { return false } }.count / 2
-        if scuffling < max(1, ants.count / 60) * (decorHas("tavern") ? 2 : 1), Double.random(in: 0..<1) < 0.5 { // (a tavern: twice the brawls)
+        if scuffling < max(1, ants.count / 60) * (decorHas("tavern") || decorHas("brawl") ? 2 : 1), Double.random(in: 0..<1) < 0.5 { // (a tavern, the beasts' fighting pit: twice the brawls)
             // (elves do not brawl)
             let fighters = Characters.current.id == "elf" ? [] : idle.filter { ants[$0].traits.personality != .calm && ants[$0].traits.personality != .boss }
             let weights = fighters.map { ants[$0].traits.personality == .brute ? 4.0 : ants[$0].traits.personality == .lively ? 1.5 : 1.0 }
@@ -2291,7 +2291,7 @@ final class Colony {
 
         // The clock only starts once the queen has crawled out.
         if !followsBooks, queen?.arrived == true, ants.count < settings.maxAnts {
-            spawnTimer += dt * (1 + boost(.honey) / 3) * (decorHas("growth") ? 1.05 : 1) * (decorHas("lv_birth") ? 1.05 : 1) // honey: a quarter less waiting (the old oak's heart, a race level's cradle: a little less)
+            spawnTimer += dt * (1 + boost(.honey) / 3) * (decorHas("growth") || decorHas("moonaltar") ? 1.05 : 1) * (decorHas("lv_birth") ? 1.05 : 1) // honey: a quarter less waiting (the old oak's heart, the beasts' moon altar, a race level's cradle: a little less)
             if spawnTimer >= settings.spawnInterval * (Characters.current.rules.spawnScale ?? 1) { // (elves come half as often)
                 spawnTimer = 0
                 let jitter = { CGFloat.random(in: -4...4) }
@@ -2391,7 +2391,7 @@ final class Colony {
         }
         // while the princess is out and about she tends the wounded resting in the nest
         let tending = queen.map { $0.arrived && $0.alpha > 0.9 && !monsterNear } ?? false
-        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") ? 1.2 : 1) * decorLevelHeal * clinicHeal
+        world.healRate = (tending ? 0.4 : 0.05) * (1 + 0.5 * boost(.water)) * (decorHas("heal") || decorHas("moonrest") || decorHas("bed") || decorHas("graverest") || decorHas("furbed") ? 1.2 : 1) * decorLevelHeal * clinicHeal
         let healer = Characters.current.breeds.firstIndex { $0.id == "healer" }
         world.healers = healer.map { i in ants.filter { $0.breedIndex == i && !$0.isHidden }.map(\.pos) } ?? []
         let raceRules = Characters.current.rules

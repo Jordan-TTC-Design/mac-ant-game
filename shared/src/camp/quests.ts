@@ -202,11 +202,11 @@ export const QUESTS: readonly Quest[] = [
   { id: "pvp_5", chapter: "大世界", title: "征服者", text: "打贏其他玩家的領地五次。", goal: (m) => n(m.pvpWins, 5), reward: { residents: 8, materials: { war_banner: 2 } }, after: "pvp_1" },
   // 專注 (focus.ts: the pomodoro's focus rounds that ran to the end, from the Mac or the phone)
   { id: "focus_1", chapter: "專注", title: "第一輪專注", text: "用番茄鐘專注完一輪（跳過的不算）。", goal: (m) => n(m.focusRounds, 1), reward: { materials: { ration_bread: 3, food_honey: 2 } } },
-  { id: "focus_day4", chapter: "專注", title: "專心的一天", text: "一天裡專注完四輪。", goal: (m) => n(m.focusBestDay, 4), reward: { decor: { goblin: "g_tomatotower", elf: "e_moondial", undead: "u_hourglass", beast: "g_tomatotower" } }, after: "focus_1" },
+  { id: "focus_day4", chapter: "專注", title: "專心的一天", text: "一天裡專注完四輪。", goal: (m) => n(m.focusBestDay, 4), reward: { decor: { goblin: "g_tomatotower", elf: "e_moondial", undead: "u_hourglass", beast: "b_moonclock" } }, after: "focus_1" },
   { id: "focus_20", chapter: "專注", title: "二十輪", text: "一共專注完二十輪。", goal: (m) => n(m.focusRounds, 20), reward: { residents: 3, materials: { crystal_shard: 2 } }, after: "focus_1" },
-  { id: "focus_day6", chapter: "專注", title: "全神貫注", text: "一天裡專注完六輪。", goal: (m) => n(m.focusBestDay, 6), reward: { decor: { goblin: "g_goldthrone", elf: "e_glowtree", undead: "u_bonethrone", beast: "g_goldthrone" } }, after: "focus_day4" },
+  { id: "focus_day6", chapter: "專注", title: "全神貫注", text: "一天裡專注完六輪。", goal: (m) => n(m.focusBestDay, 6), reward: { decor: { goblin: "g_goldthrone", elf: "e_glowtree", undead: "u_bonethrone", beast: "b_furthrone" } }, after: "focus_day4" },
   { id: "focus_100", chapter: "專注", title: "百輪老手", text: "一共專注完一百輪。", goal: (m) => n(m.focusRounds, 100), reward: { residents: 8, materials: { crystal_shard: 6, amber: 2 } }, after: "focus_20" },
-  { id: "ranch_8", chapter: "營地", title: "牧場主人", text: "牧場裡養著八隻動物。", goal: (m) => n(m.ranchAnimals, 8), reward: { decor: { goblin: "g_trophy", elf: "e_laurelarch", undead: "u_ghostbell", beast: "g_trophy" } } },
+  { id: "ranch_8", chapter: "營地", title: "牧場主人", text: "牧場裡養著八隻動物。", goal: (m) => n(m.ranchAnimals, 8), reward: { decor: { goblin: "g_trophy", elf: "e_laurelarch", undead: "u_ghostbell", beast: "b_boartrophy" } } },
   // 夥伴
   { id: "friend_3", chapter: "夥伴", title: "三五好友", text: "有三位好友。", goal: (m) => n(m.friends, 3), reward: { materials: { food_honey: 5, food_cheese: 3 } }, after: "friend_1" },
   { id: "friend_5", chapter: "夥伴", title: "朋友遍天下", text: "有五位好友。", goal: (m) => n(m.friends, 5), reward: { residents: 5, materials: { item_tonic: 3 } }, after: "friend_3" },

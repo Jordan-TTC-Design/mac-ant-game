@@ -13,7 +13,9 @@
   "undead_bone": "floors/undead_bone.png",
   "plain_wood": "floors/plain_wood.png",
   "plain_stone": "floors/plain_stone.png",
-  "plain_plaster": "floors/plain_plaster.png"
+  "plain_plaster": "floors/plain_plaster.png",
+  "beast_redearth": "floors/beast_redearth.png",
+  "beast_hides": "floors/beast_hides.png"
  },
  "walls": {
   "stone": {
@@ -76,6 +78,14 @@
    "file": "walls/plain_stone.png",
    "corner": "walls/plain_stone_corner.png",
    "side": "walls/plain_stone_side.png",
+   "w": 16,
+   "h": 32,
+   "cap": 4
+  },
+  "beast_redrock": {
+   "file": "walls/beast_redrock.png",
+   "corner": "walls/beast_redrock_corner.png",
+   "side": "walls/beast_redrock_side.png",
    "w": 16,
    "h": 32,
    "cap": 4
@@ -351,7 +361,9 @@
    "elf_moss": "苔蘚地",
    "elf_roots": "樹根木紋",
    "undead_blackstone": "黑石磚",
-   "undead_bone": "骨片馬賽克"
+   "undead_bone": "骨片馬賽克",
+   "beast_redearth": "赤土碎石地",
+   "beast_hides": "縫皮地"
   },
   "walls": {
    "stone": "灰石牆",
@@ -361,7 +373,8 @@
    "plain_stone": "素石牆",
    "goblin_hide": "獸皮帳幕牆",
    "elf_vines": "活藤樹牆",
-   "undead_gothic": "哥德拱窗黑石牆"
+   "undead_gothic": "哥德拱窗黑石牆",
+   "beast_redrock": "紅岩爪痕牆"
   }
  },
  "race": {
@@ -371,9 +384,12 @@
   "elf_roots": "elf",
   "undead_blackstone": "undead",
   "undead_bone": "undead",
+  "beast_redearth": "beast",
+  "beast_hides": "beast",
   "goblin_hide": "goblin",
   "elf_vines": "elf",
-  "undead_gothic": "undead"
+  "undead_gothic": "undead",
+  "beast_redrock": "beast"
  },
  "merchant": {
   "file": "merchant.png",

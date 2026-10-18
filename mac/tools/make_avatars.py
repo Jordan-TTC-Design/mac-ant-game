@@ -2,6 +2,7 @@
 """Production art for the guild avatars (GUILD.md §2): layered sprite strips the game composes at runtime.
 
     python3 mac/tools/make_avatars.py        # writes mac/Resources/Avatars/** and mac/Resources/Avatars/manifest.json
+    python3 mac/tools/make_avatars.py --avatars-only    # (the avatars only, not the hall's tiles and furniture)
 
 Every layer option is one horizontal PNG strip of the same N frames (FW x FH each), in the same order. The renderer draws
 frame i of each layer, in LAYER_ORDER, at the same spot, swapping the key colours (skin, hair, eye flame), then adds the
@@ -17,6 +18,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import make_avatars_preview as pv  # noqa: E402
+import avatar_beast as bst  # noqa: E402
 from PIL import Image  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, "..", "Resources", "Avatars"))
@@ -41,12 +43,13 @@ def hexc(c):
 
 # --- bodies ----------------------------------------------------------------------------------------------------------------
 BODIES = {  # body key -> (approved avatar id, race for skins, outline)
-    "goblin_m": "gob_m", "goblin_f": "gob_f", "elf_m": "elf_m", "elf_f": "elf_f", "undead_m": "und_m", "undead_f": "und_f"}
+    "goblin_m": "gob_m", "goblin_f": "gob_f", "elf_m": "elf_m", "elf_f": "elf_f", "undead_m": "und_m", "undead_f": "und_f",
+    "beast_m": "bst_m", "beast_f": "bst_f"}
 AVB = {a["id"]: a for a in pv.AVATARS}
 BODY_TYPE = {"goblin_m": "goblin_m", "goblin_f": "goblin_f", "elf_m": "elf", "elf_f": "elf", "undead_m": "skeleton",
-             "undead_f": "spirit"}
+             "undead_f": "spirit", "beast_m": "beast", "beast_f": "beast"}
 OUTLINE = {"goblin_m": (31, 43, 20), "goblin_f": (31, 43, 20), "elf_m": (58, 42, 38), "elf_f": (58, 42, 38),
-           "undead_m": (34, 30, 46), "undead_f": (62, 58, 104)}
+           "undead_m": (34, 30, 46), "undead_f": (62, 58, 104), "beast_m": bst.BODY["O"], "beast_f": bst.BODY["O"]}
 FACES = {"round": {0: (8, 15), 1: (7, 16), 10: (7, 16), 11: (8, 15)},
          "pointed": {0: (8, 15), 1: (7, 16), 9: (7, 16), 10: (8, 15), 11: (9, 14)},
          "square": {0: (7, 16), 11: (7, 16)}}
@@ -68,7 +71,9 @@ SKINS = {
     "spirit": {"pale_blue": tone((232, 242, 252), (196, 212, 238), (255, 255, 255)), "ice": tone((214, 238, 248)),
                "pale_violet": tone((234, 226, 252)), "lavender": tone((210, 198, 244))},
 }
-SKIN_SET = {"goblin_m": "goblin", "goblin_f": "goblin", "elf_m": "elf", "elf_f": "elf", "undead_m": "bone", "undead_f": "spirit"}
+SKINS["beast"] = {k: list(v) for k, v in bst.FUR.items()}            # (the beastfolk's fur: shade, fur, the light muzzle)
+SKIN_SET = {"goblin_m": "goblin", "goblin_f": "goblin", "elf_m": "elf", "elf_f": "elf", "undead_m": "bone", "undead_f": "spirit",
+            "beast_m": "beast", "beast_f": "beast"}
 HAIR_COLORS = {  # id -> [shadow, base, highlight]
     "black": [(34, 30, 42), (54, 48, 62), (96, 90, 108)], "darkbrown": [(46, 30, 22), (70, 46, 32), (112, 78, 52)],
     "chestnut": [(112, 70, 36), (150, 100, 52), (196, 146, 84)], "orange": [(168, 62, 36), (214, 96, 52), (246, 144, 88)],
@@ -86,6 +91,7 @@ HAIRS = {
     "elf_f": ["long_wreath", "braided_crown", "side_braid", "waves", "long", "ponytail", "halfup", "wreath_updo"],
     "undead_m": ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle"],
     "undead_f": ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown"],
+    "beast_m": list(bst.HAIRS["m"]), "beast_f": list(bst.HAIRS["f"]),
 }
 EYES = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide"]
 BROWS = ["thin", "thick", "faint", "none"]
@@ -96,7 +102,7 @@ SKULL_MOUTHS = ["teeth", "grin", "gap", "jaw", "fang", "stitch"]
 ACCENT = {"A": (250, 212, 90), "a": (255, 255, 255), "l": (90, 160, 80), "k": (232, 150, 170), "Z": (224, 255, 248),
           "f": (120, 236, 214), "T": (178, 160, 228), "U": (138, 120, 198), "n": (150, 140, 120), "N": (206, 198, 176),
           "C": (98, 84, 148), "c": (66, 56, 108), "v": (132, 120, 184), "d": (40, 34, 54), "W": (238, 228, 200),
-          "w": (200, 186, 150), "F": (255, 170, 60), "R": (255, 236, 140), "b": (120, 90, 60)}
+          "w": (200, 186, 150), "F": (255, 170, 60), "R": (255, 236, 140), "b": (120, 90, 60), **bst.HAIR_KEYS}
 HAT = {"F": (70, 110, 170), "f": (48, 78, 130), "L": (110, 150, 210), "B": (232, 196, 80), "X": (255, 255, 255),
        "x": (210, 200, 190), "R": (220, 70, 80), "O": (40, 34, 50)}
 FX = dict(pv.FURN, **{"X": (255, 255, 255), "x": (200, 210, 230), "D": (60, 50, 70), "H": (238, 90, 110),
@@ -316,7 +322,10 @@ def body_layers(bk, face, fr, a=None, lower=None):
                 b.cells([(10, hy + 12), (13, hy + 12)], "t")
         if race == "skeleton":
             b.cells([(11, hy + 11), (12, hy + 11)], "d")
-        b.cells([(7, hy + 11), (16, hy + 11)], "p")
+        if race == "beast":
+            bst.muzzle(b, "front", hy)
+        else:
+            b.cells([(7, hy + 11), (16, hy + 11)], "p")
         if race not in ("skeleton", "ghost"):
             b.rect(8, u + 15, 15, u + 22, "s")
         # legs and the clothes below the waist
@@ -403,7 +412,10 @@ def body_layers(bk, face, fr, a=None, lower=None):
                 b.put(17, hy + 12, "t")
         if race == "skeleton":
             b.put(17, hy + 11, "d")
-        b.put(13, hy + 11, "p")
+        if race == "beast":
+            bst.muzzle(b, "side", hy)
+        else:
+            b.put(13, hy + 11, "p")
         t = C()
         if fr["sit"]:
             if a.get("cape"):
@@ -453,6 +465,8 @@ def body_layers(bk, face, fr, a=None, lower=None):
         for (x, y) in ring:
             if b.px[y][x] is not None or L["top"].px[y][x] is not None:
                 L["top"].put(x, y, "O")
+    if a.get("pelt"):                                                    # the beastfolk's fur pauldrons and necklace
+        bst.pelt(L["top"], a, view, u)
     return L
 
 
@@ -1162,7 +1176,9 @@ STYLE = {
     ("spirit", "side_wisp"): lambda v, l, c, y: wisps(v, l, c, y, both=False),
     ("spirit", "flame_crown"): flame_crown,
 }
-HAIR_GROUP = {"goblin_m": "goblin", "goblin_f": "goblin", "elf_m": "elf", "elf_f": "elf", "undead_m": "bone", "undead_f": "spirit"}
+STYLE.update({("beast", k): fn for k, fn in bst.STYLES.items()})
+HAIR_GROUP = {"goblin_m": "goblin", "goblin_f": "goblin", "elf_m": "elf", "elf_f": "elf", "undead_m": "bone", "undead_f": "spirit",
+              "beast_m": "beast", "beast_f": "beast"}
 
 
 def style_fn(bk, hair):
@@ -1186,9 +1202,19 @@ def hair_layers(bk, hair, fr):
     view = fr["view"]
     _oy, _u, hy = heads(fr)
     back, front = C(), C()
+    beast = HAIR_GROUP[bk] == "beast"
+    if beast and view != "back":                                         # the tail: behind the body, or over the clothes
+        bst.tail(back, view, _oy, fr["phase"], fr["sit"])
     fn(view, "back", back, hy)
     fn(view, "front", front, hy)
-    if view == "side":
+    if beast:
+        if view == "back":
+            bst.tail(front, view, _oy, fr["phase"], fr["sit"])
+        if hair not in bst.NO_EARS:
+            for (x, y) in bst.ear_points(view, hy):
+                if 0 <= y < FH:
+                    front.px[y][x] = None
+    elif view == "side":
         for (x, y) in ear_mask(bk, fr):
             if front.px[y][x] in ("H", "J", "h"):
                 front.px[y][x] = None
@@ -1382,6 +1408,8 @@ def mouth_layer(bt, style, fr):
             c.cells([(10, y + 12), (13, y + 12)], "t")
         elif bt == "goblin_f" and not (state == "open"):
             c.put(12, y + 13, "t")
+        elif bt == "beast" and state != "open":
+            bst.fang(c, "front", y)
     else:
         if state == "open" or style == "open":
             c.cells([(16, y + 12), (16, y + 13)], "m")
@@ -1393,6 +1421,8 @@ def mouth_layer(bt, style, fr):
             c.put(16, y + 12, "m")
         if bt == "goblin_m":
             c.put(17, y + 12, "t")
+        elif bt == "beast" and state != "open":
+            bst.fang(c, "side", y)
     return c
 
 
@@ -1535,7 +1565,7 @@ def strip(frame_canvases, pal, x_off=DX):
 # Every top, bottom and pair of shoes is drawn on each body's own rig by body_layers, with a design of its own (`a`) and only
 # its slot's layer kept, so it moves in every frame exactly as the default clothes do. Hats sit on the head like feather_cap
 # and are the same for every body. A body that cannot wear something gets no file (the spirit has a tail, not legs).
-OUTFIT_BASE = dict(patch=False, cape=False, cuff=False, buckle=False, sleeve="short", sleeve_col="T", belt=20)
+OUTFIT_BASE = dict(patch=False, cape=False, cuff=False, buckle=False, sleeve="short", sleeve_col="T", belt=20, pelt=False)
 
 # id -> (design, colours); `emblem`: a gold cross on the chest and back, `robe`: the gown's long skirt is part of the top
 TOPS = {
@@ -2633,6 +2663,8 @@ def main():
         f.write("\n")
     size = sum(os.path.getsize(p) for p in written)
     print(f"avatars: frames {N}, {FW}x{FH}; wrote {len(written)} PNGs, {size / 1024:.0f} KB, + manifest.json")
+    if "--avatars-only" in sys.argv:                                     # (leave mac/Resources/Guild alone)
+        return
     g = write_guild()
     print(f"guild: wrote {len(g)} PNGs, {sum(os.path.getsize(p) for p in g) / 1024:.0f} KB, + manifest.json")
     # (the race floors and walls live in make_guild_tiles.py, which merges them into the manifest just rewritten)

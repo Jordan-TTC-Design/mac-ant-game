@@ -39,7 +39,7 @@ enum Biome: String, CaseIterable {
         case .forest: return (NSColor(calibratedRed: 0.02, green: 0.08, blue: 0.04, alpha: 1), 0.12)
         case .elfwood: return (NSColor(calibratedRed: 0.02, green: 0.12, blue: 0.08, alpha: 1), 0.2)
         case .graveyard: return (NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.22, alpha: 1), 0.45)
-        case .redrock: return (NSColor(calibratedRed: 0.62, green: 0.4, blue: 0.26, alpha: 1), 0.4)
+        case .redrock: return nil // (its own wall of red rock: AntView draws the canyon strips)
         case .meadow: return nil
         }
     }
@@ -778,8 +778,8 @@ final class TerrainScene {
         }
         if big {
             for i in 0..<pondCount {
-                let maxW: CGFloat = biome == .swamp ? 150 : 270
-                let w = CGFloat(rng.range(biome == .swamp ? 70 : 90, Double(max(100, maxW))))
+                let maxW: CGFloat = biome == .swamp ? 150 : biome == .redrock ? 120 : 270 // (dry country: a small waterhole)
+                let w = CGFloat(rng.range(biome == .swamp || biome == .redrock ? 70 : 90, Double(max(100, maxW))))
                 let h = w * CGFloat(rng.range(0.5, 0.95))
                 let radius = max(w, h) / 2 + 24
                 guard let c = spot(radius, in: inner.insetBy(dx: w / 2 + 6, dy: h / 2 + 6)) else { continue }

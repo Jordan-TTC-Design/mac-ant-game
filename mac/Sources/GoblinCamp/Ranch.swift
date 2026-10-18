@@ -642,7 +642,7 @@ extension Colony {
                 let near = state.beasts.indices.filter { state.beasts[$0].pen >= 0 && hypot(state.beasts[$0].pos.x - m.pos.x, state.beasts[$0].pos.y - m.pos.y) < 70 }
                 guard !near.isEmpty else { continue }
                 let guarded = decor.enumerated().contains { k, d in
-                    ["guard", "wolfdog", "bonedog"].contains(DecorCatalog.kind(d.kind)?.fn ?? "") && hypot(decorNow(k).x - m.pos.x, decorNow(k).y - m.pos.y) < 160
+                    ["guard", "wolfdog", "bonedog", "direwolf"].contains(DecorCatalog.kind(d.kind)?.fn ?? "") && hypot(decorNow(k).x - m.pos.x, decorNow(k).y - m.pos.y) < 160
                 } || state.beasts.contains { ["bone_dog", "eagle"].contains($0.kind) && $0.grown }
                 if guarded {
                     if Double.random(in: 0..<1) < 0.5 { addFloater("牧場有守衛：\(m.kind.name)被趕開了", .common, at: m.pos) }

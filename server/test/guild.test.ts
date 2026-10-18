@@ -168,12 +168,13 @@ describe("公會", () => {
     expect(saved.body).toMatchObject({ avatar: spirit, avatarChosen: true });
   });
 
-  it("gives a beast camp an avatar of its own race (the goblins' art till the beasts' is drawn)", async () => {
+  it("gives a beast camp an avatar of its own race, with the beasts' own manes and fur", async () => {
     const a = await person("a@example.com", "beast");
     expect((await guildOf(a)).avatar).toEqual(defaultAvatar("beast", "m"));
     expect(defaultAvatar("beast", "m").race).toBe("beast");
     expect((await t.call("PUT", "/guild/avatar", defaultAvatar("goblin", "m"), a.auth)).status).toBe(400);
-    const saved = await t.call("PUT", "/guild/avatar", { ...defaultAvatar("beast", "f"), hair: "mohawk" }, a.auth);
+    expect((await t.call("PUT", "/guild/avatar", { ...defaultAvatar("beast", "f"), hair: "mohawk" }, a.auth)).status).toBe(400);
+    const saved = await t.call("PUT", "/guild/avatar", { ...defaultAvatar("beast", "f"), hair: "skull_cap", skin: "snow_white" }, a.auth);
     expect(saved.status).toBe(200);
   });
 

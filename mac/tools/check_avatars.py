@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 AV = os.path.join(REPO, "mac", "Resources", "Avatars")
 GU = os.path.join(REPO, "mac", "Resources", "Guild")
-OUT = os.path.join(REPO, "docs", "images", "guild", "avatars_production_check.png")
+OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO, "docs", "images", "guild", "avatars_production_check.png")
 FONT = "/System/Library/Fonts/Hiragino Sans GB.ttc"
 M = json.load(open(os.path.join(AV, "manifest.json"), encoding="utf-8"))
 FW, FH = M["frameW"], M["frameH"]
@@ -34,6 +34,9 @@ OPTIONS = {
     "undead": {"hair": {"m": ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle", "antlers", "unicorn_horn", "bone_ridge", "soul_flame", "iron_circlet", "mossy"],
                         "f": ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown", "veil", "short_wisp", "ponytail_wisp", "star_crown", "twin_buns", "hime"]},
                "skin": ["bone", "ivory", "ash", "slate", "moss_bone", "dusk"]},
+    "beast": {"hair": {"m": ["mane", "crest", "war_paint", "bull_horns", "wild_mane", "braided_mane", "long_mane", "topknot", "skull_cap", "bone_crown", "shaggy_fur", "scar_paint", "feathers", "headband"],
+                       "f": ["bead_braids", "long_mane", "high_tail", "war_paint", "side_braid", "feathers", "headband", "shaggy_fur", "skull_cap", "pigtails", "long_braid", "bull_horns", "mane", "scar_paint"]},
+              "skin": ["wolf_grey", "fox_red", "silver_fur", "bull_brown", "snow_white", "night_black"]},
 }
 SPIRIT_SKINS = ["pale_blue", "ice", "pale_violet", "lavender", "pale_green", "rose"]
 EYES = ["round", "narrow", "sparkle", "dot", "sleepy", "sharp", "lashes", "wide", "droopy", "cat_eye", "smiley", "big"]
@@ -46,7 +49,9 @@ HAIRC = ["black", "darkbrown", "chestnut", "orange", "yellow", "blonde", "silver
 def default_avatar(race, sex):
     look = {"goblinm": dict(hairColor="darkbrown", skin="grass"), "goblinf": dict(hairColor="orange", skin="grass", eyes="lashes"),
             "elfm": dict(hairColor="chestnut", skin="fair"), "elff": dict(hairColor="blonde", skin="fair", eyes="lashes"),
-            "undeadm": dict(hairColor="black", skin="bone", flame="cyan"), "undeadf": dict(hairColor="mint", skin="pale_blue")}
+            "undeadm": dict(hairColor="black", skin="bone", flame="cyan"), "undeadf": dict(hairColor="mint", skin="pale_blue"),
+            "beastm": dict(hairColor="black", skin="wolf_grey", brows="thick"),
+            "beastf": dict(hairColor="darkbrown", skin="fox_red", eyes="lashes", brows="none")}
     skins = SPIRIT_SKINS if (race, sex) == ("undead", "f") else OPTIONS[race]["skin"]
     mouth = SKULL[0] if (race, sex) == ("undead", "m") else MOUTHS[0]
     a = dict(race=race, sex=sex, face="round", eyes="round", brows="faint", mouth=mouth, hair=OPTIONS[race]["hair"][sex][0],
@@ -172,7 +177,7 @@ def approved_diff():
     """Each default avatar's idle frames against the approved preview art (front, back, side)."""
     import make_avatars_preview as pv
     ids = {("goblin", "m"): "gob_m", ("goblin", "f"): "gob_f", ("elf", "m"): "elf_m", ("elf", "f"): "elf_f",
-           ("undead", "m"): "und_m", ("undead", "f"): "und_f"}
+           ("undead", "m"): "und_m", ("undead", "f"): "und_f", ("beast", "m"): "bst_m", ("beast", "f"): "bst_f"}
     idle = M["anims"]["idle"]
     res = []
     for (race, sex), aid in ids.items():
@@ -183,7 +188,7 @@ def approved_diff():
             w = want.image(pal)
             if view == "side":
                 w = w.transpose(Image.FLIP_LEFT_RIGHT)
-            for brows in ("faint", "none"):
+            for brows in (("faint", "none") if race != "beast" else (default_avatar(race, sex)["brows"],)):
                 a = default_avatar(race, sex)
                 a["brows"] = brows
                 got, _ = compose(a, idle[view]["frames"][0])
@@ -318,6 +323,9 @@ def main():
                ("死靈・男 預設", default_avatar("undead", "m")), ("死靈・女 預設", default_avatar("undead", "f"))]
     for race, sex in (("goblin", "f"), ("elf", "m"), ("undead", "m"), ("undead", "f"), ("goblin", "m"), ("elf", "f")):
         avatars.append(("隨機", random_avatar(race, sex, rng)))
+    avatars += [("獸人・男 預設", default_avatar("beast", "m")), ("獸人・女 預設", default_avatar("beast", "f"))]
+    for race, sex in (("beast", "m"), ("beast", "f")):
+        avatars.append(("隨機", random_avatar(race, sex, rng)))
     S = 2
     groups = anim_order()
     per_line = 28
@@ -331,11 +339,11 @@ def main():
         hall = hall_mockup(avatars)
         hall_h = hall.height + 40
     hats = []
-    for lab, a in avatars[:6]:
+    for lab, a in avatars[:6] + avatars[12:14]:
         for i in (M["anims"]["idle"]["front"]["frames"][0], M["anims"]["walk"]["side"]["frames"][1],
                   M["anims"]["idle"]["back"]["frames"][0], M["anims"]["sit"]["front"]["frames"][0]):
             hats.append(compose(a, i, hat="feather_cap")[0])
-    width = 160 + per_line * cell + 10
+    width = 160 + max(per_line, len(hats)) * cell + 10
     height = 50 + len(avatars) * (row_h * len(lines) + 10) + row_h + 40 + hall_h
     img = Image.new("RGBA", (width, height), (228, 198, 152, 255))
     wood(img)

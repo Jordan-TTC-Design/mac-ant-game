@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Draws the scenery the goblins walk in front of: a forest edge and a meadow strip (tileable sideways), and a grass
-ground tile for the map window. Output: Resources/Scenery/*.png. Run: python3 tools/make_scenery.py"""
+"""Draws the scenery the goblins walk in front of: a forest edge (and the beastfolk's red rock valley wall, `canyon`) and a
+meadow strip (tileable sideways), and a grass ground tile for the map window. Output: Resources/Scenery/*.png. Run: python3 tools/make_scenery.py"""
 import os
 import random
 from PIL import Image
@@ -151,6 +151,107 @@ def forest_side(width, right=True, height=128):
     return img
 
 
+# --- the beastfolk's red rock valley (RACES_BEAST.md §6): crags, rock pillars and dead snags instead of trees -----------------
+DUST = [(196, 156, 108), (182, 142, 96), (210, 172, 124), (170, 128, 88)]
+ROCKS = [(196, 122, 80), (166, 96, 64), (136, 74, 50), (104, 56, 40)]   # light to dark
+SNAG = (110, 82, 60)
+SAGE = [(112, 128, 96), (140, 156, 116)]
+
+
+def dust(img, top, rnd):
+    for x in range(img.width):
+        edge = top + rnd.randint(-1, 1)
+        for y in range(edge, img.height):
+            px(img, x, y, DUST[0])
+    for _ in range(img.width * (img.height - top) // 5):
+        px(img, rnd.randrange(img.width), rnd.randrange(top, img.height), rnd.choice(DUST))
+
+
+def crag(img, cx, base, height, half, rnd):
+    """A block of layered red rock with a flat, notched top and a shaded right side."""
+    top = base - height
+    for y in range(top, base + 1):
+        k = (y - top) / max(1, height)
+        w = int(half * (0.7 + 0.3 * min(1, k * 2.5))) + (1 if (y // 3) % 2 else 0)
+        for x in range(cx - w, cx + w + 1):
+            c = ROCKS[1] if (y - top) % 4 else ROCKS[0]
+            if x > cx + w - max(2, w // 3):
+                c = ROCKS[3] if (y - top) % 4 else ROCKS[2]
+            px(img, x, y, c)
+    for x in range(cx - half // 2, cx - half // 2 + 3):                      # a notch in the top
+        px(img, x, top, (0, 0, 0, 0))
+    for x in range(cx - int(half * 0.7) - 1, cx + int(half * 0.7) + 2):      # the dark outline along the top
+        px(img, x, top - 1, (52, 30, 22))
+
+
+def pillar(img, cx, base, height):
+    for y in range(base - height, base + 1):
+        band = ROCKS[0] if ((y - base) // 4) % 2 else ROCKS[1]
+        rect(img, cx - 3, y, 6, 1, band)
+        rect(img, cx + 1, y, 2, 1, ROCKS[3])
+    rect(img, cx - 4, base - height - 1, 8, 1, (52, 30, 22))
+
+
+def snag(img, cx, base, height, rnd):
+    x = cx
+    for y in range(base, base - height, -1):
+        if y % 5 == 0:
+            x += rnd.choice((0, 1, -1))
+        px(img, x, y, SNAG)
+    for side in (-1, 1):
+        bx, by = x, base - height + 3
+        for k in range(rnd.randint(3, 5)):
+            bx += side; by -= k % 2
+            px(img, bx, by, SNAG)
+
+
+def canyon(h=64):
+    """The valley wall along the bottom of the screen: crags and pillars standing on dust, tileable sideways."""
+    rnd = random.Random(23)
+    img = Image.new("RGBA", (W, h), (0, 0, 0, 0))
+    k = h / 64.0
+    base = h - 12
+    for cx in range(-8, W + 8, 26):                                         # the wall behind
+        crag(img, cx + rnd.randint(-3, 3), base, max(14, int(rnd.randint(36, 48) * k)), 14, rnd)
+    for cx in (20, 74, 112):
+        pillar(img, cx + rnd.randint(-2, 2), base + 2, max(12, int(rnd.randint(24, 34) * k)))
+    dust(img, h - 12, rnd)
+    for cx in (48, 98):
+        snag(img, cx, h - 6, max(8, int(16 * k)), rnd)
+    for cx in range(8, W, 31):
+        rect(img, cx, h - 7, 4, 2, SAGE[0]); rect(img, cx + 1, h - 8, 2, 1, SAGE[1])
+    return img
+
+
+def canyon_side(width, right=True, height=128):
+    """The valley wall down the side of the screen: dust all over, crags and pillars from far (top) to near (bottom). Tileable
+    vertically. For `right` the outer (screen edge) side is on the right."""
+    rnd = random.Random(35)
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    for y in range(height):
+        edge = rnd.randint(0, 3)
+        for x in range(edge, width):
+            px(img, x, y, DUST[0] if x > edge + 1 else DUST[3])
+    for _ in range(width * height // 5):
+        px(img, rnd.randrange(1, width), rnd.randrange(height), rnd.choice(DUST))
+    slots = sorted((base + rnd.randint(-3, 3), rnd.choice(["crag", "crag", "pillar", "snag"]), rnd.randint(width // 3, max(width // 3 + 1, width - width // 4)))
+                   for base in range(10, height, 30))
+    tall = max(18, min(34, int(width * 0.7)))
+    for base, kind, cx in slots:
+        for dy in (-height, 0, height):                                      # wrap round so the tile repeats
+            tmp = Image.new("RGBA", (width, height * 3), (0, 0, 0, 0))
+            if kind == "crag":
+                crag(tmp, cx, base + height + 9, tall, max(6, width // 4), rnd)
+            elif kind == "pillar":
+                pillar(tmp, cx, base + height + 9, tall)
+            else:
+                snag(tmp, cx, base + height + 9, tall // 2, rnd)
+            img.alpha_composite(tmp.crop((0, height - dy, width, 2 * height - dy)))
+    if not right:
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    return img
+
+
 def mushroom_v(img, x, y):
     rect(img, x - 1, y, 3, 2, (200, 50, 50))
     px(img, x, y, (250, 250, 250))
@@ -194,6 +295,9 @@ if __name__ == "__main__":
         save(f"forest-{h}.png", forest(h))
         save(f"forest-{h}_right.png", forest_side(h, right=True))
         save(f"forest-{h}_left.png", forest_side(h, right=False))
+        save(f"canyon-{h}.png", canyon(h))
+        save(f"canyon-{h}_right.png", canyon_side(h, right=True))
+        save(f"canyon-{h}_left.png", canyon_side(h, right=False))
     m = meadow()
     save("meadow.png", m)
     save("meadow_right.png", m.transpose(Image.ROTATE_90))  # the meadow is flat grass, so turning it is fine

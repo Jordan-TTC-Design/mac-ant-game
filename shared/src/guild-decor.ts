@@ -54,6 +54,8 @@ export const HALL_FLOORS: readonly { id: string; name: string; race: string | nu
   { id: "elf_roots", name: "樹根木紋", race: "elf" },
   { id: "undead_blackstone", name: "黑石磚", race: "undead" },
   { id: "undead_bone", name: "骨片馬賽克", race: "undead" },
+  { id: "beast_redearth", name: "赤土碎石地", race: "beast" },
+  { id: "beast_hides", name: "縫皮地", race: "beast" },
 ];
 export const HALL_WALLS: readonly { id: string; name: string; race: string | null }[] = [
   { id: "stone", name: "灰石牆", race: null },
@@ -64,6 +66,7 @@ export const HALL_WALLS: readonly { id: string; name: string; race: string | nul
   { id: "goblin_hide", name: "獸皮帳幕牆", race: "goblin" },
   { id: "elf_vines", name: "活藤樹牆", race: "elf" },
   { id: "undead_gothic", name: "哥德拱窗黑石牆", race: "undead" },
+  { id: "beast_redrock", name: "紅岩爪痕牆", race: "beast" },
 ];
 export const hallStyleOpen = (s: { race: string | null }, races: ReadonlySet<string>) => !s.race || races.has(s.race);
 

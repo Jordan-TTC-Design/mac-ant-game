@@ -107,10 +107,11 @@ const parts = computed<{ key: Part; title: string; list: readonly string[]; colo
   const o = opts.value;
   if (!o) return [];
   const bone = look.value!.race === "undead" && look.value!.sex === "m";
+  const fur = look.value!.race === "beast"; // (the beastfolk's hair is a mane, their skin fur)
   return [
-    { key: "hair", title: bone ? "頭部" : "髮型", list: o.hair },
-    ...(bone ? [] : [{ key: "hairColor" as Part, title: "髮色", list: AVATAR_HAIR_COLORS, colour: "hair" }]),
-    { key: "skin", title: bone ? "骨色" : "膚色", list: o.skin, colour: "skin" },
+    { key: "hair", title: bone ? "頭部" : fur ? "鬃毛" : "髮型", list: o.hair },
+    ...(bone ? [] : [{ key: "hairColor" as Part, title: fur ? "鬃毛色" : "髮色", list: AVATAR_HAIR_COLORS, colour: "hair" }]),
+    { key: "skin", title: bone ? "骨色" : fur ? "毛色" : "膚色", list: o.skin, colour: "skin" },
     ...(o.flame.length ? [{ key: "flame" as Part, title: "眼火", list: o.flame, colour: "flame" }] : []),
     { key: "face", title: "臉型", list: AVATAR_FACES },
     { key: "eyes", title: "眼睛", list: AVATAR_EYES },

@@ -110,7 +110,7 @@ export const AVATAR_HAIR_COLORS = ["black", "darkbrown", "chestnut", "orange", "
 const MOUTHS = ["line", "smile", "smirk", "open", "pout", "cat", "tongue", "toothy", "wavy"] as const;
 const SKULL_MOUTHS = ["teeth", "grin", "gap", "jaw", "fang", "stitch", "crooked", "buck", "toothless"] as const;
 
-export const AVATAR_OPTIONS: Record<"goblin" | "elf" | "undead", AvatarOptions> = {
+export const AVATAR_OPTIONS: Record<"goblin" | "elf" | "undead" | "beast", AvatarOptions> = {
   goblin: {
     hair: {
       m: ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes", "afro", "side_shave", "warrior_tail", "bowl", "shaggy", "long_braid"],
@@ -138,16 +138,26 @@ export const AVATAR_OPTIONS: Record<"goblin" | "elf" | "undead", AvatarOptions> 
     mouth: { m: SKULL_MOUTHS, f: MOUTHS },
     flame: { m: ["cyan", "violet", "green", "orange"], f: [] },
   },
+  /** Wolf-folk (RACES_BEAST.md §7): the "hair" is the mane (with ears, a tail, war paint, bones), the "skin" the fur. */
+  beast: {
+    hair: {
+      m: ["mane", "crest", "war_paint", "bull_horns", "wild_mane", "braided_mane", "long_mane", "topknot", "skull_cap", "bone_crown", "shaggy_fur", "scar_paint", "feathers", "headband"],
+      f: ["bead_braids", "long_mane", "high_tail", "war_paint", "side_braid", "feathers", "headband", "shaggy_fur", "skull_cap", "pigtails", "long_braid", "bull_horns", "mane", "scar_paint"],
+    },
+    skin: ["wolf_grey", "fox_red", "silver_fur", "bull_brown", "snow_white", "night_black"],
+    mouth: { m: MOUTHS, f: MOUTHS },
+    flame: { m: [], f: [] },
+  },
 };
 /** The spirit's skins (the undead women). */
 const SPIRIT_SKINS = ["pale_blue", "ice", "pale_violet", "lavender", "pale_green", "rose"] as const;
 
 /**
- * Whose avatar art (and options) a race's avatar uses: its own, or, for a race whose art is not drawn yet (the beasts,
- * RACES_BEAST.md §7), the goblins'. The avatar still says its own race (it must match the camp's).
+ * Whose avatar art (and options) a race's avatar uses: its own (every race has its art now, the beasts' too since
+ * RACES_BEAST.md §7), or the goblins' for a race the art does not know.
  */
-export function avatarArtRace(race: string): "goblin" | "elf" | "undead" {
-  return race === "elf" || race === "undead" ? race : "goblin";
+export function avatarArtRace(race: string): "goblin" | "elf" | "undead" | "beast" {
+  return race === "elf" || race === "undead" || race === "beast" ? race : "goblin";
 }
 
 export function avatarOptions(race: string, sex: AvatarSex): { hair: readonly string[]; skin: readonly string[]; mouth: readonly string[]; flame: readonly string[] } {
@@ -209,6 +219,8 @@ export function defaultAvatar(race: string, sex: AvatarSex): Avatar {
     elff: { hairColor: "blonde", skin: "fair", eyes: "lashes" },
     undeadm: { hairColor: "black", skin: "bone", flame: "cyan" },
     undeadf: { hairColor: "mint", skin: "pale_blue", eyes: "lashes" },
+    beastm: { hairColor: "black", skin: "wolf_grey", brows: "thick" },
+    beastf: { hairColor: "darkbrown", skin: "fox_red", eyes: "lashes" },
   };
   return { race: r, sex, face: "round", eyes: "round", brows: "none", mouth: o.mouth[0]!, hair: o.hair[0]!, hairColor: "black", skin: o.skin[0]!, ...(o.flame.length ? { flame: o.flame[0] } : {}), ...look[avatarArtRace(r) + sex] };
 }
@@ -221,6 +233,9 @@ const CLASHES: Record<string, readonly string[]> = {
   light: ["mint"],
   pale_blue: ["navy"],
   ice: ["mint", "navy"],
+  fox_red: ["orange"],
+  bull_brown: ["darkbrown"],
+  night_black: ["black", "navy"],
 };
 
 /** Every part chosen at random (`rand` gives 0 ≤ x < 1); `keep` names the parts to leave as they are in `from`. */
@@ -377,12 +392,16 @@ export const AVATAR_LABELS: Record<string, string> = {
   short_crop: "清爽短髮", low_tail: "低馬尾", circlet: "頭環長髮", pixie: "精靈短髮", twin_braids: "雙垂辮", flower_bun: "花苞頭", hime: "公主切",
   antlers: "鹿角", unicorn_horn: "獨角", bone_ridge: "骨刺", soul_flame: "頭頂魂火", iron_circlet: "鐵頭箍", mossy: "長苔蘚",
   veil: "面紗", short_wisp: "短靈髮", ponytail_wisp: "靈絲馬尾", star_crown: "星冠長髮",
+  mane: "鬃毛", long_mane: "長鬃", wild_mane: "狂野鬃毛", crest: "鬃冠", shaggy_fur: "蓬毛", war_paint: "紅色戰紋", scar_paint: "刀疤白紋",
+  bull_horns: "牛角", skull_cap: "狼頭骨盔", feathers: "鷹羽", braided_mane: "骨珠辮鬃", bead_braids: "骨珠雙辮", high_tail: "高馬尾",
+  headband: "獸皮頭帶",
   // skins
   light: "淺綠", grass: "草綠", moss: "苔綠", deep: "深綠",
   fair: "白皙", warm: "暖膚", tan: "小麥", bronze: "古銅",
   bone: "骨白", ivory: "象牙", ash: "灰骨", slate: "石灰",
   olive: "橄欖綠", teal: "藍綠", rosy: "粉嫩", umber: "深褐", moss_bone: "苔骨", dusk: "夜骨",
   pale_blue: "淡藍", ice: "冰藍", pale_violet: "淡紫", lavender: "薰衣草", pale_green: "淡綠", rose: "淡粉",
+  wolf_grey: "灰狼毛", fox_red: "赤狐毛", silver_fur: "銀毛", bull_brown: "棕牛毛", snow_white: "雪白毛", night_black: "黑毛",
   // hair colours and eye flames
   black: "黑", darkbrown: "深棕", chestnut: "栗色", orange: "橘紅", yellow: "蜜黃", blonde: "淡金", silver: "銀白", pink: "粉紅", mint: "薄荷", navy: "深藍", forest: "森綠",
   cyan: "青", violet: "紫", green: "綠",

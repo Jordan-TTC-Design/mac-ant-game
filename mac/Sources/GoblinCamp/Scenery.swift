@@ -39,7 +39,7 @@ enum Scenery {
     static func tile(style: String, size: Int = 42, side: Side, hour: Int = currentHour) -> CGImage? {
         if style == "meadow" { return image(named: "meadow" + side.rawValue, hour: hour) }
         let pick = sizes.min { abs($0 - size) < abs($1 - size) } ?? 42
-        return image(named: "forest-\(pick)" + side.rawValue, hour: hour)
+        return image(named: (style == "canyon" ? "canyon-" : "forest-") + "\(pick)" + side.rawValue, hour: hour) // (canyon: the red rock valley's wall)
     }
 
     static func ground(hour: Int = currentHour) -> CGImage? { image(named: "ground", hour: hour) }

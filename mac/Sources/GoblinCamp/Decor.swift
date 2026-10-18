@@ -328,13 +328,13 @@ extension Colony {
             let p = decorNow(k)
             func monster(within reach: CGFloat) -> Creature? { creatures.first { $0.kind.hostile && hypot($0.pos.x - p.x, $0.pos.y - p.y) < reach } }
             switch fn {
-            case "bite": // the biting plants
-                if let m = monster(within: 40) { _ = handStrike(creature: m.id); addFloater("咬！", .common, at: p) }
+            case "bite", "thorn": // the biting plants (the beasts' spiked cactus pricks)
+                if let m = monster(within: 40) { _ = handStrike(creature: m.id); addFloater(fn == "thorn" ? "刺！" : "咬！", .common, at: p) }
             case "guard": // a treant swings at what comes near (twice a goblin's hand)
                 if let m = monster(within: 60) { _ = handStrike(creature: m.id); _ = handStrike(creature: m.id); addFloater("樹人揮了一拳", .common, at: p) }
-            case "wolfdog", "bonedog":
-                if let m = monster(within: 70) { _ = handStrike(creature: m.id); addFloater(fn == "bonedog" ? "喀！" : "汪！", .common, at: p) }
-            case "slow": // a bog: what wades in is held a moment
+            case "wolfdog", "bonedog", "direwolf":
+                if let m = monster(within: 70) { _ = handStrike(creature: m.id); addFloater(fn == "bonedog" ? "喀！" : fn == "direwolf" ? "嗷！" : "汪！", .common, at: p) }
+            case "slow", "pitfall": // a bog (the beasts' pit trap): what wades in is held a moment
                 if let m = monster(within: 34) { decorHold(creature: m.id, seconds: 1.4) }
             case "lullaby", "lv_nursery": // the young near a singing flower (a race level's nursery: a bit further) grow a little faster
                 for i in ants.indices where ants[i].isChild && !ants[i].isHidden && hypot(ants[i].pos.x - p.x, ants[i].pos.y - p.y) < (fn == "lv_nursery" ? 100 : 80) { ants[i].age += 0.4 }
@@ -342,28 +342,31 @@ extension Colony {
                 if let m = monster(within: 90) { _ = handStrike(creature: m.id); addFloater("守護！", .common, at: p) }
             case "lv_hold": // a race level's trap holds what comes near a moment
                 if let m = monster(within: 60) { decorHold(creature: m.id, seconds: 1) }
-            case "watch", "forecast", "bell", "drum":
+            case "watch", "forecast", "bell", "drum", "howl":
                 guard seen.insert("alarm").inserted else { break }
                 let drums = decorHas("drum"), bell = decorHas("bell")
                 if decorAlarm(extra: drums ? 4 : 0, retreat: bell) {
-                    addFloater(bell ? "噹！噹！魔獸來了！" : fn == "forecast" ? "星象台早就算到了：魔獸來了！" : drums && fn == "drum" ? "咚咚咚！集合！" : "瞭望台發現魔獸！", .uncommon, at: p, important: true)
+                    addFloater(bell ? "噹！噹！魔獸來了！" : fn == "forecast" ? "星象台早就算到了：魔獸來了！" : fn == "howl" ? "嚎月岩上有狼在嚎：魔獸來了！" : drums && fn == "drum" ? "咚咚咚！集合！" : "瞭望台發現魔獸！", .uncommon, at: p, important: true)
                 }
             default: break
             }
         }
     }
 
-    /// How fast gear wears: a whetstone, a smithy and a race level's forge each take a tenth off.
-    var decorWear: Double { (decorHas("whet") ? 0.9 : 1) * (decorHas("smithy") ? 0.9 : 1) * (decorHas("lv_whet") ? 0.9 : 1) }
+    /// How fast gear wears: a whetstone (the beasts' claw stone), a smithy (their bone carver's) and a race level's forge each
+    /// take a tenth off.
+    var decorWear: Double {
+        (decorHas("whet") || decorHas("clawstone") ? 0.9 : 1) * (decorHas("smithy") || decorHas("bonesmith") ? 0.9 : 1) * (decorHas("lv_whet") ? 0.9 : 1)
+    }
 
     /// How much faster the hurt heal from a race level's rest and crown (a tenth each), on top of the beds'.
     var decorLevelHeal: Double { (decorHas("lv_rest") ? 1.1 : 1) * (decorHas("lv_crown") ? 1.1 : 1) }
 
-    /// Attack bonus from the totem, the archery target, (at night, the undead) the soul fire and a race level's war idol and
-    /// crown: +5% each kind.
+    /// Attack bonus from the totem (the beasts' wolf totem), the archery target, (at night, the undead) the soul fire and a race
+    /// level's war idol and crown: +5% each kind.
     var decorMight: Double {
         var bonus = 0.0
-        if decorHas("totem") { bonus += 0.05 }
+        if decorHas("totem") || decorHas("packtotem") { bonus += 0.05 }
         if decorHas("archery") { bonus += 0.05 }
         if decorHas("nightmight"), Colony.isNight { bonus += 0.05 }
         if decorHas("lv_might") { bonus += 0.05 }

@@ -29,6 +29,10 @@ PAL = {
     "undead": dict(wood=(74, 64, 70), wood_l=(102, 90, 98), wood_d=(52, 44, 50), stone=[(56, 54, 66), (82, 80, 96), (112, 110, 128)],
                    roof=(70, 52, 92), roof_l=(100, 78, 128), cloth=(90, 70, 110), cloth_l=(122, 100, 146), accent=(130, 250, 220),
                    metal=(96, 100, 112), ink=(20, 18, 26), banner=(92, 54, 120)),
+    # the beastfolk (RACES_BEAST.md): red rock of their valley, hides stretched on bone and pole, ochre, war paint
+    "beast": dict(wood=(120, 86, 58), wood_l=(158, 118, 80), wood_d=(84, 58, 38), stone=[(116, 62, 44), (150, 84, 56), (186, 110, 72)],
+                  roof=(168, 120, 76), roof_l=(198, 152, 102), cloth=(176, 126, 82), cloth_l=(206, 162, 114), accent=(236, 228, 206),
+                  metal=(150, 140, 128), ink=(52, 30, 22), banner=(184, 82, 46)),
 }
 BONE = (236, 230, 210)
 LEVELS = (1, 2, 3)
@@ -69,7 +73,7 @@ def planks(img, x, y, w, h, p, vertical=True):
 
 
 def roof(img, cx, top, half, height, p, style):
-    """A pitched roof (goblin: hide thatch; elf: leaves; undead: a steep slate)."""
+    """A pitched roof (goblin: hide thatch; elf: leaves; undead: a steep slate; beastfolk: hides stitched over crossed poles)."""
     for i in range(height):
         span = half * (i + 1) // height
         for dx in range(-span, span + 1):
@@ -78,7 +82,14 @@ def roof(img, cx, top, half, height, p, style):
                 c = shade(p["roof"], 0.8)
             if style == "elf" and (dx * 3 + i) % 5 == 0:
                 c = shade(p["roof_l"], 1.1)
+            if style == "beast" and (i % 4 == 3 or dx == 0):
+                c = shade(p["roof"], 0.78)                                        # the seams of the stitched hides
             put(img, cx + dx, top + i, c)
+    if style == "beast":                                                          # poles crossing out of the top, a horned skull
+        for k in (-2, 2):
+            line(img, cx, top, cx + k, top - 3, p["wood_d"])
+        put(img, cx - 1, top + 2, BONE); put(img, cx + 1, top + 2, BONE); put(img, cx, top + 3, BONE)
+        put(img, cx - 2, top + 1, BONE); put(img, cx + 2, top + 1, BONE)
     if style == "goblin":
         for dx in range(-half, half + 1, 3):
             put(img, cx + dx, top + height, p["roof_l"])  # fringe of the thatch
@@ -111,7 +122,7 @@ def house(race, w, h, roof_h, p):
     img = new(w + 2, h + roof_h + 2)
     cx = (w + 2) // 2
     body_top = roof_h + 1
-    if race == "undead":
+    if race in ("undead", "beast"):                                                # (the beastfolk's: red rock, dug into the valley side)
         stones(img, 1, body_top, w, h, p)
     elif race == "elf":
         rect(img, 1, body_top, w, h, p["cloth"])
@@ -155,8 +166,8 @@ def clinic(race, level, p):
     w, h, rh = [18, 24, 30][level - 1], [10, 12, 14][level - 1], [9, 11, 13][level - 1]
     img, cx, top = house(race, w, h, rh, p)
     door(img, cx - 2, top + h - 7, 5, 7, p)
-    # the sign of healing: a red cross (goblin), a green leaf-cross (elf), a soul flame (undead)
-    mark = {"goblin": (200, 50, 50), "elf": (90, 170, 90), "undead": p["accent"]}[race]
+    # the sign of healing: a red cross (goblin), a green leaf-cross (elf), a soul flame (undead), an ochre paw (beastfolk)
+    mark = {"goblin": (200, 50, 50), "elf": (90, 170, 90), "undead": p["accent"], "beast": (200, 104, 52)}[race]
     rect(img, cx - 1, top - 6, 3, 7, (240, 240, 230))
     rect(img, cx - 3, top - 4, 7, 3, (240, 240, 230))
     rect(img, cx, top - 5, 1, 5, mark)
@@ -280,6 +291,16 @@ def wall(race, level, p):
     h = [10, 12, 15][level - 1]
     img = new(16, h + 2)
     base = img.height - 1
+    if race == "beast" and level <= 2:                                            # sharpened stakes and bones, skulls on the posts
+        for x in range(0, 16, 3):
+            rect(img, x, base - h + 2, 2, h - 2, p["wood"] if x % 2 else BONE)
+            put(img, x, base - h + 2, p["wood_l"])
+            put(img, x + 1, base - h + 1, BONE)
+        rect(img, 0, base - h // 2, 16, 1, p["wood_d"])
+        if level == 2:
+            stones(img, 0, base - 3, 16, 4, p)
+            rect(img, 6, base - h - 1, 3, 2, BONE); put(img, 6, base - h, p["ink"]); put(img, 8, base - h, p["ink"])
+        return finish(img, p)
     if level == 1 or race == "goblin" and level == 2:
         for x in range(0, 16, 3):
             rect(img, x, base - h + 2, 2, h - 2, p["wood"])
@@ -298,6 +319,11 @@ def wall(race, level, p):
             for x in range(1, 16, 5):
                 put(img, x, base - 2, (90, 160, 90))
                 put(img, x + 1, base - 3, (110, 180, 100))  # ivy
+        if race == "beast":
+            for x in (2, 10):                                                      # bone spikes along the top, a claw mark
+                put(img, x, base - h, BONE); put(img, x + 1, base - h - 1, BONE)
+            for k in range(3):
+                put(img, 6 + k, base - h // 2 + k % 2, p["stone"][0])
     return finish(img, p)
 
 

@@ -72,14 +72,16 @@ enum GuildStyles {
         Style(id: "marble", name: "棋盤格大理石", race: nil), Style(id: "plain_wood", name: "素木地板", race: nil), Style(id: "plain_stone", name: "素石地", race: nil),
         Style(id: "plain_plaster", name: "灰泥地", race: nil), Style(id: "goblin_mud", name: "夯土地", race: "goblin"), Style(id: "goblin_flagstone", name: "粗石板", race: "goblin"),
         Style(id: "elf_moss", name: "苔蘚地", race: "elf"), Style(id: "elf_roots", name: "樹根木紋", race: "elf"), Style(id: "undead_blackstone", name: "黑石磚", race: "undead"),
-        Style(id: "undead_bone", name: "骨片馬賽克", race: "undead"),
+        Style(id: "undead_bone", name: "骨片馬賽克", race: "undead"), Style(id: "beast_redearth", name: "赤土碎石地", race: "beast"),
+        Style(id: "beast_hides", name: "縫皮地", race: "beast"),
     ]
     static let walls: [Style] = [
         Style(id: "stone", name: "灰石牆", race: nil), Style(id: "wood", name: "木板牆", race: nil), Style(id: "plain_plaster", name: "白灰泥牆", race: nil),
         Style(id: "plain_wood", name: "素木牆", race: nil), Style(id: "plain_stone", name: "素石牆", race: nil), Style(id: "goblin_hide", name: "獸皮帳幕牆", race: "goblin"),
         Style(id: "elf_vines", name: "活藤樹牆", race: "elf"), Style(id: "undead_gothic", name: "哥德拱窗黑石牆", race: "undead"),
+        Style(id: "beast_redrock", name: "紅岩爪痕牆", race: "beast"),
     ]
-    static let races = ["goblin": "哥布林", "elf": "精靈", "undead": "死靈"]
+    static let races = ["goblin": "哥布林", "elf": "精靈", "undead": "死靈", "beast": "獸人"]
     /// The categories, in the order the catalog's tabs show them (shared/src/guild-decor.ts GUILD_DECOR_CATEGORIES).
     /// The tab of the holiday pieces (in front of the categories, when there are any).
     static let holiday = "節日限定"

@@ -23,6 +23,10 @@ enum AvatarKit {
             return Options(hair: m ? ["hood", "bare", "crack", "horns", "long_horns", "ragged_hood", "bone_crown", "candle", "antlers", "unicorn_horn", "bone_ridge", "soul_flame", "iron_circlet", "mossy"]
                                    : ["drift", "flame", "mist", "wisp_twins", "glass_short", "long_wave", "side_wisp", "flame_crown", "veil", "short_wisp", "ponytail_wisp", "star_crown", "twin_buns", "hime"],
                            skin: m ? ["bone", "ivory", "ash", "slate", "moss_bone", "dusk"] : spiritSkins, mouth: m ? skullMouths : mouths, flame: m ? ["cyan", "violet", "green", "orange"] : [])
+        case "beast":   // (the mane is the hair, the fur the skin; RACES_BEAST.md §7)
+            return Options(hair: m ? ["mane", "crest", "war_paint", "bull_horns", "wild_mane", "braided_mane", "long_mane", "topknot", "skull_cap", "bone_crown", "shaggy_fur", "scar_paint", "feathers", "headband"]
+                                   : ["bead_braids", "long_mane", "high_tail", "war_paint", "side_braid", "feathers", "headband", "shaggy_fur", "skull_cap", "pigtails", "long_braid", "bull_horns", "mane", "scar_paint"],
+                           skin: ["wolf_grey", "fox_red", "silver_fur", "bull_brown", "snow_white", "night_black"], mouth: mouths, flame: [])
         default:
             return Options(hair: m ? ["tuft", "mohawk", "topknot", "bald_ring", "dreads", "wild", "bun", "spikes", "afro", "side_shave", "warrior_tail", "bowl", "shaggy", "long_braid"]
                                    : ["braids", "bun", "dreads", "wild", "tuft", "pigtails", "mohawk", "bob", "twin_buns", "long_braid", "afro", "shaggy", "bowl", "warrior_tail"],
@@ -48,6 +52,9 @@ enum AvatarKit {
         "short_crop": "清爽短髮", "low_tail": "低馬尾", "circlet": "頭環長髮", "pixie": "精靈短髮", "twin_braids": "雙垂辮", "flower_bun": "花苞頭", "hime": "公主切",
         "antlers": "鹿角", "unicorn_horn": "獨角", "bone_ridge": "骨刺", "soul_flame": "頭頂魂火", "iron_circlet": "鐵頭箍", "mossy": "長苔蘚",
         "veil": "面紗", "short_wisp": "短靈髮", "ponytail_wisp": "靈絲馬尾", "star_crown": "星冠長髮",
+        "mane": "鬃毛", "long_mane": "長鬃", "wild_mane": "狂野鬃毛", "crest": "鬃冠", "shaggy_fur": "蓬毛", "war_paint": "紅色戰紋", "scar_paint": "刀疤白紋",
+        "bull_horns": "牛角", "skull_cap": "狼頭骨盔", "feathers": "鷹羽", "braided_mane": "骨珠辮鬃", "bead_braids": "骨珠雙辮", "high_tail": "高馬尾", "headband": "獸皮頭帶",
+        "wolf_grey": "灰狼毛", "fox_red": "赤狐毛", "silver_fur": "銀毛", "bull_brown": "棕牛毛", "snow_white": "雪白毛", "night_black": "黑毛",
         "olive": "橄欖綠", "teal": "藍綠", "rosy": "粉嫩", "umber": "深褐", "moss_bone": "苔骨", "dusk": "夜骨", "pale_green": "淡綠", "rose": "淡粉",
         "light": "淺綠", "grass": "草綠", "moss": "苔綠", "deep": "深綠",
         "fair": "白皙", "warm": "暖膚", "tan": "小麥", "bronze": "古銅",
@@ -178,7 +185,7 @@ enum AvatarKit {
 
     /// The approved look of each race's two avatars.
     static func standard(_ race: String, _ sex: String) -> GuildInfo.Avatar {
-        let r = ["goblin", "elf", "undead"].contains(race) ? race : "goblin"
+        let r = ["goblin", "elf", "undead", "beast"].contains(race) ? race : "goblin"
         let o = options(r, sex)
         var a = GuildInfo.Avatar(race: r, sex: sex, face: "round", eyes: "round", brows: "none", mouth: o.mouth[0], hair: o.hair[0], hairColor: "black", skin: o.skin[0], flame: o.flame.first)
         switch r + sex {
@@ -187,13 +194,16 @@ enum AvatarKit {
         case "elfm": a.hairColor = "chestnut"; a.skin = "fair"
         case "elff": a.hairColor = "blonde"; a.skin = "fair"; a.eyes = "lashes"
         case "undeadm": a.hairColor = "black"; a.skin = "bone"; a.flame = "cyan"
+        case "beastm": a.hairColor = "black"; a.skin = "wolf_grey"; a.brows = "thick"
+        case "beastf": a.hairColor = "darkbrown"; a.skin = "fox_red"; a.eyes = "lashes"
         default: a.hairColor = "mint"; a.skin = "pale_blue"; a.eyes = "lashes"
         }
         return a
     }
 
     /// Hair colours that go badly with a skin, left out when choosing at random.
-    private static let clashes: [String: [String]] = ["grass": ["forest", "mint"], "moss": ["forest", "mint"], "deep": ["forest", "navy", "black"], "light": ["mint"], "pale_blue": ["navy"], "ice": ["mint", "navy"]]
+    private static let clashes: [String: [String]] = ["grass": ["forest", "mint"], "moss": ["forest", "mint"], "deep": ["forest", "navy", "black"], "light": ["mint"], "pale_blue": ["navy"], "ice": ["mint", "navy"],
+                                                            "fox_red": ["orange"], "bull_brown": ["darkbrown"], "night_black": ["black", "navy"]]
 
     /// Every part chosen at random; `only` names the one part to change (the rest stay as `from` has them).
     static func random(_ race: String, _ sex: String, from: GuildInfo.Avatar? = nil, only part: String? = nil) -> GuildInfo.Avatar {
@@ -395,9 +405,10 @@ final class GuildAvatarPanel: GuildPanelController, GuildPanelInit {
             self.changed()
         }]))
 
-        var parts: [(key: String, title: String, list: [String], colour: String?)] = [("hair", bone ? "頭部" : "髮型", o.hair, nil)]
-        if !bone { parts.append(("hairColor", "髮色", AvatarKit.hairColors, "hair")) }
-        parts.append(("skin", bone ? "骨色" : "膚色", o.skin, "skin"))
+        let fur = look.race == "beast"   // (the beastfolk's hair is a mane, their skin fur)
+        var parts: [(key: String, title: String, list: [String], colour: String?)] = [("hair", bone ? "頭部" : fur ? "鬃毛" : "髮型", o.hair, nil)]
+        if !bone { parts.append(("hairColor", fur ? "鬃毛色" : "髮色", AvatarKit.hairColors, "hair")) }
+        parts.append(("skin", bone ? "骨色" : fur ? "毛色" : "膚色", o.skin, "skin"))
         if !o.flame.isEmpty { parts.append(("flame", "眼火", o.flame, "flame")) }
         parts.append(("face", "臉型", AvatarKit.faces, nil))
         parts.append(("eyes", "眼睛", AvatarKit.eyes, nil))
