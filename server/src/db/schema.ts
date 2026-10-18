@@ -181,6 +181,10 @@ export const camps = pgTable("camps", {
 });
 
 /** Everyone who ever lived in a camp (the dead are kept a while for the battle reports). */
+/** Numbers every change to a camp resident (a trigger sets it on insert and update: drizzle/0043), so a device can ask for only
+ * the residents that changed since it last looked (`GET /api/camp?residentsSince=`). */
+export const campResidentSeq = pgSequence("camp_resident_seq");
+
 export const campResidents = pgTable(
   "camp_residents",
   {
@@ -199,8 +203,14 @@ export const campResidents = pgTable(
     gear: jsonb("gear").$type<Record<string, { id: string; left: number; pinned?: boolean }>>(),
     /** home, or a cell / an expedition in the big world (later). */
     place: text("place").notNull().default("home"),
+    /** When it last changed (`camp_resident_seq`; set by the database, never by the code). */
+    changedSeq: bigint("changed_seq", { mode: "number" }).notNull().default(sql`nextval('camp_resident_seq')`),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.id] }), index("camp_residents_alive_idx").on(t.userId).where(sql`died_at is null`)],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.id] }),
+    index("camp_residents_alive_idx").on(t.userId).where(sql`died_at is null`),
+    index("camp_residents_changed_idx").on(t.userId, t.changedSeq),
+  ],
 );
 
 /** Numbers every change to any camp's books. */

@@ -123,11 +123,18 @@ final class CampLedger {
         /// 營地建設 (shared/src/camp/buildings.ts): id → finished level, and when the one going up is done; older servers leave it out.
         struct BuildingView: Codable { let level: Int; let busyUntil: String? }
         let buildings: [String: BuildingView]?
-        let residents: [Resident]
+        var residents: [Resident]
+        /// The newest change to any resident (send it as `residentsSince` next time); older servers leave it out.
+        let residentsSeq: Int?
+        /// Asked with `residentsSince`: `residents` holds only those that changed, `residentsGone` those that died or left
+        /// (merged into the held list by `CampLedger.merged`, so a kept view never has these).
+        var partial: Bool?
+        var residentsGone: [Int]?
 
         private enum CodingKeys: String, CodingKey {
             case race, seed, startedAt, advancedTo, nextSlot, nextId, peak, stage, version, materials, larder, armory, autoGear, autoGearFar, places, boosts, foodCooldowns
             case princessName, romance, kills, delivered, sanctuary, production, merchant, decor, raceLevel, raidLevel, ranch, focus, decorEarned, questsDone, visitor, bossesBeaten, campBonus, canRefine, buildings, residents
+            case residentsSeq, partial, residentsGone
         }
 
         init(from decoder: Decoder) throws {
@@ -169,6 +176,9 @@ final class CampLedger {
             campBonus = try? c.decodeIfPresent(CampBonus.self, forKey: .campBonus)
             buildings = try? c.decodeIfPresent([String: BuildingView].self, forKey: .buildings)
             residents = try c.decode([Resident].self, forKey: .residents)
+            residentsSeq = try? c.decodeIfPresent(Int.self, forKey: .residentsSeq)
+            partial = try? c.decodeIfPresent(Bool.self, forKey: .partial)
+            residentsGone = try? c.decodeIfPresent([Int].self, forKey: .residentsGone)
         }
     }
 
@@ -480,13 +490,42 @@ final class CampLedger {
     // MARK: Talking to the server
 
     /// The account's camp now (the server works births, deaths and raids out first), or nil when it has none.
+    /// Only the residents that changed since the held books are asked for (a big camp's whole list is megabytes); the whole
+    /// list now and then anyway (every half hour), so a change ever missed is put right.
     func fetch() async throws -> View? {
         do {
-            let fresh: View = try await api.request("GET", "camp")
-            return keep(fresh)
+            var path = "camp"
+            if let held = view, let seq = held.residentsSeq, Date().timeIntervalSince(wholeAt) < 1800,
+               let started = held.startedAt.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
+                path += "?residentsSince=\(seq)&startedAt=\(started)"
+            }
+            let fresh: View = try await api.request("GET", path)
+            guard let whole = merged(fresh) else { // (a part with nothing to add it to: ask for the whole)
+                wholeAt = .distantPast
+                return keep(try await api.request("GET", "camp") as View)
+            }
+            return keep(whole)
         } catch let error as APIError where error.status == 404 {
             return nil
         }
+    }
+
+    /// When the whole list of residents last came (`fetch` asks for only the changes in between).
+    private var wholeAt = Date.distantPast
+
+    /// The books with the whole list of residents: `fresh` itself, or (a part) the held list with the changes put in.
+    private func merged(_ fresh: View) -> View? {
+        guard fresh.partial == true else {
+            wholeAt = Date()
+            return fresh
+        }
+        guard let held = view, held.startedAt == fresh.startedAt else { return nil }
+        let changed = Set(fresh.residents.map(\.id)), gone = Set(fresh.residentsGone ?? [])
+        var out = fresh
+        out.residents = (held.residents.filter { !changed.contains($0.id) && !gone.contains($0.id) } + fresh.residents).sorted { $0.id < $1.id }
+        out.partial = nil
+        out.residentsGone = nil
+        return out
     }
 
     /// A new camp (`replace`: 開新世界 over the old one).

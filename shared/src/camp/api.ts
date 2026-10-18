@@ -204,8 +204,14 @@ export interface CampView {
   focus?: FocusView;
   /** The limited decorations this camp has earned (quests.ts `decorEarned`); the rest of the limited ones cannot be put down. */
   decorEarned?: string[];
-  /** Everyone alive (at home and, later, in the big world). */
+  /** Everyone alive (at home and, later, in the big world). With `partial`: only those that changed since `residentsSince`. */
   residents: CampResidentView[];
+  /** The newest change to any resident (camp_resident_seq): what to send as `residentsSince` next time. Older servers leave it out. */
+  residentsSeq?: number;
+  /** Asked with `residentsSince` (and the same camp): `residents` holds only those that changed, and `residentsGone` those that
+   * died or left since; the device keeps the rest it has. */
+  partial?: boolean;
+  residentsGone?: number[];
 }
 
 /** The camp's sites, as the devices show them (shared/src/camp/sites.ts; the server does the sums). */

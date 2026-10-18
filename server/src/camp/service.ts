@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { and, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { focusView, decorEarned,
   advance,
   aliveAt,
@@ -374,8 +374,34 @@ export async function advanceCamp(tx: Tx, camp: CampRow, now: Date): Promise<boo
   return changed;
 }
 
-export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
-  const rows = await tx.select().from(campResidents).where(and(eq(campResidents.userId, camp.userId), isNull(campResidents.diedAt))).orderBy(campResidents.id);
+/**
+ * The camp as the devices see it. `residentsSince` (a `residentsSeq` the device got before, for this same camp): only the
+ * residents that changed since then go in, and the ids of those that died since — the whole list is the big part of the
+ * answer (about 220 bytes a resident: 1.6 MB for 7600).
+ */
+export async function campView(tx: Tx, camp: CampRow, residentsSince?: number): Promise<CampView> {
+  const [{ seq: residentsSeq } = { seq: 0 }] = await tx
+    .select({ seq: sql<number>`coalesce(max(${campResidents.changedSeq}), 0)::bigint`.mapWith(Number) })
+    .from(campResidents)
+    .where(eq(campResidents.userId, camp.userId));
+  const partial = residentsSince !== undefined && residentsSince > 0 && residentsSince <= residentsSeq;
+  const residentsGone = partial
+    ? (
+        await tx
+          .select({ id: campResidents.id })
+          .from(campResidents)
+          .where(and(eq(campResidents.userId, camp.userId), gt(campResidents.changedSeq, residentsSince), isNotNull(campResidents.diedAt)))
+      ).map((r) => r.id)
+    : undefined;
+  // (the sums below need those at home; the list needs everyone alive, or only the changed ones: a big camp's thousands
+  // away in the big world are not read when they are not sent)
+  const alive = and(eq(campResidents.userId, camp.userId), isNull(campResidents.diedAt));
+  const listed = await tx
+    .select()
+    .from(campResidents)
+    .where(partial ? and(alive, gt(campResidents.changedSeq, residentsSince!)) : alive)
+    .orderBy(campResidents.id);
+  const home = partial ? await tx.select().from(campResidents).where(and(alive, eq(campResidents.place, "home"))) : listed.filter((r) => r.place === "home");
   const level = await campRaceLevel(tx, camp.userId);
   return {
     race: camp.race,
@@ -404,19 +430,17 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
       since: camp.sanctuarySince?.toISOString() ?? null,
       canTurnOnAt: camp.sanctuaryOffAt ? new Date(camp.sanctuaryOffAt.getTime() + SANCTUARY_REST_HOURS * 3_600_000).toISOString() : null,
     },
-    production: productionView(camp, rows.filter((r) => r.place === "home").length, level),
+    production: productionView(camp, home.length, level),
     merchant: await merchantNow(tx, camp, camp.advancedTo), // (the camp was just advanced to now)
     decor: camp.decor.filter((d) => decorKind(d.kind)), // (kinds taken out of the catalogue since are gone)
     raceLevel: level,
     visitor: await (async () => {
-      const home = rows.filter((r) => r.place === "home");
       const v = visitorAt(camp.seed, camp.advancedTo, level, new Set(home.map((r) => r.breed)), talentEffect(await talentBonusOf(tx, camp.userId), "campHost"), buildingEffects(camp.buildings).visitorChance);
       return v && !camp.visitors[v.id] ? v : null;
     })(),
     bossesBeaten: camp.bossesBeaten,
     buildings: camp.buildings,
     raidLevel: (() => {
-      const home = rows.filter((r) => r.place === "home");
       const gear = home.reduce((n, r) => n + Object.values(r.gear ?? {}).reduce((k, item) => k + gearPower(item as GearItem), 0), 0);
       return raidRaceLevel(level, home.length ? gear / home.length : 0);
     })(),
@@ -428,7 +452,9 @@ export async function campView(tx: Tx, camp: CampRow): Promise<CampView> {
     ranch: { animals: camp.ranch?.animals ?? [] },
     focus: focusView(camp.focus, camp.advancedTo),
     decorEarned: [...decorEarned(camp.quests ?? {}, camp.race)],
-    residents: rows.map((r) => ({
+    residentsSeq,
+    ...(partial ? { partial: true, residentsGone } : {}),
+    residents: listed.map((r) => ({
       id: r.id,
       breed: r.breed,
       seed: r.seed,

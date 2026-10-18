@@ -18,13 +18,18 @@ export function campRoutes(deps: AppDeps) {
   app.use("*", requireAuth(deps));
 
   /** The books as they are now (births and deaths worked out up to this moment first). */
+  /** `?residentsSince=<residentsSeq>&startedAt=<the camp's startedAt>`: only the residents that changed since (CampView `partial`). */
   app.get("/", async (c) => {
     const userId = c.get("session").user.id;
+    const since = Number(c.req.query("residentsSince"));
+    const startedAt = c.req.query("startedAt");
     const result = await db.transaction(async (tx) => {
       const camp = await lockCamp(tx, userId);
       if (!camp) return null;
       const changed = await advanceCamp(tx, camp, now());
-      return { view: await campView(tx, camp), changed };
+      // (the same camp only: after 開新世界 the device's list is of another camp, so it gets the whole new one)
+      const sameCamp = startedAt !== undefined && Date.parse(startedAt) === camp.startedAt.getTime();
+      return { view: await campView(tx, camp, sameCamp && Number.isSafeInteger(since) ? since : undefined), changed };
     });
     if (!result) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
     if (result.changed) deps.hub.notify(userId, { type: "camp.changed", version: result.view.version }, c.get("session").id); // (the asker has the books in the answer)

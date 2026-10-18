@@ -22,11 +22,42 @@ let userId = "";
 let timer: ReturnType<typeof setInterval> | undefined;
 let running: Promise<void> | null = null;
 
+/** When the whole list of residents last came: in between, only the residents that changed are asked for (a big camp's whole
+ * list is megabytes); every half hour the whole list again, so a change ever missed is put right. */
+let wholeAt = 0;
+
+/** The camp with the whole list of residents: `fresh` itself, or (a part) the held list with the changes put in; null when a
+ * part came with nothing to put it in. */
+function merged(fresh: CampView, held: CampView | undefined): CampView | null {
+  if (!fresh.partial) {
+    wholeAt = Date.now();
+    return fresh;
+  }
+  if (!held || held.startedAt !== fresh.startedAt) return null;
+  const changed = new Set(fresh.residents.map((r) => r.id));
+  const gone = new Set(fresh.residentsGone ?? []);
+  const residents = [...held.residents.filter((r) => !changed.has(r.id) && !gone.has(r.id)), ...fresh.residents].sort((a, b) => a.id - b.id);
+  const { partial: _p, residentsGone: _g, ...rest } = fresh;
+  return { ...rest, residents };
+}
+
+async function fetchCamp(): Promise<CampView> {
+  const held = state.saved?.userId === userId ? state.saved.view : undefined;
+  const asked =
+    held?.residentsSeq && Date.now() - wholeAt < 30 * 60_000
+      ? `camp?residentsSince=${held.residentsSeq}&startedAt=${encodeURIComponent(held.startedAt)}`
+      : "camp";
+  const view = merged(await api<CampView>("GET", asked), held);
+  if (view) return view;
+  wholeAt = 0;
+  return api<CampView>("GET", "camp");
+}
+
 async function fetchNow() {
   if (running) return running;
   running = (async () => {
     try {
-      const [view, { raids }] = await Promise.all([api<CampView>("GET", "camp"), api<{ raids: RaidReport[] }>("GET", "camp/raids?limit=10")]);
+      const [view, { raids }] = await Promise.all([fetchCamp(), api<{ raids: RaidReport[] }>("GET", "camp/raids?limit=10")]);
       state.saved = { userId, view, raids, fetchedAt: Date.now() };
       useRace().set(view.race);
       state.status = "ok";

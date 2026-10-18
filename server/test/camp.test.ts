@@ -852,3 +852,53 @@ describe("telling the other devices", () => {
     expect(heard.other).toEqual([{ type: "camp.changed", version: now.version }]);
   });
 });
+
+describe("only the residents that changed (GET /api/camp?residentsSince=)", () => {
+  function merge(held: CampView, part: CampView): Map<number, unknown> {
+    const out = new Map(held.residents.map((r) => [r.id, r] as [number, unknown]));
+    for (const id of part.residentsGone ?? []) out.delete(id);
+    for (const r of part.residents) out.set(r.id, r);
+    return out;
+  }
+
+  it("sends the births, the deaths and the changes since, which put together make the whole list again", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    t.advance(6 * HOUR);
+    const held = await view(me);
+    expect(held.residentsSeq).toBeGreaterThan(0);
+    expect(held.partial).toBeUndefined();
+    for (const [step, hours] of [[1, 2], [2, 24 * 20]] as const) {
+      t.advance(hours * HOUR); // (a few births; then weeks: deaths of old age too)
+      const asked = `/camp?residentsSince=${held.residentsSeq}&startedAt=${encodeURIComponent(held.startedAt)}`;
+      const part = (await t.call("GET", asked, undefined, me)).body as CampView;
+      expect(part.partial, `step ${step}`).toBe(true);
+      const whole = await view(me); // (nothing changes between the two: the clock stood still)
+      if (step === 1) expect(part.residents.length).toBeLessThan(whole.residents.length / 4); // (two hours: a few newborns, not everyone)
+      expect(whole.residentsSeq).toBe(part.residentsSeq);
+      const merged = merge(held, part);
+      expect([...merged.keys()].sort((a, b) => a - b)).toEqual(whole.residents.map((r) => r.id));
+      for (const r of whole.residents) expect(merged.get(r.id)).toEqual(r);
+      if (step === 2) expect((part.residentsGone ?? []).length).toBeGreaterThan(0);
+      Object.assign(held, whole);
+    }
+    // nothing new since: an empty list, and nothing gone
+    const quiet = (await t.call("GET", `/camp?residentsSince=${held.residentsSeq}&startedAt=${encodeURIComponent(held.startedAt)}`, undefined, me)).body as CampView;
+    expect(quiet.partial).toBe(true);
+    expect(quiet.residents).toEqual([]);
+    expect(quiet.residentsGone).toEqual([]);
+  });
+
+  it("sends the whole list for another camp (開新世界), an unknown number, or without the camp's start", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    t.advance(3 * HOUR);
+    const held = await view(me);
+    const at = encodeURIComponent(held.startedAt);
+    for (const asked of [`/camp?residentsSince=${held.residentsSeq}`, `/camp?residentsSince=${held.residentsSeq}&startedAt=2020-01-01T00:00:00.000Z`, `/camp?residentsSince=${held.residentsSeq! + 1000}&startedAt=${at}`, `/camp?residentsSince=abc&startedAt=${at}`]) {
+      const res = (await t.call("GET", asked, undefined, me)).body as CampView;
+      expect(res.partial, asked).toBeUndefined();
+      expect(res.residents.length, asked).toBe(held.residents.length);
+    }
+  });
+});
