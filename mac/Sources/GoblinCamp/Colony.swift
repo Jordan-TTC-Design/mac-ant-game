@@ -1473,18 +1473,19 @@ final class Colony {
         return hour >= 20 || hour < 6
     }
 
-    /// The moon is full (or nearly) tonight: the real moon, from the date, so every camp sees the same one. About three nights
-    /// a month. `CAMP_TEST_FULLMOON=1` makes every night one.
+    /// Tonight is a full-moon night: the 14th, 15th or 16th of the lunar month (農曆十四到十六), so a player can tell from the
+    /// calendar, and the server can work it out the same way. A night belongs to the evening it began on (until 6 in the
+    /// morning it is still the night before). `CAMP_TEST_FULLMOON=1` makes every night one.
     static var isFullMoon: Bool {
         if ProcessInfo.processInfo.environment["CAMP_TEST_FULLMOON"] == "1" { return true }
-        return moonLight(at: Date()) >= 0.96
+        return fullMoonNight(at: Date())
     }
 
-    /// How much of the moon is lit, 0 (new) to 1 (full): days since a known new moon (2000-01-06 18:14 UTC), in synodic months.
-    static func moonLight(at date: Date) -> Double {
-        let synodic = 29.530588853 * 86400
-        let age = (date.timeIntervalSince1970 - 947_182_440).truncatingRemainder(dividingBy: synodic)
-        return (1 - cos(2 * .pi * age / synodic)) / 2
+    static func fullMoonNight(at date: Date) -> Bool {
+        var lunar = Calendar(identifier: .chinese)
+        lunar.timeZone = TimeZone(identifier: "Asia/Taipei") ?? .current
+        let evening = date.addingTimeInterval(-6 * 3600)
+        return (14...16).contains(lunar.component(.day, from: evening))
     }
 
     /// A full-moon night for a race that goes into a frenzy (the beastfolk, RACES_BEAST.md §4).
