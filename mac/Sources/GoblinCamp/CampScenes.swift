@@ -104,7 +104,7 @@ final class CampScenes {
 
     /// A little way out in front of the nest, toward `away` (where they go or come from), on ground they can stand on.
     private func frontOf(_ nest: CGPoint, colony: Colony, away: CGPoint) -> CGPoint {
-        let a = atan2(away.y - nest.y, away.x - nest.x)
+        let a = Double(atan2(away.y - nest.y, away.x - nest.x))
         for r in [62.0, 50, 76, 40, 28] { // (out of the crowd at the door)
             let p = CGPoint(x: nest.x + cos(a) * r, y: nest.y + sin(a) * r * 0.6 - 10)
             if colony.walkable.contains(where: { $0.contains(p) }) { return p }
