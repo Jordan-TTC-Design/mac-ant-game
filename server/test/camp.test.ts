@@ -836,3 +836,19 @@ describe("the ranch (DESKTOP.md §8)", () => {
     expect((await cmd(me, { kind: "ranch-sync", animals: [{ id: 1, kind: "dragon" }], minutes: 0 })).body.error).toBe("not_allowed");
   });
 });
+
+describe("telling the other devices", () => {
+  it("tells the other sign-ins that the camp changed, but not the one that asked (it has the books in the answer)", async () => {
+    const me = await account();
+    await t.call("POST", "/camp/start", { race: "goblin" }, me);
+    const sessions = await database.sql<{ id: string; user_id: string }[]>`select id, user_id from sessions`;
+    const asker = sessions[0]!;
+    const heard: Record<string, { type: string; version?: number }[]> = { asker: [], other: [] };
+    t.app.deps.hub.add(asker.user_id, asker.id, { send: (d: string) => heard.asker!.push(JSON.parse(d)), close: () => {} });
+    t.app.deps.hub.add(asker.user_id, "another-sign-in", { send: (d: string) => heard.other!.push(JSON.parse(d)), close: () => {} });
+    t.advance(HOUR); // (births to work out: the camp changes)
+    const now = await view(me);
+    expect(heard.asker).toEqual([]);
+    expect(heard.other).toEqual([{ type: "camp.changed", version: now.version }]);
+  });
+});

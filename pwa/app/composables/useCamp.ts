@@ -48,7 +48,12 @@ async function fetchNow() {
   return running;
 }
 
-const onChanged = () => void fetchNow();
+/** Asks again only when the camp is newer than the one shown (the whole camp is a big answer; this page's own changes come back in their answers). */
+const onChanged = (e: Event) => {
+  const version = (e as CustomEvent<{ version?: number }>).detail?.version;
+  if (version !== undefined && state.saved && version <= state.saved.view.version) return;
+  void fetchNow();
+};
 const onVisible = () => {
   if (document.visibilityState === "visible") void fetchNow();
 };

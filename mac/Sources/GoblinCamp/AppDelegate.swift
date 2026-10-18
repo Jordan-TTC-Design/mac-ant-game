@@ -2306,7 +2306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colony.onBookCommand = { [weak self] command in self?.sendCommand(command) }
         ledger.loadPending()
         lastStory = try? JSONEncoder().encode(colony.romance)
-        sync.onCampChanged = { [weak self] in self?.after(1) { self?.refreshBooks(); self?.checkWorld(); self?.worldPane?.campChanged() } }
+        sync.onCampChanged = { [weak self] version in self?.campChanged(version: version) }
         sync.onEvent = { [weak self] type, event in self?.serverEvent(type, event) }
         sync.onConnected = { [weak self] in
             self?.pullPomodoro()
@@ -2327,6 +2327,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private var worldCheckedAt = Date.distantPast
+    /// A `camp.changed` is waiting to be acted on (several in a row become one look, a second later).
+    private var campChangePending = false
+    private var campChangeNeedsBooks = false
+
+    /// The server says the camp changed. The books are fetched again only when its version is newer than the one held here
+    /// (the whole camp, every resident, is a big answer: 1.6 MB for 7600 residents); the big world is looked at either way.
+    private func campChanged(version: Int?) {
+        if version == nil || version! > (ledger.view?.version ?? -1) { campChangeNeedsBooks = true }
+        guard !campChangePending else { return }
+        campChangePending = true
+        after(1) { [weak self] in
+            guard let self else { return }
+            self.campChangePending = false
+            if self.campChangeNeedsBooks {
+                self.campChangeNeedsBooks = false
+                self.refreshBooks()
+            }
+            self.checkWorld()
+            self.worldPane?.campChanged()
+        }
+    }
     /// Under 「大世界」: parties on the road (from the last look at the big world), shown while there are any.
     private let worldStatusItem: NSMenuItem = {
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")

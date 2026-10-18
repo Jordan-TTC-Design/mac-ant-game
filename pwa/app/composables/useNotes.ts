@@ -191,7 +191,15 @@ function connect() {
     const text = String(event.data);
     if (text.includes('"notes.changed"')) void syncNow();
     // the camp page listens for this one (useCamp)
-    if (text.includes('"camp.changed"')) window.dispatchEvent(new Event("gc:camp-changed"));
+    if (text.includes('"camp.changed"')) {
+      let version: number | undefined;
+      try {
+        version = (JSON.parse(text) as { version?: number }).version;
+      } catch {
+        // (no version: everybody looks again)
+      }
+      window.dispatchEvent(new CustomEvent("gc:camp-changed", { detail: { version } }));
+    }
     // friends, the pomodoro and Claude's questions listen for the rest (useLive)
     try {
       window.dispatchEvent(new CustomEvent("gc:server-event", { detail: JSON.parse(text) }));

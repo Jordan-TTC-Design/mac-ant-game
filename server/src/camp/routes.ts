@@ -27,7 +27,7 @@ export function campRoutes(deps: AppDeps) {
       return { view: await campView(tx, camp), changed };
     });
     if (!result) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
-    if (result.changed) deps.hub.notify(userId, { type: "camp.changed", version: result.view.version });
+    if (result.changed) deps.hub.notify(userId, { type: "camp.changed", version: result.view.version }, c.get("session").id); // (the asker has the books in the answer)
     return c.json(result.view);
   });
 
@@ -146,7 +146,7 @@ export function campRoutes(deps: AppDeps) {
       return { view: await campView(tx, camp) };
     });
     if ("problem" in out) return out.problem!;
-    deps.hub.notify(userId, { type: "camp.changed", version: out.view.version });
+    deps.hub.notify(userId, { type: "camp.changed", version: out.view.version }, c.get("session").id); // (the asker has the books in the answer)
     return c.json(out.view);
   });
 
@@ -163,7 +163,7 @@ export function campRoutes(deps: AppDeps) {
     });
     if (!out) return apiError(c, 404, "not_found", "這個帳號還沒有營地。");
     if (!out.result.ok) return c.json({ error: out.result.code, message: out.result.message, camp: out.view }, 409);
-    deps.hub.notify(userId, { type: "camp.changed", version: out.view.version });
+    deps.hub.notify(userId, { type: "camp.changed", version: out.view.version }, c.get("session").id); // (the asker has the books in the answer)
     return c.json({ message: out.result.message, resident: out.result.resident ?? null, camp: out.view });
   });
 

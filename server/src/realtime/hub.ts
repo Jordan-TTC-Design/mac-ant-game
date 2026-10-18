@@ -22,9 +22,14 @@ export class Hub {
     if (sockets?.size === 0) this.byUser.delete(userId);
   }
 
-  notify(userId: string, event: ServerEvent) {
+  /**
+   * Tells every socket of the user. `exceptSession`: not that sign-in's sockets (it made the change and already has the
+   * answer: telling it would only make it ask again for what it holds).
+   */
+  notify(userId: string, event: ServerEvent, exceptSession?: string) {
     const data = JSON.stringify(event);
-    for (const socket of this.byUser.get(userId)?.keys() ?? []) {
+    for (const [socket, session] of this.byUser.get(userId) ?? []) {
+      if (exceptSession !== undefined && session === exceptSession) continue;
       try {
         socket.send(data);
       } catch {
