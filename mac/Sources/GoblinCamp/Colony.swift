@@ -180,6 +180,8 @@ final class Colony {
     var booksHome: [CampLedger.Resident] = []
     /// A race level just reached (Visitors.swift celebrate): fireworks and cheering until then.
     var celebratingUntil: Date?
+    /// The big world as the camp sees it: send-offs, homecomings, the hurt, memorials (CampScenes.swift).
+    let scenes = CampScenes()
     /// Sends a camp command to the books (visitor-accept, visitor-decline, resident-dismiss): the answer's message or the error's.
     var onCampCommand: ((CampOrder, @escaping (Result<String, VisitorError>) -> Void) -> Void)?
     var onDecorChanged: (([DecorPlaced]) -> Void)?
@@ -2392,7 +2394,7 @@ final class Colony {
         }
         for ant in ants { // (after matchmaking, so a new pair or court finds each other on its very first step)
             switch ant.mode {
-            case .activity(.scuffle, _), .activity(.chat, _): world.partners[ant.id] = ant.pos
+            case .activity(.scuffle, _), .activity(.chat, _), .activity(.convalesce, _): world.partners[ant.id] = ant.pos
             case .activity(.stroll, _): world.bosses[ant.id] = ant.pos
             default: break
             }
@@ -2435,6 +2437,7 @@ final class Colony {
         updateChildren(dt: dt)
         updateBoosts(dt: dt)
         updateSouls(dt: dt)
+        updateScenes(dt: dt, world: world)
         playSeconds += dt * Colony.wildScale * settings.pace
         // the dead leave the colony (highest index first so the others keep their places)
         let gone = events.filter { if case .died = $0.event { return true } else { return false } }.map(\.index)
@@ -2522,7 +2525,7 @@ extension Colony {
         for i in ants.indices where !wanted.contains(ants[i].id) && !ants[i].isDying && !ants[i].isDeparting && !doomed.contains(ants[i].id) {
             if away.contains(ants[i].id) { // gone out into the big world: it walks off (out of the nest first if it was inside)
                 if ants[i].isHidden { ants[i].pos = nest }
-                ants[i].mode = .departing(target: edgePoint(from: ants[i].pos))
+                ants[i].mode = scenes.setOff(ants[i], exit: edgePoint(from: ants[i].pos), colony: self)
                 awayIDs.insert(ants[i].id)
                 changed = true
                 continue
@@ -2542,7 +2545,7 @@ extension Colony {
             var born = makeAnt(at: start, breedIndex: index, age: 0, seed: r.seed, id: r.id, name: r.name)
             if let share = r.lifeShare { born.age = share * born.traits.lifespan }
             born.parents = r.parents ?? ""
-            if back { born.mode = .returningToNest } else if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) }
+            if back { scenes.welcome(&born, colony: self) } else if visibleCount >= visibleCap { born.mode = .inNest(remaining: Double.random(in: 25...60), thenForage: nil) }
             ants.append(born)
             nextAntID = max(nextAntID, r.id + 1)
             changed = true
