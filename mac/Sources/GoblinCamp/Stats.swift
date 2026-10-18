@@ -24,11 +24,14 @@ final class Stats {
         days = noDisk ? [:] : (try? JSONDecoder().decode([String: DayStats].self, from: Data(contentsOf: self.url))) ?? [:]
     }
 
-    static func key(_ date: Date) -> String {
+    static func key(_ date: Date) -> String { keyFormat.string(from: date) }
+
+    /// One formatter for every key: making a DateFormatter costs about 25 microseconds.
+    private static let keyFormat: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
-    }
+        return f
+    }()
 
     var today: DayStats { days[Stats.key(Date())] ?? DayStats() }
 

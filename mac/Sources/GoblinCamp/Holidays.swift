@@ -43,22 +43,28 @@ enum Holidays {
 
     /// The date the camp lives in: today, or `CAMP_DATE=yyyy-MM-dd` (tests).
     static var now: Date {
-        guard let forced = ProcessInfo.processInfo.environment["CAMP_DATE"] else { return Date() }
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        guard let day = f.date(from: forced) else { return Date() }
+        guard let day = forcedDay else { return Date() }
         let time = Calendar.current.dateComponents([.hour, .minute, .second], from: Date())
         return Calendar.current.date(byAdding: time, to: day) ?? day
     }
 
-    private static var cache: (key: String, holiday: Holiday?)?
+    /// `CAMP_DATE`, read once: reading the environment costs tens of microseconds and `now` is asked many times a frame.
+    private static let forcedDay: Date? = ProcessInfo.processInfo.environment["CAMP_DATE"].flatMap { forced in
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: forced)
+    }
 
-    /// Today's holiday, if any (worked out once a day).
+    private static var cache: (until: Date, holiday: Holiday?)?
+
+    /// Today's holiday, if any (worked out once a day). Asked for every resident in every frame, so a hit must stay cheap: it only
+    /// compares the time with the next midnight (making a date key each time used to take half of a frame's drawing).
     static var today: Holiday? {
-        let key = Stats.key(now)
-        if let cache, cache.key == key { return cache.holiday }
-        let found = on(now)
-        cache = (key, found)
+        let date = now
+        if let cache, date < cache.until { return cache.holiday }
+        let found = on(date)
+        let midnight = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: date)) ?? date.addingTimeInterval(3600)
+        cache = (midnight, found)
         return found
     }
 

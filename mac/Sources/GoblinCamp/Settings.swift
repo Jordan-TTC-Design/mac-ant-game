@@ -146,9 +146,11 @@ final class Settings {
         set { defaults.set(newValue, forKey: "alertScreen") }
     }
     /// A full-screen window (video, slideshow) counts as focus mode: everything goes quiet.
+    /// `CAMP_FULLSCREEN_FOCUS` (tests), read once: the mode is looked at several times a frame.
+    private static let forcedFullscreenFocus: Bool? = ProcessInfo.processInfo.environment["CAMP_FULLSCREEN_FOCUS"].map { $0 != "0" }
     var fullscreenFocus: Bool {
         get {
-            if let forced = ProcessInfo.processInfo.environment["CAMP_FULLSCREEN_FOCUS"] { return forced != "0" } // tests
+            if let forced = Settings.forcedFullscreenFocus { return forced } // tests
             return defaults.object(forKey: "fullscreenFocus") as? Bool ?? true
         }
         set { defaults.set(newValue, forKey: "fullscreenFocus") }

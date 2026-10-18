@@ -894,6 +894,7 @@ final class AntView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let lastBreed = character.breeds.count - 1
         let frenzied = Colony.frenzied
+        let holiday = Holidays.today // (once a frame, not once a resident)
         ctx.saveGState()
         ctx.interpolationQuality = .none // keep the pixels sharp
         var minded = Set<Int>() // young ones being minded (they get a heart)
@@ -986,7 +987,7 @@ final class AntView: NSView {
             ctx.setAlpha(1)
             if let touch = ant.touch { drawTouchMarks(ant, touch, at: p, size: size, pixel: pixel) }
             if ant.wet > 0 { drawDrips(ant, at: p, size: size) }
-            if isMap, let day = Holidays.today { drawHolidayWear(ant, day: day, at: p, size: size, pixel: pixel) }
+            if isMap, let day = holiday { drawHolidayWear(ant, day: day, at: p, size: size, pixel: pixel) }
             if ant.female, ant.fadeAlpha > 0.5 { // a little pink bow at the top of the head
                 let bx = p.x + size * 0.14, by = p.y + size * (ant.isChild ? 0.62 : 0.66)
                 NSColor(calibratedRed: 0.96, green: 0.45, blue: 0.62, alpha: 1).setFill()

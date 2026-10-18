@@ -28,9 +28,11 @@ enum Scenery {
     }
 
     static var currentHour: Int {
-        if let forced = ProcessInfo.processInfo.environment["CAMP_HOUR"], let h = Int(forced) { return h }
+        if let forcedHour { return forcedHour }
         return Calendar.current.component(.hour, from: Date())
     }
+    /// `CAMP_HOUR` (tests), read once: the hour is asked many times a frame.
+    private static let forcedHour: Int? = ProcessInfo.processInfo.environment["CAMP_HOUR"].flatMap { Int($0) }
 
     /// The strip heights (in points) the forest comes in; the meadow is one thin size.
     static let sizes = [30, 42, 54, 64]
