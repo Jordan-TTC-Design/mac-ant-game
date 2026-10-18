@@ -54,6 +54,16 @@ struct Ant {
         case tend(spot: CGPoint, face: CGPoint)
         /// At the scribe's desk while Claude Code works (Scribe.swift): typing (writing, for elves) at `desk`; nodding off after a long while.
         case scribe(desk: CGPoint, dozing: Bool)
+        /// Setting out into the big world with the others (CampScenes.swift): gathering at `spot` in front of the nest, then off to `exit`.
+        case muster(spot: CGPoint, exit: CGPoint)
+        /// Looking on at `face` from `spot` (CampScenes.swift): `kind` 0 seeing a party off, 1 welcoming one home, 2 at a memorial.
+        case witness(spot: CGPoint, face: CGPoint, kind: Int)
+        /// Home from a won fight (CampScenes.swift): walks up to `to` in front of the nest holding up what it brought (`loot`), then goes in.
+        case parade(to: CGPoint, loot: String?)
+        /// Hurt in the big world (CampScenes.swift): lying at `spot` by the clinic until it is better.
+        case convalesce(spot: CGPoint)
+        /// Looking after one who lies hurt by the clinic (CampScenes.swift).
+        case nurse(patient: Int)
 
         var label: String {
             switch self {
@@ -81,6 +91,11 @@ struct Ant {
             case .herd: return "抓動物"
             case .carryBeast: return "把動物帶回牧場"
             case .tend: return "餵牧場的動物"
+            case .muster: return "準備出發"
+            case .witness(_, _, let kind): return ["送行", "迎接凱旋", "哀悼"][min(2, max(0, kind))]
+            case .parade: return "凱旋歸來"
+            case .convalesce: return "養傷"
+            case .nurse: return "照顧傷患"
             }
         }
     }
@@ -368,7 +383,15 @@ struct Ant {
     }
 
     var isDeparting: Bool {
-        if case .departing = mode { return true }
+        switch mode {
+        case .departing, .activity(.muster, _): return true // (lining up to go counts: the books already have it away)
+        default: return false
+        }
+    }
+
+    /// Lying hurt by the clinic (CampScenes.swift): drawn lying down like a sleeper.
+    var liesDown: Bool {
+        if case .activity(.convalesce(let spot), _) = mode { return hypot(spot.x - pos.x, spot.y - pos.y) <= 3 }
         return false
     }
 
@@ -762,6 +785,11 @@ struct Ant {
         case .herd: return 40
         case .carryBeast: return 90
         case .tend: return Double.random(in: 10...16)
+        case .muster: return 7
+        case .witness: return Double.random(in: 7...10)
+        case .parade: return 7
+        case .convalesce: return 300
+        case .nurse: return Double.random(in: 15...25)
         }
     }
 
@@ -769,7 +797,20 @@ struct Ant {
     private mutating func updateActivity(_ activity: Activity, remaining: Double, dt: Double, world: AntWorld) -> Event? {
         var kind = activity
         activityClock += dt
-        if isWounded || world.creatures.contains(where: { $0.hostile && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < 150 }) { return giveUp() }
+        let danger = world.creatures.contains(where: { $0.hostile && hypot(pos.x - $0.pos.x, pos.y - $0.pos.y) < 150 })
+        switch kind { // (the big world's scenes, CampScenes.swift: whoever the books say is away still goes, whoever came home still gets in)
+        case .muster(_, let exit) where danger || activityClock > 25:
+            mode = .departing(target: exit)
+            return nil
+        case .parade where danger || activityClock > 60:
+            mode = .returningToNest
+            return nil
+        case .convalesce where danger:
+            mode = .returningToNest
+            return nil
+        case .convalesce: break // (hurt is why it is there)
+        default: if isWounded || danger { return giveUp() }
+        }
         var left = remaining - dt
         var event: Event?
         switch kind {
@@ -1024,6 +1065,60 @@ struct Ant {
             } else {
                 turn(toward: atan2(fire.y - pos.y, fire.x - pos.x), rate: 4, dt: dt)
                 health = min(maxHealth, health + dt * 0.03)
+            }
+        case .muster(let spot, let exit):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * 1.1, dt: dt)
+                left = remaining // (the waiting starts once it is in line)
+            } else {
+                turn(toward: atan2(exit.y - pos.y, exit.x - pos.x), rate: 4, dt: dt)
+            }
+            if left <= 0 {
+                mode = .departing(target: exit)
+                return nil
+            }
+        case .witness(let spot, let face, let kind):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if kind == 2, world.race == "undead", distance <= 3 || activityClock > 12 { // the undead drift round the grave instead of standing at it
+                let a = activityClock * 1.1 + Double(id)
+                let round = CGPoint(x: face.x + cos(a) * 14, y: face.y + sin(a) * 8)
+                walk(toward: round, distance: hypot(round.x - pos.x, round.y - pos.y), speed: effectiveSpeed * 0.5, dt: dt)
+            } else if distance > 3, activityClock < 20 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * world.pace * 1.1, dt: dt)
+                left = remaining
+            } else {
+                turn(toward: atan2(face.y - pos.y, face.x - pos.x), rate: 5, dt: dt)
+            }
+        case .parade(let to, _):
+            let distance = hypot(to.x - pos.x, to.y - pos.y)
+            if distance > 3 {
+                walk(toward: to, distance: distance, speed: effectiveSpeed * 0.9, dt: dt)
+                left = remaining
+            } else {
+                heading = -Double.pi / 2 // facing everyone, holding it up
+            }
+            if left <= 0 {
+                mode = .returningToNest
+                return nil
+            }
+        case .convalesce(let spot):
+            let distance = hypot(spot.x - pos.x, spot.y - pos.y)
+            if distance > 3 {
+                walk(toward: spot, distance: distance, speed: effectiveSpeed * 0.75, dt: dt) // limping there
+                left = remaining
+            } else {
+                health = min(maxHealth, health + dt * 0.02 * world.healRate / 0.05)
+                if health >= maxHealth * 0.8 { left = 0 } // well enough to be up
+            }
+        case .nurse(let patient):
+            guard let other = world.partners[patient] else { return giveUp() }
+            let distance = hypot(other.x - pos.x, other.y - pos.y)
+            if distance > 14 {
+                walk(toward: CGPoint(x: other.x + 8, y: other.y + 2), distance: distance - 8, speed: effectiveSpeed * 1.1, dt: dt)
+                left = remaining
+            } else {
+                turn(toward: atan2(other.y - pos.y, other.x - pos.x), rate: 5, dt: dt)
             }
         }
         if left <= 0 {

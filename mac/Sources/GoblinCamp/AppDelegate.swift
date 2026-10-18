@@ -2620,6 +2620,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         self.colony.celebrate(level: up.level, opens: up.opens)
                     }
                     self.tellExpeditions(events.compactMap(\.expedition))
+                    self.colony.scenes.note(events.compactMap(\.expedition)) // (before the books are applied: those walking in are met with it)
                     for back in events.compactMap(\.lairBack) {
                         self.say(back.held
                             ? "\(back.name)（\(back.level) 級）回來搶領地，被我們打退了！" + (back.fallen > 0 ? "倒下 \(back.fallen) 隻。" : "")

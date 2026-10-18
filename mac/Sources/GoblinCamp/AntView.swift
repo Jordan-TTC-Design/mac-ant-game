@@ -906,6 +906,7 @@ final class AntView: NSView {
             standing = colony.decorStanding().map { k in (colony.decorPoint(colony.decor[k]).y, { [unowned self] in self.drawDecorItem(k) }) }
             standing += colony.ranch.beasts.filter { $0.pen >= 0 }.map { b in (b.pos.y, { [unowned self] in self.drawBeast(b) }) }
             standing += colony.placedBuildings().map { b in (b.at.y, { [unowned self] in self.drawBuilding(b) }) } // (營地建設: Buildings.swift)
+            standing += colony.scenes.memorials.map { m in (m.at.y, { [unowned self] in CampScenes.drawMemorial(m, at: self.local(m.at)) }) } // (CampScenes.swift)
             standing.sort { $0.y > $1.y }
         }
         defer { for item in standing { item.draw() } } // (those nearer than everybody)
@@ -956,13 +957,14 @@ final class AntView: NSView {
                     continue
                 }
             }
-            if activity == .sleep, ant.touch == nil { // lying on its side, and turning over now and then; nothing else to draw
+            if activity == .sleep || ant.liesDown, ant.touch == nil { // lying on its side, and turning over now and then; nothing else to draw
                 guard let lying = role.image(direction: .down, phase: 0) else { continue }
                 ctx.saveGState()
                 ctx.translateBy(x: p.x, y: p.y + size * 0.05)
                 ctx.rotate(by: ant.sleepFlip ? -.pi / 2 : .pi / 2)
                 ctx.draw(lying, in: CGRect(x: -size / 2, y: -size / 2, width: size, height: size))
                 ctx.restoreGState()
+                if ant.liesDown { CampScenes.drawPatient(ant, at: p, size: size, pixel: pixel) } // (hurt, by the clinic)
                 continue
             }
             // the walk cycle advances with distance walked; standing still shows the first frame
@@ -1329,6 +1331,8 @@ final class AntView: NSView {
                 let x = p.x + (to.x - p.x) * f, y = p.y + size * 0.5 + (to.y - p.y - size * 0.3) * f + sin(f * .pi) * 8
                 rect(x, y, 1, 1, NSColor(calibratedRed: 0.95, green: 0.85, blue: 0.45, alpha: 1 - f * 0.5))
             }
+        case .muster?, .witness?, .parade?, .nurse?:
+            CampScenes.drawExtras(ant, at: p, size: size, pixel: u)
         case .chat(let partner)?:
             // the two take turns: a bubble over whoever is talking now
             let turn = Int(t / 2.2) % 2 == (ant.id < partner ? 0 : 1)
