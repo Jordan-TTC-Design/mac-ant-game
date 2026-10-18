@@ -460,7 +460,8 @@ final class WorldPane: NSObject, MainPane, NSSearchFieldDelegate {
 
     // MARK: the web app's own pages (a held cell, a report, the talents, the leaderboard), each in a window
 
-    private func openWeb(_ path: String, title: String) {
+    /// A page of the web app in a window of its own beside the map (one window per first path part).
+    func openWeb(_ path: String, title: String) {
         let key = path.split(separator: "/").first.map(String.init) ?? path
         if let w = webWindows[key] {
             w.pane.load(path)

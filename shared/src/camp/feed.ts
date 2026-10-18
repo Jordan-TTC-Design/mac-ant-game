@@ -135,6 +135,11 @@ export function feedEntry(e: CampEvent, noun = "居民"): FeedEntry | null {
       if (d.town) return line("🏰", "蓋好了一座城鎮！", "world");
       if (d.nest) return line("🥚", "領地的繁殖巢開工了。", "world");
       if (d.movedHome) return line("🏕️", "營地搬家了。", "world");
+      if (d.raceSwitched) {
+        const r = d.raceSwitched as { to: string; levelTo: number; left: number; cellsLost: string[] };
+        const name = ({ goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" } as Record<string, string>)[r.to] ?? r.to;
+        return line("🔁", `營地換成了${name}（種族 Lv${r.levelTo}），走掉了 ${r.left} 隻${r.cellsLost.length ? `，放掉了 ${r.cellsLost.length} 塊領地` : ""}。`, "world");
+      }
       return null;
     }
     default:

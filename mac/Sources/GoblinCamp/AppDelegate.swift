@@ -1686,9 +1686,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if self.colony.phase == .editing { self.colony.endEditing() } else { self.colony.beginEditing() }
         }
-        // the race is chosen when a world is started, never in the middle of one (its residents are made of it)
-        characterMenuItem = NSMenuItem(title: "種族：\(Characters.current.name)（開新世界時可以換）", action: nil, keyEquivalent: "")
-        characterMenuItem.isEnabled = false
+        // the race: chosen when a world is started; with an account, 換族 on the web page (RACES_SWITCH.md)
+        characterMenuItem = ClosureMenuItem(title: characterTitle()) { [weak self] in self?.showRaceSwitch() }
         capMenuItem = choiceMenu(title: "\(Characters.current.noun)數量上限",
                                  options: [("50 隻", 50), ("100 隻", 100), ("150 隻", 150), ("300 隻", 300), ("500 隻", 500), ("1000 隻", 1000)],
                                  get: { self.settings.maxAnts }, set: { self.settings.maxAnts = $0 })
@@ -2260,6 +2259,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     enum CampChoice { case account, mac }
 
+    /// The camp became another race (換族, here or on another device): the camp is set up again from the books in the new
+    /// race's looks, where it stands. The race level dropped, so the fireworks wait for the next level above the new one.
+    private func raceSwitched(to race: String) {
+        let level = ledger.view?.raceLevel ?? 1
+        UserDefaults.standard.set(level, forKey: "celebratedRaceLevel")
+        restoreFromBooks(oldSpot: nil)
+        mainWindow.reloadSidebar() // (名冊 is named after the race)
+        say("營地換成了\(Characters.current.name)！種族等級現在是 Lv\(level)。")
+    }
+
     /// The account has a camp and this Mac has its own old one: only one can be the account's.
     private func askWhichCamp(account: Int, mac: Int) -> CampChoice {
         if let forced = ProcessInfo.processInfo.environment["CAMP_TEST_CAMP_CHOICE"] { return forced == "mac" ? .mac : .account }
@@ -2440,6 +2449,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func applyBooksToCamp() {
         guard campReady, let stores = ledger.bookStores() else { return }
+        if let race = ledger.view?.race, race != settings.characterID, Characters.all.contains(where: { $0.id == race }) {
+            return raceSwitched(to: race)
+        }
         colony.applyBooks(ledger.bookResidents(), stores: stores, away: ledger.awayIDs())
         colony.applyBooksAway(ledger.awayGearResidents(), far: ledger.view?.autoGearFar ?? false)
         colony.booksQuestsDone = Set(ledger.view?.questsDone ?? [])
@@ -4564,6 +4576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pomodoroTodayItem.title = "今天已完成 \(today.pomodoros) 個，專注 \(Stats.minutes(today.focusSeconds))"
         pauseItem.title = colony.isPaused ? "繼續" : "暫停"
         pauseItem.isEnabled = colony.isSimulating
+        characterMenuItem.title = characterTitle()
         let character = Characters.current
         let home = character.nestName
         let walking = worldWalking.filter { $0 > Date().addingTimeInterval(-60) }
@@ -4740,8 +4753,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func characterTitle() -> String {
+        serverCamp && sync.user != nil ? "種族：\(Characters.current.name)（換族…）" : "種族：\(Characters.current.name)（開新世界時可以換）"
+    }
+
+    /// 換族: the web page that says what it takes (the big world has to be open; the server checks the rest).
+    private func showRaceSwitch() {
+        guard serverCamp, sync.user != nil else { return say("換族要先登入帳號，種族在開新世界時也可以換。") }
+        showWorld()
+        ensureWorldPane().openWeb("/race", title: "換族")
+    }
+
     private func characterChanged() {
-        characterMenuItem?.title = "種族：\(Characters.current.name)（開新世界時可以換）"
+        characterMenuItem?.title = characterTitle()
         mapWindow?.window.title = "\(Characters.current.name)營地"
         sceneKey = "" // the camp's belongings depend on the race
         applyStatusIcon()

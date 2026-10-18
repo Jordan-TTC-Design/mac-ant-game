@@ -309,6 +309,13 @@
       "when": 1792321405671,
       "tag": "0043_camp_resident_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792322123902,
+      "tag": "0044_race_switch",
+      "breakpoints": true
     }
   ]
 }

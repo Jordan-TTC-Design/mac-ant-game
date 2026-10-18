@@ -1099,7 +1099,11 @@
   "ghost_veil": "幽魂面紗",
   "banshee_tear": "女妖之淚",
   "basilisk_scale": "蛇蜥鱗",
-  "basilisk_eye": "石化之眼"
+  "basilisk_eye": "石化之眼",
+  "token_goblin": "部落戰旗",
+  "token_elf": "古樹之種",
+  "token_undead": "不滅魂火",
+  "token_beast": "獸王之牙"
  },
  "rations": [
   "ration_bread",

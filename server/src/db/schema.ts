@@ -247,6 +247,9 @@ export const worldPlayers = pgTable("world_players", {
   /** 種族天賦 bought (shared/src/world/talents.ts): talent id → ranks; and how many times they were all reset. */
   talents: jsonb("talents").$type<Record<string, number>>().notNull().default({}),
   talentResets: integer("talent_resets").notNull().default(0),
+  /** 換族 (shared/src/world/race-switch.ts): when the camp last switched race, and how many times (the first is lighter). */
+  raceSwitchedAt: timestamp("race_switched_at", { withTimezone: true, precision: 3 }),
+  raceSwitches: integer("race_switches").notNull().default(0),
 });
 
 /** Cells someone changed: held, or a lair cleared. A cell nobody touched is worked out from the seed (contents.ts). */

@@ -178,6 +178,11 @@ export const MATERIALS: Record<string, MaterialInfo> = {
   banshee_tear: { name: "女妖之淚", color: "#aac8f0" },
   basilisk_scale: { name: "蛇蜥鱗", color: "#5a8c3c" },
   basilisk_eye: { name: "石化之眼", color: "#dcbe3c" },
+  // 換族的信物 (race-switch.ts RACE_TOKENS; RACES_SWITCH.md §3)
+  token_goblin: { name: "部落戰旗", color: "#b8402a" },
+  token_elf: { name: "古樹之種", color: "#7ac04a" },
+  token_undead: { name: "不滅魂火", color: "#7ae0d0" },
+  token_beast: { name: "獸王之牙", color: "#e8d8a8" },
 };
 
 export function materialName(id: string): string {

@@ -5,9 +5,9 @@ import { enhanceCost, ENHANCE_MAX, GEAR, gearBonus, gearMax, gearOwnMaterial, ge
 import { SITE_RULES } from "./sites.ts";
 
 describe("gear for every material (ECONOMY.md §1.1)", () => {
-  it("leaves no material without a use (food and items are eaten and used, not made into gear)", () => {
+  it("leaves no material without a use (food and items are eaten and used, 換族的信物 spent on switching, not made into gear)", () => {
     const used = new Set([...GEAR.flatMap((g) => Object.keys(g.cost)), ...ITEMS.flatMap((i) => Object.keys(i.cost)), ...SITE_RULES.flatMap((s) => s.costs.flatMap((c) => Object.keys(c)))]);
-    const idle = Object.keys(MATERIALS).filter((id) => !used.has(id) && !/^(ration_|food_|item_)/.test(id));
+    const idle = Object.keys(MATERIALS).filter((id) => !used.has(id) && !/^(ration_|food_|item_|token_)/.test(id));
     expect(idle).toEqual([]);
     for (const g of GEAR) for (const id of Object.keys(g.cost)) expect(MATERIALS[id], `${g.id} needs ${id}`).toBeDefined();
     expect(new Set(GEAR.map((g) => g.id)).size).toBe(GEAR.length);

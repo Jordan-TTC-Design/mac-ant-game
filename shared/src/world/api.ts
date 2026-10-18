@@ -520,3 +520,30 @@ export interface TerritoryList {
   rations: number;
   paying: number;
 }
+
+/** `POST /api/world/race`: the camp becomes this race (換族, race-switch.ts). */
+export const raceSwitchInput = z.object({ race: z.enum(["goblin", "elf", "undead", "beast"]) });
+
+/** `GET /api/world/race`: what a switch would cost and take, for each race the camp could become. */
+export interface RaceSwitchView {
+  race: string;
+  level: number;
+  /** The account has never switched: the cost and the losses are lighter. */
+  first: boolean;
+  minLevel: number;
+  /** When the camp may switch again (null: as far as the cooldown goes, now). */
+  readyAt: string | null;
+  cooldownDays: number;
+  levelAfter: number;
+  /** Everybody alive (home, held cells, camping and guarding), and about how many would stay. */
+  residents: number;
+  residentsAfter: number;
+  /** Held cells beyond the camp's own ring of six, and how many of them would be given up at random. */
+  farCells: number;
+  cellsLost: number;
+  /** Parties on the road (a switch waits for them). */
+  travelling: number;
+  /** Talent points that come back (the new race's tree starts empty). */
+  talentPoints: number;
+  options: { race: string; price: { id: string; name: string; need: number; have: number }[]; problem: string | null }[];
+}

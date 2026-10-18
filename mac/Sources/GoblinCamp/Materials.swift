@@ -169,6 +169,10 @@ enum Materials {
         DropSpec(id: "vampire_cape", name: "伯爵披風", chance: 1, min: 1, max: 1, color: "#8a1a2a"), // 中級巢穴（WORLD.md §26）
         DropSpec(id: "flame_heart", name: "炎魔之心", chance: 1, min: 1, max: 1, color: "#ff6a2a"), // 中級巢穴（WORLD.md §26）
         DropSpec(id: "naga_crown", name: "娜迦王冠", chance: 1, min: 1, max: 1, color: "#60c0e0"), // 中級巢穴（WORLD.md §26）
+        DropSpec(id: "token_goblin", name: "部落戰旗", chance: 0.25, min: 1, max: 1, color: "#b8402a"), // 換族的信物（RACES_SWITCH.md）
+        DropSpec(id: "token_elf", name: "古樹之種", chance: 0.25, min: 1, max: 1, color: "#7ac04a"), // 換族的信物（RACES_SWITCH.md）
+        DropSpec(id: "token_undead", name: "不滅魂火", chance: 0.25, min: 1, max: 1, color: "#7ae0d0"), // 換族的信物（RACES_SWITCH.md）
+        DropSpec(id: "token_beast", name: "獸王之牙", chance: 0.25, min: 1, max: 1, color: "#e8d8a8"), // 換族的信物（RACES_SWITCH.md）
     ]
 
     /// Every material any loaded monster can drop.

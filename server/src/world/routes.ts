@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { buildInput, demolishInput, hubInput, expeditionInput, isCellId, marketInput, openWorldInput, planInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
+import { buildInput, demolishInput, hubInput, expeditionInput, isCellId, marketInput, openWorldInput, planInput, raceSwitchInput, recallInput, routeInput, talentsInput, targetInput } from "@goblincamp/shared/world";
 import type { AppDeps, AppEnv } from "../app.ts";
 import { requireAuth } from "../auth/session.ts";
 import { apiError, readJson } from "../http.ts";
@@ -28,6 +28,8 @@ import {
   recall,
   learnTalents,
   resetTalents,
+  raceSwitchView,
+  switchRace,
   sendExpedition,
   setCellTarget,
   tradeAtMarket,
@@ -222,6 +224,20 @@ export function worldRoutes(deps: AppDeps) {
     const out = await run(c, () => db.transaction((tx) => resetTalents(tx, userId, now())), [userId]);
     if (out instanceof Response) return out;
     return c.json(await db.transaction((tx) => worldMe(tx, userId, now())));
+  });
+
+  /** 換族 (RACES_SWITCH.md): what it would cost and take; and doing it. Answers with the camp's new standing. */
+  app.get("/race", async (c) => {
+    const userId = c.get("session").user.id;
+    return respond(c, await run(c, () => db.transaction((tx) => raceSwitchView(tx, userId, now()))));
+  });
+  app.post("/race", async (c) => {
+    const body = await readJson(c, raceSwitchInput);
+    if ("response" in body) return body.response;
+    const userId = c.get("session").user.id;
+    const out = await run(c, () => db.transaction((tx) => switchRace(tx, userId, body.data.race, now())), [userId]);
+    if (out instanceof Response) return out;
+    return c.json({ switched: out, me: await db.transaction((tx) => worldMe(tx, userId, now())) });
   });
 
   app.get("/leaderboard", async (c) => respond(c, await run(c, () => db.transaction((tx) => leaderboard(tx)))));

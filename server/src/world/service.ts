@@ -5,7 +5,7 @@
  */
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { PushSubscriptionJSON, WorldPush } from "@goblincamp/shared";
-import { advance, fightBoosts, gearRule, RACE_RANGE, raceRules, residentAsFighter, residentFor, taipeiDay, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
+import { advance, BASE_LIFESPAN_HOURS, fightBoosts, RACES, type RaceId, gearRule, RACE_RANGE, raceRules, residentAsFighter, residentFor, taipeiDay, type GearItem, type GearSlot, type Place, type Population } from "@goblincamp/shared/camp";
 import {
   afterDefeat,
   shieldLapsed,
@@ -157,6 +157,16 @@ import {
   type LairView,
   type LatLng,
   type LeaderboardEntry,
+  cellsLost,
+  levelAfterSwitch,
+  pickSome,
+  RACE_SWITCH,
+  raceSwitchPrice,
+  raceSwitchProblem,
+  raceSwitchReadyAt,
+  raceTokenDrop,
+  residentsKept,
+  type RaceSwitchView,
   type PlayerWorldState,
   type Terrain,
   type WorldMe,
@@ -171,7 +181,7 @@ import { recordFlow } from "../camp/flows.ts";
 /** A cost as a flow: every material taken, negative (camp/flows.ts). */
 const taken = (cost: Record<string, number>) => Object.fromEntries(Object.entries(cost).map(([id, n]) => [id, -n]));
 import type { Tx } from "../auth/session.ts";
-import { addEvent, advanceCamp, lockCamp, toResident, type CampRow, type ResidentRow } from "../camp/service.ts";
+import { addEvent, advanceCamp, campRaceLevel, HALF_BREED_LIFESPAN, lockCamp, toResident, type CampRow, type ResidentRow } from "../camp/service.ts";
 import { campEvents, campResidents, camps, devices, expeditions, friendships, users, worldBosses, worldCells, worldPlayers, worldRewards } from "../db/schema.ts";
 
 const MINUTE = 60_000;
@@ -1833,6 +1843,9 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         if (exp.boosts?.luck) loot = Object.fromEntries(Object.entries(loot).map(([m, n]) => [m, Math.ceil(n * 1.5)]));
         loot = moreLoot(loot); // (talents)
         if (ground.loot) loot = Object.fromEntries(Object.entries(loot).map(([m, n]) => [m, Math.ceil(n * (1 + ground.loot))])); // (its 細分地形)
+        // (換族的信物: a lair that has to do with another race, for a camp of level 10 or more; race-switch.ts)
+        const token = raceTokenDrop(lair.kind, camp.race, await campRaceLevel(tx, camp.userId), seeded(exp.id, "race-token"));
+        if (token) loot[token] = (loot[token] ?? 0) + 1;
         outcome.loot = loot;
         for (const [mat, n] of Object.entries(loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };
         await recordFlow(tx, camp.userId, at, "world-loot", loot);
@@ -3040,4 +3053,177 @@ export function startWorldLoop(deps: Pick<AppDeps, "database" | "hub" | "push">,
     }
   }, everyMs);
   return () => clearInterval(timer);
+}
+
+// --- 換族 (RACES_SWITCH.md) ----------------------------------------------------------------------------------------
+
+/** What a switch would go by: the level, whether it is the first, the far cells, parties on the road, who lives where. */
+async function switchFacts(tx: Tx, userId: string, player: PlayerRow) {
+  const ring = new Set([player.homeCell, ...neighbors(player.homeCell)]);
+  const held = (await heldCells(tx, userId)).sort();
+  const [{ n: travelling }] = (await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(expeditions)
+    .where(and(eq(expeditions.userId, userId), eq(expeditions.status, "walking")))) as [{ n: number }];
+  const places = await tx
+    .select({ place: campResidents.place, n: sql<number>`count(*)::int` })
+    .from(campResidents)
+    .where(and(eq(campResidents.userId, userId), isNull(campResidents.diedAt)))
+    .groupBy(campResidents.place);
+  return { level: raceLevel(player.xp), first: player.raceSwitches === 0, held, far: held.filter((c) => !ring.has(c)), travelling, places };
+}
+
+/** Where a resident counts when the camp is halved: each held cell on its own, everybody else (home, camping, guarding) at home. */
+const switchGroup = (place: string, homeCell: string) => (place.startsWith("cell:") && place !== cellPlace(homeCell) ? place : "home");
+
+/** `GET /api/world/race`: what switching would cost and take. */
+export async function raceSwitchView(tx: Tx, userId: string, now: Date): Promise<RaceSwitchView> {
+  const camp = await lockCamp(tx, userId);
+  if (!camp) throw new WorldError(404, "no_camp", "這個帳號還沒有營地。");
+  const [player] = await tx.select().from(worldPlayers).where(eq(worldPlayers.userId, userId));
+  if (!player) throw new WorldError(403, "not_open", "換族要先開啟大世界（種族等級從那裡來）。");
+  const f = await switchFacts(tx, userId, player);
+  const groups = new Map<string, number>();
+  for (const p of f.places) if (!p.place.startsWith("exp:") && !p.place.startsWith("fell:")) groups.set(switchGroup(p.place, player.homeCell), (groups.get(switchGroup(p.place, player.homeCell)) ?? 0) + p.n);
+  const residents = [...groups.values()].reduce((a, b) => a + b, 0);
+  return {
+    race: camp.race,
+    level: f.level,
+    first: f.first,
+    minLevel: RACE_SWITCH.minLevel,
+    readyAt: raceSwitchReadyAt(player.raceSwitchedAt)?.toISOString() ?? null,
+    cooldownDays: RACE_SWITCH.cooldownDays,
+    levelAfter: levelAfterSwitch(f.level, f.first),
+    residents,
+    residentsAfter: [...groups.values()].reduce((a, n) => a + residentsKept(n, f.first), 0),
+    farCells: f.far.length,
+    cellsLost: cellsLost(f.far.length, f.first),
+    travelling: f.travelling,
+    talentPoints: Object.values(player.talents).reduce((a, b) => a + b, 0),
+    options: RACES.filter((r) => r !== camp.race).map((race) => ({
+      race,
+      price: Object.entries(raceSwitchPrice(f.level, f.first, race)).map(([id, need]) => ({ id, name: materialName(id), need, have: camp.materials[id] ?? 0 })),
+      problem: raceSwitchProblem({ race: camp.race, to: race, level: f.level, switchedAt: player.raceSwitchedAt, now, materials: camp.materials, switches: player.raceSwitches, travelling: f.travelling }),
+    })),
+  };
+}
+
+/**
+ * 換族 (RACES_SWITCH.md §4), all at once: the price is taken; of the cells beyond the camp's own ring a share is given up at
+ * random (their residents come home, friends guarding them go home); the camp's own campers and guards come home; every
+ * place keeps only its share of residents (who goes is random; their gear goes to the store); a cell left with fewer than
+ * the new race must keep gets more from home, or is given up; those who stay become the new race's breed of the same name
+ * with the new race's lifespan (as much of it left as they had); the level drops, the talents come back, the princess's
+ * story starts over, and the births go on at the new race's pace from now.
+ */
+export async function switchRace(tx: Tx, userId: string, to: RaceId, now: Date) {
+  const camp = await lockCamp(tx, userId);
+  if (!camp) throw new WorldError(404, "no_camp", "這個帳號還沒有營地。");
+  await advanceWorld(tx, camp, now);
+  const player = await lockPlayer(tx, userId);
+  if (!player) throw new WorldError(403, "not_open", "換族要先開啟大世界（種族等級從那裡來）。");
+  const f = await switchFacts(tx, userId, player);
+  const why = raceSwitchProblem({ race: camp.race, to, level: f.level, switchedAt: player.raceSwitchedAt, now, materials: camp.materials, switches: player.raceSwitches, travelling: f.travelling });
+  if (why) throw new WorldError(409, "not_allowed", why);
+  const from = camp.race;
+  const homeCell = player.homeCell;
+  const price = raceSwitchPrice(f.level, f.first, to);
+  camp.materials = spend(camp.materials, price);
+  await recordFlow(tx, userId, now, "world-race", taken(price));
+  const random = seeded(userId, "race-switch", player.raceSwitches);
+
+  // the far land: a share given up at random, its residents home
+  const lost = pickSome(f.far, cellsLost(f.far.length, f.first), random);
+  for (const cell of lost) {
+    await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, userId), eq(campResidents.place, cellPlace(cell)), isNull(campResidents.diedAt)));
+    await releaseCell(tx, cell);
+  }
+  // the camp's own campers and guards (at friends' cells) come home too
+  await tx
+    .update(campResidents)
+    .set({ place: "home" })
+    .where(and(eq(campResidents.userId, userId), isNull(campResidents.diedAt), or(sql`${campResidents.place} like 'bivouac:%'`, sql`${campResidents.place} like 'guard:%'`, eq(campResidents.place, cellPlace(homeCell)))));
+
+  // every place keeps its share
+  const living = await tx.select().from(campResidents).where(and(eq(campResidents.userId, userId), isNull(campResidents.diedAt))).orderBy(campResidents.id);
+  const byPlace = new Map<string, ResidentRow[]>();
+  for (const r of living) byPlace.set(r.place, [...(byPlace.get(r.place) ?? []), r]);
+  const leaving: ResidentRow[] = [];
+  for (const [, rows] of [...byPlace].sort(([a], [b]) => a.localeCompare(b))) leaving.push(...pickSome(rows, rows.length - residentsKept(rows.length, f.first), random));
+  await bury(tx, camp, leaving, now);
+  if (leaving.length) await tx.update(campResidents).set({ place: "left" }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, leaving.map((r) => r.id))));
+  const gone = new Set(leaving.map((r) => r.id));
+  for (const [place, rows] of byPlace) byPlace.set(place, rows.filter((r) => !gone.has(r.id)));
+
+  // a cell left too thin gets more from home, or is given up
+  const min = garrisonMin(to);
+  const thin: string[] = [];
+  const kept = f.held.filter((c) => c !== homeCell && !lost.includes(c));
+  for (const cell of kept) {
+    const there = byPlace.get(cellPlace(cell)) ?? [];
+    if (there.length >= min) continue;
+    const home = byPlace.get("home") ?? [];
+    const spare = home.length - HOME_KEEP;
+    if (spare >= min - there.length) {
+      const sent = home.slice(home.length - (min - there.length));
+      await tx.update(campResidents).set({ place: cellPlace(cell) }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, sent.map((r) => r.id))));
+      byPlace.set("home", home.slice(0, home.length - sent.length));
+      byPlace.set(cellPlace(cell), [...there, ...sent]);
+    } else {
+      if (there.length) await tx.update(campResidents).set({ place: "home" }).where(and(eq(campResidents.userId, userId), inArray(campResidents.id, there.map((r) => r.id))));
+      byPlace.set("home", [...home, ...there]);
+      byPlace.delete(cellPlace(cell));
+      await releaseCell(tx, cell);
+      thin.push(cell);
+    }
+  }
+
+  // those who stay: the new race's breed of the same name, its lifespan, as much of it left as they had
+  const rules = raceRules(to);
+  const lifespanOf = (breed: string) => rules.breeds.find((b) => b.id === breed)?.lifespan ?? HALF_BREED_LIFESPAN[to]?.[breed] ?? rules.breeds[0]!.lifespan;
+  const known = (breed: string) => rules.breeds.some((b) => b.id === breed) || breed in (HALF_BREED_LIFESPAN[to] ?? {}) || breed.startsWith("d_");
+  for (const r of living) {
+    if (gone.has(r.id)) continue;
+    const breed = known(r.breed) ? r.breed : "common";
+    let diesAt: Date | null = null;
+    if (rules.ages) {
+      const roll = randomFrom(hashString(`${r.seed}|switch|${to}`));
+      const life = BASE_LIFESPAN_HOURS * HOUR * lifespanOf(breed) * (0.9 + 0.2 * roll());
+      const left = r.diesAt ? Math.max(0, r.diesAt.getTime() - now.getTime()) / Math.max(1, r.diesAt.getTime() - r.bornAt.getTime()) : 0.4 + 0.6 * roll();
+      diesAt = new Date(now.getTime() + Math.max(HOUR, Math.floor(left * life)));
+    }
+    await tx.update(campResidents).set({ breed, diesAt }).where(and(eq(campResidents.userId, userId), eq(campResidents.id, r.id)));
+  }
+
+  // the births go on at the new pace from now (a slot is startedAt + slot × interval)
+  const slotFrom = (startedAt: number, minutes: number) => Math.max(0, Math.ceil((now.getTime() - startedAt) / (minutes * MINUTE)));
+  for (const row of await tx.select().from(worldCells).where(eq(worldCells.owner, userId))) {
+    if (row.cell === homeCell) continue;
+    const readyAt = row.nestStartedAt ? row.nestStartedAt.getTime() + NEST_BUILD_HOURS * HOUR : null;
+    const minutes = row.hub ? hubBirthMinutes(to, row.hub) : nestBirthMinutes(to, row.town);
+    const target = row.target === null ? null : Math.max(row.target, min);
+    await tx
+      .update(worldCells)
+      .set({ nextSlot: readyAt !== null && readyAt <= now.getTime() ? slotFrom(readyAt, minutes) : row.nextSlot, target, updatedAt: now })
+      .where(eq(worldCells.cell, row.cell));
+  }
+
+  // the level, the talents (all points back), the race, the princess
+  const levelTo = levelAfterSwitch(f.level, f.first);
+  await tx
+    .update(worldPlayers)
+    .set({ xp: xpForLevel(levelTo), talents: {}, raceSwitchedAt: now, raceSwitches: player.raceSwitches + 1 })
+    .where(eq(worldPlayers.userId, userId));
+  forgetTalents(tx, userId);
+  camp.race = to;
+  camp.nextSlot = slotFrom(camp.startedAt.getTime(), rules.homeBirthMinutes);
+  await tx
+    .update(camps)
+    .set({ race: to, nextSlot: camp.nextSlot, princessName: "", romance: null, celebratedLevel: levelTo })
+    .where(eq(camps.userId, userId));
+  await addEvent(tx, userId, now, "world", {
+    raceSwitched: { from, to, first: f.first, levelFrom: f.level, levelTo, left: leaving.length, cellsLost: lost, cellsThin: thin, spent: price },
+  });
+  await bumpVersion(tx, camp);
+  return { from, to, levelFrom: f.level, levelTo, left: leaving.length, cellsLost: [...lost, ...thin] };
 }
