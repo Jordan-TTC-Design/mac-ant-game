@@ -1845,7 +1845,7 @@ export async function settleExpedition(tx: Tx, id: string, now: Date): Promise<{
         loot = moreLoot(loot); // (talents)
         if (ground.loot) loot = Object.fromEntries(Object.entries(loot).map(([m, n]) => [m, Math.ceil(n * (1 + ground.loot))])); // (its 細分地形)
         // (換族的信物: a lair that has to do with another race, for a camp of level 10 or more; race-switch.ts)
-        const token = raceTokenDrop(lair.kind, camp.race, await campRaceLevel(tx, camp.userId), seeded(exp.id, "race-token"));
+        const token = raceTokenDrop(lair.kind, camp.race, await campRaceLevel(tx, camp.userId), seeded(exp.id, "race-token"), lair.level);
         if (token) loot[token] = (loot[token] ?? 0) + 1;
         outcome.loot = loot;
         for (const [mat, n] of Object.entries(loot)) camp.materials = { ...camp.materials, [mat]: (camp.materials[mat] ?? 0) + n };

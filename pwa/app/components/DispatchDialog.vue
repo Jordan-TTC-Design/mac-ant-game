@@ -373,6 +373,9 @@ useModal();
             勝率約 <b>{{ Math.round(guess.win * 100) }}%</b>・平均倒下 {{ guess.fallen.toFixed(1) }} 隻・打倒 {{ guess.killed.toFixed(1) }} 隻
             {{ guess.win >= 0.8 ? "（應該打得贏）" : guess.win >= 0.45 ? "（有點冒險）" : "（很難打贏）" }}
           </p>
+          <p v-if="theirPower !== null && !target.owner && Number(ourPower) < Number(theirPower) * 0.9" class="warn small">
+            建議戰力至少約 {{ Math.round(Number(theirPower) * 0.9) }}（你現在 {{ ourPower }}）：先去工坊做裝備給出征的隊伍穿，再帶烤肉、蜂蜜這類加成食物。
+          </p>
           <p v-if="entry !== null" class="muted small">這個巢穴很小，一次最多只能進去 {{ entry }} 隻：靠裝備、道具和糧食取勝，不是人多。</p>
           <p v-else-if="odds !== null" class="muted small">{{ odds > 0.65 ? "應該打得贏" : odds > 0.45 ? "差不多，有點冒險" : "看起來打不過" }}</p>
           <p v-if="target.lairWounds" class="muted small">巢穴受傷中：剩 {{ target.lairWounds.standing }}/{{ target.lairWounds.total }} 隻、{{ Math.round(target.lairWounds.hpShare * 100) }}% 血</p>

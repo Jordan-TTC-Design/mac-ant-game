@@ -69,7 +69,7 @@ describe("what lives in a cell", () => {
     const forest = cells.map((c) => lairAt(1, c, "forest")).filter((l): l is Lair => l !== null);
     const share = forest.length / cells.length;
     expect(share).toBeGreaterThan(0.3);
-    expect(share).toBeLessThan(0.6);
+    expect(share).toBeLessThan(0.7); // (0.6 before the extra mid lairs of 2026-10-19)
     const kinds = lairKindsFor("forest");
     const allowed = new Set([...kinds.usual, ...kinds.rare]);
     for (const l of forest) {
@@ -117,7 +117,7 @@ describe("what lives in a cell", () => {
     }
     const free = empty + bosses + strays + mids + midBosses;
     expect(mids / free).toBeGreaterThan(0.03);
-    expect(mids / free).toBeLessThan(0.15);
+    expect(mids / free).toBeLessThan(0.25); // (0.15 before the extra mid lairs of 2026-10-19)
     expect(midBosses / free).toBeLessThan(0.04);
     expect(bosses / free).toBeGreaterThan(0.005);
     expect(bosses / free).toBeLessThan(0.05);

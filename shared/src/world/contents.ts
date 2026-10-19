@@ -536,7 +536,18 @@ export const STRAY_LAIR_CHANCE = 0.06;
  */
 export const MID_LAIR_CHANCE = 0.08;
 export const MID_BOSS_CHANCE = 0.015;
-export const MID_RACE_LEVELS: Record<2 | 3 | 4, number> = { 2: 5, 3: 10, 4: 15 };
+export const MID_RACE_LEVELS: Record<2 | 3 | 4, number> = { 2: 5, 3: 10, 4: 18 };
+/**
+ * (2026-10-19) The mid lairs climb in steps with no gap between the beginners' 1–3 and the top: a lair of tier 2 is level
+ * 3–6, tier 3 level 5–10, tier 4 level 8–14 (whatever the kind's own levels say; the great ones' are their own), and of the
+ * mid lairs 6 in 10 are tier 2, 3 in 10 tier 3 and 1 in 10 tier 4 (before, the top tier was the commonest).
+ */
+export const MID_LEVELS: Record<2 | 3 | 4, [number, number]> = { 2: [3, 6], 3: [5, 10], 4: [8, 14] };
+export const MID_TIER_SHARE: Record<2 | 3 | 4, number> = { 2: 0.6, 3: 0.3, 4: 0.1 };
+/** More mid lairs (a band after all the old ones, so the cells that held something before keep it): this share of the cells that would be empty. */
+export const MID_LAIR_EXTRA_CHANCE = 0.1;
+/** On a 細分地形 with kinds of its own on this ground, a mid lair is one of them this often. */
+const DETAIL_LEAN_CHANCE = 0.4;
 export const MID_BOSS_RACE_LEVEL = 20;
 
 /** Every kind that may turn up on this ground now: the usual ones, the 初期魔王 and the strays. */
@@ -579,6 +590,22 @@ export function lairAt(worldSeed: number, cell: CellId, terrain: Terrain = "open
   return makeLair(cell, kind, kind.levels, random);
 }
 
+/** A mid lair of this ground: its tier by MID_TIER_SHARE, then a kind of that tier, at the tier's levels. */
+function midLair(random: Random, cell: CellId, terrain: Terrain, weight: (l: LairKind) => number): Lair | null {
+  const mids = LAIRS.filter((l) => l.tier >= 2 && !l.boss && (l.terrain[terrain] ?? 0) > 0);
+  if (mids.length === 0) return null;
+  const tiers = ([2, 3, 4] as const).filter((t) => mids.some((l) => l.tier === t));
+  // (a 細分地形 leans to its own kinds: this often one of them, whatever its tier; else by the tiers' shares)
+  const own = mids.filter((l) => weight(l) > (l.terrain[terrain] ?? 0));
+  if (own.length > 0 && random() < DETAIL_LEAN_CHANCE) {
+    const kind = pickWeighted(random, own, weight);
+    return { ...makeLair(cell, kind, MID_LEVELS[kind.tier as 2 | 3 | 4], random), minRaceLevel: MID_RACE_LEVELS[kind.tier as 2 | 3 | 4] };
+  }
+  const tier = pickWeighted(random, tiers, (t) => MID_TIER_SHARE[t]);
+  const kind = pickWeighted(random, mids.filter((l) => l.tier === tier), (l) => l.terrain[terrain] ?? 0);
+  return { ...makeLair(cell, kind, MID_LEVELS[tier], random), minRaceLevel: MID_RACE_LEVELS[tier] };
+}
+
 /**
  * What a cell that would be empty may hold now and then: a 初期魔王 or a stray lair of the next tier (their own random
  * numbers, so the ordinary lairs are where they always were).
@@ -601,18 +628,14 @@ function rareLairAt(worldSeed: number, cell: CellId, terrain: Terrain, detail: T
     const pick = pickWeighted(random, strays, (s) => s.kind.terrain[terrain] ?? 0);
     return makeLair(cell, pick.kind, pick.levels, random);
   }
-  if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE) {
-    const mids = LAIRS.filter((l) => l.tier >= 2 && !l.boss && (l.terrain[terrain] ?? 0) > 0);
-    if (mids.length === 0) return null;
-    const kind = pickWeighted(random, mids, weight);
-    return { ...makeLair(cell, kind, kind.levels, random), minRaceLevel: MID_RACE_LEVELS[kind.tier as 2 | 3 | 4] };
-  }
+  if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE) return midLair(random, cell, terrain, weight);
   if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE + MID_BOSS_CHANCE) {
     const bosses = LAIRS.filter((l) => l.tier >= 2 && l.boss && (l.terrain[terrain] ?? 0) > 0);
     if (bosses.length === 0) return null;
     const kind = pickWeighted(random, bosses, weight);
     return { ...makeLair(cell, kind, kind.levels, random), minRaceLevel: MID_BOSS_RACE_LEVEL };
   }
+  if (roll < BOSS_LAIR_CHANCE + STRAY_LAIR_CHANCE + MID_LAIR_CHANCE + MID_BOSS_CHANCE + MID_LAIR_EXTRA_CHANCE) return midLair(random, cell, terrain, weight);
   return null;
 }
 

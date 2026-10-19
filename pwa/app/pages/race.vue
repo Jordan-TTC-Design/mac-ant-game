@@ -156,7 +156,7 @@ async function choose(race: string) {
             {{ p.name }} <b>{{ p.have.toLocaleString() }} / {{ p.need.toLocaleString() }}</b>
           </li>
         </ul>
-        <p class="muted small">信物從{{ tokenFrom(shown) }}掉（你的種族 10 級以上打贏才會掉，每次大約 1/4；巢穴 1～3 級的小巢也會掉）。</p>
+        <p class="muted small">信物從{{ tokenFrom(shown) }}掉（你的種族 10 級以上打贏才會掉。小巢 1～3 級每次 15%，4～6 級 30%，7 級以上 50%：小的多打幾次，高的少打幾次都行）。</p>
         <p v-if="option.problem && !(view.level < view.minLevel) && !waiting && !view.travelling" class="warn">{{ option.problem }}</p>
         <button class="btn danger" :disabled="busy || !!option.problem" @click="choose(shown)">換成{{ NAMES[shown] }}…</button>
       </section>

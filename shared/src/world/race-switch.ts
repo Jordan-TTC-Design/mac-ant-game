@@ -13,9 +13,16 @@ export const RACE_SWITCH = {
   cooldownDays: 14,
   /** 信物 of the new race a switch takes. */
   tokens: 5,
-  /** A cleared lair of the right kind drops a 信物 this often (only for camps of minLevel or more, never their own race's). */
-  tokenChance: 0.25,
 } as const;
+
+/**
+ * A cleared lair of the right kind drops a 信物 this often, by the lair's level (only for camps of minLevel or more, never
+ * their own race's): the small ones many times over, the tougher ones fewer times — five take about 33 level 1–3 clears,
+ * 17 of level 4–6, or 10 of level 7 and up.
+ */
+export function tokenChance(lairLevel: number): number {
+  return lairLevel >= 7 ? 0.5 : lairLevel >= 4 ? 0.3 : 0.15;
+}
 
 export interface RaceToken {
   /** The material (drops.ts MATERIALS). */
@@ -108,11 +115,11 @@ export function raceSwitchProblem(o: {
 }
 
 /** The 信物 a cleared lair drops for a camp (null: none this time). */
-export function raceTokenDrop(lairKind: string, campRace: string, level: number, random: Random): string | null {
+export function raceTokenDrop(lairKind: string, campRace: string, level: number, random: Random, lairLevel = 1): string | null {
   if (level < RACE_SWITCH.minLevel) return null;
   for (const race of RACES) {
     if (race === campRace || !RACE_TOKENS[race].lairs.includes(lairKind)) continue;
-    return random() < RACE_SWITCH.tokenChance ? RACE_TOKENS[race].id : null;
+    return random() < tokenChance(lairLevel) ? RACE_TOKENS[race].id : null;
   }
   return null;
 }

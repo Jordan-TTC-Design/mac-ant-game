@@ -158,10 +158,14 @@ export function residentFighter(r: Resident, side: Side, race: RaceTraits, boost
   };
 }
 
+/** What each level above the first adds to a lair's foes (2026-10-19: was 25% and 20%, which made a level 13 lair 4× and 3.4×). */
+export const LAIR_LEVEL_HP = 0.15;
+export const LAIR_LEVEL_ATTACK = 0.12;
+
 /** A lair's foes as fighters (the defenders), made stronger by its level. */
 export function lairFighters(lair: Lair): Fighter[] {
-  const hpScale = (1 + 0.25 * (lair.level - 1)) * FOE_POWER;
-  const attackScale = (1 + 0.2 * (lair.level - 1)) * FOE_POWER;
+  const hpScale = (1 + LAIR_LEVEL_HP * (lair.level - 1)) * FOE_POWER;
+  const attackScale = (1 + LAIR_LEVEL_ATTACK * (lair.level - 1)) * FOE_POWER;
   return lair.foes.map((id, i) => {
     const foe = FOES[id];
     if (!foe) throw new Error(`unknown foe ${id}`);

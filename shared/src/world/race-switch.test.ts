@@ -51,6 +51,11 @@ describe("換族", () => {
     expect(raceTokenDrop("wolf_den", "goblin", 20, always)).toBe("token_beast");
     expect(raceTokenDrop("slime_pit", "goblin", 20, always)).toBeNull();
     expect(raceTokenDrop("bear_cave", "elf", 12, () => 0.3)).toBeNull();
+    // (by the lair's level: 15% at 1–3, 30% at 4–6, 50% from 7)
+    expect(raceTokenDrop("wolf_den", "goblin", 12, () => 0.2, 2)).toBeNull();
+    expect(raceTokenDrop("wolf_den", "goblin", 12, () => 0.2, 5)).toBe("token_beast");
+    expect(raceTokenDrop("crypt", "goblin", 12, () => 0.4, 4)).toBeNull();
+    expect(raceTokenDrop("crypt", "goblin", 12, () => 0.4, 8)).toBe("token_undead");
   });
 
   it("names real materials and lairs", () => {
