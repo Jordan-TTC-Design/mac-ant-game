@@ -60,7 +60,7 @@ const scaled = (m: Record<string, readonly [number, number, number]>, k: number)
   Object.fromEntries(Object.entries(m).map(([id, v]) => [id, lv(v[0] * k, v[1] * k, v[2] * k)]));
 
 const LUMBER = { log: lv(2, 4, 7) };
-const QUARRY = { stone: lv(1, 2, 3.5) };
+const QUARRY = { stone: lv(2, 4, 7) }; // (2026-10-19: was 1, 2, 3.5 — stone fell far behind the wood and chips; now as the lumber camp)
 const ORE = { scrap_iron: lv(0.3, 0.6, 1) };
 const SCRAPS = { scrap_rag: lv(1, 2, 3), scrap_wood: lv(1, 2, 3) };
 

@@ -42,7 +42,7 @@ describe("the camp's sites", () => {
 
   it("follows each race's knack", () => {
     expect(sitePerHour("elf", { kind: "lumber", level: 1 }).makes.log).toBeCloseTo(1.4);
-    expect(sitePerHour("undead", { kind: "quarry", level: 2 }).makes.stone).toBeCloseTo(3);
+    expect(sitePerHour("undead", { kind: "quarry", level: 2 }).makes.stone).toBeCloseTo(6);
   });
 
   it("costs something to build and raise, and knows what it cost", () => {
