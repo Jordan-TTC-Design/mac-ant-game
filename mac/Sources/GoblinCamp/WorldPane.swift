@@ -86,9 +86,10 @@ final class WorldPane: NSObject, MainPane, NSSearchFieldDelegate {
         searchField.action = #selector(search)
         searchField.delegate = self
         talentsButton = button("🌟 天賦") { [weak self] in self?.openWeb("/talents", title: "種族天賦") }
+        let races = button("🧬 種族") { [weak self] in self?.openWeb("/race", title: "種族") }
         let board = button("排行") { [weak self] in self?.openWeb("/leaderboard", title: "排行榜") }
         let land = button("領地") { [weak self] in self?.openWeb("/territory", title: "我的領地") }
-        let titleRow = GuildUI.row([titleLabel, NSView(), talentsButton, land, board])
+        let titleRow = GuildUI.row([titleLabel, NSView(), talentsButton, races, land, board])
         titleRow.arrangedSubviews[1].setContentHuggingPriority(.init(1), for: .horizontal)
         let landmarkButton = button("🏛️ 地圖這附近的地標") { [weak self] in self?.toggleLandmarks() }
         let top = NSStackView(views: [titleRow, subLabel, GuildUI.row([searchField, landmarkButton])])

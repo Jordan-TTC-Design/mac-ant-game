@@ -406,10 +406,7 @@ final class DecorPalette: NSObject, NSWindowDelegate {
             panel = p
         }
         rebuild()
-        if let frame = window?.frame, let panel {
-            panel.setFrameTopLeftPoint(NSPoint(x: frame.maxX + 8, y: frame.maxY))
-            if let screen = window?.screen, !screen.visibleFrame.contains(panel.frame) { panel.setFrameTopLeftPoint(NSPoint(x: frame.minX - panel.frame.width - 8, y: frame.maxY)) }
-        }
+        if let panel { panel.placeBeside(window) }
         panel?.orderFront(nil)
     }
 
@@ -611,6 +608,23 @@ extension Colony {
             fflush(stdout)
             NSApp.terminate(nil)
         default: break
+        }
+    }
+}
+
+extension NSPanel {
+    /// Beside `window`: on its right, else on its left. When the window fills the screen and neither side has room, inside the
+    /// screen's right edge and below the window's top (so the 建設 and 裝飾 buttons in its corner stay uncovered).
+    func placeBeside(_ window: NSWindow?) {
+        guard let window else { return }
+        let frame = window.frame, room = (window.screen ?? NSScreen.main)?.visibleFrame ?? frame
+        let width = self.frame.width
+        if frame.maxX + 8 + width <= room.maxX {
+            setFrameTopLeftPoint(NSPoint(x: frame.maxX + 8, y: min(frame.maxY, room.maxY)))
+        } else if frame.minX - 8 - width >= room.minX {
+            setFrameTopLeftPoint(NSPoint(x: frame.minX - 8 - width, y: min(frame.maxY, room.maxY)))
+        } else {
+            setFrameTopLeftPoint(NSPoint(x: room.maxX - width - 8, y: min(frame.maxY, room.maxY) - 64))
         }
     }
 }

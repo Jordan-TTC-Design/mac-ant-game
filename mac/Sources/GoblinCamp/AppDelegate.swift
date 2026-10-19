@@ -4754,14 +4754,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func characterTitle() -> String {
-        serverCamp && sync.user != nil ? "種族：\(Characters.current.name)（換族…）" : "種族：\(Characters.current.name)（開新世界時可以換）"
+        serverCamp && sync.user != nil ? "種族：\(Characters.current.name)（介紹與換族…）" : "種族：\(Characters.current.name)（開新世界時可以換）"
     }
 
     /// 換族: the web page that says what it takes (the big world has to be open; the server checks the rest).
     private func showRaceSwitch() {
         guard serverCamp, sync.user != nil else { return say("換族要先登入帳號，種族在開新世界時也可以換。") }
         showWorld()
-        ensureWorldPane().openWeb("/race", title: "換族")
+        ensureWorldPane().openWeb("/race", title: "種族")
     }
 
     private func characterChanged() {

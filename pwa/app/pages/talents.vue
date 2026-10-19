@@ -208,7 +208,7 @@ const ICON: Record<TalentEffect, string> = {
         <button v-if="planned[chosenRule.id]" class="btn" @click="undo(chosenRule)">↩︎ 拿回剛點的一點</button>
       </section>
       <p class="muted small hint">點天賦放一點（還沒送出），確定才算數；點過的要重置才能拿回來。電腦上按右鍵也可以拿回剛點的。</p>
-      <p class="muted small hint">想玩別的種族？<NuxtLink to="/race">換族…</NuxtLink>（種族 10 級以上）</p>
+      <p class="muted small hint">想玩別的種族？<NuxtLink to="/race">看種族介紹、換族…</NuxtLink>（種族 10 級以上）</p>
     </template>
   </main>
 </template>

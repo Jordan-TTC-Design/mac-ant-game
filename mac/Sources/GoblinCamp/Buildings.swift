@@ -169,10 +169,7 @@ final class BuildingPanel: NSObject, NSWindowDelegate {
             panel = p
         }
         rebuild()
-        if let frame = window?.frame, let panel {
-            panel.setFrameTopLeftPoint(NSPoint(x: frame.maxX + 8, y: frame.maxY))
-            if let screen = window?.screen, !screen.visibleFrame.contains(panel.frame) { panel.setFrameTopLeftPoint(NSPoint(x: frame.minX - panel.frame.width - 8, y: frame.maxY)) }
-        }
+        if let panel { panel.placeBeside(window) }
         panel?.orderFront(nil)
     }
 
