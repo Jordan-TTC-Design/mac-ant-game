@@ -167,7 +167,7 @@ describe("expeditions", () => {
     expect(minutes).toBeGreaterThanOrEqual(3);
     expect(minutes).toBeLessThan(30);
     // on the road: not at home (as many as the lair holds: lairEntry)
-    const entry = lairEntry(target.lair!.count, target.lair!.boss);
+    const entry = lairEntry(target.lair!.count, target.lair!.boss, target.lair!.level);
     expect(res.body.party).toBe(Math.min(25, entry));
     const walking = await camp(a);
     expect(walking.residents.filter((r) => r.place === `exp:${res.body.id}`)).toHaveLength(Math.min(25, entry));

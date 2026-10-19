@@ -103,7 +103,7 @@ describe("a lair", () => {
     await t.call("POST", "/world/open", { cell: cellAt(DAAN) }, a);
     await database.sql`update world_players set xp = 18050`;
     const lair = (await map(a)).filter((c) => c.lair && !c.owner && !c.boss).sort((x, y) => x.lair!.count - y.lair!.count)[0]!;
-    const entry = lairEntry(lair.lair!.count, lair.lair!.boss);
+    const entry = lairEntry(lair.lair!.count, lair.lair!.boss, lair.lair!.level);
     const guess = (await t.call("POST", "/world/expeditions/estimate", { to: lair.cell, count: 25 }, a)).body;
     expect(guess.entry).toBe(entry);
     expect(guess.facing).toBe(lair.lair!.count);

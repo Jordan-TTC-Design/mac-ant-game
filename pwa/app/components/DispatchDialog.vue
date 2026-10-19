@@ -135,7 +135,7 @@ const startPower = computed(() => {
   return out;
 });
 /** A lair lets in only so many (world/expedition.ts lairEntry); a great monster and another camp's cell do not. */
-const entry = computed(() => (props.target.lair && !props.target.boss && !props.target.owner ? lairEntry(props.target.lair.count, props.target.lair.boss) : null));
+const entry = computed(() => (props.target.lair && !props.target.boss && !props.target.owner ? lairEntry(props.target.lair.count, props.target.lair.boss, props.target.lair.level) : null));
 const most = computed(() =>
   Math.max(
     0,

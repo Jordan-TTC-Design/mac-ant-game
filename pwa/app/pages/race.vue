@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { raceRules } from "@goblincamp/shared/camp";
-import { treesFor, type RaceSwitchView, type WorldMe } from "@goblincamp/shared/world";
+import { raceRules, type RaceId } from "@goblincamp/shared/camp";
+import { LAIRS, RACE_TOKENS, treesFor, type RaceSwitchView, type WorldMe } from "@goblincamp/shared/world";
 import { ApiError, api } from "~/utils/api";
 
 // 種族 (RACES.md) and 換族 (RACES_SWITCH.md): each race told in full (race-info.ts), then what switching to it would take, said plainly first, then one card for each race the camp could become
@@ -11,7 +11,8 @@ const world = useWorld();
 const { set: setRace } = useRace();
 const { ask } = useConfirm();
 const NAMES: Record<string, string> = { goblin: "哥布林", elf: "精靈", undead: "死靈", beast: "獸人" };
-const TOKEN_FROM: Record<string, string> = { goblin: "野蠻人營地、盜賊窩、強獸人軍團", elf: "古樹林", undead: "黑暗墓穴", beast: "洞穴熊" };
+// where a race's 信物 drops: the lairs' names (shared race-switch.ts)
+const tokenFrom = (race: string) => (RACE_TOKENS[race as RaceId]?.lairs ?? []).map((k) => LAIRS.find((l) => l.id === k)?.name ?? k).join("、");
 
 const view = ref<RaceSwitchView | null>(null);
 // the race being read about (the camp's own until another is picked)
@@ -155,7 +156,7 @@ async function choose(race: string) {
             {{ p.name }} <b>{{ p.have.toLocaleString() }} / {{ p.need.toLocaleString() }}</b>
           </li>
         </ul>
-        <p class="muted small">信物從{{ TOKEN_FROM[shown] }}掉（種族 10 級以上打贏才會掉，每次大約 1/4）。</p>
+        <p class="muted small">信物從{{ tokenFrom(shown) }}掉（你的種族 10 級以上打贏才會掉，每次大約 1/4；巢穴 1～3 級的小巢也會掉）。</p>
         <p v-if="option.problem && !(view.level < view.minLevel) && !waiting && !view.travelling" class="warn">{{ option.problem }}</p>
         <button class="btn danger" :disabled="busy || !!option.problem" @click="choose(shown)">換成{{ NAMES[shown] }}…</button>
       </section>

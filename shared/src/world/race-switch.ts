@@ -24,11 +24,12 @@ export interface RaceToken {
   lairs: readonly string[];
 }
 
+/** Lairs of level 1 to 3 first (what most of the world is), then the tougher one of the same theme. */
 export const RACE_TOKENS: Record<RaceId, RaceToken> = {
-  goblin: { id: "token_goblin", lairs: ["barbarian_camp", "bandit_hideout", "orc_warband"] },
-  elf: { id: "token_elf", lairs: ["treant_grove"] },
-  undead: { id: "token_undead", lairs: ["crypt"] },
-  beast: { id: "token_beast", lairs: ["bear_cave"] },
+  goblin: { id: "token_goblin", lairs: ["highway_robbers", "robber_chief_camp", "orc_patrol", "barbarian_camp", "bandit_hideout", "orc_warband"] },
+  elf: { id: "token_elf", lairs: ["mushroom_ring", "treant_grove"] },
+  undead: { id: "token_undead", lairs: ["giant_bat_roost", "bat_cave", "crypt"] },
+  beast: { id: "token_beast", lairs: ["wolf_den", "dire_wolf_den", "bear_cave"] },
 };
 
 /** Materials a switch costs at a race level (the first switch: half, rounded up). */

@@ -77,8 +77,11 @@ export const pvpFront = (attackers: number) => Math.ceil(Math.max(1, attackers) 
 
 /**
  * How many may go into a lair (2026-09-29): a den holds only so many — twice its foes and two more; a 初期魔王's lair,
- * three times and three more. So a lair is beaten with gear, food and 道具, not with a crowd.
+ * three times and three more. So a lair is beaten with gear, food and 道具, not with a crowd. (2026-10-19) A higher
+ * level lair is tougher, so it lets in a little more: 8% more for each level above the first.
  */
-export function lairEntry(foes: number, boss = false): number {
-  return boss ? foes * 3 + 3 : foes * 2 + 2;
+export const LAIR_ENTRY_PER_LEVEL = 0.08;
+export function lairEntry(foes: number, boss = false, level = 1): number {
+  const base = boss ? foes * 3 + 3 : foes * 2 + 2;
+  return Math.ceil(base * (1 + LAIR_ENTRY_PER_LEVEL * Math.max(0, level - 1)));
 }

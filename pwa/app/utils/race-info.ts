@@ -27,7 +27,7 @@ export interface RaceInfo {
   /** The land: its ground tile and the things standing on it (public/terrain/<name>.png), left to right. */
   ground: string;
   props: string[];
-  /** Lairs that drop the race's 信物 are in race.vue (TOKEN_FROM). */
+  /** Lairs that drop the race's 信物 are in shared race-switch.ts (RACE_TOKENS). */
 }
 
 export const RACE_ORDER = ["goblin", "elf", "undead", "beast"] as const;

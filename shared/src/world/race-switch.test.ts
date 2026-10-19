@@ -48,7 +48,8 @@ describe("換族", () => {
     expect(raceTokenDrop("crypt", "goblin", 10, always)).toBe("token_undead");
     expect(raceTokenDrop("crypt", "undead", 10, always)).toBeNull();
     expect(raceTokenDrop("crypt", "goblin", 9, always)).toBeNull();
-    expect(raceTokenDrop("wolf_den", "goblin", 20, always)).toBeNull();
+    expect(raceTokenDrop("wolf_den", "goblin", 20, always)).toBe("token_beast");
+    expect(raceTokenDrop("slime_pit", "goblin", 20, always)).toBeNull();
     expect(raceTokenDrop("bear_cave", "elf", 12, () => 0.3)).toBeNull();
   });
 

@@ -1260,7 +1260,7 @@ export async function previewRoute(tx: Tx, userId: string, input: { from: string
 async function entryOf(tx: Tx, cell: string, row: CellRow | null, now: Date): Promise<number | null> {
   if (await bossHere(tx, cell, now, false).then((b) => b && !b.row.defeatedAt)) return null;
   const { lair } = lairHere(cell, row, now, await terrainOf(tx, cell), await detailOf(tx, cell));
-  return lair ? lairEntry(lair.foes.length, lair.boss) : null;
+  return lair ? lairEntry(lair.foes.length, lair.boss, lair.level) : null;
 }
 
 /**
