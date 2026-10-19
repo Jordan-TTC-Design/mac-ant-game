@@ -24,6 +24,11 @@ const option = computed(() => view.value?.options.find((o) => o.race === shown.v
 const problem = ref("");
 const message = ref("");
 const busy = ref(false);
+// a pixel picture at `times` its size, but never wider than its room (max-width in the style)
+function grow(e: Event, times: number) {
+  const img = e.target as HTMLImageElement;
+  img.style.width = `${img.naturalWidth * times}px`;
+}
 async function load() {
   try {
     view.value = await api<RaceSwitchView>("GET", "world/race");
@@ -116,7 +121,7 @@ async function choose(race: string) {
       <h3>營地</h3>
       <div class="camps">
         <figure v-for="n in 3" :key="n">
-          <img :src="`/camps/${info.campId}/stage${n}.png`" class="pixel" alt="">
+          <img :src="`/camps/${info.campId}/stage${n}.png`" class="pixel" alt="" @load="grow($event, 2.5)">
           <figcaption>{{ ["剛落腳", `${rules.stage2} 隻以上`, `${rules.stage3} 隻以上`][n - 1] }}</figcaption>
         </figure>
       </div>
@@ -124,7 +129,7 @@ async function choose(race: string) {
 
       <h3>場地</h3>
       <div class="land" :style="{ backgroundImage: `url(/terrain/${info.ground}.png)` }">
-        <img v-for="(p, i) in info.props" :key="i" :src="`/terrain/${p}.png`" class="pixel" alt="">
+        <img v-for="(p, i) in info.props" :key="i" :src="`/terrain/${p}.png`" class="pixel" alt="" @load="grow($event, 2)">
       </div>
       <p class="line">{{ info.land }}</p>
 
@@ -200,7 +205,7 @@ h2, h3 { margin: 0 0 8px; font-size: 17px; }
 .suits { margin: 10px 0 0; }
 .suits b { margin-right: 8px; }
 .intro h3 { margin: 16px 0 6px; }
-.traits { margin: 8px 0 0; display: grid; grid-template-columns: 4.5em 1fr; gap: 6px 8px; line-height: 1.55; }
+.traits { margin: 8px 0 0; display: grid; grid-template-columns: 4.5em minmax(0, 1fr); gap: 6px 8px; line-height: 1.55; }
 .traits dt { font-weight: 700; }
 .traits dd { margin: 0; }
 .breeds, .trees { margin: 0; padding: 0; list-style: none; }
@@ -210,13 +215,13 @@ h2, h3 { margin: 0 0 8px; font-size: 17px; }
 .role { margin-left: 8px; font-size: 12px; color: var(--muted); }
 .trees li { line-height: 1.7; }
 .ico { width: 20px; height: 20px; margin-right: 6px; vertical-align: -5px; }
-.camps { display: flex; gap: 8px; align-items: flex-end; justify-content: space-around; padding: 10px 4px 6px; border-radius: 12px; background: rgba(0, 0, 0, 0.05); }
-.camps figure { margin: 0; text-align: center; }
-.camps img { display: block; margin: 0 auto 4px; zoom: 2.5; }
+.camps { overflow: hidden; display: flex; gap: 8px; align-items: flex-end; justify-content: space-around; padding: 10px 4px 6px; border-radius: 12px; background: rgba(0, 0, 0, 0.05); }
+.camps figure { flex: 0 1 auto; min-width: 0; margin: 0; text-align: center; }
+.camps img { display: block; max-width: 100%; height: auto; margin: 0 auto 4px; }
 .camps figcaption { font-size: 12px; color: var(--muted); }
 .line { margin: 8px 0 0; line-height: 1.55; }
 .land { display: flex; align-items: flex-end; justify-content: space-around; gap: 4px; height: 130px; padding: 0 6px 14px; border-radius: 12px; overflow: hidden; background-size: 96px; image-rendering: pixelated; }
-.land img { flex: none; zoom: 2; max-width: 22%; }
+.land img { flex: 0 1 auto; min-width: 0; max-width: 100%; height: auto; }
 .princess { display: flex; gap: 12px; align-items: center; }
 .princess .line { margin: 0; }
 .queen { flex: none; width: 64px; height: 64px; background-size: 256px 896px; background-position: 0 0; }
